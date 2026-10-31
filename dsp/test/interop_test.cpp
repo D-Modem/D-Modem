@@ -369,6 +369,44 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)phase 3 done \\(no DIL\\).*CP: D 42 .*"
 	      "B1d: 0 bit errors in 48 frames of 42 bits",
 	      "EXPECT_B=V.90 connect 56000/" });
+	/* K56flex: the open modem as the analogue modem (9600 Hz) calls
+	   the open digital modem: V.8bis (MRe, CRd, CL, MS, ACK(1)), V.8
+	   for V.34, INFO1c and INFO1a marked; the PCM receiver trains on
+	   R, TRN1A, TRN1B and TRN1C and decodes Js; our S to J, its R,
+	   TRN2A, our J'; MP both ways, then the data: PCM down, V.34 up
+	   (docs/dsp/k56flex.md) */
+	add("open", "open_k56flex", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000",
+	      "EXPECT_A=(?s)V.8bis CL: K56flex.*V.8bis ACK\\(1\\): K56flex"
+	      ".*INFO1a: K56flex.*k56rx: Js 0x89b0.*k56rx: TRN2A"
+	      ".*k56rx: MP at.*K56flex connect [0-9]+/56000 \\(analogue "
+	      "modem\\)",
+	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect 56000/" });
+	add("open", "open_k56flex_alaw", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:alaw", "DSP_G711=alaw",
+	      "EXPECT_A=(?s)INFO1a: K56flex \\(0x5\\).*A-law.*"
+	      "K56flex connect [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=K56flex connect 56000/" });
+	/* its codec's clock 100 ppm fast, half a sample off */
+	add("open", "open_k56flex_ppm", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_PPM=100", "NET_PHASE=0.3",
+	      "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: timing \\+(99.[5-9]|100.[0-4])[0-9]* "
+	      "ppm.*K56flex connect [0-9]+/56000 \\(analogue modem\\)"
+	      ".*K56flex data: error [0-2].[0-9]+ rms",
+	      "EXPECT_B=K56flex connect 56000/" });
+	/* the analogue modem's own echo (DSP_TEST_ECHO) */
+	add("open", "open_k56flex_echo", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "DSP_TEST_ECHO=-10:1c", "BULK=100000",
+	      "EXPECT_A=(?s)echo canceller took [4-9][0-9].[0-9] dB away[^:].*"
+	      "K56flex connect [0-9]+/56000 "
+	      "\\(analogue modem\\)",
+	      "EXPECT_B=K56flex connect 56000/" });
+	/* a digital modem without K56flex (+MS=90): no V.8bis, V.90 */
+	add("open", "open_k56flex_v90", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=90",
+	      "EXPECT_A=V.90 connect 3[0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=V.90 connect 56000/" });
 	/* the analogue modem's codec on a clock of its own (netsim's
 	   NET_PHASE, NET_PPM): its samples half a network sample off the
 	   symbols (where a T-spaced receiver at 8000 Hz loses the band's
@@ -440,7 +478,8 @@ std::vector<Call> calls()
 	   (ATI11, the same AT&V1; AT#UD Unimodem's): each direction's
 	   symbol rate and carrier, V.34 upstream's coding, the analogue
 	   modem's codec 100 ppm fast seen by each, the network's pad and
-	   robbed bit as the DIL found them */
+	   robbed bit as the DIL found them; AT#UD's keys 20/21 per
+	   direction, V.34's C one way and PCM's E the other */
 	add("open", "open_v90a_stats", "open", "open8", "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "NET_PAD=3", "NET_RBS=0x01",
 	      "NET_PPM=100", "NET_PHASE=0.3", "STREAM=20",
@@ -452,13 +491,15 @@ std::vector<Call> calls()
 	      "Timing Offset \\(ppm\\) +-(99|100|101)\r.*"
 	      "PCM Encoding +u-law.*Digital Loss \\(dB\\) +3.0.*"
 	      "Robbed Bit Frames +[1-6]\r.*"
-	      "DIAG <2A4D3263 20=E>.*DIAG <2A4D3263 22=0D65>.*"
+	      "DIAG <2A4D3263 20=C>.*DIAG <2A4D3263 21=E>.*"
+	      "DIAG <2A4D3263 22=0D65>.*"
 	      "DIAG <2A4D3263 23=1F40>.*DIAG <2A4D3263 60=2>",
 	      "EXPECT_MIDCALL_B=(?s)Symbol Rate \\(Tx/Rx\\) +8000/3429.*"
 	      "Carrier Frequency \\(Hz, Tx/Rx\\) +PCM/1959.*"
 	      "Trellis Code \\(Tx/Rx\\) +-/64S-4D.*"
 	      "Timing Offset \\(ppm\\) +(99|100|101)\r.*"
 	      "PCM Encoding +u-law.*DIAG <2A4D3263 1=8>.*"
+	      "DIAG <2A4D3263 20=E>.*DIAG <2A4D3263 21=C>.*"
 	      "DIAG <2A4D3263 22=1F40>" });
 	/* stage F: rate renegotiations (9.6/V.90).  The digital modem's
 	   (DSP_V34_RENEG on it: upstream to 24 000 bit/s): its Rd, Rd-bar,
@@ -975,6 +1016,12 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
 		      "DSP_G711=" + law, "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
+	/* K56flex: the SM56 modem as the analogue modem, ours the digital
+	   modem (docs/dsp/k56flex.md) */
+	add("sm56", "sm56_k56flex", "sm56", "open8", "ATX3;AT+MS=K56FLEX",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect",
+	      "PROTO_B=ATX3;AT+MS=56" });
 	/* V.92: its QC1a on the first call already; on the second, quick
 	   connect with short phase 2.  (Its upstream stays V.34: the module
 	   chooses PCM upstream only in quick connect's INFO1a, from an

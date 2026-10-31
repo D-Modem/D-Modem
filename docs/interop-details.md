@@ -561,6 +561,18 @@ knows nothing of modem-on-hold. And an MHreq sent at the reversal stalls
 the original library and the Agere modem (they take it for our
 reversal). So we keep following the retrain.
 
+**K56flex.** It is the one K56flex client we have, and `sm56_k56flex`
+calls us with `AT+MS=K56FLEX` (we answer with `AT+MS=56` as the digital
+modem, on the 8000 Hz line). It connects at 44000 bit/s down and 31200 up,
+with LAPM. Getting there took (see [K56flex](dsp/k56flex-details.md)):
+
+- a TRN1B that its own unused transmitter (`isdn_tx`) does not send;
+- the 16-level Js, as its detector cannot take the 4-level one, and then
+  16-point TRN, MP and E from it in phase 4;
+- its J of 24 bits (J and a robbed-bit octet), heard in time: it waits
+  only some 0.75 s for our second R;
+- the sign of our codes as its decoder takes them (bit 7 positive).
+
 ## Against the PCTel HSP soft modem
 
 `half_pctel` runs PCTel's HSP soft modem in user space: pctel-0.9.7-9,
@@ -1682,7 +1694,8 @@ a 3 dB pad, a robbed bit and the analogue modem's codec 100 ppm fast, for
 - the clock 100 ppm off as each modem sees it (the analogue modem's
   -100, the network being slower; the digital modem's +100);
 - the pad and the robbed bit as the analogue modem's DIL found them;
-- the same in Unimodem's keys (`AT#UD`'s `DIAG` lines).
+- the same in Unimodem's keys (`AT#UD`'s `DIAG` lines), keys 20 and 21
+  per direction: V.34's `C` upstream and PCM's `E` downstream.
 
 ## Retrains and renegotiations on request
 

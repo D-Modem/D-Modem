@@ -1742,8 +1742,16 @@ void Modem::change_dp()
 		dp_requested_ = 0;
 	} else {
 		id = sregs_[SREG_DP];
-		if (id == DP_K56)
-			id = DP_V90;
+		/* K56flex: its own pump where one is registered (the V.34
+		   pump, the digital modem's side), else V.90 */
+		if (id == DP_K56) {
+			bool k56 = false;
+			for (const DpDriver *d = dp_drivers(); d->id; d++)
+				if (d->id == DP_K56)
+					k56 = d->op != nullptr;
+			if (!k56)
+				id = DP_V90;
+		}
 		/* an analogue line has no V.91 (that is between two
 		   digital modems); V.90 and V.92 run as the analogue modem
 		   (dp_runtime_set_analog()) */

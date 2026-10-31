@@ -37,6 +37,8 @@
 #include "dm_types.h"
 #include "pump.h"
 #include "v34.h"
+#include "k56flex.h"
+#include "k56flex_rx.h"
 #include "v90.h"
 #include "v90a.h"
 #include "v91.h"
@@ -147,6 +149,28 @@ enum v34_state {
 	QCC_GAP,
 	MOH_BACK,               /* back from holding the remote: its ANSam,
 				   then V.8 as the call modem */
+	/* K56flex's phase 1 before V.8, answering (v34_k56.h): MRe, until
+	   CRd, CL until MS, a gap, ACK(1) */
+	K8_MRE,
+	K8_CRD,
+	K8_CL,
+	K8_ACK_GAP,
+	K8_ACK,
+	/* and calling, the analogue modem (v34_k56.h): MRe until it ends,
+	   our CRd, its CL, our MS, its ACK(1); its ANSam, then V.8 */
+	KC8_MRE,
+	KC8_CRD,
+	KC8_CL,
+	KC8_MS,
+	KC8_ACK,
+	KC8_ANS,
+	/* K56flex's phases 3 and 4 (v34_k56.h): our training to Js and
+	   the silence after it, until the caller's J; R, TRN2A, MARK and
+	   TRN2B until its MP; MP, MP', E, B1 until its E; the data */
+	K3_TRAIN,
+	K3_TRN2,
+	K4_MP,
+	K4_DATA,
 	/* phase 2 answerer */
 	P2A_INFO0,
 	P2A_A,
@@ -244,6 +268,19 @@ enum v34_state {
 	V90A_DATA,      /* the analogue modem's data mode */
 	V90A_RN_S,      /* a rate renegotiation: S 128 T (9.6.2/V.90) */
 	V90A_RN_SBAR,   /* S-bar 16 T, then SCR and phase 4's CP ... */
+	/* K56flex's analogue modem, phases 3 and 4 (v34_k56.h): silence
+	   until the digital modem's Js, S, S-bar, PP, TRN, J until its
+	   TRN2A; J', TRN, MP until its MP, MP' until its MP', E; data */
+	KC3_WAIT,
+	KC3_S,
+	KC3_SBAR,
+	KC3_PP,
+	KC3_TRN,
+	KC3_J,
+	KC4_TRN,
+	KC4_MP,
+	KC4_E,
+	KC4_DATA,
 	/* V.92 analogue modem, PCM upstream phase 3 (9.5.2/V.92): the
 	   PAM transmitter's segments follow each other (v92a.h), these
 	   wait for what moves them on */
@@ -324,6 +361,7 @@ enum v34_txm {
 	TXM_PRIMARY,
 	TXM_PAM,        /* V.92's PCM upstream (patx) */
 	TXM_HCC,        /* half-duplex's control channel (hcc_tx) */
+	TXM_K8,         /* K56flex's V.8bis tones (k8_tx_sample()) */
 };
 
 struct BitQ {
@@ -763,8 +801,11 @@ struct V34Qc {
 };
 
 /* (PcmFrames: V.90's phase 4 frames, MP the sequence) */
+#include "v34_k56.h"
+
 struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	V34Moh<V34Pump>,
+	V34K56<V34Pump>,
 	V34V8<V34Pump>,
 	V34Info0<V34Pump>,
 	V34Probe<V34Pump>,
@@ -1112,7 +1153,8 @@ void V34Pump::make_info1c(BitQ *q)
 		q->put(0, 4);        /* no pre-emphasis */
 		q->put(rate, 4);
 	}
-	q->put(0, 10);       /* frequency offset */
+	/* frequency offset: K56flex's analogue modem says so with 1 */
+	q->put(k56c_on ? 1 : 0, 10);
 	q->info_end();
 }
 
@@ -1130,7 +1172,14 @@ void V34Pump::make_info1a(BitQ *q)
 	q->put(max_rate_rx, 4);
 	q->put(baud_tx, 3);       /* answerer -> caller */
 	q->put(baud_rx, 3);       /* caller -> answerer */
-	q->put(0, 10);
+	/* K56flex: the frequency offset field says so (1, and bit 2 the
+	   law) to a caller whose INFO1c did (1) */
+	if (k56_on && rinfo1c.freq_offset == 1) {
+		s32 m = env_int("DSP_K56_MARK", 1 | (alaw ? 4 : 0));
+		DSP_DBG("v34: INFO1a: K56flex (%#x)\n", m);
+		q->put(static_cast<u32>(m), 10);
+	} else
+		q->put(0, 10);
 	q->info_end();
 }
 
@@ -2096,6 +2145,8 @@ void V34Cc<P>::info_frame(CcRx *r)
 					rinfo1c.r[b].high,
 					rinfo1c.r[b].preemph,
 					rinfo1c.r[b].max_rate);
+			DSP_DBG("v34: INFO1c frequency offset %#x\n",
+				rinfo1c.freq_offset);
 		}
 		ev_info1 = 1;
 		DSP_DBG("v34: INFO1 received\n");
@@ -2863,6 +2914,10 @@ void V34Pump::ec_schedule()
 		state == P3C_PP || state == P3C_TRN ||
 		/* V.90: Sd to Jd, the analogue modem is silent after Ja */
 		state == P3D_SD || state == P3D_JD ||
+		/* K56flex: TRN1A to Js, the analogue modem silent until
+		   our Js */
+		(k56_on && state == K3_TRAIN && k56t.seg >= K56_TRN1A &&
+		 k56t.seg <= K56_JS) ||
 		/* V.92 PCM upstream: the same, until Su */
 		(state == V92_RUN && v92u.ec_train()) ||
 		/* V.90's analogue modem: S to Ja, until the digital
@@ -2873,12 +2928,17 @@ void V34Pump::ec_schedule()
 			      v90rx.stage == V90Rx::WAIT_SD))) ||
 		/* and V.92's: Ru to Ja */
 		(v90a_rx && state == P3U_JA &&
-		 v90rx.stage == V90Rx::WAIT_SD);
+		 v90rx.stage == V90Rx::WAIT_SD) ||
+		/* K56flex's analogue modem: S to J, until the digital
+		   modem's R */
+		(k56_rx && (state == KC3_S || state == KC3_SBAR ||
+			    state == KC3_PP || state == KC3_TRN ||
+			    (state == KC3_J && !k56rx.ev_r2)));
 	s16 training;
 
 	if (ours && !e->on) {
 		e->on = 1;
-		e->ls = v90a_rx;
+		e->ls = v90a_rx || k56_rx;
 		e->ls_free();
 		e->ls_n = 0;
 		e->n = e->since = e->filled = 0;
@@ -2901,10 +2961,10 @@ void V34Pump::ec_schedule()
 	   the receiver meanwhile drags its equalizer and carrier off, so
 	   that it misses the remote's S of phase 4.  When the echo hides the
 	   J from the receiver, at the round trip measured as before */
-	training = ours && (!caller || v90a_rx ||
+	training = ours && (!caller || v90a_rx || k56_rx ||
 		(e->since > rtd + ms2samples(150, srate) &&
 		 (e->n || !remote_j())));
-	if (ours && caller && !v90a_rx && !training &&
+	if (ours && caller && !v90a_rx && !k56_rx && !training &&
 	    e->since > rtd + ms2samples(150, srate) && !e->waited) {
 		e->waited = 1;
 		DSP_DBG("v34: echo canceller: the remote's J still there, "
@@ -3029,7 +3089,12 @@ void V34Pump::pump_rx_sample(float x)
 {
 	s16 bit, k;
 
-	if (state < P2A_INFO0) {
+	if (state >= K8_MRE && state <= KC8_ACK) {
+		k8_rx_sample(x);
+		return;
+	}
+	/* (K56flex's phases 3 and 4 come before phase 2 in the list) */
+	if (state < P2A_INFO0 && !(state >= K3_TRAIN && state <= K4_DATA)) {
 		bit = v21.run(x);
 		if (bit >= 0 && v21.carrier)
 			v8_rx_bit(bit);
@@ -3045,7 +3110,8 @@ void V34Pump::pump_rx_sample(float x)
 			cc_phase_frame();
 		}
 		if (state == V8C_LISTEN || state == MOH_BACK ||
-		    state == QCC_WAIT || state == QCC_TONEQ)
+		    state == QCC_WAIT || state == QCC_TONEQ ||
+		    state == KC8_ANS)
 			ans_analyse(x);
 		if (aa_g.run(x)) {
 			if (aa_g.power > tone_power(300))
@@ -3059,6 +3125,20 @@ void V34Pump::pump_rx_sample(float x)
 				toneq_blocks = toneq_g.power > tone_power(150) &&
 					toneq_space_g.power < toneq_g.power / 10 ?
 					toneq_blocks + 1 : 0;
+		}
+		return;
+	}
+	if (k56_rx) {
+		/* K56flex's analogue modem: the digital modem's PCM, our
+		   echo taken away */
+		ec_schedule();
+		if (!ec.bypass)
+			x = ec.run(last_tx, x);
+		k56rx.line(x);
+		if (state == KC4_DATA && k56rx.qn) {
+			unsigned char b[K56RX_Q];
+			s16 m = k56rx.take(b, K56RX_Q);
+			CoreBits{ modem }.put(b, m);
 		}
 		return;
 	}
@@ -4272,6 +4352,18 @@ s16 V34V8<P>::v8_step(s32 c)
 		/* V.8's 0.2 s at least (8.2/V.8): the core's answer delay (its
 		   S-register, 2 s) is V.25's silent interval of 1.8 to 2.5 s
 		   (4.3/V.25), the answer tone then within it */
+		if (c >= ms2samples(200, self.srate) && self.k56 &&
+		    !self.k8_tried) {
+			/* K56flex: V.8bis first, MRe */
+			self.k8_tried = 1;
+			self.k8_o1.set_freq(1375, self.srate);
+			self.k8_o2.set_freq(2002, self.srate);
+			self.k8_a1 = self.k8_a2 = V34_TONE_AMP / 2;
+			self.txm = TXM_K8;
+			self.set_state(K8_MRE);
+			DSP_DBG("v34: V.8bis MRe\n");
+			break;
+		}
 		if (c >= ms2samples(200, self.srate)) {
 			self.set_state(V8A_ANSAM);
 			self.txm = TXM_ANSAM;
@@ -5494,6 +5586,34 @@ s16 V34Pump::handshake()
 	case V8C_CJ:
 	case V8C_GAP:
 		return v8_step(c);
+	case K8_MRE:
+	case K8_CRD:
+	case K8_CL:
+	case K8_ACK_GAP:
+	case K8_ACK:
+	case KC8_MRE:
+	case KC8_CRD:
+	case KC8_CL:
+	case KC8_MS:
+	case KC8_ACK:
+	case KC8_ANS:
+		return k8_step(c);
+	case KC3_WAIT:
+	case KC3_S:
+	case KC3_SBAR:
+	case KC3_PP:
+	case KC3_TRN:
+	case KC3_J:
+	case KC4_TRN:
+	case KC4_MP:
+	case KC4_E:
+	case KC4_DATA:
+		return k56c_step(c);
+	case K3_TRAIN:
+	case K3_TRN2:
+	case K4_MP:
+	case K4_DATA:
+		return k56_step(c);
 	/* V.92 short phase 1, calling */
 	case QCC_QC1A:
 	case QCC_WAIT:
@@ -5660,6 +5780,18 @@ s16 V34Pump::handshake()
 				v90a_choose();
 			if (!v90a_on)
 				choose_bauds();
+			/* K56flex: the caller sends at 3200 baud */
+			if (k56_on && rinfo1c.freq_offset != 1)
+				k56_on = 0;
+			if (k56_on && env_int("DSP_K56_3200", 1)) {
+				s16 h = v34_caller_carrier(rinfo0.rates,
+							   V34_BAUD_3200);
+				baud_rx = V34_BAUD_3200;
+				high_rx = h > 0 ? h : 0;
+				max_rate_rx = rate_of_baud[baud_rx] ?
+					rate_of_baud[baud_rx] :
+					v34_min_rate(baud_rx);
+			}
 			set_state(P2A_INFO1);
 			/* V.92's PCM upstream where INFO1d offers it (bit
 			   70, Table 17/V.92) */
@@ -5685,6 +5817,11 @@ s16 V34Pump::handshake()
 			if (v90a_on) {
 				set_state(P3V_SILENCE);
 				v90a_start();
+				break;
+			}
+			if (k56_on) {
+				if (k56_start())
+					return DPSTAT_ERROR;
 				break;
 			}
 			set_state(P3A_SILENCE);
@@ -5907,6 +6044,21 @@ s16 V34Pump::handshake()
 				v34_bauds[baud_tx].nominal,
 				v34_bauds[baud_rx].nominal,
 				high_tx ? ", we send on the high carrier" : "");
+			/* K56flex: the digital modem's INFO1a says so (1,
+			   and bit 2 the law) */
+			if (k56c_on && (rinfo1a.freq_offset & 3) == 1) {
+				alaw = (rinfo1a.freq_offset >> 2) & 1;
+				DSP_DBG("v34: INFO1a: K56flex (%#x)\n",
+					rinfo1a.freq_offset);
+				if (k56c_start())
+					return DPSTAT_ERROR;
+				break;
+			}
+			if (k56c_on) {
+				DSP_DBG("v34: INFO1a: no K56flex (%#x), V.34\n",
+					rinfo1a.freq_offset);
+				k56c_on = 0;
+			}
 			set_state(P3C_WAIT);
 			if (primary_start())
 				return DPSTAT_ERROR;
@@ -6919,6 +7071,9 @@ float V34Pump::pump_tx_sample()
 		y = ansam_sign * ANSAM_AMP * (1 + 0.2f * ansam_am.next()) *
 			ansam.next();
 		break;
+	case TXM_K8:
+		y = k8_tx_sample();
+		break;
 	case TXM_FSK:
 		y = fsk.sample([this] {
 			if (v8tx.pos >= v8tx.n && v8tx_repeat)
@@ -6989,8 +7144,9 @@ s16 V34Pump::sample(float x, float *y, const float *ref)
 		if (v90a_fail(0) == DPSTAT_ERROR)
 			return DPSTAT_ERROR;
 	}
-	if (state != V34_DATA && state != V90A_DATA && !hdx_up &&
-	    total >= timeout) {
+	if (state != V34_DATA && state != V90A_DATA && state != K4_DATA &&
+	    state != KC4_DATA &&
+	    !hdx_up && total >= timeout) {
 		DSP_DBG("v34: start-up timeout in state %d\n", state);
 		return DPSTAT_ERROR;
 	}
@@ -7141,7 +7297,7 @@ s16 V34Pump::process(void *in, void *out, s32 cnt)
 			   echo canceller */
 			float ref[2];
 			s16 m;
-			pcm_ = v90tx.sample();
+			pcm_ = k56_on ? k56_sample() : v90tx.sample();
 			m = rs_ref.run(pcm_, ref);
 			for (k = 0; k < m && ref_n < V34_FIFO; k++)
 				ref_fifo[ref_n++] = ref[k];
@@ -7206,6 +7362,14 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	rs_down.init(5, 6);
 	rs_ref.init(6, 5);
 	fifo_n = 2;          /* so that it never runs dry */
+	/* K56flex (the digital modem's side, answering): V.8bis before
+	   V.8, and V.90 when the caller has no K56flex */
+	k56 = id == DP_K56 && !caller_ && line_rate == 8000;
+	k8_tried = 0;
+	/* (and the analogue modem's, calling: below) */
+	k56c = id == DP_K56 && caller_;
+	if (id == DP_K56)
+		id = DP_V90;
 	/* a V.90 digital modem needs the 8000 Hz G.711 network */
 	v90 = (id == DP_V90 || id == DP_V92) && line_rate == 8000;
 	/* V.92 (the digital modem's side): DSP_V92=0 leaves it out */
@@ -7269,7 +7433,12 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	   has none of the digital modem's modes */
 	analog = line_rate == 9600 || (rt && rt->analog);
 	if (analog)
-		v90 = v91 = v92 = 0;
+		v90 = v91 = v92 = k56 = 0;
+	/* K56flex as the analogue modem, calling on an analogue line at
+	   9600 Hz (DSP_K56A=0 leaves it out: V.90 then) */
+	k56c = k56c && analog && line_rate == V34_SRATE &&
+		env_on("DSP_K56A");
+	k8_init();
 	/* V.90 as the analogue modem, on an analogue line at 9600 Hz
 	   (DSP_V90A=0 leaves it out).  At 8000 Hz only with DSP_V90A=1:
 	   there the band's top folds onto itself in the codec, and half a
@@ -7350,6 +7519,13 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 		   JM comes on channel 2 */
 		v21.init(1650, 1850, 300, srate_);
 		state = V8C_LISTEN;
+		/* the call progress heard V.8bis's MRe: K56flex's digital
+		   modem; without K56flex, its ANSam after it */
+		if (rt && rt->answer_tone == ANSTONE_V8BIS) {
+			state = k56c ? KC8_MRE : KC8_ANS;
+			DSP_DBG("v34: V.8bis MRe heard%s\n",
+				k56c ? "" : ", V.8 after it");
+		}
 	} else {
 		v21.init(980, 1180, 300, srate_);
 		state = V8A_SILENCE;
@@ -7381,7 +7557,8 @@ void V34Pump::cleanup()
 /* DP_V8 is what the modem core starts for the default (fastest) mode;
    V.90 (the digital modem) and V.91 run from V.8 on this pump too, and
    V.92 starts it as well (V.90 or V.34) */
-static const enum DP_ID v34_ids[] = { DP_V8, DP_V34, DP_V90, DP_V91, DP_V92 };
+static const enum DP_ID v34_ids[] = { DP_V8, DP_V34, DP_V90, DP_V91, DP_V92,
+				       DP_K56 };
 
 /* this pump for v34_ids */
 s16 dp_v34_init(void)

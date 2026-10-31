@@ -46,8 +46,9 @@ When a modem calls, the V.8 negotiation lets both ends agree on the best
 standard they share. The page on [V.8 and V.34](v34.md) explains it.
 [V.8bis](v8bis.md) can come before it, for the two ends to agree on the
 kind of call (`AT+A8E=1,1,,1`).
-K56flex, an older 56k standard from before V.90, is not supported yet;
-what is known of it is on [its own page](k56flex.md).
+K56flex, an older 56k standard from before V.90, works at both ends:
+D-Modem answers a K56flex modem with it, and calls a K56flex server with
+it. See [its own page](k56flex.md).
 
 ## The two ends of a 56k call
 

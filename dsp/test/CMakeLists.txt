@@ -130,6 +130,10 @@ target_link_libraries(vcvm_startup_test PRIVATE dmodem_loopback dmodem_dsp)
 # its data mode, and the Reed-Solomon code under it
 dmodem_test_exe(vcvm_data_test vcvm_data_test.cpp)
 target_link_libraries(vcvm_data_test PRIVATE dmodem_loopback dmodem_dsp)
+# K56flex's data mode encoder and decoder
+dmodem_test_exe(k56flex_test k56flex_test.cpp ${S}/k56flex.cpp
+	${S}/k56flex_tables.cpp)
+dmodem_gtest(k56flex_test LABELS quick)
 dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
 dmodem_gtest(rs_test LABELS quick)
 # V.wb, the wideband mode: its parts, and caller and answerer on a
@@ -392,6 +396,16 @@ if(EXISTS "${DMODEM_SM56_KO}")
 	target_link_options(half_sm56 PRIVATE ${DMODEM_M32} -no-pie
 		-Wl,-z,noexecstack)
 	target_link_libraries(half_sm56 PRIVATE ${DMODEM_LIBM})
+	# our K56flex data mode encoder into SM56's own decoder
+	add_executable(k56flex_sm56 k56flex_sm56.cpp ${S}/k56flex.cpp
+		${S}/k56flex_train.cpp
+		${S}/k56flex_tables.cpp ${_sm56o})
+	target_include_directories(k56flex_sm56 PRIVATE ${S})
+	target_compile_options(k56flex_sm56 PRIVATE ${DMODEM_M32} -g -O1)
+	target_link_options(k56flex_sm56 PRIVATE ${DMODEM_M32} -no-pie
+		-Wl,-z,noexecstack -Wl,--unresolved-symbols=ignore-all)
+	dmodem_add_test(k56flex_sm56 $<TARGET_FILE:k56flex_sm56>)
+	set_tests_properties(k56flex_sm56 PROPERTIES LABELS sm56)
 	message(STATUS "tests: the Motorola SM56 soft modem: ${DMODEM_SM56_KO}")
 endif()
 
