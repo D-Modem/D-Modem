@@ -151,6 +151,9 @@ enum DP_ID {
 	DP_CONTACTID = 5,       /* Contact ID (SIA DC-05): an alarm
 				   panel's DTMF reports, the answerer the
 				   receiver (dp_contactid.cpp) */
+	DP_SMS      = 12,       /* fixed-line SMS (ETSI ES 201 912,
+				   protocol 1): the answerer receives, the
+				   caller sends (dp_sms.cpp) */
 	DP_V18      = 18,       /* V.18 text telephone automoding: the
 				   remote's mode found (or probed for),
 				   then 5-bit (Baudot) or EDT here, or

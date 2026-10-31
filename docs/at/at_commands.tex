@@ -1513,7 +1513,7 @@ directions' rates (sent in its \std{MP} sequences).
 \item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
 \item +MS=? (gives \rc{(21,22,23,26,27,29,122,32,132,33,34,103,18,}\allowbreak
-\rc{45,110,5,212,201,202,208,56,90,91,92,150,200,64),(0,1),}\allowbreak
+\rc{45,110,5,12,212,201,202,208,56,90,91,92,150,200,64),(0,1),}\allowbreak
 \rc{(300-56000),}\allowbreak
 \rc{(300-56000)}, the
   modulations the program has)
@@ -1559,6 +1559,9 @@ directions' rates (sent in its \std{MP} sequences).
 5 & CONTACTID & \std{SIA} \std{DC-05} & Contact ID alarm reports: the answerer is
   the receiver, the caller the panel
   (\hyperref[sec:contactid]{Section~\ref*{sec:contactid}}). \\ \hline
+12 & SMS & \std{ETSI} \std{ES} \std{201} \std{912} & Fixed-line text messages: the answerer
+  receives, the caller sends
+  (\hyperref[sec:sms]{Section~\ref*{sec:sms}}). \\ \hline
 \end{vtable}
 
 \paragraph{The 4-Wire Modulations.}  \std{V.29}, \std{V.33}, \std{V.27ter}, \std{V.26} and Bell
@@ -3107,6 +3110,53 @@ ignored.  A message goes 250~ms after the handshake or the last
 kissoff, 55~ms a digit and 55~ms between, and again (four times in all)
 when no kissoff comes within 1.25~s.  Each line gets \rc{ACK} (kissed
 off), \rc{NAK} (four times without), or \rc{ERROR} (no message).
+
+\section{Text Messages: Fixed-Line SMS}\label{sec:sms}
+
+With \cmdl[plusMS]{AT+MS=SMS} the modem speaks fixed-line \std{SMS}
+(\std{ETSI} \std{ES} \std{201} \std{912}, protocol~1), the way some
+home telephones send and receive text messages through their telephone
+company's message centre.  There are no commands of its own:
+\cmd{ATA} (or \cmd{S0}) makes the modem the receiving side, \cmd{ATD}
+the sending side, and the call is in data mode from the start,
+\rc{CONNECT 1200} on both sides.  The line is \std{V.23}'s
+1200~bit/s channel (1300 and 2100~Hz) both ways, one side at a time.
+
+\paragraph{Receiving.}  Answering, the modem invites the caller's
+messages, takes each one, and gives it to the \std{DTE}: a delivery (a
+message centre's to a telephone) as \rc{+CMT: "\p{from}",,"\p{time}"},
+a submission (a telephone's to its message centre) as
+\rc{+SUBMIT: "\p{to}"}, each followed by a line of its text (\std{UTF-8};
+8-bit data in hex).  Anything else comes as \rc{+PDU: \p{hex}}.  The
+call ends when the caller says it has no more; what the \std{DTE} types
+is dropped.
+
+\begin{verbatim}
++CMT: "+441234567890",,"26/10/31,09:05:07+00"
+Your code is 1234
+\end{verbatim}
+
+\paragraph{Sending.}  Dialling, the modem waits for the invitation,
+then sends each line the \std{DTE} types:
+
+\begin{vtable}{2}{|T{0.22\textwidth}|L{0.64\textwidth}|}{Lines a Sending Modem Takes}
+  {\thd{Line} & \thd{Sends}}
+\p{number},\p{text} & A submission of \p{text} to \p{number} (a
+  telephone's message). \\ \hline
+\textless\p{number},\p{text} & A delivery of \p{text} from \p{number} (a
+  message centre's), stamped with the time now (\std{UTC}); a
+  \p{number} with letters is a name. \\ \hline
+:\p{hex} & The message (\std{3GPP} \std{TS} \std{23.040}'s
+  \std{TPDU}) as it is. \\ \hline
+\end{vtable}
+
+A \p{number} is digits (and \cmd{*}, \cmd{\#}), \cmd{+} first for an
+international one.  The text goes in \std{GSM}'s 7-bit alphabet, up to
+160 characters, or in \std{UCS2}, up to 70, when it has a character
+that alphabet lacks.  Each line gets \rc{OK} (taken), \rc{+CMS ERROR:
+\p{cause}} (refused, with the far end's cause), or \rc{ERROR} (not a
+message, or no answer after three tries).  With no line for 3~s, the
+modem says it has no more and hangs up.
 
 \section{Voice Commands}\label{sec:voice}
 

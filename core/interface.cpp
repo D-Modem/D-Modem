@@ -65,6 +65,7 @@ static DpDriver pump_table[] = {
 	{ DP_BAUDOT, "Baudot", "45", nullptr },
 	{ DP_EDT, "EDT", "110", nullptr },
 	{ DP_CONTACTID, "ContactID", "5", nullptr },
+	{ DP_SMS, "SMS", "12", nullptr },
 	{ DP_B212, "Bell212", "212", nullptr },
 	{ DP_B201, "Bell201", "201", nullptr },
 	{ DP_B202, "Bell202", "202", nullptr },

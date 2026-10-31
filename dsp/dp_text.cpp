@@ -63,69 +63,6 @@ static const struct dp_text text_defaults = {
 };
 
 /*
- *    An asynchronous character receiver on a demodulator's decisions
- */
-struct TextUart {
-	float bit_len;          /* samples a bit */
-	s16 nbits;              /* data bits a character (parity among
-				   them) */
-	s16 busy;               /* in a character */
-	s16 n;                  /* the bit due next, -1 the start */
-	s16 prev;               /* the last decision */
-	float pos;              /* samples into the character */
-	u16 bits;
-
-	/* baud bit/s, nbits_ data bits, at srate; idle */
-	void init(float baud, s16 nbits_, s32 srate)
-	{
-		*this = TextUart();
-		bit_len = srate / baud;
-		nbits = nbits_;
-		prev = 1;
-	}
-	/* a sample's decision dec (1: mark) while on (a carrier, the
-	   receiver listening): a character's bits when its stop bit is
-	   good, else -1 */
-	s32 run(s16 dec, bool on)
-	{
-		if (!on) {
-			busy = 0;
-			prev = 1;
-			return -1;
-		}
-		if (!busy) {
-			if (prev && !dec) {
-				busy = 1;
-				pos = 0;
-				n = -1;
-				bits = 0;
-			}
-			prev = dec;
-			return -1;
-		}
-		prev = dec;
-		pos += 1;
-		/* each bit at its middle */
-		if (pos < (n + 1.5f) * bit_len)
-			return -1;
-		if (n < 0) {
-			if (dec)
-				busy = 0;       /* a glitch, not a start */
-			else
-				n = 0;
-			return -1;
-		}
-		if (n < nbits) {
-			bits |= static_cast<u16>((dec & 1) << n);
-			n++;
-			return -1;
-		}
-		busy = 0;
-		return dec ? bits : -1;
-	}
-};
-
-/*
  *    The pump
  */
 enum text_state {
@@ -189,11 +126,11 @@ struct TextPump : PumpBase<TextPump, text_state> {
 
 	/* the text mode's receiver */
 	FskDemod dem;
-	TextUart uart;
+	Uart uart;
 
 	/* automoding's detectors */
 	FskDemod d_baudot, d_ch1, d_ch2;
-	TextUart u_baudot, u_edt;
+	Uart u_baudot, u_edt;
 	s16 rx_shift_auto;      /* 5-bit decoding while detecting */
 	s32 ch1_run, ch1_min, ch1_runs, ch1_on;
 	s16 ch1_prev;
