@@ -23,6 +23,7 @@ const s32 k56_seg_len[K56_NSEGS] = {
 	704, 704, 12, -1,
 };
 
+/* the training from its first silence, in µ-law or A-law (law) */
 void K56Train::init(s16 law)
 {
 	memset(this, 0, sizeof *this);
@@ -32,6 +33,7 @@ void K56Train::init(s16 law)
 	segment(K56_SIL1);
 }
 
+/* start segment s: its length, and its scrambler and sign state */
 void K56Train::segment(s16 s)
 {
 	if (s == K56_TRN1B && no_trn1b)
@@ -110,6 +112,7 @@ unsigned char K56Train::level(s16 in, unsigned char mag1)
 	return put(static_cast<unsigned char>(mag | (neg ? 0x80 : 0)));
 }
 
+/* the next code of the training, moving on at each segment's end */
 unsigned char K56Train::next()
 {
 	/* silence: the smallest positive code */

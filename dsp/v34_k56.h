@@ -450,6 +450,8 @@ s16 V34K56<P>::k56_sample()
 	return code & 0x80 ? v : static_cast<s16>(-v);
 }
 
+/* the server's K56flex phases 3 and 4 and data, c samples into the
+   state: the next sample sent */
 template <class P>
 s16 V34K56<P>::k56_step(s32 c)
 {
