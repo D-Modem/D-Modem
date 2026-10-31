@@ -340,12 +340,17 @@
       {\footnotesize\leftmark};
   \end{tikzpicture}}
 \newif\ifdmmain
+% the footer: the page number on the outer edge (right on an odd page,
+% left on an even one), the name and edition on the inner
+\newcommand{\dmfootname}{\docname\ \textbullet\ \docedition}
+\newcommand{\dmfootpage}{Page \thepage\ifdmmain\ of \pageref*{dm:last}\fi}
 \fancypagestyle{dm}{%
   \fancyhf{}%
   \fancyhead[L]{\pageband}%
-  \fancyfoot[L]{\footnotesize\color{dmgrey}\docname\ \textbullet\ \docedition}%
-  \fancyfoot[R]{\footnotesize\color{dmgrey}Page \thepage\ifdmmain\ of
-    \pageref*{dm:last}\fi}%
+  \fancyfoot[L]{\footnotesize\color{dmgrey}\ifodd\value{page}\dmfootname
+    \else\dmfootpage\fi}%
+  \fancyfoot[R]{\footnotesize\color{dmgrey}\ifodd\value{page}\dmfootpage
+    \else\dmfootname\fi}%
   \renewcommand{\headrulewidth}{0pt}%
   \renewcommand{\footrulewidth}{0.5pt}%
   \renewcommand{\footrule}{{\color{dmhead}%
@@ -363,7 +368,11 @@
   {\color{dmred}\hrule height 1.2pt}\vspace{2ex}%
   \noindent\begin{tikzpicture}
     \begin{scope}[overlay]\renewcommand{\qamstep}{2}%
-     \qam{16}{0.6cm}{(\linewidth-50.4mm,-147mm+50.4mm)}{dmred,opacity=0.12}{axes}\end{scope}
+     \ifodd\value{page}
+       \qam{16}{0.6cm}{(\linewidth-50.4mm,-147mm+50.4mm)}{dmred,opacity=0.12}{axes}%
+     \else
+       \qam{16}{0.6cm}{(50.4mm,-147mm+50.4mm)}{dmred,opacity=0.12}{axes}%
+     \fi\end{scope}
     \foreach \l in {0,...,21}
       \draw[dmhead,line width=0.5pt] (0.25pt,-\l*7mm) -- (\linewidth-0.25pt,-\l*7mm);
   \end{tikzpicture}\clearpage}
