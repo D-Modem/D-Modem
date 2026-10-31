@@ -18,11 +18,12 @@ Terms used on this page:
 
 Status:
 
-- D-Modem has no K56flex yet. `AT+MS=56` (or `AT+MS=K56`) is accepted while V.90 is available, and runs V.90 (`Modem::change_dp()` in `core/modem.cpp`; `ms_choosable()` in `core/at.cpp`).
+- D-Modem has K56flex's data mode encoder and decoder (`dsp/k56flex.h`), but
+  no K56flex modem yet. `AT+MS=56` (or `AT+MS=K56`) is accepted while V.90 is available, and runs V.90 (`Modem::change_dp()` in `core/modem.cpp`; `ms_choosable()` in `core/at.cpp`).
 - Known: the start-up from the first tone to the end of phase 4 (sections
   1 to 4).
-- Not known: the data-mode encoder (section 5). Without it the server can
-  train with a K56flex client but not carry data.
+- Known: the data mode encoder (section 5), in `dsp/k56flex.cpp`, checked
+  against sm56's own decoder.
 - Conexant's HSF engine (`hsfengine.o`) is no help. Its K56flex slot is
   disabled (`"NOTSUPP"` in its `+MS` table), and when forced on, its CM offers
   no modulation. Its `k56*` files are the PCM base of its V.90 receiver.
@@ -44,7 +45,7 @@ upstream. The start-up:
 | 2 | V.34 phase 2, with K56flex in the INFO1 frequency offset field | the server is the V.34 *answer* modem (unlike V.90) |
 | 3 | downstream PCM training; upstream S, S-bar, PP, TRN, J | the client waits for the server's signal |
 | 4 | downstream TRN2, MP, MP', E; upstream J-bar, TRN, MP, MP', E, B1 | |
-| data | downstream PCM at 32000 to 56000 bit/s in 2000 bit/s steps; upstream V.34 | encoder not known |
+| data | downstream PCM at 32000 to 56000 bit/s in 2000 bit/s steps; upstream V.34 | section 5 |
 
 ## 1. Phase 1: V.8bis, then V.8
 
@@ -263,19 +264,112 @@ running DC sum [seen in `isdn_tx`]. The levels depend on the digital pad (the ne
 | 3 dB | `35 4d 58 60` | `5d 44` |
 | 6 dB | `3d 54 61 67` | `65 4c` |
 
-## 5. Data mode: not known
+## 5. Data mode
 
-Downstream, the server encodes the data as PCM codes in frames of 8 symbols,
-at 32000 to 56000 bit/s [seen in the client's rate range]. Robbed-bit
-signalling lowers the rate for each robbed slot [seen].
+The data mode encoder is `K56Enc` in `dsp/k56flex.cpp`, its decoder
+`K56Dec`, and the constants are in `dsp/k56flex_tables.cpp`. They were read
+from sm56's client decoder (`pstn_init_rx`, `putBIOS`, `shelldemapper`,
+`putinfo`) and its unused digital-side encoder (`isdn_init_tx`, `getBIOS`,
+`getinfo`, `shellmapper`, `datamerge`), which share the tables [seen]. The
+test `k56flex_sm56` (label `sm56`) runs our encoder into sm56's own decoder at
+every rate, pad and a set of robbed-bit patterns, and the data comes out
+[seen]. Two Rockwell patents describe the same two techniques: shell mapping
+for PCM modems (US 6,081,555 and US 6,259,742) and a sign chosen against the
+running digital sum, which leaves the shell mapper's rings alone
+(US 6,278,744).
 
-How the server maps data bits to codes is **not recovered**, and this page does not describe it.
-Without it, a K56flex server can train but not connect. The upstream in data
-mode is V.34's [inferred].
+### Frames and rates
+
+The downstream is sent in **frames of 8 symbols** (8 kHz codes). A frame
+carries R / 1000 data bits, where R is the rate: 32000 to 56000 bit/s in
+steps of 2000. The rate code r of the MP gives R = 30000 + 2000·r [seen:
+`pstn_init_rx(30 + 2r)` in `SC_Phase4_Rec_MPs`]. Frames go in a cycle of
+3 (24 symbols, 4 cycles of the network's 6 symbol robbed-bit pattern).
+
+Each rate has these parameters (index i = (R − 32000) / 2000):
+
+| R (kbit/s) | 32 | 34 | 36 | 38 | 40 | 42 | 44 | 46 | 48 | 50 | 52 | 54 | 56 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| K (shell bits) | 28 | 30 | 24 | 26 | 26 | 28 | 30 | 24 | 25 | 27 | 29 | 31 | 25 |
+| u | 1 | 1 | 2 | 2 | 2 | 2 | 2 | 3 | 3 | 3 | 3 | 3 | 4 |
+| r (shaping period) | 2 | 2 | 2 | 2 | 4 | 4 | 4 | 4 | 8 | 8 | 8 | 8 | 8 |
+| M, 0 dB pad | 13 | 15 | 9 | 11 | 11 | 13 | 15 | 9 | 10 | 11 | 13 | 16 | 9 |
+| M, 3 dB pad | 13 | 15 | 9 | 11 | 11 | 13 | 15 | 9 | 10 | 11 | 14 | 16 | 10 |
+| M, 6 dB pad | 13 | 15 | 9 | 11 | 11 | 13 | 15 | 9 | 10 | 11 | 13 | 16 | 10 |
+
+K bits a frame go through the shell mapper, which picks 8 rings out of M.
+Each symbol then takes q = u − 1 bits to pick one of 2^q points in its ring,
+and a sign. Every r-th symbol's sign is not data (see "Shaping"). So a frame
+carries K + 8q + 8 − 8/r bits: 28 + 0 + 8 − 4 = 32 at 32000 bit/s, and
+25 + 24 + 8 − 1 = 56 at 56000 bit/s. sm56 also has tables for 58000 and
+60000 bit/s (r = 16; with r = 16 every other frame's K is one less), which
+its client never selects.
+
+### Scrambler and bit order
+
+The data bits are scrambled with V.34's GPA scrambler (1 + x^-5 + x^-23),
+one bit at a time, least significant bit of each octet first [seen: the
+client's `descramble`]. The frame's bits are then numbered in that order
+from 0: bits 0 to K' − 1 are the shell mapper's index, the rest go to the
+symbols. (sm56's unused encoder scrambles each octet most significant bit
+first, which its own decoder does not undo; the decoder is the reference.)
+
+### The shell mapper
+
+It is V.34's 8-ring shell mapper (9.3/V.34, with V.34's g2, g4, g8 and z8
+tables for M rings). The index picks rings m0 to m7; each pair (a, b) of sum
+s and index i is a = i, b = s − i when s < M, else b = M − 1 − i,
+a = s − b. Ring m0 goes to symbol 0, and so on.
+
+The ring number m is the ring's cost rank, not its place in the
+constellation: a per rate and pad table (`k56_ring`) gives the group g of
+each ring. The point is p = g · 2^q + (q bits), and the constellation table
+(`k56_bios`, M · 2^q entries) gives each point's magnitude as a µ-law code
+index (0 the smallest, 127 the largest). For example, at 56000 bit/s with no
+pad the 72 magnitudes are 3, 8, 12, 16, 18, ... 101.
+
+### Signs and shaping
+
+A symbol's sign (bit 7 of the code: 1 negative) is a data bit, the symbol's
+first: the code's q bits are the next q. Every r-th symbol (counted over the
+whole call, across frames) has no sign bit. Its sign is chosen against the
+running sum of all sent values: negative when the sum is 0 or more,
+positive otherwise. The values are µ-law's in 14 bit units
+(`((2m + 33) << seg) − 33`), or A-law's for an A-law line. This keeps the
+downstream's DC near 0, and since a point and its mirror are in the same
+ring, the shell mapper is not affected (US 6,278,744).
+
+### Robbed bits
+
+Above 34000 bit/s, the robbed symbols (from the 6 symbol pattern, here the
+6 entries that `mask_RBS` fills from the RBS detector: 2 means not robbed)
+lose their code's last bit:
+
+- A robbed symbol's q bits have their last bit forced to 0, so it carries one
+  bit fewer; the decoder takes the code and its last bit flipped as the same.
+- A frame loses L bits, L = 0, 2, 4, 4, 6, 8, 8 for 0 to 6 robbed symbols in 6.
+  With 5 robbed, all 6 are treated as robbed.
+- With n robbed symbols in a frame (it depends on the frame's place in the 3
+  frame cycle), the shell mapper takes K' = K − (L − n) bits, and the index is
+  shifted left by L − n, so that its range stays the same. With 3 robbed in 6,
+  K' = K and the frame carries R/1000 − n bits instead.
+
+### Codes on the line
+
+The encoder's code is the magnitude index with the sign in bit 7. As a G.711
+octet this is 0xff − m (positive) or 0x7f − m (negative) for µ-law
+(`k56_g711()`). sm56's encoder writes the code with `c ^ 0x7f` for negative
+codes and leaves the final inversion to its hardware layer [seen in
+`isdn_tx`]. For A-law the octet D-Modem sends is the standard one; no A-law
+client has been tried.
+
+### Data after phase 4
+
+In sm56's encoder, data mode starts right after E, and B1 is data. The
+client discards its first 48 symbols (B1) [seen].
 
 ## Open questions
 
-- The data-mode encoder (section 5).
 - When the server ends each R. The inference is: the first R until the client is ready,
   then a reversal and TRN1A; and the second R until the client's J is in, then
   a reversal and TRN2A.
