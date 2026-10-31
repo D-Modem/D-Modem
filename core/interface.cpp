@@ -57,6 +57,7 @@ static DpDriver pump_table[] = {
 	{ DP_V22BIS, "V22bis", "122", nullptr },
 	{ DP_V32, "V32", "32", nullptr },
 	{ DP_V32BIS, "V32bis", "132", nullptr },
+	{ DP_V32TERBO, "V32terbo", "232", nullptr },
 	{ DP_V33, "V33", "33", nullptr },
 	{ DP_V34, "V34", "34", nullptr },
 	{ DP_B103, "Bell103", "103", nullptr },

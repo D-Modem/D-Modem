@@ -164,6 +164,9 @@ enum DP_ID {
 	DP_VCVM     = 150,      /* V.cvm, data over a mobile speech path
 				   (docs/v_cvm.pdf), after V.8 */
 	DP_V32BIS   = 132,
+	DP_V32TERBO = 232,      /* V.32terbo: V.32bis and 16800, 19200
+				   bit/s (dp_v32.cpp); not in V.250, the
+				   number is D-Modem's */
 	DP_VWB      = 200,      /* V.wb: wideband DMT on a bare pair, at
 				   48000 Hz or more (dsp/vwb.h) */
 	DP_B212     = 212,      /* Bell 212A */

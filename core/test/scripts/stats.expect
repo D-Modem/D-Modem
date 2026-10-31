@@ -448,7 +448,7 @@
   40800 A: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
   40800 A: Protocol Negotiation Result         MNP\r\n
   40800 A: Data Compression Result             MNP5\r\n
-  40800 A: Estimated SNR (dB)                  30.3\r\n
+  40800 A: Estimated SNR (dB)                  44.3\r\n
   40800 A: Receive Signal Power Level (dBm0)   -18.6\r\n
   40800 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
   40800 A: Carrier Frequency Offset (Hz)       0.0\r\n
@@ -473,7 +473,7 @@
   40800 A: DIAG <2A4D3263 3=0>\r\n
   40800 A: DIAG <2A4D3263 10=13>\r\n
   40800 A: DIAG <2A4D3263 11=11>\r\n
-  40800 A: DIAG <2A4D3263 12=31>\r\n
+  40800 A: DIAG <2A4D3263 12=3F>\r\n
   40800 A: DIAG <2A4D3263 20=B>\r\n
   40800 A: DIAG <2A4D3263 21=B>\r\n
   40800 A: DIAG <2A4D3263 22=0960>\r\n
@@ -512,7 +512,7 @@
   40800 B: DIAG <2A4D3263 3=0>\r\n
   40800 B: DIAG <2A4D3263 10=12>\r\n
   40800 B: DIAG <2A4D3263 11=11>\r\n
-  40800 B: DIAG <2A4D3263 12=2E>\r\n
+  40800 B: DIAG <2A4D3263 12=3E>\r\n
   40800 B: DIAG <2A4D3263 20=B>\r\n
   40800 B: DIAG <2A4D3263 21=B>\r\n
   40800 B: DIAG <2A4D3263 22=0960>\r\n
@@ -587,7 +587,7 @@
   54440 A: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
   54440 A: Protocol Negotiation Result         NONE\r\n
   54440 A: Data Compression Result             NONE\r\n
-  54440 A: Estimated SNR (dB)                  36.1\r\n
+  54440 A: Estimated SNR (dB)                  46.3\r\n
   54440 A: Receive Signal Power Level (dBm0)   -18.8\r\n
   54440 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
   54440 A: Carrier Frequency Offset (Hz)       0.0\r\n
@@ -613,7 +613,7 @@
   54440 B: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
   54440 B: Protocol Negotiation Result         NONE\r\n
   54440 B: Data Compression Result             NONE\r\n
-  54440 B: Estimated SNR (dB)                  35.6\r\n
+  54440 B: Estimated SNR (dB)                  42.1\r\n
   54440 B: Receive Signal Power Level (dBm0)   -17.8\r\n
   54440 B: Transmit Signal Power Level (dBm0)  -17.8\r\n
   54440 B: Carrier Frequency Offset (Hz)       0.0\r\n

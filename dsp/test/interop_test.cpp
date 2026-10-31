@@ -840,6 +840,17 @@ std::vector<Call> calls()
 		add("agere", std::string("agere_") + ms + "_open_calls", "open",
 		    "agere", o, { "NET=9600:8000:ulaw", "PROTO_B=" + a });
 	}
+	/* V.32terbo (AT+MS=V32T on both; its +MS knows the name), whose
+	   16800 and 19200 bit/s were found in this modem
+	   (docs/dsp/v32terbo.md): 19200 both ways on the clean line */
+	add("agere", "agere_232_agere_calls", "agere", "open",
+	    "ATX3;AT+MS=V32T",
+	    { "NET=8000:9600:ulaw", "EXPECT_B=E word F993, rx rate 19200",
+	      "PROTO_B=ATX3;AT+MS=V32T" });
+	add("agere", "agere_232_open_calls", "open", "agere",
+	    "ATX3;AT+MS=V32T",
+	    { "NET=9600:8000:ulaw", "EXPECT_A=E word F993, rx rate 19200",
+	      "PROTO_B=ATX3;AT+MS=V32T" });
 	/* V.44 both ways (the Agere modem offers it): 60000 octets each way
 	   of text, binary, repeats and noise, which it sends in transparent
 	   mode now and then */

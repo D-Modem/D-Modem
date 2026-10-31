@@ -207,6 +207,13 @@ extern const cplx v32_points_9600[32];
 extern const cplx v32_points_12000[64];
 extern const cplx v32_points_14400[128];
 extern const cplx v32_points_4800[4];
+/* V.32terbo's, through its non-linear encoder (constant initialized:
+   ready before any static constructor) */
+template <s32 N> struct V32tPoints {
+	cplx p[N];
+};
+extern const V32tPoints<256> v32_points_16800;
+extern const V32tPoints<512> v32_points_19200;
 extern const cplx v32_abcd[4];
 
 } // namespace dsp

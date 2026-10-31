@@ -2,11 +2,15 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 D-Modem Authors
  *
- *    dp_v32.cpp - ITU V.32 / V.32bis data pump (4800 to 14400 bit/s)
+ *    dp_v32.cpp - ITU V.32 / V.32bis data pump (4800 to 14400 bit/s),
+ *                 and V.32terbo (AT&T's, 16800 and 19200 bit/s)
  *
  *    2400 baud QAM on an 1800 Hz carrier in both directions, separated
  *    by an echo canceller.  4800 bit/s is differentially coded QPSK,
- *    7200 to 14400 bit/s use the 8 state trellis code.
+ *    7200 to 19200 bit/s use the 8 state trellis code.  V.32terbo is
+ *    V.32bis with two more rates: the rate word's reserved bits B13
+ *    (16800) and B14 (19200), 256 and 512 point constellations sent
+ *    through a non-linear encoder (docs/dsp/v32terbo.md).
  *
  *    Start up sequence (as sent by the original library):
  *
@@ -63,7 +67,11 @@ namespace dsp {
 #define RB_7200         0x0040
 #define RB_12000        0x0020
 #define RB_14400        0x0008
-#define RB_RATES        (RB_4800 | RB_9600 | RB_TCM | RB_7200 | RB_12000 | RB_14400)
+#define RB_16800        0x0004  /* V.32terbo (B13, reserved in V.32bis) */
+#define RB_19200        0x0002  /* V.32terbo (B14, reserved in V.32bis) */
+#define RB_TERBO        (RB_16800 | RB_19200)
+#define RB_RATES        (RB_4800 | RB_9600 | RB_TCM | RB_7200 | RB_12000 | \
+			 RB_14400 | RB_TERBO)
 
 struct v32_rate {
 	s32 bps;
@@ -73,6 +81,8 @@ struct v32_rate {
 };
 
 static const struct v32_rate v32_rates[] = {
+	{ 19200, RB_TCM | RB_19200, 8, v32_points_19200.p },
+	{ 16800, RB_TCM | RB_16800, 7, v32_points_16800.p },
 	{ 14400, RB_TCM | RB_14400, 6, v32_points_14400 },
 	{ 12000, RB_TCM | RB_12000, 5, v32_points_12000 },
 	{ 9600, RB_TCM | RB_9600, 4, v32_points_9600 },
@@ -211,6 +221,17 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	const struct v32_rate *rx_rate;
 	Viterbi vit;
 	s16 rx_dbits;           /* data bits per symbol */
+	/* B1 (the remote's scrambled ones as data begins) known: the
+	   remote's scrambler register, its trellis encoder in each of
+	   its 32 states (not standardized) and their errors so far, the
+	   one chosen (-1: not yet), B1's symbols received */
+	u32 b1_scr;
+	TrellisEnc b1_enc[32];
+	float b1_err[32];
+	s16 b1_best;
+	s16 b1_syms;
+	s16 agc_free;           /* symbols the AGC still follows the input
+				   after its level came back */
 
 	/* events from the receiver to the handshake */
 	s16 ev_aa, ev_ac, ev_rev, ev_s, ev_r, ev_e, ev_usb1;
@@ -229,6 +250,8 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	cplx tx_word_symbol(u16 word, s16 data);
 	cplx tx_data_symbol();
 	void rx_reset();
+	void b1_start();
+	bool b1_point(s16 n, cplx z, cplx *d);
 	void rx_word_bit(s16 bit);
 	void rx_symbol();
 	void rx_sample(float x);
@@ -386,7 +409,7 @@ cplx V32Pump::tx_data_symbol()
 {
 	const struct v32_rate *r = tx_rate;
 	s16 q = 0, k, idx;
-	u8 bits[6];
+	u8 bits[8];
 
 	if (r->nbits == 2)
 		return tx_word_symbol(0, 1);
@@ -460,10 +483,66 @@ cplx V32Pump::tx_symbol()
 void V32Pump::rx_reset()
 {
 	rx.reset();
+	rx.agc_hold = 0;
+	agc_free = 0;
 	rxp = RX_IDLE;
 	run_s = 0;
 	rx_nbits = 0;
 	rx_e_seen = 0;
+}
+
+/* data begins (E received): the remote sends B1, scrambled ones, for
+   128 symbols, from the scrambler register our descrambler has now;
+   its trellis encoder's state is not known, all 32 are followed */
+void V32Pump::b1_start()
+{
+	s16 i;
+	b1_scr = rx_scr;
+	for (i = 0; i < 32; i++) {
+		b1_enc[i].diff = i & 3;
+		b1_enc[i].conv = i >> 2;
+		b1_err[i] = 0;
+	}
+	b1_best = -1;
+	b1_syms = 0;
+}
+
+/* during B1 the point the remote sent for the received z (n data bits a
+   symbol) into *d: once its encoder's state is known (the one of the 32
+   nearest z over the first 8 symbols, if near enough); true when *d is
+   that point */
+bool V32Pump::b1_point(s16 n, cplx z, cplx *d)
+{
+	const cplx *pts = rx_rate->points;
+	s16 q = 0, k, i;
+
+	if (b1_syms >= V32_B1_SYMS)
+		return false;
+	b1_syms++;
+	for (k = 0; k < n; k++)
+		q |= scramble(&b1_scr, rx_scr_tap, 1) << k;
+	if (b1_best >= 0) {
+		*d = pts[b1_enc[b1_best].encode(q, n)];
+		return true;
+	}
+	for (i = 0; i < 32; i++)
+		b1_err[i] += cplx_pow(cplx_sub(z, pts[b1_enc[i].encode(q, n)]));
+	if (b1_syms < 8)
+		return false;
+	for (i = 1, k = 0; i < 32; i++)
+		if (b1_err[i] < b1_err[k])
+			k = i;
+	/* not B1 (or not where we expect it): the decisions alone */
+	if (b1_err[k] > 8 * 0.05f * V32_POWER) {
+		DSP_DBG("v32: no B1 (error %.3f)\n",
+			b1_err[k] / (8 * V32_POWER));
+		b1_syms = V32_B1_SYMS;
+		return false;
+	}
+	b1_best = k;
+	DSP_DBG("v32: B1 found, trellis state %d (error %.4f)\n", k,
+		b1_err[k] / (8 * V32_POWER));
+	return false;
 }
 
 /* one descrambled bit of the 4800 bit/s rate word stream: a new R word
@@ -510,6 +589,12 @@ void V32Pump::rx_word_bit(s16 bit)
 		   constellations */
 		rx.kt_p = 0.004f * rx.sps;
 		rx.kt_gi = 0.003f;
+		/* and the gain held: the AGC's power estimate on a dense
+		   constellation jitters by a few per cent, a radial error
+		   of the outer points the size of the 512 point
+		   constellation's spacing (the equalizer follows slow
+		   changes) */
+		rx.agc_hold = 1;
 		DSP_DBG("v32: E word %04X, rx rate %" PRId32 "\n", w,
 			rx_rate->bps);
 	}
@@ -555,6 +640,7 @@ void V32Pump::rx_symbol()
 					   noise is useless: start over */
 					if (rxp != RX_IDLE)
 						rx.reset();
+					rx.agc_hold = 0;
 					rxp = RX_S;
 					ev_s = 1;
 					DSP_DBG("v32: S detected\n");
@@ -612,16 +698,31 @@ void V32Pump::rx_symbol()
 		rx_4800 = q;
 		rx_word_bit(descramble(&rx_scr, rx_scr_tap, k & 1));
 		rx_word_bit(descramble(&rx_scr, rx_scr_tap, k >> 1));
-		if (rxp == RX_DATA)
+		if (rxp == RX_DATA) {
 			vit.last_y12 = 0;
+			b1_start();
+		}
 		break;
 	case RX_DATA:
 		{
 			const struct v32_rate *r = rx_rate;
-			u8 bits[6];
+			u8 bits[8];
 			s16 n = r->nbits;
 			k = nearest_point(r->points, 1 << (n == 2 ? 2 : n + 1), z);
 			d = r->points[k];
+			/* B1: train on the points the remote sends */
+			bool b1 = n > 2 && b1_point(n, z, &d);
+			/* the gain held only while the level stays within 3 dB
+			   of data's: through a burst of noise or a level step
+			   the AGC follows, and for 100 ms after */
+			if (state == V32_DATA && data_power > 0) {
+				if (rx.power > 2 * data_power ||
+				    rx.power < 0.5f * data_power) {
+					rx.agc_hold = 0;
+					agc_free = V32_BAUD / 10;
+				} else if (agc_free > 0 && --agc_free == 0)
+					rx.agc_hold = 1;
+			}
 			rx_mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / V32_POWER -
 					      rx_mse);
 			if (rx_mse > lost_mse)
@@ -632,7 +733,7 @@ void V32Pump::rx_symbol()
 				DSP_TRACE("%s data mse %.4f t %.3f tadj %.5f th %.2f dth %.5f\n",
 					  caller ? "C" : "A", rx_mse, rx.t_next,
 					  rx.t_adj, rx.theta, rx.dtheta);
-			rx.adapt(d, 0.004f, 0.02f, 0.0002f);
+			rx.adapt(d, b1 ? 0.01f : 0.004f, 0.02f, 0.0002f);
 			if (n == 2) {
 				for (q = 0; q < 4; q++)
 					if (v32_4800_enc[rx_4800][q] == k)
@@ -763,8 +864,11 @@ s16 V32Pump::fallback()
 	return fallback_to(DP_V22BIS, "V.22bis");
 }
 
-/* the training SNR (dB) each rate of v32_rates[] takes */
-static const float v32_min_snr[] = { 25, 22, 19, 16, 0 };
+/* the training SNR (dB) each rate of v32_rates[] takes.  V.32terbo's
+   from back to back calls (pump_test): our training's estimate tops out
+   near 31 dB; 19200 bit/s is clean from about 32 dB of line SNR (an
+   estimate of 29.6), 16800 from 24 dB (25.6) */
+static const float v32_min_snr[] = { 29.5f, 26.5f, 25, 22, 19, 16, 0 };
 
 /* the data mse (of V32_POWER) past which a receiver at rate r has
    lost its equalization: 4 dB short of the SNR its rate was chosen at
@@ -788,7 +892,7 @@ u16 V32Pump::quality_caps()
 		if (snr >= v32_min_snr[i])
 			caps_ |= v32_rates[i].bits;
 	/* TCM is shared by the trellis rates */
-	if (caps_ & (RB_7200 | RB_9600 | RB_12000 | RB_14400))
+	if (caps_ & (RB_7200 | RB_9600 | RB_12000 | RB_14400 | RB_TERBO))
 		caps_ |= RB_TCM;
 	return caps & (caps_ | RB_4800);
 }
@@ -1101,7 +1205,7 @@ s16 V32Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	s32 min_rate, max_rate;
 
 	pump_setup(m, srate_, caller_);
-	automode = (id != DP_V32 && id != DP_V32BIS) ||
+	automode = (id != DP_V32 && id != DP_V32BIS && id != DP_V32TERBO) ||
 		(rt && rt->v32_automode);
 
 	/* rates we offer */
@@ -1110,6 +1214,9 @@ s16 V32Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	for (i = 0; i < V32_NRATES; i++) {
 		const struct v32_rate *r = &v32_rates[i];
 		if (id == DP_V32 && r->bps != 9600 && r->bps != 4800)
+			continue;
+		/* V.32terbo's rates only when asked for (+MS=V32T) */
+		if (id != DP_V32TERBO && (r->bits & RB_TERBO))
 			continue;
 		if (max_rate > 0 && r->bps > max_rate)
 			continue;
@@ -1177,9 +1284,9 @@ void V32Pump::cleanup()
 
 /* the V.8/V.34 pump (dp_v34.cpp) hands over to this one, with the
    V.22bis fallback, when the remote modem does not do V.34 */
-static const enum DP_ID v32_ids[] = { DP_V32, DP_V32BIS };
+static const enum DP_ID v32_ids[] = { DP_V32, DP_V32BIS, DP_V32TERBO };
 
-/* registers the pump as DP_V32 and DP_V32BIS; 0 */
+/* registers the pump as DP_V32, DP_V32BIS and DP_V32TERBO; 0 */
 s16 dp_v32_init(void)
 {
 	u16 i;

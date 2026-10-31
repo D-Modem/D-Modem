@@ -2524,7 +2524,8 @@ void Modem::unimodem_diag()
 		case DP_V27TER: return 0x8;
 		case DP_V29: return 0x9;
 		case DP_V32: return 0xA;
-		case DP_V32BIS: return 0xB;
+		/* V.58 has no V.32terbo: its V.32bis */
+		case DP_V32BIS: case DP_V32TERBO: return 0xB;
 		case DP_V34: return 0xC;
 		/* V.90 Issue 1: PCM one way, V.34 the other */
 		case DP_V90: case DP_V92: return pcm ? 0xE : 0xC;

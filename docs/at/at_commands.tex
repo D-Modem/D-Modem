@@ -1512,7 +1512,7 @@ directions' rates (sent in its \std{MP} sequences).
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
 \item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
-\item +MS=? (gives \rc{(21,22,23,27,29,122,32,132,33,34,103,18,45,}\allowbreak
+\item +MS=? (gives \rc{(21,22,23,27,29,122,32,132,232,33,34,103,18,45,}\allowbreak
 \rc{110,5,212,56,90,91,92,150,200,64),(0,1),(300-56000),}\allowbreak
 \rc{(300-56000)}, the
   modulations the program has)
@@ -1531,6 +1531,8 @@ directions' rates (sent in its \std{MP} sequences).
 122 & V22B & \std{ITU} \std{V.22bis} & \std{2400} bit/s, \std{V.22} as its fallback. \\ \hline
 32 & V32 & \std{ITU} \std{V.32} & \std{4800} and \std{9600} bit/s. \\ \hline
 132 & V32B & \std{ITU} \std{V.32bis} & \std{4800} to \std{14400} bit/s. \\ \hline
+232 & V32T, V32TERBO & \std{V.32terbo} & \std{V.32bis} and \std{16800}, \std{19200} bit/s
+  (AT\&T's; D-Modem's number). \\ \hline
 29 & V29 & \std{ITU} \std{V.29} & \std{4800} to \std{9600} bit/s, 4-wire leased. \\ \hline
 33 & V33 & \std{ITU} \std{V.33} & \std{12000} and \std{14400} bit/s, 4-wire leased. \\ \hline
 27 & V27TC & \std{ITU} \std{V.27ter} & \std{2400} and \std{4800} bit/s, 4-wire leased. \\ \hline
