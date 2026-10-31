@@ -8,8 +8,10 @@ fax and voice, and can drive the USB modems D-Modem supports.
 For build options, every way of connecting a program to it, and how
 the port works, see [the technical details](windows-details.md).
 
-> **Status:** the Windows version is built and tested automatically
-> under Wine on Linux. It has not yet been run on Windows itself.
+> **Status:** the Windows version is built and tested automatically,
+> both under Wine on Linux and on a Windows build server (GitHub's
+> Windows Server 2022 machines). Nobody has yet run it by hand on a
+> desktop Windows, or with a real USB modem.
 
 ## Building
 

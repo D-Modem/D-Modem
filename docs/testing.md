@@ -21,7 +21,7 @@ D-Modem also builds for [Windows](windows.md), [macOS](macos.md) and
 
 ## Running the tests
 
-    ctest --test-dir build -L quick       # the fast tests: a few seconds
+    ctest --test-dir build -L quick       # the fast, offline tests: a few minutes at most
     ctest --test-dir build -j16           # everything: about 1.5 minutes on 4 cores
 
 You can also run groups of tests by label:
@@ -33,6 +33,7 @@ You can also run groups of tests by label:
 | `smartlink` | against Smart Link's original modem library (needs a 32-bit build) |
 | `agere`, `sm56`, `pctel`, `hsf`, `broadcom`, ... | against other companies' soft modems ([interop](interop.md)) |
 | `open` | two D-Modems calling each other |
+| `ring`, `adaptive` | calls put through as each country's exchange rings them; fax and data callers into one D-Modem that tells them apart |
 | `alsa` | the daemon on simulated PC modem chips and USB modems |
 | `flaky` | only the tests known to fail now and then |
 

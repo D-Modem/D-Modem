@@ -59,7 +59,8 @@ Each modem has its own test label:
 
 The other labels are `smartlink`, `sm56`, `pctel`, `hsf`, `intel`,
 `broadcom`, `ess`, `spanpeer`, `hda` and `open` (D-Modem against
-itself). These need a 32-bit build environment, because the old drivers
+itself), plus `ring` (the exchange's tones) and `adaptive` (fax or
+data?). These need a 32-bit build environment, because the old drivers
 are 32-bit programs. See [Building and testing](testing.md).
 
 The drivers belong to their makers and are kept only as test partners;

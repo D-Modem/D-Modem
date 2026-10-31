@@ -31,8 +31,9 @@ For the generated files, the code and the tests, see
   server, a program such as `pppd`, or a login. Each profile appears as
   a destination ("D-Modem") you can pick in inbound routes, IVRs, time
   conditions and so on.
-- **Fax.** Turn on the fax destination to have D-Modem answer as a fax
-  machine and save faxes to a folder.
+- **Fax.** The fax destination (on unless you turn it off in the
+  settings) has D-Modem answer as a fax machine and save faxes to a
+  folder.
 - **Dial out.** Make D-Modem call a remote modem (a BBS or a provider)
   with a profile, from the page or from a script:
 

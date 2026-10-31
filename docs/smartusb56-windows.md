@@ -17,7 +17,7 @@ The Windows driver does several things the Linux driver did not.
 
 | Feature | How to turn it on |
 |---|---|
-| Caller ID | always on (`AT#CID=1`) |
+| Caller ID | `AT#CID=1` (off until you turn it on) |
 | The newer ST75951 "silicon DAA" version of the hardware | automatic |
 | Carrier and data lights, on boards that have them | `--usb-leds` |
 | Waking the computer when the phone rings | `--usb-wake` |
