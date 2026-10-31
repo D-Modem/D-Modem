@@ -205,6 +205,8 @@ public:
 	bool online() const { return online_; }
 	/* the call is in V.80's Synchronous Access Mode */
 	bool sync() const { return mode_ == Mode::Sync; }
+	/* and in its framed sub-mode (rather than transparent) */
+	bool sync_framed() const { return sync() && sync_.framed(); }
 	/* the call has no error correction (async): V.54's loop tests
 	   can run */
 	bool plain() const { return mode_ == Mode::Async; }

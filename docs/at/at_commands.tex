@@ -1108,8 +1108,8 @@ This command lists the command sets the modem has: \rc{+GCAP:
 
 \begin{command}{hashUD}{\#UD}{Unimodem Diagnostics}
 This command gives the last call's statistics (or this one's), as
-\cmdl[I]{ATI11} has them, in the form of Microsoft's Unimodem
-diagnostics (its draft specification, rev.~0.85), for Windows' modem log
+\cmdl[I]{ATI11} has them, in the form that Microsoft's Unimodem
+Diagnostics Command Reference Specification (version~1.0) gives, for Windows' modem log
 and the programs that read it: a line \rc{DIAG <2A4D3263 \p{key}=\p{value}>} for each key there is a value for, both
 in hexadecimal.  Before any call: \rc{0=10}, \rc{1=0} and \rc{60=1}.
 \begin{results}
@@ -1119,14 +1119,17 @@ in hexadecimal.  Before any call: \rc{0=10}, \rc{1=0} and \rc{60=1}.
   {\thd{Key} & \thd{Value}}
 0 & The format (10). \\ \hline
 1 & The call's setup. \\ \hline
+2, 3 & The call's mode (data or fax) and the DTE interface's (async, or
+  \std{V.80}'s transparent or framed synchronous mode). \\ \hline
 10--17 & The receive and transmit levels, the noise, the echoes' loss, the
   round trip delay. \\ \hline
 20, 21 & The modulation (\std{V.58}'s codes). \\ \hline
 22--27 & The symbol rates, the carriers, the first rates. \\ \hline
-31, 32 & The renegotiations and retrains. \\ \hline
+31--33 & The renegotiations, the retrains asked for and granted. \\ \hline
 34, 35 & The last rates. \\ \hline
-40 & The error control. \\ \hline
-44 & The compression (\std{V.58}'s codes; 80 \std{MNP~5}, 81 \std{V.44}, 82 zstd). \\ \hline
+40, 41 & The error control and its frame size. \\ \hline
+44, 45 & The compression (\std{V.58}'s codes; 80 \std{MNP~5}, 81 \std{V.44}, 82 zstd) and
+  \std{V.42bis}' dictionary size. \\ \hline
 50, 51 & The flow control (\cmdl[ampH]{\&H}). \\ \hline
 52--59 & The characters and frames. \\ \hline
 60 & How the call ended (\std{V.58}'s \p{callCleared}; 2 while it goes on). \\ \hline

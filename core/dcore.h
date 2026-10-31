@@ -413,6 +413,9 @@ private:
 		None, LocalHangup, RemoteCleardown, LineDropped, CarrierLost,
 		NoDialtone, Busy, NoAnswer, TrainingFailed, ProtocolFailure,
 		NoCarrier,
+		/* local hangups AT#UD tells apart: a character from the
+		   DTE while the call came up, ATZ, DTR off */
+		AnyKey, DteReset, DtrOff,
 	};
 	enum { EV_RING_CHECK = 0x01, EV_ESCAPE = 0x02 };
 

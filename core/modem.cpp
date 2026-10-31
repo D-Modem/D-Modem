@@ -122,6 +122,8 @@ static const char *const cause_text[] = {
 	"None", "Local hangup", "Remote cleardown", "Line dropped",
 	"Carrier lost", "No dial tone", "Busy", "No answer",
 	"Training failed", "Protocol failure", "No carrier",
+	/* (ATI11 calls these local hangups too) */
+	"Local hangup", "Local hangup", "Local hangup",
 };
 
 /* the result codes in words, by Result */
@@ -681,7 +683,9 @@ s16 Modem::stop_call()
 	/* a leased line's call that the line ended (not ATH, DTR, ATZ):
 	   started again by itself in 2 s (poll()) */
 	if (leased_role_ != Leased::None && sregs_[SREG_LEASED] &&
-	    stats_.cause != Cause::LocalHangup)
+	    stats_.cause != Cause::LocalHangup &&
+	    stats_.cause != Cause::AnyKey && stats_.cause != Cause::DteReset &&
+	    stats_.cause != Cause::DtrOff)
 		leased_at_ms_ = host_.now_ms() + LEASED_AGAIN_MS;
 	if (stats_.call && !stats_.ended) {
 		const char *dp = stats_.connected ? dp_name(stats_.dp) :
@@ -1312,7 +1316,7 @@ s32 Modem::dte_input(const char *buf, s32 n)
 		return 0;
 	if ((state_ == DP_ESTAB || state_ == EC_ESTAB) && !command_) {
 		logf("a character from the DTE: hanging up\n");
-		set_cause(Cause::LocalHangup);
+		set_cause(Cause::AnyKey);
 		hup(true);
 		return n;
 	}
@@ -2057,7 +2061,7 @@ void Modem::hangup()
 {
 	leased_stop();
 	if (state_ != IDLE)
-		set_cause(Cause::LocalHangup);
+		set_cause(Cause::DtrOff);
 	else if (voice_held_)
 		stop_call();
 	hup(true);
@@ -2150,7 +2154,7 @@ s16 Modem::reset()
 	/* (V.54: the far end's loop 2 refused again, AT&T5) */
 	test_.set_grant(false);
 	if (state_ != IDLE) {
-		set_cause(Cause::LocalHangup);
+		set_cause(Cause::DteReset);
 		hup(true);
 	} else if (started_) {
 		stop_call();
@@ -2470,11 +2474,15 @@ void Modem::call_stats()
 }
 
 /* AT#UD: the last call's statistics (or this one's) as Microsoft's
-   Unimodem diagnostics (its draft reference specification, rev 0.85):
-   a line "DIAG <2A4D3263 key=value>" for each key we have, keys and
-   values in hexadecimal; the codes of V.58 (modulation, error control,
-   compression, call cleared) where it has them, the manufacturers'
-   range (80 on) for V.44 and zstd */
+   Unimodem Diagnostics Command Reference Specification, version 1.0 (2
+   July 1998; docs/specs/umud10.rtf): a line "DIAG <2A4D3263 key=value>"
+   for each key we have, keys and values in hexadecimal; its Tables 2-4
+   for the call's setup and modes, V.58's codes (its Tables 6-9) for the
+   modulation, error control, compression and why the call ended, the
+   manufacturers' range (80 on) for V.44 and zstd.  Not reported, as
+   nothing measures them: 4-5 (V.8's CM and JM), 13 (NMSE), 16 (far echo
+   delay), 18 (V.34's INFO bits), 30 (carrier losses), 42-43 (V.42's
+   timeouts and NAKs), 54-55 (characters lost) */
 void Modem::unimodem_diag()
 {
 	auto put = [this](u32 key, const std::string &value) {
@@ -2490,8 +2498,10 @@ void Modem::unimodem_diag()
 		long v = lrint(-db);
 		num(key, static_cast<u64>(v < 0 ? 0 : v > most ? most : v), 2);
 	};
-	/* V.58's gstnModulationSchemeActive; -1 for one it has none for */
-	auto v58_modulation = [](s16 dp) -> s32 {
+	/* V.58's gstnModulationSchemeActive (Table 6) for a direction of
+	   the call, pcm: that direction is PCM; -1 for one it has none
+	   for */
+	auto v58_modulation = [](s16 dp, bool pcm) -> s32 {
 		switch (dp) {
 		case DP_V17: return 0x0;
 		case DP_V21: return 0x1;
@@ -2503,7 +2513,8 @@ void Modem::unimodem_diag()
 		case DP_V32: return 0xA;
 		case DP_V32BIS: return 0xB;
 		case DP_V34: return 0xC;
-		case DP_V90: case DP_V92: return 0xE;
+		/* V.90 Issue 1: PCM one way, V.34 the other */
+		case DP_V90: case DP_V92: return pcm ? 0xE : 0xC;
 		case DP_V91: return 0xF;
 		case DP_K56: return 0x81;
 		default: return -1;
@@ -2516,8 +2527,8 @@ void Modem::unimodem_diag()
 		put(0x60, "1");
 		return;
 	}
-	/* the call's setup: the remote's answer (or calling) signal heard
-	   when it came up, else why it did not */
+	/* the call's setup (Table 2): the remote's answer (or calling)
+	   signal heard when it came up, else why it did not */
 	u32 setup = 4;
 	if (stats_.connected)
 		setup = stats_.fax ? (stats_.caller ? 0x9 : 0xA) :
@@ -2530,9 +2541,18 @@ void Modem::unimodem_diag()
 		 stats_.cause == Cause::ProtocolFailure)
 		setup = stats_.caller ? 0x7 : 0x8;
 	num(1, setup);
+	if (stats_.connected) {
+		/* Table 3: data or fax; Table 4: async, or V.80's
+		   transparent or framed synchronous mode */
+		num(2, stats_.fax ? 1 : 0);
+		if (!stats_.fax)
+			num(3, link_->sync() ? (link_->sync_framed() ? 2 : 1) :
+			    0);
+	}
 	if (stats_.connected && !stats_.fax) {
 		const struct dp_stats &d = dp_stats_;
 		const dlink::Stats &l = link_->stats();
+		const dlink::Config &lc = link_->config();
 		double rx = 0, tx = 0;
 		if (stats_.samples) {
 			rx = 10 * log10(stats_.rx_pow / stats_.samples /
@@ -2544,20 +2564,25 @@ void Modem::unimodem_diag()
 			if (d.have & DP_STATS_SNR)
 				neg_db(0x12, rx - d.snr, 0x5A);
 		}
-		/* the echoes' loss: what we send over what comes back */
+		/* the echoes' loss: what we send over what comes back,
+		   0-3F dB */
 		if (stats_.samples && (d.have & DP_STATS_NEAR_ECHO))
-			neg_db(0x14, d.near_echo - tx, 0xFF);
+			neg_db(0x14, d.near_echo - tx, 0x3F);
 		if (stats_.samples && (d.have & DP_STATS_FAR_ECHO))
-			neg_db(0x15, d.far_echo - tx, 0xFF);
+			neg_db(0x15, d.far_echo - tx, 0x3F);
 		if (d.have & DP_STATS_RTD)
-			num(0x17, static_cast<u64>(d.rtd > 0xFF ? 0xFF : d.rtd),
-			    2);
-		s32 m = v58_modulation(stats_.dp);
-		if (m >= 0) {
+			num(0x17, static_cast<u64>(d.rtd < 0 ? 0 :
+						   d.rtd > 0xFFF ? 0xFFF :
+						   d.rtd), 2);
+		bool line = d.have & DP_STATS_LINE;
+		s32 m = v58_modulation(stats_.dp, line && d.sym_tx == 8000);
+		if (m >= 0)
 			num(0x20, static_cast<u32>(m));
+		m = v58_modulation(stats_.dp,
+				   !line || d.sym_rx == 8000);
+		if (m >= 0)
 			num(0x21, static_cast<u32>(m));
-		}
-		if (d.have & DP_STATS_LINE) {
+		if (line) {
 			num(0x22, static_cast<u32>(lrint(d.sym_tx)), 4);
 			num(0x23, static_cast<u32>(lrint(d.sym_rx)), 4);
 			num(0x24, static_cast<u32>(lrint(d.carrier_tx)), 4);
@@ -2566,15 +2591,27 @@ void Modem::unimodem_diag()
 		num(0x26, stats_.tx0, 4);
 		num(0x27, stats_.rx0, 4);
 		num(0x31, d.renegs_local + d.renegs_remote, 2);
+		/* retrains asked for (by either modem), and granted: the
+		   pumps carry out every one */
 		num(0x32, d.retrains_local + d.retrains_remote, 2);
+		num(0x33, d.retrains_local + d.retrains_remote, 2);
 		num(0x34, stats_.ended ? stats_.tx1 : tx_rate_, 4);
 		num(0x35, stats_.ended ? stats_.rx1 : rx_rate_, 4);
 		num(0x40, cfg_.ec ? 1 : cfg_.mnp_on ? 2 : 0);
+		/* the error correction's frame size: the information
+		   field we send */
+		if (cfg_.ec)
+			num(0x41, static_cast<u32>(lc.tx_info));
+		else if (cfg_.mnp_on)
+			num(0x41, static_cast<u32>(lc.mnp_info));
 		const std::string_view c = compression_name();
 		num(0x44, c == "V42bis" ? 0x1 : c == "MNP5" ? 0x80 :
 		    c == "V44" ? 0x81 : c == "ZSTD" ? 0x82 : 0x0);
-		/* &H: 0 none, 1 RTS/CTS (V.58's 2), 2 XON/XOFF (its 1), 3
-		   both */
+		/* V.42bis's dictionary (P1) */
+		if (c == "V42bis")
+			num(0x45, static_cast<u32>(lc.dict_size));
+		/* &H: 0 none, 1 RTS/CTS (2: circuits 106/133), 2 XON/XOFF
+		   (1: DC1/DC3), 3 both */
 		static const unsigned char flow[] = { 0, 2, 1, 2 };
 		u16 h = sregs_[SREG_FLOW_CONTROL];
 		num(0x50, flow[h < 4 ? h : 0]);
@@ -2584,16 +2621,21 @@ void Modem::unimodem_diag()
 		if (cfg_.ec || cfg_.mnp_on) {
 			num(0x56, l.tx_frames, 8);
 			num(0x57, l.rx_frames, 8);
-			num(0x58, l.tx_again, 8);
-			num(0x59, l.rx_errors, 8);
+			/* (16-bit counters, held at their most) */
+			num(0x58, l.tx_again > 0xFFFF ? 0xFFFF : l.tx_again, 4);
+			num(0x59, l.rx_errors > 0xFFFF ? 0xFFFF : l.rx_errors,
+			    4);
 		}
 	}
-	/* V.58's callCleared, 2 while the call goes on */
+	/* V.58's callCleared (Table 9), 2 while the call goes on */
 	u32 cleared = 2;
 	if (stats_.ended) {
 		switch (stats_.cause) {
 		case Cause::None: cleared = 0x0; break;
 		case Cause::LocalHangup: cleared = 0x51; break;
+		case Cause::AnyKey: cleared = 0x50; break;
+		case Cause::DteReset: cleared = 0x52; break;
+		case Cause::DtrOff: cleared = 0x20; break;
 		case Cause::RemoteCleardown: cleared = 0x41; break;
 		case Cause::LineDropped: cleared = 0x2E; break;
 		case Cause::CarrierLost: cleared = 0x3C; break;
