@@ -427,59 +427,64 @@ rarer ones.
 \item[AT command] AT stands for ``attention''.  An instruction to the
   modem, sent as text that starts with the letters \cmdr{AT}, such as \cmdl[Z]{ATZ}.  One
   line can hold several commands (\cmdr{ATE1Q0V1}).
-\item[DTE] Data Terminal Equipment.  The computer or program that talks
-  to the modem: a terminal program, a fax program, \texttt{pppd},
-  or the program that embeds libdmodem.
-\item[DCE] Data Circuit-terminating Equipment.  The modem: what sits
-  between the DTE and the telephone line or call, here D-Modem itself.
+\item[Basic and extended commands] Basic commands are a letter, maybe
+  after \cmdr{\&}, \cmdr{\bs}, or \cmdr{\%}, and a number
+  (\cmdl[E]{E1}, \cmdl[ampK]{\&K3}).  Extended commands start with
+  \cmdr{+} or \cmdr{-} and take values (\cmdl[plusMS]{+MS=V92}).
+\item[Baud] Symbols per second: how many times a second the modem
+  changes its signal.  Each symbol can carry several bits, so a
+  connection's bit/s is often higher than its baud: \std{V.34} sends
+  up to 3429 baud but 33600~bit/s.  Older modems were sold by baud,
+  which is why the two words are often mixed up.
+\item[bit/s] Bits per second, the speed of a connection; \rc{CONNECT}
+  gives it.
+\item[Carrier] The signal the far modem sends during a call.  Losing it
+  ends the call (\rc{NO CARRIER}).
 \item[Command mode and online mode] In command mode the modem reads what
   the DTE sends as commands.  Once a call is up (\rc{CONNECT}) it is
   online: what the DTE sends goes to the far end as data.  The escape
   sequence (\cmdr{+++}, with a pause before and after) returns to
   command mode with the call kept, and \cmdl[O]{ATO} goes back online
   (\hyperref[sec:online]{Section~\ref*{sec:online}}).
+\item[DCE] Data Circuit-terminating Equipment.  The modem: what sits
+  between the DTE and the telephone line or call, here D-Modem itself.
+\item[Default] A setting's value after \cmdl[Z]{ATZ} or when the program
+  starts.  The modem keeps no stored profiles.
+\item[Dial string] What follows \cmdl[D]{ATD}: the number and the
+  modifiers that change how it is dialed (\cmdl[D]{T}, \cmdl[D]{P},
+  \cmdl[D]{W}, \cmdl[D]{,} and so on).
+\item[Dry pair] A pair of copper wires with nothing on it: no telephone
+  exchange, no battery voltage and no dial tone, such as two modems wired
+  to each other directly.  A modem uses it as a leased line;
+  \std{V.wb} runs only on one.
+\item[DTE] Data Terminal Equipment.  The computer or program that talks
+  to the modem: a terminal program, a fax program, \texttt{pppd},
+  or the program that embeds libdmodem.
+\item[Error correction and compression] Error correction (\std{V.42},
+  \std{MNP}) resends data the line damaged; compression (\std{V.42bis},
+  \std{V.44}) packs it to go faster.  Both need the far modem to have
+  them too.
+\item[ITU] International Telecommunication Union.  The United Nations
+  agency for telecommunications.  Its standards sector, ITU-T, writes the
+  recommendations modems follow: the V.\ldots{} series for modems
+  (\std{V.34}, \std{V.92}), T.\ldots{} for fax (\std{T.30}), G.\ldots{}
+  for audio (\std{G.711}) and so on.
+\item[Leased line] A permanent connection between two modems, with no
+  dialing, ringing or dial tone: each end starts at once
+  (\cmdl[ampL]{\&L}).  A 2-wire leased line carries both directions on
+  one pair; a 4-wire line has a pair for each direction.
+\item[Modulation] How the modem turns data into sound on the line, and
+  so how fast it goes: \std{V.34}, \std{V.90}, \std{V.92} and the rest,
+  chosen with \cmdl[plusMS]{+MS}.
 \item[Result code] The modem's answer to a command line, or news of a
   call: \rc{OK}, \rc{ERROR}, \rc{CONNECT}, \rc{RING}, \rc{NO CARRIER}
   and so on (\hyperref[sec:results]{Section~\ref*{sec:results}}).
 \item[S-register] A numbered setting, read with \cmdr{ATS}\p{n}\cmdr{?}
   and set with \cmdr{ATS}\p{n}\cmdr{=}\p{value}
   (\hyperref[sec:sregs]{Section~\ref*{sec:sregs}}).
-\item[Basic and extended commands] Basic commands are a letter, maybe
-  after \cmdr{\&}, \cmdr{\bs}, or \cmdr{\%}, and a number
-  (\cmdl[E]{E1}, \cmdl[ampK]{\&K3}).  Extended commands start with
-  \cmdr{+} or \cmdr{-} and take values (\cmdl[plusMS]{+MS=V92}).
-\item[Default] A setting's value after \cmdl[Z]{ATZ} or when the program
-  starts.  The modem keeps no stored profiles.
-\item[Modulation] How the modem turns data into sound on the line, and
-  so how fast it goes: \std{V.34}, \std{V.90}, \std{V.92} and the rest,
-  chosen with \cmdl[plusMS]{+MS}.
-\item[Carrier] The signal the far modem sends during a call.  Losing it
-  ends the call (\rc{NO CARRIER}).
-\item[bit/s] Bits per second, the speed of a connection; \rc{CONNECT}
-  gives it.
-\item[Baud] Symbols per second: how many times a second the modem
-  changes its signal.  Each symbol can carry several bits, so a
-  connection's bit/s is often higher than its baud: \std{V.34} sends
-  up to 3429 baud but 33600~bit/s.  Older modems were sold by baud,
-  which is why the two words are often mixed up.
-\item[Error correction and compression] Error correction (\std{V.42},
-  \std{MNP}) resends data the line damaged; compression (\std{V.42bis},
-  \std{V.44}) packs it to go faster.  Both need the far modem to have
-  them too.
 \item[SIP] Session Initiation Protocol.  The protocol of internet
   telephony.  dmodemd places and takes
   its calls as SIP calls (\hyperref[sec:sip]{Section~\ref*{sec:sip}}).
-\item[Dial string] What follows \cmdl[D]{ATD}: the number and the
-  modifiers that change how it is dialed (\cmdl[D]{T}, \cmdl[D]{P},
-  \cmdl[D]{W}, \cmdl[D]{,} and so on).
-\item[Leased line] A permanent connection between two modems, with no
-  dialing, ringing or dial tone: each end starts at once
-  (\cmdl[ampL]{\&L}).  A 2-wire leased line carries both directions on
-  one pair; a 4-wire line has a pair for each direction.
-\item[Dry pair] A pair of copper wires with nothing on it: no telephone
-  exchange, no battery voltage and no dial tone, such as two modems wired
-  to each other directly.  A modem uses it as a leased line;
-  \std{V.wb} runs only on one.
 \end{description}
 
 \section{Command summary}
