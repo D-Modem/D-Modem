@@ -12,10 +12,18 @@ set -e
 here=$(cd "$(dirname "$0")" && pwd)
 out=${DMODEM_BUILD:-$here/../../build}/docs/at
 mkdir -p "$out"
-# the version on the title page: CMakeLists.txt's project() version
+# the version on the title page: CMakeLists.txt's project() version,
 ver=$(sed -n 's/^project(dmodem VERSION \([0-9.]*\).*/\1/p' \
 	"$here/../../CMakeLists.txt")
-printf '\\newcommand{\\dmversion}{%s}\n' "${ver:-unknown}" > "$out/dmversion.tex"
+# and its date: the month of the last commit to change the manual's
+# source (today's month outside a git checkout)
+date=$(git -C "$here" log -1 --format=%cd --date=format:'%B %Y' \
+	-- at_commands.tex 2>/dev/null || true)
+[ -n "$date" ] || date=$(LC_ALL=C date +'%B %Y')
+{
+	printf '\\newcommand{\\dmversion}{%s}\n' "${ver:-unknown}"
+	printf '\\newcommand{\\dmdate}{%s}\n' "$date"
+} > "$out/dmversion.tex"
 # make name: latexmk on name.tex, its log's end on a failure
 make() {
 	if ! TEXINPUTS="$out:" latexmk -g -pdf -interaction=nonstopmode \

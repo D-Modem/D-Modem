@@ -45,9 +45,11 @@
 
 % the document's name and edition, for the title page and the footer
 \newcommand{\docname}{D-Modem AT Command Reference}
-\newcommand{\docedition}{October 2026}
-% the software version, from CMakeLists.txt through build.sh
-\InputIfFileExists{dmversion.tex}{}{\newcommand{\dmversion}{1.0.0}}
+% the software version (CMakeLists.txt's) and the date (the last commit
+% to this file's), written by build.sh
+\InputIfFileExists{dmversion.tex}{}{%
+  \newcommand{\dmversion}{1.0.0}\newcommand{\dmdate}{\today}}
+\newcommand{\docedition}{\dmdate}
 
 % colours, D-Modem's (the brand repository's palette, its Red Book for
 % this repository): the navy of the band and the headings, the red of
