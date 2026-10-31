@@ -5,7 +5,9 @@
 # docs/at_commands-cover.pdf (the covers and the spine on an A3 sheet)
 # from at_commands_cover.tex, and docs/at_commands-booklet.pdf (the
 # pages two to an A4 sheet, in booklet order, after the cover) from
-# at_commands_booklet.tex; pdflatex through latexmk
+# at_commands_booklet.tex, and docs/at_commands-a3.pdf (the pages between
+# the covers in A3 sections of 8) from at_commands_a3.tex; pdflatex
+# through latexmk
 # (Debian's texlive-latex-recommended, texlive-latex-extra,
 # texlive-fonts-recommended, texlive-pictures, lmodern and latexmk).  The
 # intermediate files go to <build>/docs/at (DMODEM_BUILD, default
@@ -40,7 +42,9 @@ make() {
 make at_commands
 make at_commands_cover
 make at_commands_booklet
+make at_commands_a3
 cp "$out/at_commands.pdf" "$here/../at_commands.pdf"
 cp "$out/at_commands_booklet.pdf" "$here/../at_commands-booklet.pdf"
 cp "$out/at_commands_cover.pdf" "$here/../at_commands-cover.pdf"
-echo "docs/at_commands.pdf docs/at_commands-booklet.pdf docs/at_commands-cover.pdf"
+cp "$out/at_commands_a3.pdf" "$here/../at_commands-a3.pdf"
+echo "docs/at_commands.pdf docs/at_commands-booklet.pdf docs/at_commands-cover.pdf docs/at_commands-a3.pdf"

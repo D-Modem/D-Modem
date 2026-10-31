@@ -1,0 +1,48 @@
+% at_commands_a3.tex - the AT command reference's pages between the
+% covers (at_commands.pdf's 2nd to last but one) as A3 sections of 8
+% pages: each sheet holds four A5 pages a side, printed on both sides
+% (portrait, flipped on the long edge), folded in half across (the top
+% half behind) and then down the middle (the left half behind), and cut
+% at the head.  The sections, gathered in order, sewn or glued at the
+% spine and trimmed, make the book inside at_commands_cover.pdf.  Built
+% with docs/at/build.sh into docs/at_commands-a3.pdf.
+\documentclass{article}
+\usepackage[a3paper,margin=0pt]{geometry}
+\usepackage{graphicx}
+\usepackage{tikz}
+\pagestyle{empty}
+
+\pdfximage{at_commands.pdf}
+\newcount\pages \pages=\pdflastximagepages
+% the pages between the covers, and the sections they fill
+\newcount\inside \inside=\numexpr\pages-2\relax
+\newcount\sections \sections=\numexpr(\inside+3)/8\relax % rounded up
+\ifnum\numexpr\sections*8\relax<\inside \advance\sections by 1 \fi
+
+% \slot{x}{y}{rotation}{inside page}: an A5 page (or a blank, past the
+% last) with its bottom left corner at (x,y) mm on the sheet
+\newcommand{\slot}[4]{%
+  \ifnum#4>\inside\else
+    \node[anchor=center,inner sep=0pt,rotate=#3]
+      at ([xshift=#1mm+74mm,yshift=#2mm+105mm]current page.south west)
+      {\includegraphics[width=148mm,height=210mm,
+        page=\the\numexpr#4+1\relax]{at_commands.pdf}};
+  \fi}
+% one section: pages 8n+1 to 8n+8; the head row upside down
+\newcommand{\sheet}[1]{%
+  \edef\b{\the\numexpr8*#1\relax}%
+  \noindent\begin{tikzpicture}[remember picture,overlay]
+    \slot{0.5}{210}{180}{\numexpr\b+5}\slot{148.5}{210}{180}{\numexpr\b+4}%
+    \slot{0.5}{0}{0}{\numexpr\b+8}\slot{148.5}{0}{0}{\numexpr\b+1}%
+  \end{tikzpicture}\newpage
+  \noindent\begin{tikzpicture}[remember picture,overlay]
+    \slot{0.5}{210}{180}{\numexpr\b+3}\slot{148.5}{210}{180}{\numexpr\b+6}%
+    \slot{0.5}{0}{0}{\numexpr\b+2}\slot{148.5}{0}{0}{\numexpr\b+7}%
+  \end{tikzpicture}\newpage}
+
+\begin{document}
+\newcount\n \n=0
+\loop\ifnum\n<\sections
+  \sheet{\the\n}\advance\n by 1
+\repeat
+\end{document}
