@@ -362,6 +362,8 @@
   {\large\bfseries\color{dmnavy}Notes}\par\vspace{1ex}%
   {\color{dmred}\hrule height 1.2pt}\vspace{2ex}%
   \noindent\begin{tikzpicture}
+    {\renewcommand{\qamstep}{2}%
+     \qam{16}{0.6cm}{(0.5\linewidth,-73.5mm)}{dmnavy,opacity=0.06}{axes}}
     \foreach \l in {0,...,21}
       \draw[dmhead,line width=0.5pt] (0.25pt,-\l*7mm) -- (\linewidth-0.25pt,-\l*7mm);
   \end{tikzpicture}\clearpage}
