@@ -298,8 +298,9 @@
 \renewcommand{\cftsecpagefont}{\bfseries\color{dmnavy}}
 \renewcommand{\cfttoctitlefont}{\large\bfseries\color{dmnavy}}
 \setlength{\cftbeforesecskip}{0.45ex}
-% every entry dotted to its page number, the dots close together
-\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+% every entry dotted to its page number, the dots grey and close together
+\renewcommand{\cftsecleader}{{\color{dmmuted}\cftdotfill{\cftdotsep}}}
+\renewcommand{\cftsubsecleader}{{\color{dmmuted}\cftdotfill{\cftdotsep}}}
 \renewcommand{\cftdotsep}{1.5}
 \renewcommand{\cftmarktoc}{\markboth{\contentsname}{\contentsname}}
 
