@@ -302,6 +302,68 @@ struct FskBitTx {
 	}
 };
 
+/* an asynchronous character receiver on a demodulator's decisions
+   (the text telephones', fixed-line SMS's) */
+struct Uart {
+	float bit_len;          /* samples a bit */
+	s16 nbits;              /* data bits a character (parity among
+				   them) */
+	s16 busy;               /* in a character */
+	s16 n;                  /* the bit due next, -1 the start */
+	s16 prev;               /* the last decision */
+	float pos;              /* samples into the character */
+	u16 bits;
+
+	/* baud bit/s, nbits_ data bits, at srate; idle */
+	void init(float baud, s16 nbits_, s32 srate)
+	{
+		*this = Uart();
+		bit_len = srate / baud;
+		nbits = nbits_;
+		prev = 1;
+	}
+	/* a sample's decision dec (1: mark) while on (a carrier, the
+	   receiver listening): a character's bits when its stop bit is
+	   good, else -1 */
+	s32 run(s16 dec, bool on)
+	{
+		if (!on) {
+			busy = 0;
+			prev = 1;
+			return -1;
+		}
+		if (!busy) {
+			if (prev && !dec) {
+				busy = 1;
+				pos = 0;
+				n = -1;
+				bits = 0;
+			}
+			prev = dec;
+			return -1;
+		}
+		prev = dec;
+		pos += 1;
+		/* each bit at its middle */
+		if (pos < (n + 1.5f) * bit_len)
+			return -1;
+		if (n < 0) {
+			if (dec)
+				busy = 0;       /* a glitch, not a start */
+			else
+				n = 0;
+			return -1;
+		}
+		if (n < nbits) {
+			bits |= static_cast<u16>((dec & 1) << n);
+			n++;
+			return -1;
+		}
+		busy = 0;
+		return dec ? bits : -1;
+	}
+};
+
 /* the answerer's start (4.3/V.25, 8.2/V.8): 200 ms of silence (V.8's
    0.2 s at least; the core's answer delay, its S-register of 2 s, is
    V.25's silent interval of 1.8 to 2.5 s, the answer tone then within
@@ -411,6 +473,8 @@ void dp_fsk_exit(void);
 s16 dp_text_init(void);
 s16 dp_contactid_init(void);
 void dp_contactid_exit(void);
+s16 dp_sms_init(void);
+void dp_sms_exit(void);
 void dp_text_exit(void);
 s16 dp_v22_init(void);
 void dp_v22_exit(void);

@@ -67,6 +67,7 @@ The DTE selects one with `AT+MS=` and either the number or a name.
 | `BAUDOT` (45) | 5-bit (Baudot) text telephone: TTY (45.45 bit/s, 1400/1800 Hz), telex, RTTY | `dp_text.cpp`. Half duplex, with its own character framing (5 bits, 1.5 stop bits, the shift codes) and conversion to and from ASCII on the core's asynchronous link. The rate, tones and figures set come from `AT+MBAUDOT` (`struct dp_text`, `MDMPRM_TEXT`) |
 | `EDT` (110) | EDT text telephone: V.21 channel 1 at 110 bit/s, 7 bits, even parity | `dp_text.cpp`, half duplex |
 | `CONTACTID` (5) | Contact ID (SIA DC-05) alarm reports | `dp_contactid.cpp`. The answering side is the alarm receiver and the calling side is the panel. DTMF messages of 16 digits with their checksum, the receiver's 1400/2300 Hz handshake and 1400 Hz kissoff, half duplex. Each message is one line to or from the core's asynchronous link. Call progress hands over to it as soon as dialling ends |
+| `SMS` (12) | Fixed-line SMS (ETSI ES 201 912, protocol 1) | `dp_sms.cpp`, with the messages' coding in `sms_pdu.cpp`. V.23's 1200 bit/s channel (1300/2100 Hz) both ways, half duplex. The answering side receives: it sends SMS_EST, then SMS_ACK for each SMS_DATA, and each message goes to the DTE as `+CMT:` (a delivery) or `+SUBMIT:` (a submission) and its text. The calling side sends: each line the DTE types becomes an SMS-SUBMIT, an SMS-DELIVER or a raw TPDU, and SMS_REL ends the call when the DTE has nothing more for 3 s. Text in GSM's 7-bit alphabet, or UCS2 when it has a character that alphabet lacks. Call progress hands over as soon as dialling ends |
 | `V18` (18) | V.18 text telephone automoding | `dp_text.cpp`. Listens for a 5-bit, EDT, V.21, V.23 or Bell 103 remote, probes a silent one, then runs that mode (V.21, V.23 and Bell 103 through their own pumps). Call progress hands over as soon as dialling ends, since there is no answer tone to wait for |
 | 22 | ITU V.22, 1200 bit/s DPSK | |
 | 212 | Bell 212A, 1200 bit/s DPSK | 2225 Hz answer tone, scrambled ones handshake |
@@ -231,7 +232,8 @@ pumps share:
 - the carrier run, the connect report, and the hand-over to another pump;
 - the tests' settings from the environment;
 - `pump_loop()`, a `process()` that works sample by sample for a pump
-  with a `sample()` method (FSK, the text telephones, Contact ID, V.22,
+  with a `sample()` method (FSK, the text telephones, Contact ID,
+  fixed-line SMS, V.22,
   V.32 and the 4-wire pumps).
 
 The call's statistics for the core's `ATI11` (`struct dp_stats` in
