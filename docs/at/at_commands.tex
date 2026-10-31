@@ -12,6 +12,9 @@
 \renewcommand{\familydefault}{\sfdefault}
 \usepackage{microtype}
 \setlength{\emergencystretch}{3em}
+% no words broken with a hyphen at the end of a line
+\hyphenpenalty=10000
+\uchyph=0
 % A5: 148 x 210 mm, a text block of 11.8 x 17.1 cm
 \usepackage[a5paper,left=1.5cm,right=1.5cm,top=2.1cm,bottom=1.8cm,
   headheight=12pt,headsep=0.45cm,footskip=0.8cm]{geometry}
