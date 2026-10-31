@@ -989,7 +989,8 @@ void Modem::update_status(Status s)
 					dp_->id == DP_V18 ||
 					dp_->id == DP_BAUDOT ||
 					dp_->id == DP_EDT ||
-					dp_->id == DP_CONTACTID))) {
+					dp_->id == DP_CONTACTID ||
+					dp_->id == DP_SMS))) {
 			cfg_.ec = false;
 			cfg_.mnp = false;
 		}

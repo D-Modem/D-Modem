@@ -224,10 +224,11 @@ s16 CallProgPump::start(struct modem *m, enum DP_ID id, s16 caller,
 	}
 
 	calling_tone = modem_get_param(m, GetCallingToneFlag) > 0;
-	/* (and Contact ID's panel, whose receiver has no answer tone
-	   either) */
+	/* (and Contact ID's panel and fixed-line SMS's caller, whose
+	   answerers have no answer tone either) */
 	text = modem_get_param(m, MDMPRM_TEXT) > 0 ||
-		modem_get_sreg(m, SREG_DP) == DP_CONTACTID;
+		modem_get_sreg(m, SREG_DP) == DP_CONTACTID ||
+		modem_get_sreg(m, SREG_DP) == DP_SMS;
 	fax = modem_get_param(m, MDMPRM_MODE) == MODEM_MODE_FAX;
 	/* (tests: DSP_FAX_CNG=0, a fax caller that sends no CNG) */
 	if (fax && env_off("DSP_FAX_CNG"))

@@ -44,6 +44,7 @@ int prop_dp_init(void)
 	dp_fsk_init();
 	dp_text_init();
 	dp_contactid_init();
+	dp_sms_init();
 	dp_v22_init();
 	dp_v32_init();
 	dp_v34_init();
@@ -63,6 +64,7 @@ void prop_dp_exit(void)
 	dp_fsk_exit();
 	dp_text_exit();
 	dp_contactid_exit();
+	dp_sms_exit();
 	dp_v22_exit();
 	dp_v32_exit();
 	dp_v34_exit();
