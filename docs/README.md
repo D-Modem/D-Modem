@@ -61,9 +61,11 @@ The project's overview, building and usage are in the top
   modem core takes (dmodemd, libdmodem, the PBX modules), its result
   codes and S-registers, on A5 pages (half an A4 sheet); the
   [booklet](at_commands-booklet.pdf) has them two to an A4 sheet, to
-  print on both sides (flip on the short edge), fold and staple.  Its
-  LaTeX source is [at/](at/at_commands.tex), `docs/at/build.sh` builds
-  both
+  print on both sides (flip on the short edge), fold and staple, after
+  a cover sheet; the [cover](at_commands-cover.pdf) is the covers and
+  the spine at full size on an A3 sheet, with crop marks.  Its LaTeX
+  source is [at/](at/at_commands.tex), `docs/at/build.sh` builds all
+  three
 - [Data over mobile telephony's speech paths](v_cvm.pdf): a proposed
   Recommendation, in the form of an ITU-T Recommendation, for a modem
   through the AMR, AMR-WB and EVS codecs of VoLTE and VoNR calls, built on

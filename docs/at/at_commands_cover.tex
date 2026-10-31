@@ -1,0 +1,62 @@
+% at_commands_cover.tex - the AT command reference's cover on a landscape
+% A3 sheet: the back cover, the spine and the front cover side by side
+% (at_commands.pdf's last and first pages), with crop marks at the
+% trim.  The spine is as wide as the pages between the covers are thick:
+% one leaf for every two of them, \dmleaf each (dmcover.tex, from
+% build.sh; 0.1 mm, 80 g/m2 paper, without it).  Built with
+% docs/at/build.sh into docs/at_commands-cover.pdf.
+\documentclass{article}
+\usepackage[a3paper,landscape,margin=0pt]{geometry}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage[T1]{fontenc}
+\usepackage[scaled=0.92]{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\pagestyle{empty}
+\definecolor{dmnavy}{HTML}{0A0F1C}
+\definecolor{dmred}{HTML}{FF4D5E}
+\definecolor{dmmuted}{HTML}{A9B4D0}
+\InputIfFileExists{dmversion.tex}{}{\newcommand{\dmversion}{1.0.0}}
+\InputIfFileExists{dmcover.tex}{}{\newcommand{\dmleaf}{0.1mm}}
+
+% the leaves between the covers, and so the spine's width
+\pdfximage{at_commands.pdf}
+\newcount\pages \pages=\pdflastximagepages
+\newcount\leaves \leaves=\numexpr(\pages-2+1)/2\relax
+\newdimen\spine \spine=\dmleaf \multiply\spine by \leaves
+
+\begin{document}
+\noindent\begin{tikzpicture}[remember picture,overlay]
+  % the trim: the back cover, the spine and the front cover, centred
+  \coordinate (bl) at ([xshift=-148mm-0.5\spine,yshift=-105mm]current page.center);
+  \coordinate (tr) at ([xshift=148mm+0.5\spine,yshift=105mm]current page.center);
+  \node[anchor=south west,inner sep=0pt] at (bl)
+    {\includegraphics[width=148mm,height=210mm,page=\the\pages]{at_commands.pdf}};
+  \node[anchor=south west,inner sep=0pt] at ([xshift=148mm+\spine]bl)
+    {\includegraphics[width=148mm,height=210mm,page=1]{at_commands.pdf}};
+  % the spine: the band's navy, the title down it when there is room
+  \fill[dmnavy] ([xshift=148mm-0.1mm]bl) rectangle ([xshift=148mm+\spine+0.1mm,yshift=210mm]bl);
+  \ifdim\spine>3mm
+    \node[rotate=-90,text=white,inner sep=0pt,font=\fontsize{0.55\spine}{0.6\spine}\selectfont]
+      at ([xshift=148mm+0.5\spine,yshift=105mm]bl)
+      {\bfseries D-Modem\quad\mdseries AT Command Reference\quad
+       \textcolor{dmmuted}{\dmversion}};
+    \fill[dmred] ([xshift=148mm,yshift=12mm]bl) rectangle
+      ([xshift=148mm+\spine,yshift=12mm+\spine]bl);
+  \fi
+  % crop marks, 5 mm long and 3 mm off the trim, at its corners and at
+  % the spine's folds
+  \foreach \x/\y/\dx/\dy in {0/0/-1/-1, 0/210/-1/1}
+    {\draw[line width=0.25pt] ([xshift=\dx*3mm,yshift=\y mm]bl) -- ++(\dx*5mm,0);
+     \draw[line width=0.25pt] ([xshift=0,yshift=\y mm+\dy*3mm]bl) -- ++(0,\dy*5mm);}
+  \foreach \y/\dy in {0/-1, 210/1}
+    {\draw[line width=0.25pt] ([xshift=3mm,yshift=\y mm]tr|-bl) -- ++(5mm,0);
+     \draw[line width=0.25pt] ([yshift=\y mm+\dy*3mm]tr|-bl) -- ++(0,\dy*5mm);
+     \draw[line width=0.25pt] ([xshift=148mm,yshift=\y mm+\dy*3mm]bl) -- ++(0,\dy*5mm);
+     \draw[line width=0.25pt] ([xshift=148mm+\spine,yshift=\y mm+\dy*3mm]bl) -- ++(0,\dy*5mm);}
+  \node[anchor=north west,inner sep=0pt,font=\scriptsize]
+    at ([xshift=0mm,yshift=-12mm]bl)
+    {D-Modem AT Command Reference \dmversion: cover, \the\pages\ pages,
+     spine \the\leaves\ leaves of \dmleaf};
+\end{tikzpicture}
+\end{document}

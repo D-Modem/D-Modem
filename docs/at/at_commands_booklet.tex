@@ -1,7 +1,8 @@
 % at_commands_booklet.tex - the AT command reference's A5 pages
 % (at_commands.pdf) two to a landscape A4 sheet, in booklet order.  The
-% first sheet is the cover: the back and front covers side by side on
-% one side, the other side blank.  The sheets after it, printed on both
+% first sheet is the cover: the back cover, the spine and the front cover
+% (at_commands_cover.pdf's, cut at the trim and scaled to the sheet's
+% width) on one side, the other side blank.  The sheets after it, printed on both
 % sides (flipped on the short edge), folded and stapled in the middle,
 % make the A5 pages between the covers; the cover sheet folds around
 % them.  Built with docs/at/build.sh into docs/at_commands-booklet.pdf.
@@ -18,11 +19,19 @@
 \advance\last by 3 \divide\last by 4 \multiply\last by 4
 \advance\last by 1
 
-% \order: the cover sheet (back cover, front cover; then two blanks),
-% then the inside pages in booklet order, two to a side, each sheet's
+% the cover's trim on its A3 sheet: 420 by 297 mm, the trim 296 mm and
+% the spine by 210 mm in the middle
+\InputIfFileExists{dmcover.tex}{}{\newcommand{\dmleaf}{0.1mm}}
+\newdimen\spine \spine=\dmleaf
+\multiply\spine by \numexpr(\pages-2+1)/2\relax
+\newdimen\trimx \trimx=\dimexpr(420mm-296mm-\spine)/2\relax
+\newdimen\trimy \trimy=\dimexpr(297mm-210mm)/2\relax
+
+% \order: after the cover sheet's blank side, the inside pages in
+% booklet order, two to a side, each sheet's
 % front (last, first) then its back (second, last but one); {} a blank
 \newcount\lo \newcount\hi
-\edef\order{\the\pages,1,{},{}}
+\edef\order{{},{}}
 \def\add#1{\ifnum#1<\pages \edef\order{\order,\the#1}%
   \else\edef\order{\order,{}}\fi}
 \lo=2 \hi=\last
@@ -34,5 +43,8 @@
 \ifnum\lo<\hi \repeat
 
 \begin{document}
+\edef\cover{\noexpand\includepdf[pages=1,trim=\the\trimx\space
+  \the\trimy\space\the\trimx\space\the\trimy,clip,
+  noautoscale=false]{at_commands_cover.pdf}}\cover
 \includepdf[pages=\order,nup=2x1,noautoscale=false]{at_commands.pdf}
 \end{document}
