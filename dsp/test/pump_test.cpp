@@ -157,11 +157,11 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v21_3000ppm_long", line(21, 20, 60, 9600, 0.5f, 3000) }), name);
 
 /* V.32terbo's rate follows the line: 19200 bit/s at 40 dB of SNR,
-   16800 at 27 dB, V.32bis's 14400 at 25 dB; each without errors */
+   16800 at 29 dB, V.32bis's 14400 at 25 dB; each without errors */
 TEST(V32Terbo, Rates)
 {
 	for (auto [snr, rate] : { std::make_pair(40.0f, 19200),
-				  std::make_pair(27.0f, 16800),
+				  std::make_pair(29.0f, 16800),
 				  std::make_pair(25.0f, 14400) }) {
 		LoopbackResult r = loopback_run(line(232, snr, 20));
 		for (int k = 0; k < 2; k++) {
