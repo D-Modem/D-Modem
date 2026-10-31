@@ -141,6 +141,7 @@ struct ContactIdPump : PumpBase<ContactIdPump, cid_state> {
 		return pump_loop(in, out, cnt);
 	}
 
+	/* n ms in samples */
 	s32 ms(s32 n) const { return ms2samples(n, srate); }
 	void to_link(const char *s);
 	s32 dte_char();
