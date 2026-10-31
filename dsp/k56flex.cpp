@@ -258,10 +258,10 @@ s16 K56Dec::frame(const unsigned char code[8], unsigned char *bits)
 			}
 		} else {
 			if (rb) {
-				U |= (w | neg) << nu;
+				U |= (w | (neg ? 1u : 0u)) << nu;
 				nu = static_cast<s16>(nu + q);
 			} else {
-				U |= (w << 1 | neg) << nu;
+				U |= (w << 1 | (neg ? 1u : 0u)) << nu;
 				nu = static_cast<s16>(nu + q + 1);
 			}
 		}
