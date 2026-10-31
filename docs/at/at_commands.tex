@@ -317,7 +317,11 @@
       ([yshift=-1.25cm]current page.north east);
     \fill[dmred] ([yshift=-1.25cm]current page.north west) rectangle
       ([yshift=-1.37cm]current page.north east);
-    \qam{4}{0.17cm}{([xshift=0.78cm,yshift=-0.625cm]current page.north west)}{dmred}{}
+    \begin{scope}[shift={(current page.north)}]
+      \foreach \x in {0,...,29}
+        \foreach \y in {1,...,4}
+          \fill[dmmuted,opacity=0.45] ({0.125cm+\x*0.25cm},{-\y*0.25cm}) circle[radius=0.025cm];
+    \end{scope}
     \node[anchor=base west,text=white,inner sep=0pt]
       at ([xshift=1.5cm,yshift=-0.75cm]current page.north west)
       {\small\bfseries D-Modem\quad\mdseries AT Command Reference};
