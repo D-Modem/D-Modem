@@ -10,10 +10,10 @@ Agere's USB modem) work too.
 For the full technical description, see
 [the technical details](macos-details.md).
 
-> **Status:** the macOS version has not been run on a real Mac yet.
-> It has been checked as far as possible from Linux, and an automated
-> test on a Mac is ready to run once the project's build servers are
-> available again.
+> **Status:** the project's automated build servers build and test the
+> macOS version on a Mac (GitHub's Apple silicon machines), including
+> calls through simulated USB modems. Nobody has yet tried it by hand
+> on a Mac, or with a real USB modem.
 
 ## What is missing on macOS
 

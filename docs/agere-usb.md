@@ -11,10 +11,11 @@ How the device works was worked out by reading its built-in software and
 Agere's Windows and Linux drivers. For all of that, see
 [the technical details](agere-usb-details.md).
 
-> **Status:** not yet working on a real device. The first device tried
-> did not send usable sound. The driver has since been changed to work
-> the way Agere's Windows driver does, which has not yet been tried on
-> the device.
+> **Status:** not yet working reliably on a real device. At first the
+> device tried did not send usable sound. The driver has since been
+> changed to work the way Agere's Windows driver does; calls on the
+> device then reached the far end, but were heard badly there. The
+> latest version has so far been tested only on a simulated device.
 
 ## Using it
 

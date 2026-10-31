@@ -68,5 +68,5 @@ This runs every protocol without a modem: two links back to back, with
 bit errors, slow receivers and lost frames. The interop tests run the
 link layer against other companies' modems
 ([Interop against other soft modems](interop.md)).
-`link/compress_bench` measures how well each compressor does on your own
-files.
+`compress_bench` (built from `link/test/compress_bench.cpp`) measures how
+well each compressor does on your own files.

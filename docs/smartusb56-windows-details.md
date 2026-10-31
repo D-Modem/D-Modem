@@ -11,8 +11,22 @@ the one `dmodemd --usb` drives ([hardware.md](hardware-details.md#smart-link-sma
 from Smart Link's Linux driver (`st7554.c` of slmodem 2.9.11). This page
 is mostly about what Windows does that Linux does not.
 
-Marks: **[seen]** in a file or in code; **[inferred]** from names, use or
-context, not proven.
+Marks: **[seen]** means seen in a file or in the code; **[inferred]**
+means worked out from names, use or context, and not proven.
+
+Terms used on this page:
+- **ST7554**: ST's USB bridge chip in the SmartUSB56. It carries the
+  codec's samples over USB and has the GPIOs.
+- **GPIO**: a general-purpose input/output pin of the ST7554. The modem's
+  hook relay, ring detector, LEDs and line controls hang on them.
+- **DAA** (data access arrangement): the circuit that connects the modem
+  to the telephone line. A *silicon DAA* puts it in a chip.
+- **SSI1, SSI2**: the ST7554's two serial ports to codecs: SSI1 for the
+  modem's codec, SSI2 for an optional second (voice) codec.
+- **FIFO**: the ST7554's sample buffers, one per codec.
+- **HAL**: Smart Link's hardware abstraction layer, between the soft
+  modem and the USB driver.
+- **INF**: a Windows driver package's setup file.
 
 ## Contents
 
@@ -85,13 +99,15 @@ On 2000 and XP (ME runs the same `.sys` files) [seen]:
 - No bulk transfers. The bulk methods have no code behind them.
 
 **Isochronous streams** (`KIsoBidiChannel`) [seen]:
-- 2 OUT and 2 IN transfers of 40 packets (1 ms each) in flight. Linux
-  uses 3 × 5. Property 0x5A changes the count.
+- 2 OUT and 2 IN transfers of 40 packets (1 ms each) are in flight.
+  Linux's driver, and dmodemd, use 3 transfers of 5 packets
+  (`ISO_TRANSFERS`, `ISO_PACKETS` in `dmodemd/usb_line.h`). Property 0x5A
+  changes the count.
 - First a 2-byte OUT "start" packet at the current frame + 10. IN
   transfers then go at explicit frames from + 13, OUT ones ASAP.
 - OUT packet sizes come from a fixed pattern, not from the IN lengths.
   At 9600 Hz it is 20, 20, 20, 18, 18 bytes per 5 ms (`tPacketer`,
-  0x1c303). Linux and dmodemd send what came in instead.
+  0x1c303). Linux and dmodemd instead send as many bytes as came in.
 - Drift between the codec and the USB clock is corrected from the
   codec FIFO's level:
   - below the low threshold, `EnlargePacket` drops one packet and
@@ -132,8 +148,8 @@ these (`RequestCodeFromReg`, 0x17863) [seen]:
 | 0x00 | REVISION | – | read-only; below 0x200 RHOM is forced off |
 | 0x01 | AFE_POWER | SSI1_CONTROL | codec power |
 | 0x02 | SSI_CTRL | SSI2 control | voice codec power: 0x21 or 0 |
-| 0x03 | FIFO_MASK | FIFO_MASK | 0x00E0 while streaming (Linux 0x0060): the 0x80 period tick too |
-| 0x04 | AFE_COUNTER | SSI1_COUNTER | the period: rate × ms / 1000 − 1, e.g. 47 for 5 ms at 9600 Hz (Linux 96) |
+| 0x03 | FIFO_MASK | FIFO_MASK | 0x00E0 while streaming, which adds the 0x80 period tick (Linux and dmodemd: 0x0060) |
+| 0x04 | AFE_COUNTER | SSI1_COUNTER | the period: rate × ms / 1000 − 1, e.g. 47 for 5 ms at 9600 Hz (Linux and dmodemd: 96) |
 | 0x06 | SSI_COUNTER | SSI2_COUNTER | the voice codec's period |
 | 0x08 | GPIO_DIR | GPIO_DIR | |
 | 0x0A | GPIO_OUT | GPIO_OUT | |
@@ -145,8 +161,8 @@ these (`RequestCodeFromReg`, 0x17863) [seen]:
 | 0x1A | FIFO_CTRL_HI | FIFO_CONTROL2 | bits 8–14 SSI1 high threshold, bit 15 SSI1 "RHOM"; bits 0–6 and 7 the same for SSI2 |
 
 The FIFO thresholds (low/high) while streaming are 0x20/0x3E at 8000 Hz,
-0x20/0x3A at 9600 Hz and 0x0E/0x2E at 16000 Hz. Linux writes 0x28/0x28
-[seen].
+0x20/0x3A at 9600 Hz and 0x0E/0x2E at 16000 Hz. Linux writes 0x28/0x28,
+and so does dmodemd [seen].
 
 RHOM (`ConfigureRHOM` 0x163e8 → `EnableRHOM` 0x1d872) only sets
 FIFO_CTRL2's bit 15, and bit 7 for the voice codec when `Alt` ≥ 2. It
@@ -194,8 +210,9 @@ off.
 - The result goes to the registry as `CodecModel` ("ST7550" or
   "ST75951"), with `Version.HW`.
 
-The **ST75951 is supported** [seen]; the Linux driver and dmodemd refuse
-it. Its control word (register 0x17) addresses four 12-bit registers:
+The **ST75951 is supported** [seen]. The Linux driver refuses it;
+dmodemd now starts it up as Windows does ([below](#what-this-means-for-dmodemd)).
+Its control word (register 0x17) addresses four 12-bit registers:
 
 | | STLC7550 | ST75951 |
 |---|---|---|
@@ -324,8 +341,8 @@ on and off hook [inferred].
   call-waiting caller ID during modem-on-hold (`AT#CID=1`) [seen in
   mtlstrm/mtlmnt5].
 - Linux's st7554.c defines GPIO_CID1 but never uses it. **So the
-  SmartUSB56 hardware can do caller ID**, which docs/hardware.md has
-  said it cannot.
+  SmartUSB56 hardware can do caller ID**, which D-Modem's hardware notes
+  used to say it could not.
 
 **Pulse dialling** [seen]:
 - The USB driver has no make/break timing. The soft modem pulses the
@@ -569,15 +586,18 @@ decodes caller ID itself; this one does not [inferred].
 `dmodemd/usb_line.cpp` follows Linux, with more taken from Windows
 (items 1, 2, 6, 7, 8, 9, 10, 11 and 12). Against Windows:
 
-1. **Caller ID: done.** With `AT#CID=1`, from the first ring dmodemd
-   sets GPIO 0x0020 (CID1) while the core listens on hook, and clears
-   it before the hook changes. Tested on the fake device, not yet on
-   hardware.
-2. **The ST75951 silicon DAA: done.** dmodemd starts it up as Windows
-   does (power 3, codec register 3 = 0x050, register 0 = 0x3C0, power
-   2, then 3 and the rate's word) and powers it down to 2. Hook, ring
-   and caller ID are the same GPIOs. The DC bit, inverted on it, is not
-   used.
+1. **Caller ID: done.** Caller ID is off by default (`AT#CID=0`). With
+   `AT#CID=1`, from the first ring dmodemd sets GPIO 0x0020 (CID1)
+   while the core listens on hook (`MODEM_HOOK_SNOOPING`), and clears it
+   before the hook changes (`UsbLine::set_hook`). Tested on the fake
+   device, not yet on hardware.
+2. **The ST75951 silicon DAA: done.** dmodemd detects it from
+   GPIO_STATUS bit 0x4000 and starts it up as Windows does
+   (`UsbLine::start_st75951`): power 3, codec register 3 = 0x050,
+   register 0 = 0x3C0, power 2, then power 3 and the rate's control
+   word. It powers it down to 2. Hook, ring and caller ID use the same
+   GPIOs. The DC bit, inverted on the ST75951, is used only with
+   `--usb-international` (item 9).
 3. **The idle GPIO state differs**: Windows holds DP (0x0400) high.
    The Linux values work, but DP's role is not known.
 4. **Clock drift**: Windows adds or drops whole packets from the FIFO
@@ -619,8 +639,11 @@ decodes caller ID itself; this one does not [inferred].
 12. **The buzzer: done, behind `--usb-buzzer`.** As `SetSpeakerVolume`
    (0x16d46) with `Options.Buzzer`: BUZEN (0x0800) set for any level but
    0, cleared at 0; dmodemd's levels are the core's ATM/ATL speaker.
-13. **Rates**: 8000, 9600 and 16000 Hz. There is no 24000 Hz as on
-   Linux.
+13. **Rates**: dmodemd has Windows' three control words, for 8000,
+   9600 and 16000 Hz (`cword()` in `dmodemd/usb_line.cpp`), and not
+   Linux's 24000 Hz word (0x3E8). Its `-r` option takes only 8000 or
+   9600 for this modem (`line_rate_ok()` in `dmodemd/options.h`), so
+   16000 Hz is not reachable from the command line.
 
 ## Open questions
 
