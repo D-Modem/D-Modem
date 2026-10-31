@@ -424,13 +424,14 @@ A few words this manual uses throughout.  The glossary
 rarer ones.
 
 \begin{description}[style=nextline,leftmargin=1.2em,font=\bfseries\color{dmnavy}]
-\item[AT command] An instruction to the modem, sent as text that starts
-  with the letters \cmdr{AT} (``attention''), such as \cmdl[Z]{ATZ}.  One
+\item[AT command] AT stands for ``attention''.  An instruction to the
+  modem, sent as text that starts with the letters \cmdr{AT}, such as \cmdl[Z]{ATZ}.  One
   line can hold several commands (\cmdr{ATE1Q0V1}).
-\item[DTE] The computer or program that talks to the modem (Data
-  Terminal Equipment): a terminal program, a fax program, \texttt{pppd},
-  or the program that embeds libdmodem.  The modem is the DCE (Data
-  Circuit-terminating Equipment).
+\item[DTE] Data Terminal Equipment.  The computer or program that talks
+  to the modem: a terminal program, a fax program, \texttt{pppd},
+  or the program that embeds libdmodem.
+\item[DCE] Data Circuit-terminating Equipment.  The modem: what sits
+  between the DTE and the telephone line or call, here D-Modem itself.
 \item[Command mode and online mode] In command mode the modem reads what
   the DTE sends as commands.  Once a call is up (\rc{CONNECT}) it is
   online: what the DTE sends goes to the far end as data.  The escape
@@ -444,7 +445,7 @@ rarer ones.
   and set with \cmdr{ATS}\p{n}\cmdr{=}\p{value}
   (\hyperref[sec:sregs]{Section~\ref*{sec:sregs}}).
 \item[Basic and extended commands] Basic commands are a letter, maybe
-  after \cmdr{\&}, \cmdr{\bs} or \cmdr{\%}, and a number
+  after \cmdr{\&}, \cmdr{\bs}, or \cmdr{\%}, and a number
   (\cmdl[E]{E1}, \cmdl[ampK]{\&K3}).  Extended commands start with
   \cmdr{+} or \cmdr{-} and take values (\cmdl[plusMS]{+MS=V92}).
 \item[Default] A setting's value after \cmdl[Z]{ATZ} or when the program
@@ -460,7 +461,8 @@ rarer ones.
   \std{MNP}) resends data the line damaged; compression (\std{V.42bis},
   \std{V.44}) packs it to go faster.  Both need the far modem to have
   them too.
-\item[SIP] The protocol of internet telephony.  dmodemd places and takes
+\item[SIP] Session Initiation Protocol.  The protocol of internet
+  telephony.  dmodemd places and takes
   its calls as SIP calls (\hyperref[sec:sip]{Section~\ref*{sec:sip}}).
 \item[Dial string] What follows \cmdl[D]{ATD}: the number and the
   modifiers that change how it is dialed (\cmdl[D]{T}, \cmdl[D]{P},
@@ -3158,59 +3160,59 @@ modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \hline\rowcolor{dmhead}\thd{Term} & \thd{Meaning} \\ \hline
 \endhead
 \textbf{A-law, u-law} & The two ways \std{G.711} codes telephone audio in 8 bits: A-law in Europe, u-law in North America and Japan. \\ \hline
-\textbf{ADPCM} & Adaptive Differential PCM: compressed audio, one of the voice formats of \cmdl[plusVSM]{+VSM}. \\ \hline
-\textbf{ADSI} & Analog Display Services Interface: a telephone's screen and keys, driven by tones. \\ \hline
-\textbf{ALSA} & The sound system of Linux; dmodemd uses it to reach a telephone line through a sound card. \\ \hline
+\textbf{ADPCM} & Adaptive Differential Pulse Code Modulation.  Compressed audio, one of the voice formats of \cmdl[plusVSM]{+VSM}. \\ \hline
+\textbf{ADSI} & Analog Display Services Interface.  A telephone's screen and keys, driven by tones. \\ \hline
+\textbf{ALSA} & Advanced Linux Sound Architecture.  The sound system of Linux; dmodemd uses it to reach a telephone line through a sound card. \\ \hline
 \textbf{Automode} & Trying modulations from the fastest down until both modems have one (\cmdl[N]{N}, \cmdl[plusMS]{+MS}). \\ \hline
 \textbf{Baudot} & The 5-bit code (ITA2) of teleprinters, of the deaf community's TTY, of telex and of RTTY. \\ \hline
 \textbf{Bell 103, Bell 212A} & The North American 300 and 1200~bit/s modulations, akin to \std{V.21} and \std{V.22}. \\ \hline
-\textbf{CAPI} & Common ISDN API, the programming interface of ISDN cards; \cmdl[plusB2]{+B2} uses its numbers. \\ \hline
-\textbf{CED, CNG} & The fax answer tone (2100~Hz) and the calling fax's tone (1100~Hz). \\ \hline
-\textbf{CIG, CSI, TSI} & The fax identities: the poller's, the answerer's and the caller's (\cmdl[plusFLI]{+FLI}). \\ \hline
+\textbf{CAPI} & Common ISDN Application Programming Interface.  The programming interface of ISDN cards; \cmdl[plusB2]{+B2} uses its numbers. \\ \hline
+\textbf{CED, CNG} & Called terminal identification and Calling tone.  The fax answer tone (2100~Hz) and the calling fax's tone (1100~Hz). \\ \hline
+\textbf{CIG, CSI, TSI} & Calling subscriber identification, Called Subscriber Identification and Transmitting Subscriber Identification.  The fax identities of the poller, the answerer and the caller (\cmdl[plusFLI]{+FLI}). \\ \hline
 \textbf{\std{Class 1}, \std{Class 2}, \std{Class 2.0}} & The fax command sets: in \std{Class 1} (\std{T.31}) the DTE runs the fax protocol, in \std{Class 2} and \std{Class 2.0} (\std{T.32}) the modem does. \\ \hline
 \textbf{Clear channel} & A 64000~bit/s digital channel used as it is, with no modulation, as in an ISDN data call. \\ \hline
-\textbf{CPE} & Customer Premises Equipment: the equipment at the subscriber's end of a line. \\ \hline
-\textbf{CRC, FCS} & A checksum on a frame (the Frame Check Sequence) that shows whether it arrived damaged. \\ \hline
-\textbf{DCD, DSR, DTR, RTS, CTS} & The serial port's signals: carrier detect, data set ready, data terminal ready, request and clear to send. \\ \hline
-\textbf{DIL} & Digital Impairment Learning: the \std{V.90} and \std{V.92} sequence that measures the digital network. \\ \hline
-\textbf{DIS, DTC, DCS} & The fax messages that offer (DIS), ask for polling (DTC) and choose (DCS) the session's settings. \\ \hline
-\textbf{DLE} & Data Link Escape (10h): in fax and voice modes, the character that starts a code in the data, such as \cmd{<DLE><ETX>}. \\ \hline
-\textbf{DMT} & Discrete Multitone: many carriers side by side, as in \std{V.wb} and ADSL. \\ \hline
-\textbf{DTMF} & Dual Tone Multi-Frequency: the tones of a telephone keypad. \\ \hline
-\textbf{ECM} & Error Correction Mode of fax: pages sent in frames and repeated where damaged. \\ \hline
-\textbf{EDT} & European Deaf Telephone: a text telephone at 110~bit/s (\std{V.18}). \\ \hline
-\textbf{ETSI} & European Telecommunications Standards Institute. \\ \hline
-\textbf{FSK, DPSK, QAM} & Ways of putting data on a carrier: by its frequency, by its phase, by phase and size together. \\ \hline
-\textbf{HDLC} & High-level Data Link Control: frames with flags and an FCS, the basis of LAPM, of fax's T.30 messages and of PPP. \\ \hline
-\textbf{ISDN} & Integrated Services Digital Network: digital telephone lines with 64000~bit/s channels. \\ \hline
-\textbf{ITU-T} & The International Telecommunication Union's standards body, whose recommendations are V.\ldots{} (modems), T.\ldots{} (fax) and so on. \\ \hline
-\textbf{LAPM} & Link Access Procedure for Modems: \std{V.42}'s error correction. \\ \hline
+\textbf{CPE} & Customer Premises Equipment.  The equipment at the subscriber's end of a line. \\ \hline
+\textbf{CRC, FCS} & Cyclic Redundancy Check and Frame Check Sequence.  A checksum on a frame that shows whether it arrived damaged. \\ \hline
+\textbf{DCD, DSR, DTR, RTS, CTS} & Data Carrier Detect, Data Set Ready, Data Terminal Ready, Request To Send and Clear To Send.  The serial port's control signals. \\ \hline
+\textbf{DIL} & Digital Impairment Learning.  The \std{V.90} and \std{V.92} sequence that measures the digital network. \\ \hline
+\textbf{DIS, DTC, DCS} & Digital Identification Signal, Digital Transmit Command and Digital Command Signal.  The fax messages that offer (DIS), ask for polling (DTC) and choose (DCS) the session's settings. \\ \hline
+\textbf{DLE} & Data Link Escape (10h).  In fax and voice modes, the character that starts a code in the data, such as \cmd{<DLE><ETX>}. \\ \hline
+\textbf{DMT} & Discrete Multitone.  Many carriers side by side, as in \std{V.wb} and ADSL. \\ \hline
+\textbf{DTMF} & Dual Tone Multi-Frequency.  The tones of a telephone keypad. \\ \hline
+\textbf{ECM} & Error Correction Mode.  Fax pages sent in frames, and repeated where damaged. \\ \hline
+\textbf{EDT} & European Deaf Telephone.  A text telephone at 110~bit/s (\std{V.18}). \\ \hline
+\textbf{ETSI} & European Telecommunications Standards Institute.  The European standards body. \\ \hline
+\textbf{FSK, DPSK, QAM} & Frequency Shift Keying, Differential Phase Shift Keying and Quadrature Amplitude Modulation.  Ways of putting data on a carrier: by its frequency, by its phase, by phase and size together. \\ \hline
+\textbf{HDLC} & High-level Data Link Control.  Frames with flags and an FCS, the basis of LAPM, of fax's \std{T.30} messages and of PPP. \\ \hline
+\textbf{ISDN} & Integrated Services Digital Network.  Digital telephone lines with 64000~bit/s channels. \\ \hline
+\textbf{ITU-T} & International Telecommunication Union, Telecommunication Standardization Sector.  The standards body whose recommendations are V.\ldots{} (modems), T.\ldots{} (fax) and so on. \\ \hline
+\textbf{LAPM} & Link Access Procedure for Modems.  \std{V.42}'s error correction. \\ \hline
 \textbf{Leased line} & A permanent line between two modems, with no dialing; 2-wire or 4-wire (\cmdl[ampL]{\&L}). \\ \hline
-\textbf{LR, LD} & \std{MNP}'s link request and link disconnect. \\ \hline
-\textbf{MDMF, SDMF} & Caller ID messages: Multiple and Single Data Message Format. \\ \hline
-\textbf{MH} & Modified Huffman, the plainest fax page coding (\std{T.4}). \\ \hline
-\textbf{\std{MNP}} & Microcom Networking Protocol: classes 2 to 4 are error correction, class 5 compression. \\ \hline
+\textbf{LR, LD} & Link Request and Link Disconnect.  \std{MNP}'s messages that start and end its link. \\ \hline
+\textbf{MDMF, SDMF} & Multiple Data Message Format and Single Data Message Format.  The two forms of a caller ID message. \\ \hline
+\textbf{MH} & Modified Huffman.  The plainest fax page coding (\std{T.4}). \\ \hline
+\textbf{\std{MNP}} & Microcom Networking Protocol.  Classes 2 to 4 are error correction, class 5 compression. \\ \hline
 \textbf{Modem-on-hold} & \std{V.92}'s way to put a data call on hold to take another call (\cmdl[plusPMH]{+PMH}). \\ \hline
-\textbf{PBX} & Private Branch Exchange: an office telephone system, such as Asterisk or FreeSWITCH. \\ \hline
-\textbf{PCM} & Pulse Code Modulation: audio as numbers, 8000 a second on a telephone network; \std{V.90} and \std{V.92} send data as these numbers. \\ \hline
-\textbf{PPP} & Point-to-Point Protocol: how a computer carries the internet over a modem call. \\ \hline
-\textbf{PREP, ACK, TERM} & \std{V.54}'s signals to start, confirm and end a remote loop test. \\ \hline
-\textbf{PSTN} & Public Switched Telephone Network. \\ \hline
+\textbf{PBX} & Private Branch Exchange.  An office telephone system, such as Asterisk or FreeSWITCH. \\ \hline
+\textbf{PCM} & Pulse Code Modulation.  Audio as numbers, 8000 a second on a telephone network; \std{V.90} and \std{V.92} send data as these numbers. \\ \hline
+\textbf{PPP} & Point-to-Point Protocol.  How a computer carries the internet over a modem call. \\ \hline
+\textbf{PREP, ACK, TERM} & Preparatory, Acknowledgement and Termination.  \std{V.54}'s signals to start, confirm and end a remote loop test. \\ \hline
+\textbf{PSTN} & Public Switched Telephone Network.  The ordinary telephone network. \\ \hline
 \textbf{Retrain, renegotiation} & Modems re-measuring the line during a call (retrain), or changing only the rate (renegotiation). \\ \hline
 \textbf{Robbed-bit signalling} & A digital network taking a bit of some samples for its own use, which a \std{V.90} modem must allow for. \\ \hline
-\textbf{RTTY} & Radio teletype: Baudot over radio, as radio amateurs send it. \\ \hline
-\textbf{SNR} & Signal-to-Noise Ratio, in dB. \\ \hline
-\textbf{SYN} & The idle octet of \std{V.80}'s synchronous mode. \\ \hline
+\textbf{RTTY} & Radio Teletypewriter.  Baudot over radio, as radio amateurs send it. \\ \hline
+\textbf{SNR} & Signal-to-Noise Ratio.  How far the signal stands above the noise, in dB. \\ \hline
+\textbf{SYN} & Synchronous idle.  The idle octet of \std{V.80}'s synchronous mode. \\ \hline
 \textbf{T.30} & The fax protocol: its messages, phases and timers. \\ \hline
-\textbf{TTY} & A text telephone of the deaf community, sending Baudot at 45.45 or 50~bit/s. \\ \hline
+\textbf{TTY} & Teletypewriter.  A text telephone of the deaf community, sending Baudot at 45.45 or 50~bit/s. \\ \hline
 \textbf{Type II caller ID} & The caller ID of a waiting call, sent during a call. \\ \hline
 \textbf{Unimodem} & Windows' modem driver; \cmdl[hashUD]{\#UD} gives its diagnostics. \\ \hline
 \textbf{V.8} & The start of a modern call, where the modems tell each other what they have. \\ \hline
 \textbf{V.cvm, \std{V.wb}} & D-Modem's data over mobile speech paths, and its wideband modem for a bare pair. \\ \hline
 \textbf{X.75, V.110, V.120} & Protocols on an ISDN data channel (\cmdl[plusB2]{+B2}). \\ \hline
-\textbf{XID} & The exchange of identification: \std{V.42}'s message that agrees the compression. \\ \hline
-\textbf{XON, XOFF} & Characters that stop and start the flow of data (DC1 and DC3). \\ \hline
-\textbf{zstd} & Zstandard, a modern compression D-Modem offers between two D-Modems (\cmdl[plusDSZ]{+DSZ}). \\ \hline
+\textbf{XID} & Exchange Identification.  \std{V.42}'s message that agrees the compression. \\ \hline
+\textbf{XON, XOFF} & Transmit On and Transmit Off.  The characters (DC1 and DC3) that start and stop the flow of data. \\ \hline
+\textbf{zstd} & Zstandard.  A modern compression D-Modem offers between two D-Modems (\cmdl[plusDSZ]{+DSZ}). \\ \hline
 \end{longtable}}
 
 \end{document}
