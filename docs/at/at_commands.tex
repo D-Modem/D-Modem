@@ -298,6 +298,9 @@
 \renewcommand{\cftsecpagefont}{\bfseries\color{dmnavy}}
 \renewcommand{\cfttoctitlefont}{\large\bfseries\color{dmnavy}}
 \setlength{\cftbeforesecskip}{0.45ex}
+% every entry dotted to its page number, the dots close together
+\renewcommand{\cftsecleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cftdotsep}{1.5}
 \renewcommand{\cftmarktoc}{\markboth{\contentsname}{\contentsname}}
 
 % every page: a band across the top with the document's name and the
