@@ -395,7 +395,7 @@ D-Modem program:
   \std{V.110}, \std{V.120}) (\hyperref[sec:isdn]{Section~\ref*{sec:isdn}}),
   and \std{V.80}'s synchronous access.
 \item \textbf{V.cvm} for data over mobile speech paths, and
-  \textbf{V.wb}, a wideband modem for a bare pair of wires.
+  \textbf{V.wb}, a wideband modem for a dry pair.
 \item \textbf{Diagnostics}: the last call's statistics (\cmdl[I]{ATI11},
   \cmdl[ampV]{AT\&V1}, \cmdl[hashUD]{AT\#UD}) and loop tests
   (\cmdl[ampT]{AT\&T}).
@@ -457,6 +457,11 @@ rarer ones.
   ends the call (\rc{NO CARRIER}).
 \item[bit/s] Bits per second, the speed of a connection; \rc{CONNECT}
   gives it.
+\item[Baud] Symbols per second: how many times a second the modem
+  changes its signal.  Each symbol can carry several bits, so a
+  connection's bit/s is often higher than its baud: \std{V.34} sends
+  up to 3429 baud but 33600~bit/s.  Older modems were sold by baud,
+  which is why the two words are often mixed up.
 \item[Error correction and compression] Error correction (\std{V.42},
   \std{MNP}) resends data the line damaged; compression (\std{V.42bis},
   \std{V.44}) packs it to go faster.  Both need the far modem to have
@@ -467,6 +472,14 @@ rarer ones.
 \item[Dial string] What follows \cmdl[D]{ATD}: the number and the
   modifiers that change how it is dialed (\cmdl[D]{T}, \cmdl[D]{P},
   \cmdl[D]{W}, \cmdl[D]{,} and so on).
+\item[Leased line] A permanent connection between two modems, with no
+  dialing, ringing or dial tone: each end starts at once
+  (\cmdl[ampL]{\&L}).  A 2-wire leased line carries both directions on
+  one pair; a 4-wire line has a pair for each direction.
+\item[Dry pair] A pair of copper wires with nothing on it: no telephone
+  exchange, no battery voltage and no dial tone, such as two modems wired
+  to each other directly.  A modem uses it as a leased line;
+  \std{V.wb} runs only on one.
 \end{description}
 
 \section{Command summary}
@@ -1343,7 +1356,7 @@ directions' rates (sent in its \std{MP} sequences).
 56 & K56 & K56flex & Not implemented: runs \std{V.90}. \\ \hline
 150 & VCVM & \std{V.cvm} & Data over mobile speech paths, 175 to 3500
   bit/s, after \std{V.8} (\cmdl[plusCVM]{+CVM}). \\ \hline
-200 & VWB & \std{V.wb} & Wideband DMT on a bare pair, at 48000 Hz and more,
+200 & VWB & \std{V.wb} & Wideband DMT on a dry pair, at 48000 Hz and more,
   up to 148656 bit/s each way. \\ \hline
 64 & CLEAR & Clear channel & 64000 bit/s on a clear digital channel
   (an ISDN data call), no modulation (\cmdl[plusB2]{+B2}). \\ \hline
@@ -3208,7 +3221,7 @@ modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \textbf{Type II caller ID} & The caller ID of a waiting call, sent during a call. \\ \hline
 \textbf{Unimodem} & Windows' modem driver; \cmdl[hashUD]{\#UD} gives its diagnostics. \\ \hline
 \textbf{V.8} & The start of a modern call, where the modems tell each other what they have. \\ \hline
-\textbf{V.cvm, \std{V.wb}} & D-Modem's data over mobile speech paths, and its wideband modem for a bare pair. \\ \hline
+\textbf{\std{V.cvm}, \std{V.wb}} & D-Modem's data over mobile speech paths, and its wideband modem for a dry pair. \\ \hline
 \textbf{X.75, V.110, V.120} & Protocols on an ISDN data channel (\cmdl[plusB2]{+B2}). \\ \hline
 \textbf{XID} & Exchange Identification.  \std{V.42}'s message that agrees the compression. \\ \hline
 \textbf{XON, XOFF} & Transmit On and Transmit Off.  The characters (DC1 and DC3) that start and stop the flow of data. \\ \hline
