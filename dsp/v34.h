@@ -455,6 +455,13 @@ struct V34Rx {
 	s32 bit_n = 0, j_last = 0;
 	u32 j_word = 0;
 	s16 j16;                /* the remote asked for 16 point TRN */
+	s16 j24;                /* K56flex: J every 24 bits, its third
+				   octet (j_rbs) the line's robbed bits */
+	u16 j_rbs;
+	s16 trn16;              /* K56flex: the remote's TRN, MP and E of
+				   16 points after its J' (our Js asked) */
+	s16 i16, q16;           /* the 16 point decision's turn and
+				   quarter point */
 	s16 jword;
 	unsigned char mpbits[200];
 	/* V.90 digital modem: Ja carries the DIL descriptor */
@@ -495,6 +502,7 @@ struct V34Rx {
 	void cp_bit(s16 bit);
 	void got_bit(s16 bit);
 	void diff_decode(cplx z);
+	cplx nearest16(cplx z);
 	void pp_align();
 	float eq_delay() const;
 	void timing_fix();

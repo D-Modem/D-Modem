@@ -116,8 +116,11 @@ connect when calling, and modem-on-hold. `DSP_V92A_UP=0` leaves out PCM
 upstream, together with its renegotiations and the digital modem's fast
 parameter exchange.
 
-K56flex and V.8bis are not implemented. `AT+MS=56` (K56flex) runs V.90;
-what is known of K56flex is in [K56flex](k56flex.md).
+K56flex runs on the V.34 pump as the digital modem (`DP_K56`,
+`dsp/v34_k56.h`): answering with `AT+MS=56` on an 8000 Hz line, V.8bis
+(MRe, CRd, CL, MS, ACK(1)) comes before V.8, and phases 3 and 4 and the data
+mode are K56flex's when the caller has it; V.90 otherwise, and when calling.
+See [K56flex](k56flex-details.md).
 
 Between two digital modems, V.91 (see
 [V.91](v91.md#v91-digital-to-digital)) takes the place of V.90.

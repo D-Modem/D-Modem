@@ -37,7 +37,7 @@ measurements, and test lists.
   - [V.91](dsp/v91.md): about 62000 bit/s between two digital modems
   - [V.cvm](dsp/vcvm.md): data through mobile phone calls
   - [V.wb](dsp/vwb.md): about 149000 bit/s on a bare pair of wires
-  - [K56flex](dsp/k56flex.md): the older 56k standard (not supported yet)
+  - [K56flex](dsp/k56flex.md): the older 56k standard (as the server)
   - [Fax](dsp/fax.md): fax modem classes 1, 2 and 2.0, a built-in fax
     machine, and fax over the internet (T.38)
 - [The data link layer](link.md): error correction and compression
