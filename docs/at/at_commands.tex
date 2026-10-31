@@ -468,6 +468,9 @@ rarer ones.
 \item[DTE] Data Terminal Equipment.  The computer or program that talks
   to the modem: a terminal program, a fax program, \texttt{pppd},
   or the program that embeds libdmodem.
+\item[DTMF] Dual Tone Multi-Frequency.  The tones of a telephone
+  keypad, two at once for each key.  The modem dials with them
+  (\cmdl[D]{T}), and hears them in voice mode and in DTMF caller ID.
 \item[Error correction and compression] Error correction (\std{V.42},
   \std{MNP}) resends data the line damaged; compression (\std{V.42bis},
   \std{V.44}) packs it to go faster.  Both need the far modem to have
@@ -477,13 +480,23 @@ rarer ones.
   recommendations modems follow: the V.\ldots{} series for modems
   (\std{V.34}, \std{V.92}), T.\ldots{} for fax (\std{T.30}), G.\ldots{}
   for audio (\std{G.711}) and so on.
+\item[LAPM] Link Access Procedure for Modems.  \std{V.42}'s error
+  correction, the one most modems use: data goes in numbered frames
+  with a checksum, and a damaged frame is sent again.
 \item[Leased line] A permanent connection between two modems, with no
   dialing, ringing or dial tone: each end starts at once
   (\cmdl[ampL]{\&L}).  A 2-wire leased line carries both directions on
   one pair; a 4-wire line has a pair for each direction.
+\item[\std{MNP}] Microcom Networking Protocol.  An older family of
+  error correction (classes 2 to 4) and compression (class 5), from
+  before \std{V.42}; many modems still have it (\cmdl[bsN]{\bs N}).
 \item[Modulation] How the modem turns data into sound on the line, and
   so how fast it goes: \std{V.34}, \std{V.90}, \std{V.92} and the rest,
   chosen with \cmdl[plusMS]{+MS}.
+\item[PCM] Pulse Code Modulation.  Sound as numbers: the telephone
+  network carries a call as 8000 8-bit samples a second (\std{G.711}).
+  \std{V.90} and \std{V.92} send data as these numbers, which is how they
+  reach 56000~bit/s.
 \item[Result code] The modem's answer to a command line, or news of a
   call: \rc{OK}, \rc{ERROR}, \rc{CONNECT}, \rc{RING}, \rc{NO CARRIER}
   and so on (\hyperref[sec:results]{Section~\ref*{sec:results}}).
@@ -493,6 +506,9 @@ rarer ones.
 \item[SIP] Session Initiation Protocol.  The protocol of internet
   telephony.  dmodemd places and takes
   its calls as SIP calls (\hyperref[sec:sip]{Section~\ref*{sec:sip}}).
+\item[TTY] Teletypewriter.  A text telephone used by deaf and hard of
+  hearing people, sending Baudot code at 45.45 or 50~bit/s
+  (\hyperref[sec:text]{Section~\ref*{sec:text}}).
 \end{description}
 
 \section{Command summary}
@@ -3204,7 +3220,6 @@ modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \textbf{DIS, DTC, DCS} & Digital Identification Signal, Digital Transmit Command and Digital Command Signal.  The fax messages that offer (DIS), ask for polling (DTC) and choose (DCS) the session's settings. \\ \hline
 \textbf{DLE} & Data Link Escape (10h).  In fax and voice modes, the character that starts a code in the data, such as \cmd{<DLE><ETX>}. \\ \hline
 \textbf{DMT} & Discrete Multitone.  Many carriers side by side, as in \std{V.wb} and ADSL. \\ \hline
-\textbf{DTMF} & Dual Tone Multi-Frequency.  The tones of a telephone keypad. \\ \hline
 \textbf{ECM} & Error Correction Mode.  Fax pages sent in frames, and repeated where damaged. \\ \hline
 \textbf{EDT} & European Deaf Telephone.  A text telephone at 110~bit/s (\std{V.18}). \\ \hline
 \textbf{ETSI} & European Telecommunications Standards Institute.  The European standards body. \\ \hline
@@ -3212,15 +3227,12 @@ modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \textbf{HDLC} & High-level Data Link Control.  Frames with flags and an FCS, the basis of LAPM, of fax's \std{T.30} messages and of PPP. \\ \hline
 \textbf{ISDN} & Integrated Services Digital Network.  Digital telephone lines with 64000~bit/s channels. \\ \hline
 \textbf{ITU-T} & International Telecommunication Union, Telecommunication Standardization Sector.  The standards body whose recommendations are V.\ldots{} (modems), T.\ldots{} (fax) and so on. \\ \hline
-\textbf{LAPM} & Link Access Procedure for Modems.  \std{V.42}'s error correction. \\ \hline
 \textbf{Leased line} & A permanent line between two modems, with no dialing; 2-wire or 4-wire (\cmdl[ampL]{\&L}). \\ \hline
 \textbf{LR, LD} & Link Request and Link Disconnect.  \std{MNP}'s messages that start and end its link. \\ \hline
 \textbf{MDMF, SDMF} & Multiple Data Message Format and Single Data Message Format.  The two forms of a caller ID message. \\ \hline
 \textbf{MH} & Modified Huffman.  The plainest fax page coding (\std{T.4}). \\ \hline
-\textbf{\std{MNP}} & Microcom Networking Protocol.  Classes 2 to 4 are error correction, class 5 compression. \\ \hline
 \textbf{Modem-on-hold} & \std{V.92}'s way to put a data call on hold to take another call (\cmdl[plusPMH]{+PMH}). \\ \hline
 \textbf{PBX} & Private Branch Exchange.  An office telephone system, such as Asterisk or FreeSWITCH. \\ \hline
-\textbf{PCM} & Pulse Code Modulation.  Audio as numbers, 8000 a second on a telephone network; \std{V.90} and \std{V.92} send data as these numbers. \\ \hline
 \textbf{PPP} & Point-to-Point Protocol.  How a computer carries the internet over a modem call. \\ \hline
 \textbf{PREP, ACK, TERM} & Preparatory, Acknowledgement and Termination.  \std{V.54}'s signals to start, confirm and end a remote loop test. \\ \hline
 \textbf{PSTN} & Public Switched Telephone Network.  The ordinary telephone network. \\ \hline
@@ -3230,7 +3242,6 @@ modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \textbf{SNR} & Signal-to-Noise Ratio.  How far the signal stands above the noise, in dB. \\ \hline
 \textbf{SYN} & Synchronous idle.  The idle octet of \std{V.80}'s synchronous mode. \\ \hline
 \textbf{T.30} & The fax protocol: its messages, phases and timers. \\ \hline
-\textbf{TTY} & Teletypewriter.  A text telephone of the deaf community, sending Baudot at 45.45 or 50~bit/s. \\ \hline
 \textbf{Type II caller ID} & The caller ID of a waiting call, sent during a call. \\ \hline
 \textbf{Unimodem} & Windows' modem driver; \cmdl[hashUD]{\#UD} gives its diagnostics. \\ \hline
 \textbf{V.8} & The start of a modern call, where the modems tell each other what they have. \\ \hline
