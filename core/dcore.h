@@ -413,6 +413,9 @@ private:
 		None, LocalHangup, RemoteCleardown, LineDropped, CarrierLost,
 		NoDialtone, Busy, NoAnswer, TrainingFailed, ProtocolFailure,
 		NoCarrier,
+		/* local hangups AT#UD tells apart: a character from the
+		   DTE while the call came up, ATZ, DTR off */
+		AnyKey, DteReset, DtrOff,
 	};
 	enum { EV_RING_CHECK = 0x01, EV_ESCAPE = 0x02 };
 
@@ -704,6 +707,9 @@ private:
 		u32 start, up, end;
 		s16 dp;
 		u32 tx0, rx0, tx1, rx1;
+		/* the DTE's characters online that did not fit in its
+		   buffer (lost) */
+		u32 tx_lost;
 		Cause cause;
 		double rx_pow, tx_pow;
 		u64 samples;

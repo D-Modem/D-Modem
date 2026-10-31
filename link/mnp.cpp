@@ -370,6 +370,7 @@ void Mnp::t401_expired()
 			return;
 		}
 		link_->logf("mnp: T401: LT %d again.", una_);
+		link_->stats().timeouts++;
 		nxt_ = una_;
 		dup_ignore_ = 0;
 		t401_ = t401_data();
@@ -758,6 +759,7 @@ void Mnp::rx_la(const u8 *h, s16 len)
 			dup_ignore_--;
 			return;
 		}
+		link_->stats().naks++;
 		if (++rtx_count_ > N400) {
 			link_->logf("mnp: LT %d sent %d times: disconnect.", una_,
 				    N400);
