@@ -225,3 +225,39 @@ at N * 2400 bit/s (a test).
 
 Not implemented: pre-emphasis, non-linear decoding (we never ask for
 it), the auxiliary channel and starting a cleardown.
+
+## Half-duplex (clause 12, for fax)
+
+`v34_hdx_create()` (`v34.h`) makes a half-duplex V.34 modem for T.30
+Annex F fax. Its host gives and takes the bits through `V34HdxHost`.
+The core does not see them yet: class 2 and class 1 use it in later
+changes.
+
+- V.8: CM and JM carry the half-duplex bit (0x80 in the first
+  modulation octet) and the T.30 call function, 0x81 to send and 0xA1
+  to poll. The modem that sends the pages is the source.
+- Phase 2: the source and the recipient probe one way only, and INFOh
+  gives the source the symbol rate, the carrier, the pre-emphasis and
+  the training length (12.3/V.34).
+- Phase 3: the source sends S, S-bar, PP and TRN; the recipient
+  trains on them.
+- The control channel (`v34_cc.cpp`, 10.2.4/V.34) runs at 1200 bit/s,
+  with PPh, ALT, MPh and E at its start (12.4/V.34). It comes back with
+  Sh, S-bar h, ALT and E after each turn of the primary channel
+  (12.6/V.34).
+- The primary channel: `v34_hdx_primary()` turns the control channel
+  off (4 symbols of ones). After 70 ms the source sends S, S-bar, PP,
+  two frames of ones (B1), then the host's bits until it returns -1,
+  then 35 ms of ones (12.5/V.34). The recipient finds S with its
+  receiver trained in phase 3. It sees the end as 20 ms without the
+  signal.
+
+The control channel's receiver keeps its gain, timing and equalizer
+while the primary channel has the line, and adapts only on the
+decisions that look right, so the primary channel's signal does not
+move it. `V34Hdx.CallerSends` and `V34Hdx.AnswererSendsToAPoll` run
+two modems back to back: messages on the control channel both ways
+and two pages, each about 3 s at 31200 bit/s.
+
+Not implemented yet: T.30 Annex F with class 2 and 2.0, class 1 (T.31
+V.34), and the primary channel's rate change between pages.

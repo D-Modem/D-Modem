@@ -623,7 +623,7 @@ void V34Rx::pp_align()
 	cplx best = { 0, 0 };
 	float bm = -1;
 	s16 off, k;
-	for (off = -4; off <= 4; off++) {
+	for (off = hdx ? -8 : -4; off <= (hdx ? 8 : 4); off++) {
 		cplx c = { 0, 0 };
 		for (k = 0; k < 48; k++)
 			c = cplx_add(c, cplx_mulc(pp_buf[k], v34_pp(k + 48 + off)));
@@ -931,15 +931,24 @@ void V34Rx::symbol()
 			s_count = 0;
 		break;
 	case V34_RX_S:
-		/* S-bar: reversed against two symbols ago */
-		if (b < 0.15f * p && cplx_pow(z) > 0.5f) {
+		/* S-bar: reversed against two symbols ago (half-duplex:
+		   less of it, the reversal's symbol blurred by the
+		   receiver that S alone has not trained yet, but twice) */
+		if (hdx && !(b < 0.45f * p && cplx_pow(z) > 0.5f)) {
+			sbar_run = 0;
+			break;
+		}
+		/* (half-duplex: two of them in a row) */
+		if (hdx && ++sbar_run < 2)
+			break;
+		if (b < (hdx ? 0.45f : 0.15f) * p && cplx_pow(z) > 0.5f) {
 			set_stage(V34_RX_SBAR);
 			sbar_count++;
 		}
 		break;
 	case V34_RX_SBAR:
 		if (n == 16) {
-			set_stage(phase4 ? V34_RX_TRN : V34_RX_PP);
+			set_stage(phase4 && !hdx ? V34_RX_TRN : V34_RX_PP);
 			idx = nearest4(z);
 			if (phase4 && have_good) {
 				/* the same channel as in phase 3 (or in data
@@ -961,6 +970,13 @@ void V34Rx::symbol()
 		}
 		d = cplx_scale(v34_pp(n - 1 + pp_off), 1.41421f);
 		qam.adapt(d, 0.02f, 0.05f, 0.0005f);
+		if (n == 288 - pp_off && hdx && data_on) {
+			/* (B1 and the data: start_data() set the data
+			   decoder up for it) */
+			set_stage(V34_RX_DATA);
+			mse = 0;
+			break;
+		}
 		if (n == 288 - pp_off) {
 			set_stage(V34_RX_TRN);
 			phase4 = 1;
