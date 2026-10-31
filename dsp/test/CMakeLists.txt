@@ -66,6 +66,11 @@ dmodem_gtest(pump_test LABELS quick)
 dmodem_test_exe(pcm_cp_test pcm_cp_test.cpp)
 target_link_libraries(pcm_cp_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_gtest(pcm_cp_test LABELS quick)
+# V.34 half-duplex back to back: V.8 to the control channel, its data
+# both ways, the primary channel's pages (its own core stubs)
+dmodem_test_exe(v34_hdx_test v34_hdx_test.cpp test_util.cpp)
+target_link_libraries(v34_hdx_test PRIVATE dmodem_dsp)
+dmodem_gtest(v34_hdx_test LABELS quick)
 # bits.h: fields, the V.34 and frame CRCs, the HDLC FCS
 dmodem_test_exe(bits_test bits_test.cpp)
 dmodem_gtest(bits_test LABELS quick)
@@ -209,6 +214,12 @@ dmodem_gtest(fax_test LABELS quick)
 dmodem_test_exe(t38_test t38_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp
 	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 dmodem_gtest(t38_test LABELS quick)
+# T.30 Annex F: two T.30 machines on V.34 half-duplex, and with one
+# without it
+dmodem_test_exe(t30_v34_test t30_v34_test.cpp fax_docs.cpp test_util.cpp
+	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp)
+target_link_libraries(t30_v34_test PRIVATE dmodem_dsp)
+dmodem_gtest(t30_v34_test LABELS quick)
 # class 1 over T.38: a DTE of its own through T.30 on the engine, our
 # T.30 machine at the other end
 dmodem_test_exe(class1_t38_test class1_t38_test.cpp fax_docs.cpp fax_stubs.cpp

@@ -236,3 +236,44 @@ The rate goes down by as many steps as the mse asks for (about 3 dB per bit per 
 - non-linear decoding (we never ask for it);
 - the auxiliary channel;
 - starting a cleardown.
+
+## Half-duplex (clause 12, for fax)
+
+`v34_hdx_create()` (`v34.h`) makes a half-duplex V.34 modem for T.30
+Annex F fax. Its host gives and takes the bits through `V34HdxHost`.
+For class 2 and 2.0 the host is the T.30 machine (`t30_v34.cpp`; see
+[the fax details](fax-details.md)). In half-duplex mode V.8 never falls
+back to another pump; the T.30 machine carries on with V.21 instead.
+
+The call goes like this:
+
+1. **V.8.** CM and JM carry the half-duplex bit (0x80 in the first
+   modulation octet) and the T.30 call function: 0x81 to send, 0xA1 to
+   poll. The modem that sends the pages is the *source*; the other is
+   the *recipient*.
+2. **Phase 2.** The source and the recipient probe one way only. INFOh
+   gives the source the symbol rate, the carrier, the pre-emphasis and
+   the training length (12.3/V.34).
+3. **Phase 3.** The source sends S, S-bar, PP and TRN, and the recipient
+   trains on them.
+4. **The control channel** (`v34_cc.cpp`, 10.2.4/V.34) runs at
+   1200 bit/s. It starts with PPh, ALT, MPh and E (12.4/V.34), and comes
+   back with Sh, S-bar h, ALT and E after each turn of the primary
+   channel (12.6/V.34).
+5. **The primary channel.** `v34_hdx_primary()` turns the control
+   channel off (4 symbols of ones). After 70 ms the source sends S,
+   S-bar, PP, two frames of ones (B1), then the host's bits until the
+   host returns -1, then 35 ms of ones (12.5/V.34). The recipient finds
+   S with the receiver it trained in phase 3, and takes 20 ms without
+   the signal as the end.
+
+The control channel's receiver keeps its gain, timing and equaliser
+while the primary channel has the line. It adapts only on decisions that
+look right, so the primary channel's signal does not disturb it.
+
+**Tests.** `V34Hdx.CallerSends` and `V34Hdx.AnswererSendsToAPoll` run two
+modems back to back: messages on the control channel both ways, and two
+pages, each about 3 s at 31200 bit/s.
+
+**Not implemented yet:** class 1 fax on V.34 (T.31's V.34 mode), and
+changing the primary channel's rate between pages.

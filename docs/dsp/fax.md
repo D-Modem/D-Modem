@@ -23,7 +23,12 @@ Class 1 is the most widely supported and the most flexible. Classes 2
 and 2.0 suit simpler programs.
 
 The fax speeds are the usual ones: V.27ter (2400 and 4800 bit/s), V.29
-(7200 and 9600) and V.17 (up to 14400).
+(7200 and 9600) and V.17 (up to 14400). In class 2 and 2.0, **V.34 fax**
+goes up to 33600 bit/s when the other machine has it too: set the
+highest speed to 13 with error correction on (for example
+`AT+FIS=1,13,0,2,0,2,0,0`). A machine without V.34 still gets the
+usual speeds. To poll (fetch a document) on V.34, send `AT+FSP=1`
+before dialling.
 
 ## Built-in fax machine
 

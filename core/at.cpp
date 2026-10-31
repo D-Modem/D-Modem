@@ -1506,8 +1506,8 @@ const struct {
 /* the ranges of +FCC and +FIS (and +FCS): vr, br, wd, ln, df, ec, bf,
    st (MH only, A4 only: the DTE's pages are MH whatever the line's) */
 const char *const FAX2_RANGES =
-	"(0,1),(0-5),(0),(0-2),(0),(0-2),(0),(0-7)";
-const u32 FAX2_MAX[8] = { 1, 5, 0, 2, 0, 2, 0, 7 };
+	"(0,1),(0-13),(0),(0-2),(0),(0-2),(0),(0-7)";
+const u32 FAX2_MAX[8] = { 1, 13, 0, 2, 0, 2, 0, 7 };
 
 /* u's 8 values as a list */
 std::string fax2_list(const u32 *u)

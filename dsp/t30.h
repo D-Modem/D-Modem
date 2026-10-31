@@ -8,7 +8,7 @@
  *
  *    The calling machine sends the document, the answering one receives
  *    it (no polling), with error correction mode (T.30 Annex A) when both
- *    have it.
+ *    have it; on V.34 half-duplex (T.30 Annex F) when both have that.
  *
  */
 
@@ -19,6 +19,8 @@
 #include "dm_types.h"
 #include "t4.h"
 #include "t38.h"
+
+struct modem;
 
 namespace dsp {
 
@@ -68,6 +70,44 @@ enum t30_wait {
 /* a result as text, for the log */
 const char *t30_result_text(enum t30_result r);
 
+/* a half-duplex modem for T.30 Annex F (V.34's clause 12: t30_v34()),
+   which has the line from V.8 on: the control channel for the frames,
+   the primary channel for the ECM blocks.  Its host (the machine): */
+struct t30_hdx_host {
+	void *ctx;
+	/* the next bit to send on the control channel (primary 0) or the
+	   primary channel; -1 there ends it */
+	s16 (*get_bit)(void *ctx, s16 primary);
+	void (*put_bit)(void *ctx, s16 primary, s16 bit);
+	void (*event)(void *ctx, s16 ev);       /* enum t30_hdx_event */
+};
+
+enum t30_hdx_event {
+	T30_HDX_CC_UP,          /* the control channel carries data */
+	T30_HDX_PRIMARY_UP,     /* the primary channel does */
+	T30_HDX_PRIMARY_DOWN,   /* and has stopped */
+};
+
+struct t30_hdx_ops {
+	/* calling or answering on modem (t30_config's), at srate; sending:
+	   the caller's V.8 says it sends (else it polls).  NULL when it
+	   can't start */
+	void *(*create)(struct modem *modem, s16 caller, s16 sending,
+			s32 srate, const struct t30_hdx_host *h);
+	/* n samples in and out: 0, or -1 when it failed (V.8 found no
+	   V.34 half-duplex fax, or the line went) */
+	s16 (*process)(void *m, const s16 *in, s16 *out, s32 n);
+	/* the source: the primary channel, until its get_bit() says -1 */
+	void (*primary)(void *m);
+	s16 (*on)(void *m);             /* V.8 chose it */
+	s16 (*source)(void *m);         /* we send the primary channel */
+	s32 (*rate)(void *m);           /* the primary channel's bit/s */
+	void (*free)(void *m);
+};
+
+/* V.34 half-duplex (v34.h) for t30_config's v34 */
+const struct t30_hdx_ops *t30_v34(void);
+
 struct t30_config {
 	s16 sending;            /* calls and sends; else answers and
 				   receives */
@@ -104,6 +144,14 @@ struct t30_config {
 	   makes it the sender, as a caller after the DIS (T30_EV_DIS) */
 	s16 polled;
 	const char *poll_ident; /* our CIG when we poll (NULL: ident) */
+	/* V.34 half-duplex (T.30 Annex F) offered by V.8, with ECM only
+	   (NULL: none; not on T.38): ANSam for CED, CM for CNG; a remote
+	   without it gets V.21 and the fax modulations */
+	const struct t30_hdx_ops *v34;
+	s16 v34_poll;           /* calling: V.8 says we poll (t30_poll()
+				   after the DIS) */
+	struct modem *modem;    /* the core's, for the V.34 modem (its S
+				   registers and settings; NULL: none) */
 };
 
 struct t30_status {
@@ -127,6 +175,7 @@ struct t30_status {
 	s16 remote_poll;        /* it has a document to be polled */
 	s16 sending;            /* it sends now (a poller receives, the
 				   polled sends) */
+	s16 v34;                /* on V.34 half-duplex (bps its rate) */
 };
 
 struct T30;

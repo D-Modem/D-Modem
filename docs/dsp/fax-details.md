@@ -191,12 +191,19 @@ to frame ECM.
 point of the call. Whatever was going out is sent again from its start
 on the new path, as `FAX_t38_start()` does for class 1.
 
+**V.34 fax (T.30 Annex F):** a `+FIS` bit rate (br) above 5 (16800 to
+33600 bit/s) together with ECM offers V.34 half-duplex (`t30_config`'s
+`v34`, `t30_v34()`). V.8 carries the call function: a caller sends, or
+polls when `+FSP=1` was set before it dialled (`v34_poll`). `+FIS:` and
+`+FCS:` report the V.34 rate as br 6 to 13.
+
 **Tests** (in `core_test`):
 
 - `Classes/CoreFax2.TwoPages/*` sends two pages between two modems in
-  class 2.0, class 2, class 2.0 with ECM and the other bit order, and on
-  T.38 from the start and from the DIS on, with the bitmaps compared.
-- `Core.Fax2Poll` polls a page.
+  class 2.0, class 2, class 2.0 with ECM and the other bit order, on
+  T.38 from the start and from the DIS on, and on V.34, with the bitmaps
+  compared.
+- `Core.Fax2Poll` polls a page, and `Fax2PollV34` does the same on V.34.
 - `Core.Fax2Abort` ends a call with `+FKS`.
 
 ## Fax machine (T.30)
@@ -235,6 +242,32 @@ When the sender misses the MCF, it sends the command again after T4
 found one), the receiver treats the command as a repeat and answers MCF
 again, as spandsp's receiver does. Answering RTN there would make the
 sender send again a page the receiver already has.
+
+### V.34 half-duplex (T.30 Annex F)
+
+With `t30_config`'s `v34` (`t30_v34()`), the machine uses the half-duplex
+V.34 modem ([V.34's details](v34-details.md#half-duplex-clause-12-for-fax)),
+which has the line from the start of the call:
+
+- ANSam takes the place of CED, and V.8's CM that of CNG. The CM carries
+  the call function: T.30 transmit, or receive when the caller polls.
+- The T.30 frames go on V.34's control channel at 1200 bit/s, with flags
+  between them.
+- The DIS has bit 6 (V.8) set. The DCS gives no rate (bits 11 to 14 are
+  0), and there is no TCF: the receiver answers the DCS with CFR.
+- ECM is the only mode. Each block goes on the primary channel
+  (`v34_hdx_primary()`), its frames after a few flags, and the PPS
+  follows on the control channel once that is back.
+- A remote without V.8 gets V.21 and the usual fax modulations. An
+  answerer whose ANSam draws no CM within 5 s sends its DIS on V.21, and
+  a caller that hears a DIS on V.21 while V.8 is still waiting drops the
+  V.34 modem.
+- V.8 fixes which side sends on the primary channel, so a poll that V.8
+  did not announce (`t30_poll()` with us as the source) is refused.
+
+`t30_v34_test` runs two machines on V.34 back to back through G.711
+(two pages at 31200 bit/s), and one machine with V.34 against one
+without it, both ways round (they fall back to V.17).
 
 ### Tests
 
