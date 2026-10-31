@@ -593,14 +593,14 @@ fourth is left out.
 \end{results}
 \begin{vtable}{3}{|C{0.1\textwidth}|L{0.52\textwidth}|L{0.22\textwidth}|}{\&A\p{n} Bits}
   {\thd{Bit} & \thd{Line} & \thd{With V0}}
-1 & \rc{Modulation: }\p{name}, the modulation (\cmd{V92}, \cmd{V34},
+1 & \rc{Modulation: \p{name}}, the modulation (\cmd{V92}, \cmd{V34},
   \cmd{V32bis}, \ldots). & 1000 and its number (1092, 1034, 1132, \ldots). \\ \hline
 2 & \rc{Protocol: LAPM}, \cmd{MNP} or \cmd{NONE}, the error correction
   (V.42's LAPM, MNP 2 to 4). & 77, 78, 76. \\ \hline
 1 and 2 & \rc{Compression: V44}, \cmd{V42bis}, \cmd{MNP5}, \cmd{ZSTD}
   (V.cvm's, Annex F) or \cmd{NONE}, what V.42 or MNP agreed. & 68, 67,
   66, 70, 69. \\ \hline
-4 & \rc{TxRate: }\p{rate}, the rate the modem sends at. & None. \\ \hline
+4 & \rc{TxRate: \p{rate}}, the rate the modem sends at. & None. \\ \hline
 \end{vtable}
 The default is 0, no lines.
 \end{command}
@@ -838,9 +838,8 @@ This command lists the command sets the modem has: \rc{+GCAP:
 This command gives the last call's statistics (or this one's), as
 \cmdl[I]{ATI11} has them, in the form of Microsoft's Unimodem
 diagnostics (its draft specification, rev.~0.85), for Windows' modem log
-and the programs that read it: a line \rc{DIAG <2A4D3263
-}\p{key}\cmd{=}\p{value}\cmd{>} for each key there is a value for, both
-in hexadecimal.  Before any call: \cmd{0=10}, \cmd{1=0} and \cmd{60=1}.
+and the programs that read it: a line \rc{DIAG <2A4D3263 \p{key}=\p{value}>} for each key there is a value for, both
+in hexadecimal.  Before any call: \rc{0=10}, \rc{1=0} and \rc{60=1}.
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}
@@ -924,7 +923,7 @@ dmodemd the dial string is the SIP call's number
 \begin{vtable}{2}{|C{0.12\textwidth}|L{0.74\textwidth}|}{Dial Modifiers}
   {\thd{Modifier} & \thd{Function}}
 0--9 * \# A--D & Dialed as DTMF, or as pulses for the digits with \cmdl[P]{P}. \\ \hline
-L & Dial the last number again (\rc{Dialing }\p{number}\cmd{...} first).
+L & Dial the last number again (\rc{Dialing \p{number}...} first).
   Valid only as the first character of the string; \rc{ERROR} while a call
   is held after \cmdl[D]{;}. \\ \hline
 T & Tone dialing (DTMF) from here on. \\ \hline
@@ -1408,10 +1407,11 @@ the values below; \p{rate}, the signal interface's rate, 8000 or 16000;
 D-Modem keeps \p{rate} and \p{report} but works at 8000~Hz only,
 without the wideband modes, and sends no \rc{+CVMR}.  During and after a
 V.cvm call, \cmdl[plusCVM]{+CVM?} gives a second line with that call's figures:
-\rc{+CVM: }\p{raw tx}\cmd{,}\p{raw rx}\cmd{,}\p{coded tx}\cmd{,}%
-\p{coded rx}\cmd{,}\p{symbol ms}\cmd{,}\p{tones tx}\cmd{,}\p{tones rx}%
-\cmd{,}\p{code rate}\cmd{,}\p{renegotiations}\cmd{,}\p{erasures}
-(\rc{+CVM: 1600,1600,1400,1400,20.0,16,16,7/8,0,0}; the tones are 0 in
+\rc{+CVM: \p{raw tx},}\allowbreak\rc{\p{raw rx},}\allowbreak
+\rc{\p{coded tx},}\allowbreak\rc{\p{coded rx},}\allowbreak\rc{\p{symbol ms},}\allowbreak
+\rc{\p{tones tx},\p{tones rx},}\allowbreak\rc{\p{code rate},}\allowbreak
+\rc{\p{renegotiations},\p{erasures}}
+(\rc{+CVM: 1600,1600,}\allowbreak\rc{1400,1400,}\allowbreak\rc{20.0,16,16,}\allowbreak\rc{7/8,0,0}; the tones are 0 in
 the parametric mode).  The call's \rc{CONNECT} has its coded receive rate
 and \cmd{/CVM}: \rc{CONNECT 1200/CVM}, with \cmdl[bsV]{\bs V1}
 \rc{CONNECT 1200/CVM/LAPM}.  \sreg{44} and \sreg{45} hold the tones
