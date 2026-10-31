@@ -175,6 +175,7 @@ codec. dmodemd takes it like this:
   G.711 first gets G.711, as before.
 - A CLEARMODE call has no telephone-events: their tones would be data.
 - `SIP_CLEARMODE=no` turns CLEARMODE off: neither offered nor taken.
+- CLEARMODE goes over SRTP as well (`SIP_SRTP`, [README](../README.md)).
 
 Asterisk has no CLEARMODE codec of its own; `codec_clearmode` (below)
 gives it one. Other peers that have it: another dmodemd, a gateway,
