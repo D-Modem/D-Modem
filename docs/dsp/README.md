@@ -29,10 +29,12 @@ receiver works inside, see [the technical details](dsp-details.md).
 | [V.92](v92.md) | 56000 down, up to 48000 up | V.90 plus faster start-up, call waiting and a faster upload |
 | [V.91](v91.md) | about 62000 bit/s both ways | two modems that are both on digital lines |
 | V.29, V.33, V.27ter | 9600, 14400, 4800 bit/s | classic modems for 4-wire [leased lines](../leased.md) |
+| V.26, Bell 201, 202, 208 | 2400, 2400, 1200, 4800 bit/s | older 4-wire [leased line](../leased.md) modems |
 | [V.cvm](vcvm.md) | 175 to 3500 bit/s | D-Modem's proposal for data through mobile phone calls |
 | [V.wb](vwb.md) | about 149000 bit/s each way | D-Modem's own mode for a bare pair of wires |
 | Text telephones | 45 to 300 bit/s | TTY (Baudot), EDT and V.18 automatic detection, for deaf and hard of hearing users |
 | Contact ID | (DTMF digits) | alarm panels reporting to a monitoring centre; D-Modem can be either end |
+| Fixed-line SMS | 1200 bit/s | text messages to and from home phones that have an SMS button, as some European phone companies offered; D-Modem can be the phone or the message centre |
 | Clear channel | 64000 bit/s | a fully digital ISDN data call, with no modulation at all (see [ISDN](../isdn.md)) |
 
 There are also pumps for **call progress** (dial tone, dialling, busy,

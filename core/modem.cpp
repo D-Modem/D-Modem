@@ -989,7 +989,8 @@ void Modem::update_status(Status s)
 					dp_->id == DP_V18 ||
 					dp_->id == DP_BAUDOT ||
 					dp_->id == DP_EDT ||
-					dp_->id == DP_CONTACTID))) {
+					dp_->id == DP_CONTACTID ||
+					dp_->id == DP_SMS))) {
 			cfg_.ec = false;
 			cfg_.mnp = false;
 		}
@@ -1240,7 +1241,10 @@ s16 Modem::loop3_start(bool self_test)
 	    !sregs_[SREG_LEASED] || wideband())
 		return -1;
 	switch (sregs_[SREG_DP]) {
+	case DP_V26:
 	case DP_V27TER:
+	case DP_B201:
+	case DP_B208:
 	case DP_V29:
 	case DP_V33:
 		break;
@@ -1874,7 +1878,11 @@ bool Modem::leased_direct() const
 		return false;
 	switch (sregs_[SREG_DP]) {
 	case DP_VWB:            /* (refused below 48000 Hz at once) */
+	case DP_V26:
 	case DP_V27TER:
+	case DP_B201:
+	case DP_B202:
+	case DP_B208:
 	case DP_V29:
 	case DP_V33:
 		return true;

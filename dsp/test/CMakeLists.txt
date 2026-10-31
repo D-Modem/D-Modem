@@ -232,6 +232,10 @@ dmodem_test_exe(class1_v34_test class1_v34_test.cpp fax_docs.cpp test_util.cpp
 	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(class1_v34_test PRIVATE dmodem_dsp)
 dmodem_gtest(class1_v34_test LABELS quick)
+# fixed-line SMS's TPDUs: SMS-SUBMIT and SMS-DELIVER, the 7-bit
+# alphabet and UCS2, against known encodings
+dmodem_test_exe(sms_pdu_test sms_pdu_test.cpp ${S}/sms_pdu.cpp)
+dmodem_gtest(sms_pdu_test LABELS quick)
 # the test document for the Asterisk and FreeSWITCH fax scripts
 dmodem_test_exe(fax_doc fax_doc.cpp fax_docs.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(fax_doc PRIVATE GTest::gtest)

@@ -283,10 +283,13 @@ const struct {
 	{ "V92", DP_V92 }, { "B103", DP_B103 }, { "BELL103", DP_B103 },
 	{ "B212", DP_B212 }, { "BELL212A", DP_B212 }, { "K56", DP_K56 },
 	{ "VCVM", DP_VCVM }, { "V_CVM", DP_VCVM }, { "VWB", DP_VWB },
+	{ "V26", DP_V26 }, { "B201", DP_B201 }, { "BELL201", DP_B201 },
+	{ "B202", DP_B202 }, { "BELL202", DP_B202 }, { "B208", DP_B208 },
+	{ "BELL208", DP_B208 },
 	{ "V27TC", DP_V27TER },
 	{ "V29", DP_V29 }, { "V33", DP_V33 }, { "CLEAR", DP_CLEAR },
 	{ "V18", DP_V18 }, { "BAUDOT", DP_BAUDOT }, { "EDT", DP_EDT },
-	{ "CONTACTID", DP_CONTACTID },
+	{ "CONTACTID", DP_CONTACTID }, { "SMS", DP_SMS },
 };
 
 /* pump id is registered */

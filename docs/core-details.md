@@ -288,4 +288,4 @@ comes.
 | Answering | `AdaptiveAnswer`, `VoiceFaxCall`, `VoiceDataCallingTone` |
 | Voice | `VoiceLineGone`, `LocalPhone`, `VoiceHandset`, `VoiceEvents` |
 | Class 2 fax | `CoreFax2.TwoPages`, `Fax2Abort`, `Fax2Poll` |
-| Text telephones and alarms | `CoreText.LineEachWay` (V.18's modes), `CoreContactId` (Contact ID messages kissed off, a bad checksum NAKed) |
+| Text telephones and alarms | `CoreText.LineEachWay` (V.18's modes), `CoreContactId` (Contact ID messages kissed off, a bad checksum NAKed), `CoreSms` (fixed-line SMS: submissions, a delivery, a call with nothing to send) |

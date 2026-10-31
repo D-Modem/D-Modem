@@ -61,5 +61,5 @@ right to reproduce and distribute it for making hardware that complies
 with it.
 
 Not from the ITU: Bell 103 and Bell 212A (AT&T), Bell 202 caller ID (Telcordia
-GR-30), TIFF-F (RFC 3949), Contact ID (SIA DC-05, `dsp/dp_contactid.cpp`). Section references in the code and in these
+GR-30), TIFF-F (RFC 3949), Contact ID (SIA DC-05, `dsp/dp_contactid.cpp`), fixed-line SMS (ETSI ES 201 912 protocol 1, `dsp/dp_sms.cpp`; its messages are 3GPP TS 23.040's SMS-SUBMIT and SMS-DELIVER in TS 23.038's alphabets, `dsp/sms_pdu.cpp`). Section references in the code and in these
 documents, such as "9.6.2/V.34", are to these editions.

@@ -4,8 +4,10 @@
  *
  *    dp_4wire.cpp - the 4-wire leased line's data pumps: ITU V.29 (9600,
  *                   7200 and 4800 bit/s), V.33 (14400 and 12000 bit/s)
- *                   and V.27ter (4800 and 2400 bit/s), each duplex
- *                   with a continuous carrier
+ *                   and V.27ter (4800 and 2400 bit/s), V.26 and Bell
+ *                   201 (2400 bit/s, unscrambled) and Bell 208 (V.27ter's
+ *                   4800 bit/s signal), each duplex with a continuous
+ *                   carrier
  *
  *    On a 4-wire circuit each way has its pair, so both modems send in
  *    the same band at once and there is no echo to cancel.  The
@@ -80,7 +82,7 @@ struct FwRxCtx {
 
 struct FourWirePump : PumpBase<FourWirePump, fw_state> {
 	static constexpr const char *name =
-		"4-wire leased (V.29/V.33/V.27ter) data pump";
+		"4-wire leased (V.29/V.33/V.27ter/V.26/Bell) data pump";
 
 	const char *family;             /* in the log */
 	enum fax_mod rx_mods[MAX_RX];   /* the family's rates, fastest first */
@@ -195,6 +197,8 @@ float FourWirePump::limit_of(enum fax_mod mod) const
 	case FM_V29_7200:  return 0.03f;
 	case FM_V29_4800:  return 0.06f;
 	case FM_V27_4800:  return 0.024f;
+	case FM_V26_A:
+	case FM_V26_B:     return 0.018f;
 	default:           return 0.018f;  /* V.27ter 2400 */
 	}
 }
@@ -327,6 +331,20 @@ s16 FourWirePump::start(struct modem *m, enum DP_ID id, s16 caller_,
 		nrx = 2;
 		tx_mod = max >= 4800 ? FM_V27_4800 : FM_V27_2400;
 		break;
+	case DP_B208:
+		/* 8-phase at 1600 baud, scrambled: V.27ter's 4800 (V.27
+		   came from it), at that rate alone */
+		family = "Bell208";
+		rx_mods[0] = tx_mod = FM_V27_4800;
+		nrx = 1;
+		break;
+	case DP_V26:
+	case DP_B201:
+		/* 2400 bit/s alone, the data unscrambled */
+		family = id == DP_V26 ? "V26" : "Bell201";
+		rx_mods[0] = tx_mod = id == DP_V26 ? FM_V26_A : FM_V26_B;
+		nrx = 1;
+		break;
 	default:
 		return -1;
 	}
@@ -395,8 +413,11 @@ s16 FourWirePump::sample(float x, float *y)
 	   gone (and maybe back): the receivers search again */
 	const FaxRx *r = rx_active();
 	if (r && r->stage == FaxRx::RXS_DATA) {
-		bool again = !r->carrier ||
-			r->alt_run >= SYNC_RUN || r->const_run >= SYNC_RUN;
+		/* (V.26's data is not scrambled: its marks are
+		   alternations, its zeros an unmodulated carrier) */
+		bool plain = dp.id == DP_V26 || dp.id == DP_B201;
+		bool again = !r->carrier || (!plain &&
+			(r->alt_run >= SYNC_RUN || r->const_run >= SYNC_RUN));
 		if (again) {
 			DSP_DBG("%s: the far end synchronizes (%s) at %" PRId64
 				" ms\n", family, !r->carrier ? "carrier off" :
@@ -473,12 +494,16 @@ s16 FourWirePump::sample(float x, float *y)
 	return ret;
 }
 
-/* registers the pump as DP_V29, DP_V33 and DP_V27TER; 0 */
+/* registers the pump as DP_V29, DP_V33, DP_V27TER, DP_V26, DP_B201 and
+   DP_B208; 0 */
 s16 dp_4wire_init(void)
 {
 	modem_dp_register(DP_V29, &PumpOps<FourWirePump>::ops);
 	modem_dp_register(DP_V33, &PumpOps<FourWirePump>::ops);
 	modem_dp_register(DP_V27TER, &PumpOps<FourWirePump>::ops);
+	modem_dp_register(DP_V26, &PumpOps<FourWirePump>::ops);
+	modem_dp_register(DP_B201, &PumpOps<FourWirePump>::ops);
+	modem_dp_register(DP_B208, &PumpOps<FourWirePump>::ops);
 	return 0;
 }
 
@@ -488,6 +513,9 @@ void dp_4wire_exit(void)
 	modem_dp_deregister(DP_V29, &PumpOps<FourWirePump>::ops);
 	modem_dp_deregister(DP_V33, &PumpOps<FourWirePump>::ops);
 	modem_dp_deregister(DP_V27TER, &PumpOps<FourWirePump>::ops);
+	modem_dp_deregister(DP_V26, &PumpOps<FourWirePump>::ops);
+	modem_dp_deregister(DP_B201, &PumpOps<FourWirePump>::ops);
+	modem_dp_deregister(DP_B208, &PumpOps<FourWirePump>::ops);
 }
 
 } // namespace dsp

@@ -98,7 +98,7 @@ s16 fax_mod_from_code(u32 code, enum fax_mod *mod, s16 *short_train)
 s32 fax_mod_bps(enum fax_mod mod)
 {
 	static const s32 bps[] = { 0, 300, 2400, 4800, 4800, 7200, 9600,
-				       7200, 9600, 12000, 14400 };
+				       7200, 9600, 12000, 14400, 2400, 2400 };
 	return bps[mod];
 }
 
@@ -108,7 +108,9 @@ float fax_tx_rms(enum fax_mod mod)
 	switch (mod) {
 	case FM_V21:       return 4096;
 	case FM_V27_2400:
-	case FM_V27_4800:  return 3333;
+	case FM_V27_4800:
+	case FM_V26_A:
+	case FM_V26_B:     return 3333;
 	case FM_V29_4800:
 	case FM_V29_7200:
 	case FM_V29_9600:  return 3446;
@@ -117,11 +119,26 @@ float fax_tx_rms(enum fax_mod mod)
 }
 
 /* the modulation families */
-static s16 is_v17(enum fax_mod m) { return m >= FM_V17_7200; }
+static s16 is_v17(enum fax_mod m)
+{
+	return m >= FM_V17_7200 && m <= FM_V17_14400;
+}
 /* (see is_v17()) */
 static s16 is_v29(enum fax_mod m) { return m >= FM_V29_4800 && m <= FM_V29_9600; }
 /* (see is_v17()) */
-static s16 is_v27(enum fax_mod m) { return m == FM_V27_2400 || m == FM_V27_4800; }
+static s16 is_v26(enum fax_mod m) { return m == FM_V26_A || m == FM_V26_B; }
+/* (see is_v17(); V.26 is V.27ter at 2400 with its data unscrambled) */
+static s16 is_v27(enum fax_mod m)
+{
+	return m == FM_V27_2400 || m == FM_V27_4800 || is_v26(m);
+}
+/* V.27ter 2400's dibits as phase steps (45 degree units); V.26's
+   alternative B 45 degrees on */
+static const s16 *dibit_steps(enum fax_mod m)
+{
+	static const s16 alt_b[4] = { 1, 3, 7, 5 };
+	return m == FM_V26_B ? alt_b : steps_4;
+}
 
 /* data bits per symbol (V.17: those into the trellis encoder, which
    adds one) */
@@ -129,6 +146,8 @@ static s16 data_bits(enum fax_mod m)
 {
 	switch (m) {
 	case FM_V27_2400: return 2;
+	case FM_V26_A: return 2;
+	case FM_V26_B: return 2;
 	case FM_V27_4800: return 3;
 	case FM_V29_4800: return 2;
 	case FM_V29_7200: return 3;
@@ -187,7 +206,7 @@ static float data_mean_power(enum fax_mod m)
 /* the symbol rate, baud */
 static float mod_baud(enum fax_mod m)
 {
-	if (m == FM_V27_2400)
+	if (m == FM_V27_2400 || is_v26(m))
 		return 1200;
 	if (m == FM_V27_4800)
 		return 1600;
@@ -315,7 +334,14 @@ cplx FaxTx::data_symbol()
 		state = (state + bits) & 7;
 		return v29_points[amp | state];
 	}
-	/* V.27ter */
+	/* V.27ter; V.26 unscrambled */
+	if (is_v26(mod)) {
+		bits = data_bit();
+		bits = (bits << 1) | data_bit();
+		bits = dibit_steps(mod)[bits];
+		state = (state + bits) & 7;
+		return v27_points[state];
+	}
 	bits = scr7(&scr, &scr_count, data_bit());
 	bits = (bits << 1) | scr7(&scr, &scr_count, data_bit());
 	if (mod == FM_V27_4800)
@@ -676,8 +702,9 @@ void FaxRx::bits_out(s16 q, s16 n, s16 msb_first)
 	s16 k;
 	for (k = 0; k < n; k++) {
 		s16 bit = msb_first ? (q >> (n - 1 - k)) & 1 : (q >> k) & 1;
-		bit = is_v27(mod) ? descr7(&scr, &scr_count, bit) :
-			descramble(&scr, SCR_GPC, bit);
+		if (!is_v26(mod))
+			bit = is_v27(mod) ? descr7(&scr, &scr_count, bit) :
+				descramble(&scr, SCR_GPC, bit);
 		if (trained)
 			put_bit(ctx, bit);
 	}
@@ -744,13 +771,14 @@ void FaxRx::data_symbol()
 		state = phase;
 		if (++data_sym > ones_len(mod))
 			trained = 1;
-		if (n == 2 && mod != FM_V27_2400) {
+		if (n == 2 && mod != FM_V27_2400 && !is_v26(mod)) {
 			/* V.29 4800 */
 			for (bits = 0; bits < 4 && steps_4[bits] != dp; bits++)
 				;
 			bits_out(bits & 3, 2, 1);
-		} else if (mod == FM_V27_2400) {
-			for (bits = 0; bits < 4 && steps_4[bits] != dp; bits++)
+		} else if (mod == FM_V27_2400 || is_v26(mod)) {
+			const s16 *st = dibit_steps(mod);
+			for (bits = 0; bits < 4 && st[bits] != dp; bits++)
 				;
 			bits_out(bits & 3, 2, 1);
 		} else {

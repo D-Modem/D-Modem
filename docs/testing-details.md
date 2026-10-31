@@ -123,6 +123,7 @@ noted):
 | `ring_tones_test` | Each country's tones (`tones.cpp`, from the ITU's list of national tones: dial, ringing, busy and congestion tones, the ring signal): the table, and the ring signal through `RingDetect` to the core, with a RING for each ring and the auto answer at S0=2 |
 | `hw_test` | The hardware the harnesses emulate (`hw/`), on a host of its own: the ICH's bus masters, and the HD Audio controller's commands and streams with the Si3054 on it |
 | `rs_test` | The Reed-Solomon code (`rs.cpp`) |
+| `sms_pdu_test` | Fixed-line SMS's messages (`sms_pdu.cpp`): SMS-SUBMIT and SMS-DELIVER against known encodings, the 7-bit alphabet with its escapes, UCS2, user data headers, the length limits |
 | `vcvm_test`, `vcvm_startup_test`, `vcvm_data_test` | V.cvm's signal set, start-up and data mode, through the codecs where the AMR libraries are installed (see [V.cvm](dsp/vcvm-details.md#tests)) |
 | `vwb_test` | V.wb, the wideband mode (`vwb.h`): its FFT, QAM and interpolator; then a caller and an answerer on a simulated bare pair at 96000 Hz (`vwb_line.cpp`: 24 AWG cable loss k·sqrt(f)·length, the transformers, white noise, interferers, -15 dB of hybrid echo, the clocks 100 ppm apart, a dropout). Error free on 0.5 to 5 km, the rate falling with length; through interferers; for two minutes with the clock offset either way; a retrain after the dropout; 48000 and 192000 Hz. Each pair's rates are printed (`VWB_DEBUG=1` adds the modems' logs) |
 

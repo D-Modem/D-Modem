@@ -2136,3 +2136,104 @@ TEST_F(CoreContactId, BadChecksumNak)
 	EXPECT_EQ(p.got_a, "NAK\r\nACK\r\n");
 	EXPECT_EQ(p.got_b, "1234181131010158\r\n");
 }
+
+/* fixed-line SMS: B the answerer (it receives), A the caller (it
+   sends) */
+class CoreSms : public testing::Test {
+protected:
+	Pair p{""};
+
+	/* both in +MS=SMS, B answers, A dials: both online */
+	void call()
+	{
+		type(p.a, "AT+MS=SMS\r");
+		type(p.b, "AT+MS=SMS\r");
+		p.step();
+		ASSERT_TRUE(has(p.got_a, "OK")) << p.got_a;
+		ASSERT_TRUE(has(p.got_b, "OK")) << p.got_b;
+		p.got_a.clear();
+		p.got_b.clear();
+		EXPECT_EQ(p.b->answer(), 0);
+		EXPECT_EQ(p.a->dial(""), 0);
+		ASSERT_TRUE(until([&] {
+			return p.a->link_state() == LinkState::Online &&
+				p.b->link_state() == LinkState::Online;
+		}, 10000)) << "A [" << p.got_a << "] B [" << p.got_b << "]";
+		EXPECT_TRUE(has(p.got_a, "CONNECT 1200\r")) << p.got_a;
+		EXPECT_TRUE(has(p.got_b, "CONNECT 1200\r")) << p.got_b;
+		p.got_a.clear();
+		p.got_b.clear();
+	}
+	/* steps until both have hung up, at most ms */
+	bool until_idle(int ms)
+	{
+		return until([&] {
+			return p.a->link_state() == LinkState::Idle &&
+				p.b->link_state() == LinkState::Idle;
+		}, ms);
+	}
+	/* steps until cond, at most ms */
+	template <class F> bool until(F cond, int ms)
+	{
+		for (int t = 0; t < ms; t += 20) {
+			if (cond())
+				return true;
+			p.step();
+		}
+		return cond();
+	}
+	/* s has x */
+	static bool has(const std::string &s, const std::string &x)
+	{
+		return s.find(x) != std::string::npos;
+	}
+	/* s to m's DTE */
+	static void type(Modem *m, const char *s)
+	{
+		m->dte_input(s, strlen(s));
+	}
+};
+
+/* three submissions (7-bit with an escape, UCS2, a TPDU in hex) and a
+   line that is none: each to the answerer's DTE and acknowledged, then
+   SMS_REL and both hang up */
+TEST_F(CoreSms, SubmitsThenReleases)
+{
+	call();
+	type(p.a, "+4412345,Hello [world]\r"
+		  "0800,\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82\r"
+		  "no comma\r"
+		  ":010005912143F500000AE8329BFD4697D9EC37\r");
+	ASSERT_TRUE(until_idle(30000))
+		<< "A [" << p.got_a << "] B [" << p.got_b << "]";
+	EXPECT_EQ(p.got_a, "ERROR\r\nOK\r\nOK\r\nOK\r\nNO CARRIER\r\n");
+	EXPECT_EQ(p.got_b,
+		  "+SUBMIT: \"+4412345\"\r\nHello [world]\r\n"
+		  "+SUBMIT: \"0800\"\r\n"
+		  "\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82\r\n"
+		  "+SUBMIT: \"+12345\"\r\nhellohello\r\n"
+		  "NO CARRIER\r\n");
+}
+
+/* the service centre's side: a delivery from a name, stamped now */
+TEST_F(CoreSms, Delivers)
+{
+	call();
+	type(p.a, "<Centre,Your code is 1234\r");
+	ASSERT_TRUE(until_idle(30000))
+		<< "A [" << p.got_a << "] B [" << p.got_b << "]";
+	EXPECT_EQ(p.got_a, "OK\r\nNO CARRIER\r\n");
+	EXPECT_EQ(p.got_b.rfind("+CMT: \"Centre\",,\"", 0), 0u) << p.got_b;
+	EXPECT_TRUE(has(p.got_b, "+00\"\r\nYour code is 1234\r\n"))
+		<< p.got_b;
+}
+
+/* nothing to send: SMS_REL after 3 s, and both hang up */
+TEST_F(CoreSms, NothingToSend)
+{
+	call();
+	ASSERT_TRUE(until_idle(10000))
+		<< "A [" << p.got_a << "] B [" << p.got_b << "]";
+	EXPECT_EQ(p.got_a, "NO CARRIER\r\n");
+	EXPECT_EQ(p.got_b, "NO CARRIER\r\n");
+}
