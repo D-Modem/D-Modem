@@ -23,6 +23,7 @@ receiver works inside, see [the technical details](dsp-details.md).
 | Bell 212A, V.22 | 1200 bit/s | |
 | V.22bis | 2400 bit/s | |
 | V.32, V.32bis | 9600, 14400 bit/s | |
+| [V.32terbo](v32terbo.md) | 19200 bit/s | AT&T's unpublished extension of V.32bis, rebuilt from a modem that has it |
 | V.34 | 33600 bit/s | the fastest purely analogue modem |
 | [V.90](v90.md) | 56000 bit/s down, 33600 up | "56k" modems |
 | [V.92](v92.md) | 56000 down, up to 48000 up | V.90 plus faster start-up, call waiting and a faster upload |

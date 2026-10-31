@@ -178,6 +178,16 @@
       0 A: OK\r\n
       0 A< AT+MS=V32T\r
       0 A: AT+MS=V32T\r\r\n
+      0 A: OK\r\n
+      0 A< AT+MS?\r
+      0 A: AT+MS?\r\r\n
+      0 A: 232,0,4800,14400\r\n
+      0 A: OK\r\n
+      0 A< AT+MS=V92\r
+      0 A: AT+MS=V92\r\r\n
+      0 A: OK\r\n
+      0 A< AT+MS=V32X\r
+      0 A: AT+MS=V32X\r\r\n
       0 A: ERROR\r\n
       0 A< AT+MS=V99,1\r
       0 A: AT+MS=V99,1\r\r\n

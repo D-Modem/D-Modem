@@ -381,6 +381,7 @@ time of writing:
 |---|---|---|
 | V34 / 34 | CONNECT 33600 (our transmitter; we receive at 24000) | CONNECT 33600 / 24000 |
 | V32B / 132, V32 / 32 | CONNECT 14400, 9600 | CONNECT 14400, 9600 |
+| V32T / V32T ([V.32terbo](dsp/v32terbo.md)) | CONNECT 19200 | CONNECT 19200 |
 | V22B / 122, V22 / 22, B212 / 212 | CONNECT 2400, 1200, 1200 | the same |
 | V23C / 23, V21 / 21, B103 / 103 | CONNECT 1200/75, 300, 300 | the same |
 | V90 / 90 (ours as the digital modem), µ-law and A-law | CONNECT 46666 | - |

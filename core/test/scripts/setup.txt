@@ -72,6 +72,9 @@ A AT+MS?\r
 A AT+MS=V92\r
 A AT+MS?\r
 A AT+MS=V32T\r
+A AT+MS?\r
+A AT+MS=V92\r
+A AT+MS=V32X\r
 A AT+MS=V99,1\r
 A AT+MS?\r
 # &Q as \N, %B as *B, +VCID as #CID in data mode, ATM3 as ATM1
