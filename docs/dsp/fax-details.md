@@ -135,10 +135,17 @@ moves the machine to T.38 (or back) at any point of the call, what was
 going out sent again from its start there, as `FAX_t38_start()` does
 for class 1.
 
+V.34 (T.30 Annex F): `+FIS`'s br above 5 (16800 to 33600 bit/s) with
+ECM offers V.34 half-duplex (`t30_config`'s `v34`, `t30_v34()`). V.8 has
+the call function: a caller sends, or polls when `+FSP=1` was set before
+it dialled (`v34_poll`). `+FIS:` and `+FCS:` give the V.34 rate (br 6 to
+13).
+
 `core_test`'s `CoreFax2` cases send two pages between two modems in
-class 2.0, class 2, class 2.0 with ECM and the other bit order, and on
-T.38 from the start and from the DIS on, the bitmaps compared;
-`Fax2Poll` polls a page; `Fax2Abort` ends a call with `+FKS`.
+class 2.0, class 2, class 2.0 with ECM and the other bit order, on
+T.38 from the start and from the DIS on, and on V.34, the bitmaps
+compared; `Fax2Poll` polls a page, `Fax2PollV34` on V.34; `Fax2Abort`
+ends a call with `+FKS`.
 
 ## Fax machine (T.30)
 
@@ -162,6 +169,25 @@ again after T4 (3 s); if no page's training came since (the fast
 receiver never found one) that is a repeat, and it gets MCF again, as
 spandsp's receiver does. RTN there would have the sender send the page
 the receiver already has once more.
+
+V.34 half-duplex (T.30 Annex F, `t30_config`'s `v34`: `t30_v34()`,
+[V.34's details](v34-details.md)): the modem has the line from the
+start. ANSam takes the place of CED and V.8's CM that of CNG, with the
+call function (T.30 transmit, or receive when the caller polls). The
+frames go on the control channel at 1200 bit/s, with flags between them.
+The DIS has bit 6 (V.8), the DCS no rate (bits 11 to 14 are 0), and
+there is no TCF: the receiver answers the DCS with CFR. ECM is the only
+way: each block goes on the primary channel (`v34_hdx_primary()`), its
+frames after a few flags, and the PPS follows on the control channel
+once it is back. A remote without V.8 gets V.21 and the fax
+modulations: an answerer whose ANSam has no CM in 5 s sends its DIS on
+V.21, and a caller that hears a DIS on V.21 while V.8 still waits drops
+the modem. The source of the primary channel is fixed by V.8: a poll
+that V.8 did not announce (`t30_poll()` with us the source) is refused.
+
+`t30_v34_test` puts two machines on V.34 back to back through G.711
+(two pages at 31200 bit/s), and one with V.34 against one without it,
+either way (V.17).
 
 `fax_test`'s `T30Pair` cases put two of them back to back, at each rate,
 with ECM, and with ECM on a noisy line (at 19 dB ECM sends a few frames

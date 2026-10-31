@@ -160,14 +160,19 @@ struct Fax2 {
 	void snapshot(unsigned *v, const struct t30_status &st) const;
 };
 
-/* the T.32 parameter codes of a rate */
+/* the T.32 parameter codes of a rate: 0 2400 to 5 14400, then V.34's
+   6 16800 to 13 33600 */
 unsigned br_code(s32 bps)
 {
+	if (bps > 14400)
+		return bps >= 33600 ? 13 :
+			static_cast<unsigned>(5 + (bps - 14400) / 2400);
 	return bps >= 14400 ? 5 : bps >= 12000 ? 4 : bps >= 9600 ? 3 :
 		bps >= 7200 ? 2 : bps >= 4800 ? 1 : 0;
 }
 
-/* +FIS's br as bit/s */
+/* +FIS's br as bit/s on the fax modulations (V.34's rates: their
+   14400) */
 s32 br_bps(unsigned br)
 {
 	static const s32 bps[6] = { 2400, 4800, 7200, 9600, 12000, 14400 };
@@ -599,6 +604,11 @@ void *FAX2_create(struct modem *m, unsigned caller, unsigned srate,
 	c.polled = s->lp != 0;
 	f->set.pi[sizeof(f->set.pi) - 1] = '\0';
 	c.poll_ident = f->set.pi[0] ? f->set.pi : nullptr;
+	/* +FIS's br above 5 (and ECM): V.34 half-duplex offered (T.30
+	   Annex F); V.8 then says whether we send or poll (+FSP) */
+	c.v34 = s->br > 5 && s->ec ? t30_v34() : nullptr;
+	c.v34_poll = s->sp != 0;
+	c.modem = m;
 	c.t38_tx = t38_out;
 	f->t30 = t30_create(&c);
 	if (!f->t30) {

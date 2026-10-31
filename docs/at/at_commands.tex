@@ -2851,7 +2851,7 @@ last session's.  At the start \cmd{1,5,0,2,0,0,0,0}.
 \item +FIS=\p{vr},\p{br},\ldots
 \item +FCC?, +FIS?, +\std{FCS}?
 \item +FCC=?, +FIS=? (give
-  \cmd{(0,1),(0-5),(0),(0-2),(0),(0-2),(0),(0-7)})
+  \cmd{(0,1),(0-13),(0),(0-2),(0),(0-2),(0),(0-7)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{If every value is in its range.}
@@ -2860,7 +2860,7 @@ last session's.  At the start \cmd{1,5,0,2,0,0,0,0}.
 \begin{vtable}{2}{|C{0.1\textwidth}|L{0.76\textwidth}|}{+FCC Values}
   {\thd{Value} & \thd{Meaning}}
 \p{vr} & 0 normal, 1 fine resolution. \\ \hline
-\p{br} & 0 to 5: \std{2400}, \std{4800}, \std{7200}, \std{9600}, \std{12000}, \std{14400} bit/s. \\ \hline
+\p{br} & 0 to 5: \std{2400}, \std{4800}, \std{7200}, \std{9600}, \std{12000}, \std{14400} bit/s.  6 to 13: \std{V.34} half-duplex (\std{T.30} Annex F) as well, \std{16800} to \std{33600} bit/s, with error correction mode only: \std{V.8} offers it at the start of the call, and a remote without it has \std{V.17} and the rest.  A caller that polls sets \cmdl[plusFLP]{+FSP=1} before dialling, for \std{V.8} to say so.  \cmdl[plusFCC]{+FCS} then gives the \std{V.34} rate. \\ \hline
 \p{ec} & 0 none, 1 or 2 error correction mode. \\ \hline
 others & Taken in their ranges. \\ \hline
 \end{vtable}

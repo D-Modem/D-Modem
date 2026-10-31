@@ -3141,6 +3141,12 @@ void V34Pump::pump_rx_sample(float x)
    DPSTAT_CHANGEDP */
 s16 V34Pump::fallback(const char *why)
 {
+	/* half-duplex fax: no other modulation here (its T.30 goes on
+	   with V.21 and the fax modulations) */
+	if (hdx) {
+		DSP_DBG("v34: %s: no V.34 half-duplex\n", why);
+		return DPSTAT_ERROR;
+	}
 	if (v8_low)
 		return v8_back(why);
 	if (caller && rt && rt->answer_tone == ANSTONE_2225) {
@@ -7420,6 +7426,12 @@ void v34_hdx_primary(V34Hdx *h)
 {
 	if (h->hdx_source)
 		h->hdx_pri_req = 1;
+}
+
+/* (v34.h) */
+s16 v34_hdx_on(const V34Hdx *h)
+{
+	return h->hdx_on;
 }
 
 /* (v34.h) */

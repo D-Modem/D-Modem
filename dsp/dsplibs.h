@@ -132,13 +132,15 @@ struct fax2_settings {
 	unsigned cls;           /* 2, or 20 for 2.0 */
 	char ident[21];         /* +FLI */
 	unsigned vr, br, ec;    /* +FIS: fine resolution, the fastest rate
-				   (0 2400 to 5 14400 bit/s), error correction
-				   mode */
+				   (0 2400 to 5 14400 bit/s; 6 16800 to 13
+				   33600: V.34 half-duplex, with error
+				   correction), error correction mode */
 	unsigned bo;            /* +FBO: bit 0, the page data with its first
 				   bit in the top of each octet */
 	unsigned lp;            /* +FLP: a document to be polled (answering:
 				   the DIS says so, a DTC has it sent) */
 	char pi[21];            /* +FPI: our CIG when we poll */
+	unsigned sp;            /* +FSP: calling, we poll (V.8 says so) */
 };
 /* the class 2 commands for FAX2_command() */
 enum FAX2_CMD { FAX2_CMD_FDT, FAX2_CMD_FDR, FAX2_CMD_FET, FAX2_CMD_FKS };
