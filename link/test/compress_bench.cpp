@@ -21,7 +21,7 @@
  *        any stream does not come back as it went (ctest's
  *        compress_bench_check)
  *
- *    docs/link.md#compression-benchmark has results.
+ *    docs/link-details.md#compression-benchmark has results.
  *
  */
 

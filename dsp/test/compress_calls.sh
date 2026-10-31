@@ -14,7 +14,7 @@
 #
 # The CSV: line, compression, file, exit status, CONNECT rate, octets,
 # seconds to A, seconds to B (the call's clock), checks passed (2: both
-# ways), what the link negotiated.  docs/link.md#compression-benchmark
+# ways), what the link negotiated.  docs/link-details.md#compression-benchmark
 # has results.
 
 build=${1:?usage: $0 <build dir> <out dir> <file>...}
