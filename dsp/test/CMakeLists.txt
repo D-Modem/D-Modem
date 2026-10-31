@@ -66,6 +66,11 @@ dmodem_gtest(pump_test LABELS quick)
 dmodem_test_exe(pcm_cp_test pcm_cp_test.cpp)
 target_link_libraries(pcm_cp_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_gtest(pcm_cp_test LABELS quick)
+# V.34 half-duplex back to back: V.8 to the control channel, its data
+# both ways, the primary channel's pages (its own core stubs)
+dmodem_test_exe(v34_hdx_test v34_hdx_test.cpp test_util.cpp)
+target_link_libraries(v34_hdx_test PRIVATE dmodem_dsp)
+dmodem_gtest(v34_hdx_test LABELS quick)
 # bits.h: fields, the V.34 and frame CRCs, the HDLC FCS
 dmodem_test_exe(bits_test bits_test.cpp)
 dmodem_gtest(bits_test LABELS quick)

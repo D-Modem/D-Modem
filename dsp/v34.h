@@ -417,6 +417,10 @@ struct V34Rx {
 	s16 baud;
 	s16 tap;                /* the remote's scrambler */
 	s16 phase4;             /* the next S starts phase 4 (no PP) */
+	s16 hdx;                /* half-duplex: PP after each S-bar, and
+				   in a resynchronization (12.5/V.34, data
+				   set up) data straight after it */
+	s16 sbar_run;           /* (half-duplex) reversed symbols in a row */
 	enum v34_rxstage stage;
 	s32 n;                  /* symbols in this stage */
 	s32 sym;
@@ -516,6 +520,133 @@ struct V34Rx {
 	void start_data(const V34Params *p, CoreBits link);
 	void sample(float x);
 };
+
+
+/*
+ *    half-duplex: the control channel (10.2.4/V.34, v34_cc.cpp), 600
+ *    symbols/s at 1200 bit/s both ways at once, the caller on 1200 Hz,
+ *    the answerer on 2400 Hz with an 1800 Hz guard tone
+ */
+enum v34_ccseg {
+	V34CC_SILENCE,
+	V34CC_PPH,      /* 32 symbols (10.2.4.5/V.34) */
+	V34CC_ALT,      /* scrambled 0 1 alternations, the scrambler from 0 */
+	V34CC_MPH,      /* MPh again and again, E after the one sent when
+			   mp_to_e is set */
+	V34CC_E,        /* 20 scrambled ones, then data */
+	V34CC_DATA,
+	V34CC_SH,       /* Sh, then S-bar h (10.2.3.3/V.34) */
+	V34CC_SHBAR,
+	V34CC_AC,
+	V34CC_ONES,     /* scrambled ones: the turn-off */
+};
+
+struct V34CcTx {
+	QamTx qam;
+	Osc guard;              /* the answerer's 1800 Hz guard tone */
+	float guard_amp;
+	u32 scr;
+	s16 tap;
+	s16 z;                  /* the differential encoder's state */
+	enum v34_ccseg seg;
+	s32 n;                  /* symbols of the segment sent */
+	V34Mp mp;               /* the MPh we send */
+	unsigned char bits[188];
+	s16 nbits, pos;
+	s16 mp_sent;            /* whole MPh sequences sent */
+	s16 mp_to_e;
+	CoreBits link;          /* the data */
+
+	/* silent, the caller's or the answerer's */
+	void init(s16 caller);
+	/* the next segment, from its next symbol */
+	void segment(enum v34_ccseg s);
+	/* the next symbol of the segment */
+	cplx symbol();
+	/* the next line sample, at 9600 Hz */
+	float sample();
+};
+
+#define V34CC_HIST      32      /* phase steps kept, for the signals */
+
+struct V34CcRx {
+	QamRx qam;
+	s16 tap;                /* the remote's scrambler */
+	u32 scr;
+	s16 q;                  /* the last symbol's quarter turns */
+	unsigned char steps[V34CC_HIST];        /* between symbols, the
+						   newest at steps[0] */
+	s16 nsteps;
+	s16 on;                 /* the remote's signal is there */
+	s16 hold;               /* the line goes by (the primary channel's
+				   turn): the symbol timing kept, nothing
+				   else */
+	s16 ended;              /* the remote's signal went after E:
+				   nothing taken (the primary channel's
+				   signal is not ours) until resync() */
+	float pin;              /* the power in the band (fast) */
+	float level;            /* and its level when there (slow) */
+	s32 sym;
+	float mse;
+	/* what came: PPh, Sh then S-bar h, AC, an MPh, E */
+	s16 ev_pph, ev_shbar, ev_ac, ev_mp, ev_e;
+	s16 decoding;           /* bits from the symbols (after PPh or Sh) */
+	s16 data_on;            /* E is in: the bits go to link */
+	unsigned char mpbits[188];
+	s16 mp_n, mp_len, ones;
+	u32 sr;                 /* the last bits, the newest in bit 0 */
+	V34Mp mp;               /* the remote's */
+	CoreBits link;
+
+	/* the remote's (we are the caller: the answerer's) channel; -1
+	   when out of memory */
+	s16 init(s16 caller);
+	void release();
+	/* wait for PPh or Sh again, the equalizer and the carrier kept */
+	void resync();
+	void bit(s16 b);
+	void symbol();
+	void sample(float x);
+};
+
+/* V.34 half-duplex (clause 12/V.34) for a fax machine (T.30 Annex F):
+   V.8 with a fax call's CM (T.30 sending or polling, V.34 half-duplex
+   alone), phase 2's probing one way, the source's training, then the
+   control channel, and the primary channel from the source whenever it
+   asks for it (v34_hdx_primary()).  Its bits and what happens go to
+   the host */
+struct V34HdxHost {
+	void *ctx;
+	/* the next bit to send: on the control channel (primary 0), or on
+	   the primary channel, -1 at its end */
+	s16 (*get_bit)(void *ctx, s16 primary);
+	void (*put_bit)(void *ctx, s16 primary, s16 bit);
+	void (*event)(void *ctx, s16 ev);       /* enum v34hdx_event */
+};
+
+enum v34hdx_event {
+	V34HDX_CC_UP,           /* the control channel carries data */
+	V34HDX_PRIMARY_UP,      /* the primary channel does (both sides) */
+	V34HDX_PRIMARY_DOWN,    /* and has stopped */
+};
+
+struct V34Hdx;
+/* a half-duplex modem calling or answering on modem m (its S registers;
+   NULL: none), at srate (9600, or 8000); sending: a caller's CM says
+   it sends the document (else it polls).  NULL when it can't start */
+V34Hdx *v34_hdx_create(struct modem *m, s16 caller, s16 sending,
+		       s32 srate, const V34HdxHost *host);
+/* n samples in and out: DPSTAT_OK, DPSTAT_CONNECT once the control
+   channel is up, DPSTAT_ERROR when it fails */
+s16 v34_hdx_process(V34Hdx *h, s16 *in, s16 *out, s32 n);
+/* the source: the primary channel from now on, until its get_bit()
+   says -1; then the control channel again */
+void v34_hdx_primary(V34Hdx *h);
+/* we are the source (once V.8 is over) */
+s16 v34_hdx_source(const V34Hdx *h);
+/* the primary channel's rate, bit/s (0 until it is known) */
+s32 v34_hdx_rate(const V34Hdx *h);
+void v34_hdx_free(V34Hdx *h);
 
 
 } // namespace dsp

@@ -374,17 +374,28 @@ struct Bell103Detect {
    none), put() what came */
 struct CoreBits {
 	struct modem *modem;
+	/* instead of the core: a host's bits (V.34 half-duplex for a fax
+	   machine, v34.h), from hget(hctx, ...) and to hput(hctx, ...) */
+	void (*hget)(void *ctx, unsigned char *bits, s32 n) = nullptr;
+	void (*hput)(void *ctx, const unsigned char *bits, s32 n) = nullptr;
+	void *hctx = nullptr;
 
 	/* n bits to send into bits (ones where the core has none) */
 	void get(unsigned char *bits, s32 n) const
 	{
 		std::fill_n(bits, n, 1);
-		modem_get_bits(modem, 1, bits, n);
+		if (hget)
+			hget(hctx, bits, n);
+		else
+			modem_get_bits(modem, 1, bits, n);
 	}
 	/* n bits received to the core */
 	void put(const unsigned char *bits, s32 n) const
 	{
-		modem_put_bits(modem, 1, const_cast<u8 *>(bits), n);
+		if (hput)
+			hput(hctx, bits, n);
+		else
+			modem_put_bits(modem, 1, const_cast<u8 *>(bits), n);
 	}
 };
 

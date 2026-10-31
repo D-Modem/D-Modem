@@ -69,6 +69,11 @@ namespace dsp {
 /* our CM / JM: V-series data call; V.34, V.32bis, V.22bis, V.23 (duplex)
    and V.21; LAPM, PSTN access (a JM: of the modulations, what both have) */
 static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x13, 0x94, 0x2a, 0x0d };
+/* and a fax call's (V.34 half-duplex): the call function (filled in),
+   V.34 half-duplex; V.17, V.29 and V.27ter, V.21; PSTN access */
+static const unsigned char v8_fax_msg[] = { 0xe0, 0x81, 0x85, 0x74, 0x90, 0x0d };
+/* half-duplex phase 3's TRN (INFOh), 35 ms units: about 1.5 s */
+#define HDX_TRN         43
 /* the trellis code we ask the remote to send: 0, 1, 2 for 16, 32, 64
    states */
 #ifndef V34_TRELLIS
@@ -81,6 +86,11 @@ static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x13, 0x94, 0x2a, 0x0d
 #endif
 
 #define V8_MOD1_V34     0x40    /* in the first modulation octet */
+#define V8_MOD1_HDX     0x80    /* V.34 half-duplex */
+/* V.8's call function (Table 3/V.8): T.30 sending, T.30 receiving (a
+   poll) */
+#define V8_CALLF_SEND   0x81
+#define V8_CALLF_POLL   0xA1
 #define V8_MOD1_PCM     0x20    /* a PCM modem availability octet follows */
 #define V8_CAT_MOD      0x05    /* category tags (bits 0 to 4) */
 #define V8_CAT_ACCESS   0x0D
@@ -257,6 +267,52 @@ enum v34_state {
 	/* V.91 (v91.cpp) from the end of V.8 on */
 	V91_RUN,
 	V92_RUN,        /* V.92 PCM upstream from phase 3 on */
+	/* V.34 half-duplex phase 2 (12.2/V.34), the source modem: our tone
+	   until the remote reverses its tone, ours 40 ms later and 10 ms
+	   more of it, L1, L2 until the remote's tone, our tone until INFOh */
+	P2H_S_TONE,
+	P2H_S_40,
+	P2H_S_REV,
+	P2H_S_L1,
+	P2H_S_L2,
+	P2H_S_INFOH,
+	/* the recipient: our tone, reversed once the remote's has been
+	   there and ours 50 ms, 10 ms more, silence while L1 and L2 come,
+	   our tone until the remote's, 25 ms more, INFOh */
+	P2H_R_TONE,
+	P2H_R_REV,
+	P2H_R_PROBE,
+	P2H_R_TONE2,
+	P2H_R_25,
+	P2H_R_INFOH,
+	/* phase 3 (12.3/V.34): the source's silence, S, S-bar, PP, TRN,
+	   and 70 ms of silence after it */
+	P3H_SILENCE,
+	P3H_S,
+	P3H_SBAR,
+	P3H_PP,
+	P3H_TRN,
+	P3H_END,
+	/* the recipient trains on it, until its end */
+	P3H_R_TRAIN,
+	P3H_R_END,
+	/* the control channel (12.4, 12.6/V.34) */
+	CCH_WAIT,       /* the recipient, silent: the source's PPh or Sh */
+	CCH_START,      /* PPh, ALT, MPh until the remote's is in, E */
+	CCH_RESYNC,     /* Sh, S-bar h, ALT, E */
+	CCH_DATA,       /* its data both ways */
+	CCH_OFF,        /* the source: 4 T of ones, then silence */
+	/* the primary channel (12.5/V.34), the source: silence, S, S-bar,
+	   PP, B1 and the data, 35 ms of ones, silence */
+	PRI_GAP,
+	PRI_S,
+	PRI_SBAR,
+	PRI_PP,
+	PRI_DATA,
+	PRI_ONES,
+	PRI_END,
+	PRI_R_WAIT,     /* the recipient: the source's S to the end of its
+			   data */
 };
 
 enum v34_txm {
@@ -267,6 +323,7 @@ enum v34_txm {
 	TXM_PROBE,
 	TXM_PRIMARY,
 	TXM_PAM,        /* V.92's PCM upstream (patx) */
+	TXM_HCC,        /* half-duplex's control channel (hcc_tx) */
 };
 
 struct BitQ {
@@ -357,6 +414,15 @@ struct Info1a {
 	s16 baud_ac, baud_ca;   /* baud_ca 6: V.90 */
 	s16 uinfo;              /* V.90: the Ucode of the 2 point train */
 	s16 freq_offset;
+
+	void parse(const unsigned char *b);
+};
+
+/* half-duplex's INFOh (Table 22/V.34), the recipient's */
+struct Infoh {
+	s16 power_red;
+	s16 trn;                /* TRN in phase 3, 35 ms units */
+	s16 high, preemph, baud, trn16;
 
 	void parse(const unsigned char *b);
 };
@@ -818,6 +884,37 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 
 	s16 connected;          /* CONNECT has been reported */
 
+	/* V.34 half-duplex (clause 12/V.34) for a fax machine
+	   (v34_hdx_create()) */
+	s16 hdx;                /* our CM / JM is a fax call's */
+	s16 hdx_send;           /* calling: we send (else we poll) */
+	s16 hdx_on;             /* both have it (V.8) */
+	s16 hdx_source;         /* we send the primary channel */
+	V34HdxHost hdx_host;
+	Infoh rinfoh;
+	s16 hdx_trn;            /* phase 3's TRN, 35 ms units */
+	V34CcTx hcc_tx;
+	V34CcRx hcc_rx;
+	s16 hcc_rx_init, hcc_rx_on;
+	V34Params hdx_p;        /* the primary channel's data mode */
+	s32 hdx_rate;
+	s16 hdx_up;             /* the control channel has been up */
+	s16 hdx_pri_req;        /* the host asks for the primary channel */
+	s16 hdx_pri_done;       /* and its get_bit() said -1 */
+	s16 hdx_pri_up;         /* the recipient: the primary's data in */
+	s32 hdx_b1_tx, hdx_b1_rx;       /* B1's ones still to send, the
+					   bits to drop */
+	s32 hdx_quiet;          /* samples without the primary signal */
+	s32 hdx_trn_syms() const;
+	void hdx_choose_baud();
+	void make_infoh(BitQ *q);
+	s16 hdx_cc_start();
+	void hdx_make_mp();
+	s16 hdx_cc_up();
+	s16 hdx_params();
+	void hdx_event(s16 ev);
+	s16 hdx_step(s32 c);
+
 	/* its name in the log */
 	const char *tag() const { return "v34"; }
 	void fs_reinit(V90Tx *t);
@@ -1134,11 +1231,24 @@ void Info1a::parse(const unsigned char *b)
 	freq_offset = bits_val(b, 40, 49);
 }
 
+/* the recipient's INFOh (Table 22/V.34) */
+void Infoh::parse(const unsigned char *b)
+{
+	power_red = bits_val(b, 12, 14);
+	trn = bits_val(b, 15, 21);
+	high = b[22];
+	preemph = bits_val(b, 23, 26);
+	baud = bits_val(b, 27, 29);
+	trn16 = b[30];
+}
+
 /* the length of the INFO frame we expect next, up to the end of its CRC */
 s16 V34Pump::info_expected()
 {
 	if (!ev_info0)
 		return info0_rx_len();
+	if (hdx_on)
+		return 31 + 16;         /* INFOh */
 	return caller ? 50 + 16 : 89 + 16;
 }
 
@@ -1179,6 +1289,14 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 			v8_own[v8_own_n++] = static_cast<unsigned char>(c);
 	};
 	v8_own_n = 0;
+	/* a fax call's (half-duplex): the call function ours, or the
+	   CM's in a JM */
+	const unsigned char *msg = self.hdx ? v8_fax_msg : v8_msg;
+	s16 msg_n = self.hdx ? static_cast<s16>(sizeof(v8_fax_msg)) :
+		static_cast<s16>(sizeof(v8_msg));
+	s16 callf = !self.hdx ? 0 : self.caller ?
+		(self.hdx_send ? V8_CALLF_SEND : V8_CALLF_POLL) :
+		v8_remote_cat(V8_CAT_CALLF);
 	s16 i, k, pcm_ = (self.v90 ? V8_PCM_DIGITAL : 0) |
 		(self.v91 ? V8_PCM_V91 : 0) |
 		(self.v90a ? V8_PCM_ANALOGUE : 0);
@@ -1197,8 +1315,10 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 		if (!(c & V8_PCM_V91))
 			pcm_ &= ~V8_PCM_V91;
 	}
-	for (i = 0, k = -1; i < static_cast<s16>(sizeof(v8_msg)); i++) {
-		s16 c = v8_msg[i];
+	for (i = 0, k = -1; i < msg_n; i++) {
+		s16 c = msg[i];
+		if (callf > 0 && (c & 0x1F) == V8_CAT_CALLF)
+			c = callf;
 		/* the modulation octets: in a JM what the CM has too */
 		if ((c & 0x1F) == V8_CAT_MOD)
 			k = 0;
@@ -1951,6 +2071,13 @@ void V34Cc<P>::info_frame(CcRx *r)
 			"diff %d\n", rinfo0.rates,
 			rinfo0.allow_3429,
 			rinfo0.max_diff);
+	} else if (self.hdx_on) {
+		self.rinfoh.parse(r->frame);
+		ev_info1 = 1;
+		DSP_DBG("v34: INFOh: symbol rate %d, high %d, TRN %d ms, "
+			"power reduction %d\n", self.rinfoh.baud,
+			self.rinfoh.high, self.rinfoh.trn * 35,
+			self.rinfoh.power_red);
 	} else {
 		if (self.caller) {
 			rinfo1a.parse(r->frame);
@@ -2954,6 +3081,19 @@ void V34Pump::pump_rx_sample(float x)
 		}
 		return;
 	}
+	/* half-duplex from phase 3 on: no echo to cancel, one receiver
+	   at a time */
+	if (hdx_on && state >= P3H_SILENCE) {
+		/* (the control channel's receiver keeps its timing while
+		   the primary channel is on) */
+		if (hcc_rx_init) {
+			hcc_rx.hold = !hcc_rx_on;
+			hcc_rx.sample(x);
+		}
+		if (prx_on)
+			prx.sample(x);
+		return;
+	}
 	if (prx_on) {
 		ec_schedule();
 		if (!ec.bypass)
@@ -2979,7 +3119,8 @@ void V34Pump::pump_rx_sample(float x)
 	if (k >= 0) {
 		probe_blocks = k ? probe_blocks + 1 : 0;
 		if (probe_blocks == 2 && !l1_start &&
-		    (state == P2A_SILENCE || state == P2C_SILENCE)) {
+		    (state == P2A_SILENCE || state == P2C_SILENCE ||
+		     state == P2H_R_PROBE)) {
 			l1_start = total - 2 * PROBE_PERIOD;
 			DSP_DBG("v34: remote L1 at %ld ms\n",
 				static_cast<long>(l1_start) * 1000 / srate);
@@ -4162,6 +4303,29 @@ s16 V34V8<P>::v8_step(s32 c)
 			self.set_state(QCA_QCA1D);
 			break;
 		}
+		if (v8_ok && self.hdx) {
+			/* a fax machine's half-duplex V.34 (its CM a fax
+			   call's with V.34 half-duplex), or nothing */
+			s16 callf = v8_remote_cat(V8_CAT_CALLF);
+			if (!v8_fax_call() ||
+			    !(v8_remote_mod(0) & V8_MOD1_HDX)) {
+				DSP_DBG("v34: V.8: no V.34 half-duplex fax in "
+					"CM\n");
+				return DPSTAT_ERROR;
+			}
+			self.hdx_on = 1;
+			/* T.30 receiving: the caller polls, we send */
+			self.hdx_source = (callf >> 5) == 5;
+			DSP_DBG("v34: V.8: V.34 half-duplex fax, we are the "
+				"%s modem\n", self.hdx_source ? "source" :
+				"recipient");
+			self.set_state(V8A_JM);
+			self.ccr.init(1200);
+			v8_make_msg(&v8tx);
+			fsk.init(1650, 1850, V34_TONE_AMP, 300, self.srate, 1);
+			self.txm = TXM_FSK;
+			break;
+		}
 		if (v8_ok && v8_adaptive && v8_fax_call()) {
 			/* a fax machine's CM (adaptive answer): the core
 			   takes it on as a fax call */
@@ -4322,6 +4486,23 @@ s16 V34V8<P>::v8_step(s32 c)
 			break;
 		}
 		/* finish the octet, then CJ */
+		if (v8_ok && fsk.edge() && v8tx.pos % 10 == 0 && self.hdx) {
+			if (!(v8_remote_mod(0) & V8_MOD1_HDX)) {
+				DSP_DBG("v34: V.8: no V.34 half-duplex in "
+					"JM\n");
+				return DPSTAT_ERROR;
+			}
+			self.hdx_on = 1;
+			self.hdx_source = self.hdx_send;
+			DSP_DBG("v34: V.8: V.34 half-duplex fax, we are the "
+				"%s modem\n", self.hdx_source ? "source" :
+				"recipient");
+			self.set_state(V8C_CJ);
+			v8tx.make_cj();
+			v8tx_repeat = 0;
+			self.ccr.init(2400);
+			break;
+		}
 		if (v8_ok && fsk.edge() && v8tx.pos % 10 == 0) {
 			v8_dp = 0;
 			if (!v8_remote_v34()) {
@@ -4720,6 +4901,544 @@ s16 V34Retrain<P>::rt_step(s32 c)
 	return DPSTAT_OK;
 }
 
+/*
+ *    V.34 half-duplex (clause 12/V.34)
+ */
+
+/* phase 3's TRN (INFOh's length, 35 ms units) in symbols */
+s32 V34Pump::hdx_trn_syms() const
+{
+	s16 b = hdx_source ? baud_tx : baud_rx;
+	return static_cast<s32>(hdx_trn * 35 * v34_symbol_rate(b) / 1000);
+}
+
+/* the recipient after the source's L2: the symbol rate (the fastest the
+   probing allows, of those both INFO0s have) and carrier for the
+   primary channel, the most it can take (max_rate_rx) */
+void V34Pump::hdx_choose_baud()
+{
+	s16 b, best = V34_BAUD_2400, best_rate = 0, best_high = 0;
+
+	probe_analyse();
+	for (b = V34_BAUD_2400; b <= V34_BAUD_3429; b++) {
+		s16 rate = rate_of_baud[b], high;
+		if (b == V34_BAUD_2743 || b == V34_BAUD_2800)
+			continue;
+		if (b == V34_BAUD_3429 &&
+		    !(rinfo0.allow_3429 && (rinfo0.rates & info0_rates & 0x04)))
+			continue;
+		/* a carrier the source's transmitter has */
+		high = v34_caller_carrier(rinfo0.rates, b);
+		if (high < 0 || !rate)
+			continue;
+		if (rate >= best_rate) {
+			best_rate = rate;
+			best = b;
+			best_high = high;
+		}
+	}
+	baud_rx = best;
+	high_rx = best_high;
+	max_rate_rx = best_rate ? best_rate : v34_min_rate(best);
+	hdx_trn = HDX_TRN;
+	DSP_DBG("v34: half-duplex: %d baud, %s carrier, up to %" PRId32
+		" bit/s\n", v34_bauds[best].nominal, best_high ? "high" : "low",
+		max_rate_rx * INT32_C(2400));
+}
+
+/* our INFOh (Table 22/V.34): no power reduction, TRN, the carrier and
+   the symbol rate hdx_choose_baud() took, no pre-emphasis, 4 point TRN */
+void V34Pump::make_infoh(BitQ *q)
+{
+	q->info_start();
+	q->put(0, 3);
+	q->put(hdx_trn, 7);
+	q->put(high_rx, 1);
+	q->put(0, 4);
+	q->put(baud_rx, 3);
+	q->put(0, 1);
+	q->info_end();
+}
+
+/* the host's control channel bits to send */
+static void hdx_cc_get(void *ctx, unsigned char *bits, s32 n)
+{
+	V34Pump *v = static_cast<V34Pump *>(ctx);
+	for (s32 i = 0; i < n; i++) {
+		s16 b = v->hdx_host.get_bit ?
+			v->hdx_host.get_bit(v->hdx_host.ctx, 0) : 1;
+		bits[i] = b == 0 ? 0 : 1;
+	}
+}
+
+/* the control channel bits received, to the host */
+static void hdx_cc_put(void *ctx, const unsigned char *bits, s32 n)
+{
+	V34Pump *v = static_cast<V34Pump *>(ctx);
+	for (s32 i = 0; i < n; i++)
+		if (v->hdx_host.put_bit)
+			v->hdx_host.put_bit(v->hdx_host.ctx, 0, bits[i] & 1);
+}
+
+/* the primary channel bits to send: B1's ones, the host's, ones after
+   their end */
+static void hdx_pri_get(void *ctx, unsigned char *bits, s32 n)
+{
+	V34Pump *v = static_cast<V34Pump *>(ctx);
+	for (s32 i = 0; i < n; i++) {
+		s16 b = 1;
+		if (v->hdx_b1_tx > 0)
+			v->hdx_b1_tx--;
+		else if (!v->hdx_pri_done) {
+			b = v->hdx_host.get_bit ?
+				v->hdx_host.get_bit(v->hdx_host.ctx, 1) : -1;
+			if (b < 0) {
+				v->hdx_pri_done = 1;
+				b = 1;
+			}
+		}
+		bits[i] = b ? 1 : 0;
+	}
+}
+
+/* the primary channel bits received, B1's dropped, to the host */
+static void hdx_pri_put(void *ctx, const unsigned char *bits, s32 n)
+{
+	V34Pump *v = static_cast<V34Pump *>(ctx);
+	for (s32 i = 0; i < n; i++) {
+		if (v->hdx_b1_rx > 0) {
+			v->hdx_b1_rx--;
+			continue;
+		}
+		if (v->hdx_host.put_bit)
+			v->hdx_host.put_bit(v->hdx_host.ctx, 1, bits[i] & 1);
+	}
+}
+
+/* what happened, to the host */
+void V34Pump::hdx_event(s16 ev)
+{
+	DSP_DBG("v34: half-duplex event %d\n", ev);
+	if (hdx_host.event)
+		hdx_host.event(hdx_host.ctx, ev);
+}
+
+/* the control channel's modem, silent, its receiver listening; -1
+   when out of memory */
+s16 V34Pump::hdx_cc_start()
+{
+	hcc_tx.init(caller);
+	hcc_tx.link = CoreBits{ modem, hdx_cc_get, hdx_cc_put, this };
+	if (!hcc_rx_init) {
+		if (hcc_rx.init(caller))
+			return -1;
+		hcc_rx_init = 1;
+	}
+	hcc_rx.resync();
+	hcc_rx.link = hcc_tx.link;
+	hcc_rx_on = 1;
+	txm = TXM_HCC;
+	return 0;
+}
+
+/* our MPh (Table 23/V.34): the most the source sends or the recipient
+   receives, the control channel at 1200 bit/s; the recipient asks for
+   the trellis code and constellation expansion, no precoding */
+void V34Pump::hdx_make_mp()
+{
+	V34Mp *mp = &hcc_tx.mp;
+	zero(*mp);
+	if (hdx_source) {
+		mp->rate_ca = rate_cap(MDMPRM_MAX_RATE);
+	} else {
+		/* (test: DSP_V34_RX_MAX=<n> as for the duplex modem) */
+		if (s32 m = env_int("DSP_V34_RX_MAX"); m > 0 && max_rate_rx > m)
+			max_rate_rx = static_cast<s16>(m);
+		if (s16 m = rate_cap(MDMPRM_MAX_RX_RATE); max_rate_rx > m)
+			max_rate_rx = m;
+		mp->rate_ca = max_rate_rx;
+		mp->trellis = V34_TRELLIS;
+		mp->expanded = 1;
+	}
+	mp->rate_mask = 0x3FFF;
+}
+
+/* both MPh known: the primary channel's data mode (the recipient's MPh
+   says how the source sends); -1 when there is no common rate */
+s16 V34Pump::hdx_params()
+{
+	const V34Mp *l = &hcc_tx.mp, *r = &hcc_rx.mp;
+	const V34Mp *rec = hdx_source ? r : l;
+	s16 b = hdx_source ? baud_tx : baud_rx;
+	s16 max = l->rate_ca < r->rate_ca ? l->rate_ca : r->rate_ca;
+	s16 n = v34_pick_rate(b, max, l->rate_mask & r->rate_mask);
+
+	if (!n || rec->trellis > 2 || hdx_p.init(b, n, rec->expanded))
+		return -1;
+	if (rec->nonlinear)
+		hdx_p.set_nonlinear(0.3125);
+	hdx_p.states = 16 << rec->trellis;
+	{
+		const s16 h0[6] = { 0, 0, 0, 0, 0, 0 };
+		hdx_p.set_precoder(h0);
+	}
+	hdx_rate = hdx_p.rate;
+	stat_coding(!hdx_source, hdx_p.states, rec->nonlinear, false,
+		    rec->expanded);
+	DSP_DBG("v34: half-duplex primary channel %" PRId32 " bit/s, %d "
+		"states\n", hdx_rate, hdx_p.states);
+	return 0;
+}
+
+/* the control channel carries data (E both ways): the host told, and
+   CONNECT the first time */
+s16 V34Pump::hdx_cc_up()
+{
+	set_state(CCH_DATA);
+	hdx_event(V34HDX_CC_UP);
+	if (hdx_up)
+		return DPSTAT_OK;
+	hdx_up = connected = 1;
+	stat_dp(DP_V34);
+	return connect_at(hdx_source ? hdx_rate : 1200,
+			  hdx_source ? 1200 : hdx_rate);
+}
+
+/* handshake()'s half-duplex states (c: the samples in the state) */
+s16 V34Pump::hdx_step(s32 c)
+{
+	switch (state) {
+	/* phase 2, the source */
+	case P2H_S_TONE:
+		if (info0_resend(c))
+			break;
+		if (ev_info0 && ev_rev) {
+			set_state(P2H_S_40);
+			count = total - rev_time;
+		}
+		break;
+	case P2H_S_40:
+		if (c >= REV_WAIT) {
+			set_state(P2H_S_REV);
+			cc_rev = 1;
+		}
+		break;
+	case P2H_S_REV:
+		if (rev_on_line() >= ms2samples(10, srate)) {
+			set_state(P2H_S_L1);
+			start_probe();
+		}
+		break;
+	case P2H_S_L1:
+		if (c >= ms2samples(160, srate)) {
+			set_state(P2H_S_L2);
+			probe_gain = 1;
+		}
+		break;
+	case P2H_S_L2:
+		if (tone_blocks >= 3 || c >= ms2samples(2000, srate)) {
+			set_state(P2H_S_INFOH);
+			cc_tone();
+		}
+		break;
+	case P2H_S_INFOH:
+		if (ev_info1) {
+			if (rinfoh.baud >= V34_NBAUDS) {
+				DSP_DBG("v34: INFOh: no such symbol rate\n");
+				return DPSTAT_ERROR;
+			}
+			baud_tx = rinfoh.baud;
+			high_tx = rinfoh.high;
+			hdx_trn = rinfoh.trn;
+			ptx.init(baud_tx, high_tx, caller);
+			txm = TXM_PRIMARY;
+			set_state(P3H_SILENCE);
+		} else if (c >= ms2samples(3000, srate)) {
+			DSP_DBG("v34: half-duplex: no INFOh\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+
+	/* phase 2, the recipient */
+	case P2H_R_TONE:
+		if (info0_resend(c))
+			break;
+		if (c >= ms2samples(50, srate) && ev_info0) {
+			set_state(P2H_R_REV);
+			cc_rev = 1;
+			ev_rev = 0;
+		}
+		break;
+	case P2H_R_REV:
+		if (rev_on_line() >= ms2samples(10, srate)) {
+			set_state(P2H_R_PROBE);
+			cc_silence();
+		}
+		break;
+	case P2H_R_PROBE:
+		if (l1_start && total - l1_start >= ms2samples(465, srate)) {
+			hdx_choose_baud();
+			set_state(P2H_R_TONE2);
+			cc_tone();
+		} else if (c >= ms2samples(3000, srate)) {
+			DSP_DBG("v34: half-duplex: no L1\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P2H_R_TONE2:
+		if (tone_blocks >= 3)
+			set_state(P2H_R_25);
+		else if (c >= ms2samples(3000, srate)) {
+			DSP_DBG("v34: half-duplex: no tone after L2\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P2H_R_25:
+		if (c >= ms2samples(25, srate)) {
+			set_state(P2H_R_INFOH);
+			make_infoh(&cctx);
+			cc_send();
+		}
+		break;
+	case P2H_R_INFOH:
+		if (!cc_busy()) {
+			cc_silence();
+			if (prx.init(baud_rx, high_rx, caller))
+				return DPSTAT_ERROR;
+			prx.hdx = 1;
+			prx_on = 1;
+			set_state(P3H_R_TRAIN);
+		}
+		break;
+
+	/* phase 3, the source */
+	case P3H_SILENCE:
+		if (c >= ms2samples(70, srate))
+			tx_next(P3H_S, V34_TX_S);
+		break;
+	case P3H_S:
+		if (ptx.n >= 128)
+			tx_next(P3H_SBAR, V34_TX_SBAR);
+		break;
+	case P3H_SBAR:
+		if (ptx.n >= 16)
+			tx_next(P3H_PP, V34_TX_PP);
+		break;
+	case P3H_PP:
+		if (ptx.n >= 288)
+			tx_next(P3H_TRN, V34_TX_TRN);
+		break;
+	case P3H_TRN:
+		if (ptx.n >= hdx_trn_syms())
+			tx_next(P3H_END, V34_TX_SILENCE);
+		break;
+	case P3H_END:
+		/* the control channel after 70 ms (12.4.1.1/V.34) */
+		if (c >= ms2samples(70, srate)) {
+			if (hdx_cc_start())
+				return DPSTAT_ERROR;
+			hdx_make_mp();
+			hcc_tx.segment(V34CC_PPH);
+			set_state(CCH_START);
+		}
+		break;
+
+	/* phase 3, the recipient */
+	case P3H_R_TRAIN:
+		if (prx.stage == V34_RX_TRN &&
+		    prx.n >= hdx_trn_syms() - 16) {
+			/* the equalizer for the resynchronizations */
+			copy_array(prx.good_eq, prx.qam.eq);
+			prx.have_good = 1;
+			DSP_DBG("v34: half-duplex TRN in, mse %.4f\n",
+				prx.mse);
+			set_state(P3H_R_END);
+		} else if (c >= ms2samples(4000, srate) +
+			   hdx_trn_syms() * 1000 /
+			   static_cast<s32>(v34_symbol_rate(baud_rx)) *
+			   srate / 1000) {
+			DSP_DBG("v34: half-duplex: no phase 3 training\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case P3H_R_END:
+		/* the control channel once the training has gone (the
+		   primary receiver still on the line: its symbol timing goes
+		   on) */
+		if (!prx.on || c >= ms2samples(100, srate)) {
+			if (hdx_cc_start())
+				return DPSTAT_ERROR;
+			set_state(CCH_WAIT);
+		}
+		break;
+
+	/* the control channel */
+	case CCH_WAIT:
+		if (hcc_rx.ev_pph) {
+			hdx_make_mp();
+			hcc_tx.segment(V34CC_PPH);
+			set_state(CCH_START);
+		} else if (hcc_rx.ev_shbar) {
+			hcc_tx.segment(V34CC_SH);
+			set_state(CCH_RESYNC);
+		} else if (c >= ms2samples(3000, srate)) {
+			DSP_DBG("v34: half-duplex: no control channel\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case CCH_START:
+		/* PPh, ALT (16 T at least, until the remote's PPh), MPh
+		   until the remote's is in, E (12.4/V.34) */
+		if (hcc_tx.seg == V34CC_PPH && hcc_tx.n >= 32)
+			hcc_tx.segment(V34CC_ALT);
+		if (hcc_tx.seg == V34CC_ALT && hcc_rx.ev_pph &&
+		    hcc_tx.n >= (hdx_source ? 16 : 32))
+			hcc_tx.segment(V34CC_MPH);
+		if (hcc_tx.seg == V34CC_MPH && hcc_rx.ev_mp)
+			hcc_tx.mp_to_e = 1;
+		if (hcc_tx.seg == V34CC_DATA && hcc_rx.ev_e) {
+			if (hdx_params()) {
+				DSP_DBG("v34: half-duplex: no common rate\n");
+				return DPSTAT_ERROR;
+			}
+			return hdx_cc_up();
+		}
+		if (c >= ms2samples(6000, srate)) {
+			DSP_DBG("v34: half-duplex: control channel start-up "
+				"failed\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case CCH_RESYNC:
+		/* Sh, S-bar h, ALT (16 T at least, and the remote's Sh,
+		   S-bar h), E (12.6/V.34) */
+		if (hcc_tx.seg == V34CC_SH && hcc_tx.n >= 24)
+			hcc_tx.segment(V34CC_SHBAR);
+		if (hcc_tx.seg == V34CC_SHBAR && hcc_tx.n >= 8)
+			hcc_tx.segment(V34CC_ALT);
+		if (hcc_tx.seg == V34CC_ALT && hcc_rx.ev_shbar &&
+		    hcc_tx.n >= (hdx_source ? 16 : 32))
+			hcc_tx.segment(V34CC_E);
+		if (hcc_tx.seg == V34CC_DATA && hcc_rx.ev_e)
+			return hdx_cc_up();
+		if (c >= ms2samples(3000, srate)) {
+			DSP_DBG("v34: half-duplex: control channel resync "
+				"failed\n");
+			return DPSTAT_ERROR;
+		}
+		break;
+	case CCH_DATA:
+		if (hdx_source && hdx_pri_req) {
+			/* the turn-off: 4 T of ones */
+			hdx_pri_req = 0;
+			hcc_tx.segment(V34CC_ONES);
+			set_state(CCH_OFF);
+		} else if (!hdx_source && !prx.data_on) {
+			/* the primary receiver waits for the source's S
+			   meanwhile (its resynchronization, 12.5/V.34) */
+			prx.start_data(&hdx_p,
+				       CoreBits{ modem, nullptr, hdx_pri_put,
+						 this });
+			prx.set_stage(V34_RX_IDLE);
+			prx.s_count = 0;
+		} else if (!hdx_source && !hcc_rx.on &&
+			   hcc_tx.seg != V34CC_SILENCE) {
+			/* the source turned its control channel off */
+			hcc_tx.segment(V34CC_SILENCE);
+		} else if (!hdx_source && prx.stage != V34_RX_IDLE) {
+			/* its S: the primary channel, ours silent */
+			hcc_tx.segment(V34CC_SILENCE);
+			hcc_rx_on = 0;
+			hdx_pri_up = 0;
+			hdx_quiet = 0;
+			set_state(PRI_R_WAIT);
+		}
+		break;
+	case CCH_OFF:
+		if (hcc_tx.seg == V34CC_ONES && hcc_tx.n >= 4) {
+			hcc_tx.segment(V34CC_SILENCE);
+			hcc_rx_on = 0;
+			set_state(PRI_GAP);
+		}
+		break;
+
+	/* the primary channel, the source */
+	case PRI_GAP:
+		if (c >= ms2samples(70, srate)) {
+			txm = TXM_PRIMARY;
+			tx_next(PRI_S, V34_TX_S);
+		}
+		break;
+	case PRI_S:
+		if (ptx.n >= 128)
+			tx_next(PRI_SBAR, V34_TX_SBAR);
+		break;
+	case PRI_SBAR:
+		if (ptx.n >= 16)
+			tx_next(PRI_PP, V34_TX_PP);
+		break;
+	case PRI_PP:
+		if (ptx.n >= 288) {
+			/* B1: a data frame of ones, twice */
+			hdx_b1_tx = 2 * hdx_p.b * hdx_p.P;
+			hdx_pri_done = 0;
+			ptx.start_data(&hdx_p, CoreBits{ modem, hdx_pri_get,
+							 nullptr, this });
+			tx_next(PRI_DATA, V34_TX_DATA);
+			hdx_event(V34HDX_PRIMARY_UP);
+		}
+		break;
+	case PRI_DATA:
+		if (hdx_pri_done)
+			set_state(PRI_ONES);
+		break;
+	case PRI_ONES:
+		if (c >= ms2samples(35, srate))
+			tx_next(PRI_END, V34_TX_SILENCE);
+		break;
+	case PRI_END:
+		/* the control channel again after 70 ms (12.6.1.1/V.34) */
+		if (c >= ms2samples(70, srate)) {
+			hdx_event(V34HDX_PRIMARY_DOWN);
+			txm = TXM_HCC;
+			hcc_tx.segment(V34CC_SH);
+			hcc_rx.resync();
+			hcc_rx_on = 1;
+			set_state(CCH_RESYNC);
+		}
+		break;
+
+	/* the primary channel, the recipient */
+	case PRI_R_WAIT:
+		if (!hdx_pri_up && prx.stage == V34_RX_DATA) {
+			hdx_pri_up = 1;
+			hdx_b1_rx = hdx_p.b * hdx_p.P;
+			hdx_event(V34HDX_PRIMARY_UP);
+		}
+		if (!hdx_pri_up) {
+			if (c >= ms2samples(10000, srate)) {
+				DSP_DBG("v34: half-duplex: no primary "
+					"channel\n");
+				return DPSTAT_ERROR;
+			}
+			break;
+		}
+		hdx_quiet = prx.on ? 0 : hdx_quiet + 1;
+		if (hdx_quiet >= ms2samples(20, srate)) {
+			prx.data_on = 0;
+			prx.set_stage(V34_RX_IDLE);
+			hdx_event(V34HDX_PRIMARY_DOWN);
+			hcc_rx.resync();
+			hcc_rx_on = 1;
+			set_state(CCH_WAIT);
+		}
+		break;
+	default:
+		break;
+	}
+	return DPSTAT_OK;
+}
+
 /* the start-up and data mode, once a sample before it goes out: V.8,
    phases 2 to 4 of V.34 / V.90, retrains, renegotiations and
    modem-on-hold; returns DPSTAT_OK, DPSTAT_CONNECT, DPSTAT_CHANGEDP or
@@ -4776,11 +5495,24 @@ s16 V34Pump::handshake()
 	case V91_RUN:           /* process() runs it */
 	case V92_RUN:
 		break;
+	case P2H_S_TONE: case P2H_S_40: case P2H_S_REV: case P2H_S_L1:
+	case P2H_S_L2: case P2H_S_INFOH: case P2H_R_TONE: case P2H_R_REV:
+	case P2H_R_PROBE: case P2H_R_TONE2: case P2H_R_25: case P2H_R_INFOH:
+	case P3H_SILENCE: case P3H_S: case P3H_SBAR: case P3H_PP: case P3H_TRN:
+	case P3H_END: case P3H_R_TRAIN: case P3H_R_END: case CCH_WAIT:
+	case CCH_START: case CCH_RESYNC: case CCH_DATA: case CCH_OFF:
+	case PRI_GAP: case PRI_S: case PRI_SBAR: case PRI_PP: case PRI_DATA:
+	case PRI_ONES: case PRI_END: case PRI_R_WAIT:
+		return hdx_step(c);
 
 	/* phase 2 answerer */
 	case P2A_INFO0:
-		if (!cc_busy() && !info0_more())
-			set_state(P2A_A);
+		if (!cc_busy() && !info0_more()) {
+			set_state(!hdx_on ? P2A_A : hdx_source ? P2H_S_TONE :
+				  P2H_R_TONE);
+			if (hdx_on)
+				ev_rev = 0;
+		}
 		break;
 	case P2A_A:
 		/* in a retrain: once the caller's B has been there a while,
@@ -4949,7 +5681,8 @@ s16 V34Pump::handshake()
 	/* phase 2 caller */
 	case P2C_INFO0:
 		if (!cc_busy() && !info0_more()) {
-			set_state(P2C_B);
+			set_state(!hdx_on ? P2C_B : hdx_source ? P2H_S_TONE :
+				  P2H_R_TONE);
 			ev_rev = 0;
 		}
 		break;
@@ -6201,6 +6934,16 @@ float V34Pump::pump_tx_sample()
 			ptx.qam.set_clock(tx_clk);
 		}
 		y = ptx.sample();
+		/* (and the control channel's symbol clock) */
+		if (hdx_on && hcc_rx_init)
+			hcc_tx.sample();
+		break;
+	case TXM_HCC:
+		y = hcc_tx.sample();
+		/* the primary channel's symbol clock goes on (silent): the
+		   recipient's timing stays as it trained it */
+		if (hdx_source && state >= P3H_END)
+			ptx.sample();
 		break;
 	case TXM_PAM:
 		/* on the network's clock, once the PCM receiver has it */
@@ -6231,7 +6974,8 @@ s16 V34Pump::sample(float x, float *y, const float *ref)
 		if (v90a_fail(0) == DPSTAT_ERROR)
 			return DPSTAT_ERROR;
 	}
-	if (state != V34_DATA && state != V90A_DATA && total >= timeout) {
+	if (state != V34_DATA && state != V90A_DATA && !hdx_up &&
+	    total >= timeout) {
 		DSP_DBG("v34: start-up timeout in state %d\n", state);
 		return DPSTAT_ERROR;
 	}
@@ -6612,8 +7356,10 @@ void V34Pump::cleanup()
 {
 	if (rt)
 		rt->pcm = 0;
-	if (prx_on)
+	if (prx_on || hdx_on)
 		prx.release();
+	if (hcc_rx_init)
+		hcc_rx.release();
 	ec.ls_free();
 }
 
@@ -6637,6 +7383,61 @@ void dp_v34_exit(void)
 	s16 i;
 	for (i = 0; i < static_cast<s16>(std::size(v34_ids)); i++)
 		modem_dp_deregister(v34_ids[i], &PumpOps<V34Pump>::ops);
+}
+
+/*
+ *    V.34 half-duplex for a fax machine (v34.h)
+ */
+
+struct V34Hdx : V34Pump {};
+
+/* (v34.h) a V.34 pump for the half-duplex fax, V.8 first */
+V34Hdx *v34_hdx_create(struct modem *m, s16 caller, s16 sending,
+		       s32 srate, const V34HdxHost *host)
+{
+	V34Hdx *h = new (std::nothrow) V34Hdx();
+	if (!h)
+		return nullptr;
+	h->hdx = 1;
+	h->hdx_send = sending;
+	if (host)
+		h->hdx_host = *host;
+	if (h->start(m, DP_V34, caller, srate, 0)) {
+		delete h;
+		return nullptr;
+	}
+	return h;
+}
+
+/* (v34.h) its samples */
+s16 v34_hdx_process(V34Hdx *h, s16 *in, s16 *out, s32 n)
+{
+	return h->process(in, out, n);
+}
+
+/* (v34.h) the source asks for the primary channel */
+void v34_hdx_primary(V34Hdx *h)
+{
+	if (h->hdx_source)
+		h->hdx_pri_req = 1;
+}
+
+/* (v34.h) */
+s16 v34_hdx_source(const V34Hdx *h)
+{
+	return h->hdx_on && h->hdx_source;
+}
+
+/* (v34.h) */
+s32 v34_hdx_rate(const V34Hdx *h)
+{
+	return h->hdx_rate;
+}
+
+/* (v34.h) */
+void v34_hdx_free(V34Hdx *h)
+{
+	delete h;
 }
 
 } // namespace dsp
