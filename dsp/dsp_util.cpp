@@ -229,12 +229,12 @@ float DtmfGen::next()
  *    DTMF detector
  */
 
-/* see dsp.h: blocks of 205 samples at 8000 Hz (the bins 39 Hz apart,
-   half the spacing of the tones), as many ms at srate */
-void DtmfDetect::init(s32 srate)
+/* see dsp.h: by default blocks of 205 samples at 8000 Hz (the bins
+   39 Hz apart, half the spacing of the tones), as many ms at srate */
+void DtmfDetect::init(s32 srate, s16 block8k)
 {
 	*this = DtmfDetect();
-	n_block = (205 * srate + 4000) / 8000;
+	n_block = static_cast<s16>((block8k * srate + 4000) / 8000);
 	for (s16 k = 0; k < 4; k++) {
 		coef[k] = 2 * cosf(2 * static_cast<float>(M_PI) * dtmf_lo[k] /
 				   srate);

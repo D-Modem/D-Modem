@@ -398,6 +398,8 @@ s16 dp_fsk_init(void);
 void dp_fsk_exit(void);
 /* the text telephone pumps (dp_text.cpp) */
 s16 dp_text_init(void);
+s16 dp_contactid_init(void);
+void dp_contactid_exit(void);
 void dp_text_exit(void);
 s16 dp_v22_init(void);
 void dp_v22_exit(void);
@@ -425,10 +427,11 @@ struct DtmfGen {
 	float next();
 };
 
-/* DTMF detector (the voice object): Goertzel filters at the eight
-   frequencies over blocks of 25.6 ms; a digit is on after two blocks of
-   it in a row (51 ms, Q.24's 40 ms tones and V.253's 25 ms minimum),
-   off after a block without it or at a quarter of its level */
+/* DTMF detector (the voice object, and Contact ID's receiver with
+   blocks of 16 ms): Goertzel filters at the eight frequencies over
+   blocks of 25.6 ms; a digit is on after two blocks of it in a row
+   (51 ms, Q.24's 40 ms tones and V.253's 25 ms minimum), off after a
+   block without it or at a quarter of its level */
 struct DtmfDetect {
 	enum Event { NONE, ON, OFF };
 
@@ -441,8 +444,9 @@ struct DtmfDetect {
 	char digit;             /* the digit on, 0 if none */
 	float ref;              /* its first block's energy */
 
-	/* at srate, nothing on */
-	void init(s32 srate);
+	/* at srate, blocks of block8k samples at 8000 Hz (as many ms at
+	   srate; 205 by default), nothing on */
+	void init(s32 srate, s16 block8k = 205);
 	/* one sample: ON when a digit comes on (digit has it), OFF when it
 	   goes, else NONE */
 	Event sample(float x);

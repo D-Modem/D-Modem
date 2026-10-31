@@ -1513,7 +1513,7 @@ directions' rates (sent in its \std{MP} sequences).
 \item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
 \item +MS=? (gives \rc{(21,22,23,27,29,122,32,132,33,34,103,18,45,}\allowbreak
-\rc{110,212,56,90,91,92,150,200,64),(0,1),(300-56000),}\allowbreak
+\rc{110,5,212,56,90,91,92,150,200,64),(0,1),(300-56000),}\allowbreak
 \rc{(300-56000)}, the
   modulations the program has)
 \end{syntax}
@@ -1551,6 +1551,9 @@ directions' rates (sent in its \std{MP} sequences).
 45 & BAUDOT & \std{V.18}, TIA-825-A & 5-bit text telephone: \std{TTY}, telex,
   \std{RTTY} (\cmdl[plusMBAUDOT]{+MBAUDOT}). \\ \hline
 110 & \std{EDT} & \std{V.18} & \std{EDT} text telephone, \std{110} bit/s. \\ \hline
+5 & CONTACTID & \std{SIA} \std{DC-05} & Contact ID alarm reports: the answerer is
+  the receiver, the caller the panel
+  (\hyperref[sec:contactid]{Section~\ref*{sec:contactid}}). \\ \hline
 \end{vtable}
 
 \paragraph{The 4-Wire Modulations.}  \std{V.29}, \std{V.33} and \std{V.27ter} are the
@@ -3011,6 +3014,38 @@ listens on these tones.  \cmdl[Z]{Z} sets the US \std{TTY}'s
   \cmd{;} on V, unshift on space), 1 ITA2's (telex). \\ \hline
 \end{vtable}
 \end{command}
+
+\section{Alarm Reports: Contact ID}\label{sec:contactid}
+
+With \cmdl[plusMS]{AT+MS=CONTACTID} the modem speaks Contact ID (\std{SIA} \std{DC-05}),
+the \std{DTMF} format in which alarm panels report events to a central
+station's receiver.  There are no commands of its own: \cmd{ATA} (or
+\cmd{S0}) makes the modem the receiver, \cmd{ATD} the panel, and the call
+is in data mode from the handshake on, \rc{CONNECT 40} on both sides.
+Neither hangs up for want of carrier; \cmd{ATH} or the far end ends the
+call.
+
+A message is 16 digits: the account (4), the message type (18, or
+98), the qualifier (1 a new event or an opening, 3 a restore or a
+closing, 6 a previous event still there), the event code (3), the
+partition (2), the zone or user (3), and the checksum, which makes the
+digits' values add up to a multiple of 15 (0 counts 10; B to F are
+11 to 15, sent as \cmd{*}, \cmd{\#}, \cmd{A}, \cmd{B} and \cmd{C}).
+
+\paragraph{The Receiver.}  Answering, the modem sends the handshake
+(1400~Hz, then 2300~Hz, 100~ms each), and again after 3~s with no
+message (four times in all).  Each message with a good checksum goes to
+the \std{DTE} as a line of its 16 digits (\rc{1234181131010158}) and gets
+the kissoff (1400~Hz for 900~ms); a bad one gets nothing, and the
+panel sends it again.  What the \std{DTE} types is dropped.
+
+\paragraph{The Panel.}  Dialling, the modem waits for the handshake,
+then sends each line the \std{DTE} types (\cmd{1234 18 1131 01 015}): 16
+digits, or 15 and the modem adds the checksum; spaces and dashes are
+ignored.  A message goes 250~ms after the handshake or the last
+kissoff, 55~ms a digit and 55~ms between, and again (four times in all)
+when no kissoff comes within 1.25~s.  Each line gets \rc{ACK} (kissed
+off), \rc{NAK} (four times without), or \rc{ERROR} (no message).
 
 \section{Voice Commands}\label{sec:voice}
 
