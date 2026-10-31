@@ -2,15 +2,18 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 D-Modem Authors
  *
- *    v34_k56.h - K56flex in the V.34 pump (dp_v34.cpp): the digital
- *                modem (the answerer).  Phase 1: V.8bis (its MRe, CRd,
+ *    v34_k56.h - K56flex in the V.34 pump (dp_v34.cpp).  The digital
+ *                modem (the answerer): phase 1 V.8bis (its MRe, CRd,
  *                CL, MS and ACK(1)) before V.8; phase 2 V.34's, our
  *                INFO1a marked as K56flex's.  Phases 3 and 4: our PCM
  *                training (K56Train) down, the caller's V.34 signals up
  *                (S, S-bar, PP, TRN, J; J', TRN, MP, MP', E), then the
- *                data: K56Enc's frames down, V.34 up.  Included by
- *                dp_v34.cpp only, after its states and BitQ.  See
- *                docs/dsp/k56flex-details.md.
+ *                data: K56Enc's frames down, V.34 up.  The analogue
+ *                modem (the caller), the other way round: CRd and MS
+ *                to the digital modem's MRe and CL, INFO1c marked, the
+ *                PCM receiver (K56Rx) on its training and data.
+ *                Included by dp_v34.cpp only, after its states and
+ *                BitQ.  See docs/dsp/k56flex-details.md.
  *
  */
 
@@ -57,6 +60,16 @@ struct V34K56 {
 	s16 k56_mp_in;          /* the caller's MP is in */
 	s32 k56_t0;             /* when the state began (total) */
 
+	/* the analogue modem (calling): K56flex offered (+MS=K56 on an
+	   analogue line at 9600 Hz; DSP_K56A=0 leaves it out), agreed
+	   (the digital modem's ACK(1) to our MS), the line into k56rx */
+	s16 k56c;
+	s16 k56c_on;
+	s16 k56_rx;
+	K56Rx k56rx;
+	s32 k56_quiet;          /* data mode samples without the signal */
+	s32 k8_ans;             /* ANSam's samples after V.8bis */
+
 	void k8_init();
 	s16 k56_start();
 	s16 k56_step(s32 c);
@@ -68,7 +81,11 @@ struct V34K56 {
 	void k8_rx_bit(s16 bit);
 	void k8_rx_sample(float x);
 	bool k8_ms_k56() const;
+	bool k8_msg_k56(s16 type) const;
 	s16 k8_step(s32 c);
+	s16 k56c_start();
+	s16 k56c_step(s32 c);
+	s16 k56c_data_setup();
 };
 
 /* our CL (the capabilities list): K56flex's non-standard block, as the
@@ -76,6 +93,10 @@ struct V34K56 {
 static const unsigned char k8_cl[] = {
 	0x12, 0xc9, 0x80, 0x80, 0x80,
 	0x07, 0xb5, 0x02, 0x00, 0x94, 0x81, 0x83, 0x61 };
+/* the analogue modem's MS: the SM56 client's, the block without 0x40 */
+static const unsigned char k8_ms[] = {
+	0x11, 0xc9, 0x80, 0x80, 0x80,
+	0x07, 0xb5, 0x02, 0x00, 0x94, 0x81, 0x83, 0x21 };
 
 /* for a new call */
 template <class P>
@@ -85,10 +106,19 @@ void V34K56<P>::k8_init()
 	k56_on = 0;
 	k8_dual = k8_crd = 0;
 	k8_crd_end = 0;
-	k8_g[0].init(1529, 96, self.srate);
-	k8_g[1].init(2225, 96, self.srate);
-	k8_g[2].init(1900, 96, self.srate);
-	k8_rx.init(1650, 1850, 300, self.srate);
+	if (self.caller) {
+		/* MRe's tones; the CL and ACK on V.21's channel 1 */
+		k8_g[0].init(1375, 96, self.srate);
+		k8_g[1].init(2002, 96, self.srate);
+		k8_g[2].init(650, 96, self.srate);
+		k8_rx.init(980, 1180, 300, self.srate);
+	} else {
+		k8_g[0].init(1529, 96, self.srate);
+		k8_g[1].init(2225, 96, self.srate);
+		k8_g[2].init(1900, 96, self.srate);
+		k8_rx.init(1650, 1850, 300, self.srate);
+	}
+	k56c_on = k56_rx = 0;
 	k8_sr = 0;
 	k8_ones = k8_nbit = k8_in = k8_n = 0;
 	k8_msg_n = 0;
@@ -187,27 +217,41 @@ void V34K56<P>::k8_rx_sample(float x)
 		k8_rx_bit(bit);
 	k8_g[2].run(x);
 	k8_g[1].run(x);
-	if (k8_g[0].run(x)) {
-		float t = tone_power(300);
-		bool dual = k8_g[0].power > t && k8_g[1].power > t;
-		k8_dual = dual ? static_cast<s16>(k8_dual + 1) : 0;
-		if (k8_dual >= 15)
+	if (!k8_g[0].run(x))
+		return;
+	float t = tone_power(300);
+	if (self.caller) {
+		/* MRe: its dual tone, then 650 Hz; ended when neither */
+		bool on = (k8_g[0].power > t && k8_g[1].power > t) ||
+			k8_g[2].power > t;
+		k8_dual = on ? static_cast<s16>(k8_dual + 1) : 0;
+		if (k8_dual >= 3 && !k8_crd)
 			k8_crd = 1;
-		if (k8_crd == 1 && !dual) {
+		if (k8_crd == 1 && !on) {
 			k8_crd = 2;
 			k8_crd_end = self.count;
 		}
+		return;
+	}
+	bool dual = k8_g[0].power > t && k8_g[1].power > t;
+	k8_dual = dual ? static_cast<s16>(k8_dual + 1) : 0;
+	if (k8_dual >= 15)
+		k8_crd = 1;
+	if (k8_crd == 1 && !dual) {
+		k8_crd = 2;
+		k8_crd_end = self.count;
 	}
 }
 
-/* the responder's MS selects K56flex: its non-standard block (L > 6,
-   T.35 code 0xb5 0x02, bit 0 of its 6th octet) */
+/* the last message, of type (K8_MSG_*), offers K56flex: its
+   non-standard block (L > 6, T.35 code 0xb5 0x02, bit 0 of its 6th
+   octet) */
 template <class P>
-bool V34K56<P>::k8_ms_k56() const
+bool V34K56<P>::k8_msg_k56(s16 type) const
 {
 	const unsigned char *o = k8_msg;
 	s16 n = k8_msg_n, i = 1, k;
-	if (n < 2 || (o[0] & 0x0f) != K8_MSG_MS || !(o[1] & 0x40))
+	if (n < 2 || (o[0] & 0x0f) != type || !(o[1] & 0x40))
 		return false;
 	/* the identification field's NPar(1) and SPar(1), the standard
 	   field's: each up to the octet with bit 7 set */
@@ -226,6 +270,13 @@ bool V34K56<P>::k8_ms_k56() const
 		i = static_cast<s16>(i + L + 1);
 	}
 	return false;
+}
+
+/* the responder's MS selects K56flex */
+template <class P>
+bool V34K56<P>::k8_ms_k56() const
+{
+	return k8_msg_k56(K8_MSG_MS);
 }
 
 /* phase 1 before V.8: MRe, the responder's CRd, our CL, its MS, our
@@ -312,6 +363,97 @@ s16 V34K56<P>::k8_step(s32 c)
 				self.v90 = self.v91 = self.v92 = 0;
 			}
 			self.set_state(V8A_SILENCE);
+		}
+		break;
+
+	/* the analogue modem, calling: the digital modem's MRe (heard by
+	   the call progress), our CRd 150 ms after it, its CL, our MS,
+	   its ACK(1); then V.8 from its ANSam */
+	case KC8_MRE:
+		if (k8_crd == 2 &&
+		    self.count - k8_crd_end >= ms2samples(150, self.srate)) {
+			DSP_DBG("v34: V.8bis MRe; CRd\n");
+			k8_o1.set_freq(1529, self.srate);
+			k8_o2.set_freq(2225, self.srate);
+			k8_a1 = k8_a2 = V34_TONE_AMP / 2;
+			self.txm = TXM_K8;
+			self.set_state(KC8_CRD);
+		} else if (c >= ms2samples(2000, self.srate)) {
+			DSP_DBG("v34: V.8bis: MRe does not end, V.8\n");
+			self.set_state(KC8_ANS);
+		}
+		break;
+	case KC8_CRD:
+		/* CRd (8.2/V.8bis): 1529 + 2225 Hz 400 ms, 1900 Hz 100 ms */
+		if (c == ms2samples(400, self.srate)) {
+			k8_o1.set_freq(1900, self.srate);
+			k8_a1 = V34_TONE_AMP;
+			k8_a2 = 0;
+		}
+		if (c >= ms2samples(500, self.srate)) {
+			k8_a1 = 0;
+			self.txm = TXM_SILENCE;
+			k8_ev = 0;
+			self.set_state(KC8_CL);
+		}
+		break;
+	case KC8_CL:
+		if (k8_ev) {
+			k8_ev = 0;
+			if ((k8_msg[0] & 0x0f) != K8_MSG_CL)
+				break;
+			if (!k8_msg_k56(K8_MSG_CL)) {
+				DSP_DBG("v34: V.8bis CL: no K56flex, V.8\n");
+				self.set_state(KC8_ANS);
+				break;
+			}
+			DSP_DBG("v34: V.8bis CL: K56flex; MS\n");
+			k8_frame(&self.v8tx, k8_ms,
+				 static_cast<s16>(sizeof(k8_ms)));
+			self.v8tx_repeat = 0;
+			self.fsk.init(1650, 1850, V34_TONE_AMP, 300,
+				      self.srate, 1);
+			self.txm = TXM_FSK;
+			self.set_state(KC8_MS);
+		} else if (c >= ms2samples(3000, self.srate)) {
+			DSP_DBG("v34: V.8bis: no CL, V.8\n");
+			self.set_state(KC8_ANS);
+		}
+		break;
+	case KC8_MS:
+		if (self.v8tx.pos >= self.v8tx.n && self.fsk.edge()) {
+			self.txm = TXM_SILENCE;
+			k8_ev = 0;
+			self.set_state(KC8_ACK);
+		}
+		break;
+	case KC8_ACK:
+		if (k8_ev) {
+			k8_ev = 0;
+			if ((k8_msg[0] & 0x0f) != K8_MSG_ACK1)
+				break;
+			k56c_on = 1;
+			/* V.8 for V.34 alone: K56flex goes on from phase 2 */
+			self.v90a = self.v92a = 0;
+			DSP_DBG("v34: V.8bis ACK(1): K56flex\n");
+			self.set_state(KC8_ANS);
+		} else if (c >= ms2samples(2000, self.srate)) {
+			DSP_DBG("v34: V.8bis: no ACK(1), V.8\n");
+			self.set_state(KC8_ANS);
+		}
+		break;
+	case KC8_ANS:
+		/* its ANSam there 200 ms: V.8 as the call modem */
+		k8_ans = self.ans_peak > 300 && self.ans_gone == 0 ?
+			k8_ans + 1 : 0;
+		if (k8_ans >= ms2samples(200, self.srate)) {
+			self.ans_peak = 0;
+			self.env_sum = self.env15_re = self.env15_im = 0;
+			self.env_n = 0;
+			self.set_state(V8C_LISTEN);
+		} else if (c >= ms2samples(5000, self.srate)) {
+			DSP_DBG("v34: V.8bis: no ANSam after it\n");
+			return DPSTAT_ERROR;
 		}
 		break;
 	default:
@@ -519,6 +661,176 @@ s16 V34K56<P>::k56_step(s32 c)
 			self.stat_dp(DP_K56);
 			return DPSTAT_CONNECT;
 		}
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+/*
+ *    the analogue modem's phases 3 and 4
+ */
+
+/* after the digital modem's INFO1a marked K56flex: our V.34
+   transmitter at the symbol rate it asked for (the caller's, GPC), the
+   PCM receiver on the line; silent until its Js */
+template <class P>
+s16 V34K56<P>::k56c_start()
+{
+	P &self = static_cast<P &>(*this);
+	self.ptx.init(self.baud_tx, self.high_tx, 1);
+	/* our J: 0x89b0 (16 point), then a robbed-bit octet: none */
+	self.ptx.j24 = 1;
+	self.ptx.jword = 0x89b0;
+	self.ptx.j_rbs = 0;
+	self.txm = TXM_PRIMARY;
+	k56rx.init(self.alaw, self.line_rate);
+	k56_rx = 1;
+	k56_quiet = 0;
+	k56_t0 = self.total;
+	/* (the PCM codes' DC is theirs, as V.90's) */
+	if (self.rt)
+		self.rt->pcm = 1;
+	self.set_state(KC3_WAIT);
+	DSP_DBG("v34: K56flex phase 3, the analogue modem at %.0f baud, "
+		"%s\n", v34_symbol_rate(self.baud_tx),
+		self.alaw ? "A-law" : "u-law");
+	return 0;
+}
+
+/* the digital modem's MP: the rates both ways, our data encoder */
+template <class P>
+s16 V34K56<P>::k56c_data_setup()
+{
+	P &self = static_cast<P &>(*this);
+	const V34Mp &m = k56rx.mp;
+	V34Params p;
+	s16 n = m.rate_ca;
+	if (k56rx.bad || n < 1 || n > 14 ||
+	    !v34_rates[self.ptx.baud][n - 1].b || p.init(self.ptx.baud, n, 0))
+		return -1;
+	p.states = 16;
+	self.ptx.start_data(&p, CoreBits{ self.modem });
+	self.rate_tx = p.rate;
+	self.rate_rx = 30000 + 2000 * m.rate_ac;
+	DSP_DBG("v34: K56flex rates: up %" PRId32 ", down %" PRId32 "\n",
+		self.rate_tx, self.rate_rx);
+	return 0;
+}
+
+/* the analogue modem's phases 3 and 4 and data, c samples into the
+   state */
+template <class P>
+s16 V34K56<P>::k56c_step(s32 c)
+{
+	P &self = static_cast<P &>(*this);
+	V34Tx &t = self.ptx;
+	switch (self.state) {
+	case KC3_WAIT:
+		/* the digital modem's training until its Js, then our S */
+		if (k56rx.ev_js) {
+			DSP_DBG("v34: K56flex: Js %#06x; S\n", k56rx.js);
+			self.tx_next(KC3_S, V34_TX_S);
+		} else if (self.total - k56_t0 >= ms2samples(10000,
+							      self.srate)) {
+			DSP_DBG("v34: K56flex: no training from the digital "
+				"modem\n");
+			return self.fallback("no K56flex training");
+		}
+		break;
+	case KC3_S:
+		if (t.n >= 128)
+			self.tx_next(KC3_SBAR, V34_TX_SBAR);
+		break;
+	case KC3_SBAR:
+		if (t.n >= 16)
+			self.tx_next(KC3_PP, V34_TX_PP);
+		break;
+	case KC3_PP:
+		if (t.n >= 288)
+			self.tx_next(KC3_TRN, V34_TX_TRN);
+		break;
+	case KC3_TRN:
+		if (t.n >= 2048) {
+			self.tx_next(KC3_J, V34_TX_J);
+			k56_t0 = self.total;
+		}
+		break;
+	case KC3_J:
+		/* J until its TRN2A, then J' after a whole J; our phase 4
+		   of 16 points if its Js asked */
+		if (k56rx.ev_trn2a && t.n % 12 == 0) {
+			t.trn16 = (k56rx.js >> 5) & 1;
+			DSP_DBG("v34: K56flex: TRN2A; J'\n");
+			self.tx_next(KC4_TRN, V34_TX_JP);
+		} else if (self.total - k56_t0 >= ms2samples(8000,
+							      self.srate)) {
+			DSP_DBG("v34: K56flex: no R after our J\n");
+			return self.fallback("no K56flex phase 4");
+		}
+		break;
+	case KC4_TRN:
+		if (t.seg == V34_TX_TRN && t.n >= 2048) {
+			/* our MP: the most we send, the most we take down
+			   (DSP_K56_MAX, 13: 56000 bit/s) */
+			V34Mp *mp = &t.mp;
+			zero(*mp);
+			mp->rate_ca = self.rate_cap(MDMPRM_MAX_RATE);
+			mp->rate_ac = static_cast<s16>(env_int("DSP_K56_MAX",
+							       13));
+			mp->rate_mask = 0x3FFF;
+			mp->asym = 1;
+			self.tx_next(KC4_MP, V34_TX_MP);
+			k56_t0 = self.total;
+		}
+		break;
+	case KC4_MP:
+		if (k56rx.ev_mp && !t.ack_mp) {
+			if (k56c_data_setup()) {
+				DSP_DBG("v34: K56flex: no common rate\n");
+				return self.fallback("no common data rate");
+			}
+			t.ack_mp = 1;
+		}
+		/* E after a whole MP' once its MP' has come */
+		if (k56rx.ev_mpack && t.mp_sent >= 1 && t.mp.ack &&
+		    t.pos >= t.nbits)
+			self.tx_next(KC4_E, V34_TX_E);
+		else if (self.total - k56_t0 >= ms2samples(8000, self.srate)) {
+			DSP_DBG("v34: K56flex: no MP from the digital "
+				"modem\n");
+			return self.fallback("no MP");
+		}
+		break;
+	case KC4_E:
+		if (t.seg == V34_TX_DATA && k56rx.ev_data) {
+			self.set_state(KC4_DATA);
+			self.set_rates(self.rate_tx, self.rate_rx);
+			self.connected = 1;
+			DSP_DBG("v34: K56flex connect " RATE_FMT
+				" (analogue modem)\n", self.rate_tx,
+				self.rate_rx);
+			self.stat_dp(DP_K56);
+			return DPSTAT_CONNECT;
+		}
+		break;
+	case KC4_DATA:
+		/* the PCM signal gone: carrier lost */
+		k56_quiet = k56rx.dpow < 1e-3f * k56rx.level * k56rx.level ?
+			k56_quiet + 1 : 0;
+		self.stat_carrier(!k56_quiet);
+		if (k56_quiet >= self.carrier_loss) {
+			DSP_DBG("v34: K56flex: carrier lost\n");
+			return DPSTAT_ERROR;
+		}
+		if (c % ms2samples(1000, self.srate) == 0)
+			DSP_DBG("v34: K56flex data: error %.2f rms (%.1f dB), "
+				"%" PRId32 " code errors, timing %+.2f ppm\n",
+				sqrtf(k56rx.de_mse),
+				10 * log10f(k56rx.dpow /
+					    (k56rx.de_mse + 1e-6f)),
+				k56rx.dec.errors, k56rx.ppm());
 		break;
 	default:
 		break;

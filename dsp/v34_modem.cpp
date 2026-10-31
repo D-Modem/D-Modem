@@ -208,8 +208,11 @@ static cplx tx_symbol(V34Tx *t)
 		break;
 	case V34_TX_J:
 	case V34_TX_JP:
-		w = t->seg == V34_TX_J ? J_4POINT : J_DASH;
-		k = 2 * (t->n % 8);
+		w = t->seg == V34_TX_J ? (t->jword ? t->jword : J_4POINT) :
+			J_DASH;
+		if (t->seg == V34_TX_J && t->j24)
+			w |= static_cast<u32>(t->j_rbs) << 16;
+		k = 2 * (t->n % (t->seg == V34_TX_J && t->j24 ? 12 : 8));
 		t->idx = (t->idx + t->dibit((w >> k) & 1, (w >> (k + 1)) & 1)) & 3;
 		z = tx_point(t->idx);
 		break;
