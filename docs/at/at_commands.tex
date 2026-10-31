@@ -294,6 +294,19 @@
 % every page: a band across the top with the document's name and the
 % section, an accent stripe under it; the footer the name, the edition
 % and the page of how many
+% a square QAM constellation: #1 points a side, #2 apart, centred at
+% #3, drawn in #4 (with its I and Q axes when #5 is not empty)
+\newcommand{\qam}[5]{%
+  \begin{scope}[shift={#3}]
+    \pgfmathsetmacro{\qamh}{(#1-1)/2}
+    \if\relax\detokenize{#5}\relax\else
+      \draw[#4,line width=0.4pt] ({-(\qamh+0.9)*#2},0) -- ({(\qamh+0.9)*#2},0);
+      \draw[#4,line width=0.4pt] (0,{-(\qamh+0.9)*#2}) -- (0,{(\qamh+0.9)*#2});
+    \fi
+    \foreach \i in {1,...,#1}
+      \foreach \q in {1,...,#1}
+        \fill[#4] ({(\i-1-\qamh)*#2},{(\q-1-\qamh)*#2}) circle[radius=0.16*#2];
+  \end{scope}}
 \renewcommand{\sectionmark}[1]{\markboth{\thesection\quad #1}{}}
 \newcommand{\pageband}{%
   \begin{tikzpicture}[remember picture,overlay]
@@ -301,6 +314,7 @@
       ([yshift=-1.25cm]current page.north east);
     \fill[dmred] ([yshift=-1.25cm]current page.north west) rectangle
       ([yshift=-1.37cm]current page.north east);
+    \qam{4}{0.17cm}{([xshift=0.78cm,yshift=-0.625cm]current page.north west)}{dmred}{}
     \node[anchor=base west,text=white,inner sep=0pt]
       at ([xshift=1.5cm,yshift=-0.75cm]current page.north west)
       {\small\bfseries D-Modem\quad\mdseries AT Command Reference};
@@ -334,6 +348,7 @@
       \draw[white,opacity=\o,line width=1.2pt,domain=0:14.8,samples=300,
         smooth] plot (\x,{\a*sin(\f*\x r)});
   \end{scope}
+  \qam{8}{0.52cm}{([xshift=10.6cm,yshift=-3.6cm]current page.north west)}{white,opacity=0.13}{axes}
   \node[anchor=north west,inner sep=0pt]
     at ([xshift=1.1cm,yshift=-1.0cm]current page.north west)
     {\dmlogo{3.6cm}};
