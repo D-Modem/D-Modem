@@ -587,7 +587,11 @@ void V34Rx::got_bit(s16 bit)
 	if ((sr & 0xFFFF) == rev16(J_4POINT) ||
 	    (sr & 0xFFFF) == rev16(J_16POINT)) {
 		/* (the same J 16 bits after the last) */
-		bool next = j_count && bit_n - j_last == 16 && (sr & 0xFFFF) == j_word;
+		bool next = j_count && bit_n - j_last == (j24 ? 24 : 16) &&
+			    (sr & 0xFFFF) == j_word;
+		/* K56flex: the octet between two Js */
+		if (next && j24)
+			j_rbs = static_cast<u16>(rev16(static_cast<u16>(sr >> 16)) >> 8);
 		j_count = next ? j_count + 1 : 1;
 		j_last = bit_n;
 		j_word = sr & 0xFFFF;
@@ -598,7 +602,7 @@ void V34Rx::got_bit(s16 bit)
 				j16 ? " (16 point TRN)" : "");
 		}
 	} else if ((sr & 0xFFFF) == rev16(J_DASH) && ev_j && !ev_jp &&
-		   bit_n - j_last == 16) {
+		   bit_n - j_last == (j24 ? 24 : 16)) {
 		ev_jp = 1;
 		ls_n = 0;            /* the caller's phase 4 TRN */
 		DSP_DBG("v34 rx: J' at symbol %" PRId32 "\n", sym);
@@ -608,12 +612,45 @@ void V34Rx::got_bit(s16 bit)
 /* the 4 point signals after S-bar: J, MP and E are coded differentially */
 void V34Rx::diff_decode(cplx z)
 {
-	s16 idx_ = nearest4(z), d = (idx_ - idx) & 3;
+	s16 idx_ = nearest4(z), d, q = 0;
+	if (trn16 && ev_jp) {
+		/* 16 points: the turn of the last decision, then its
+		   quarter point (tx_point16()) */
+		nearest16(z);
+		idx_ = i16;
+		q = q16;
+	}
+	d = (idx_ - idx) & 3;
 	idx = idx_;
 	got_bit(descramble(&scr, tap, d & 1));
 	if (stage == V34_RX_DATA)
 		return;
 	got_bit(descramble(&scr, tap, d >> 1));
+	if (trn16 && ev_jp && stage != V34_RX_DATA) {
+		got_bit(descramble(&scr, tap, q & 1));
+		if (stage != V34_RX_DATA)
+			got_bit(descramble(&scr, tap, q >> 1));
+	}
+}
+
+/* the nearest of the 16 training points (tx_point16()) to z; its turn
+   and quarter point into i16 and q16 */
+cplx V34Rx::nearest16(cplx z)
+{
+	cplx best = { 0, 0 };
+	float bd = 1e30f;
+	for (s16 i = 0; i < 4; i++)
+		for (s16 q = 0; q < 4; q++) {
+			cplx p = tx_point16(i, q);
+			float e = cplx_pow(cplx_sub(z, p));
+			if (e < bd) {
+				bd = e;
+				best = p;
+				i16 = i;
+				q16 = q;
+			}
+		}
+	return best;
 }
 
 /* from the first 48 PP symbols: the offset (-4..4 symbols) at which
@@ -999,7 +1036,10 @@ void V34Rx::symbol()
 			}
 		} else
 			s_count = 0;
-		d = v34_trn4[nearest4(z)];
+		if (trn16 && ev_jp)
+			d = nearest16(z);
+		else
+			d = v34_trn4[nearest4(z)];
 		e = cplx_pow(cplx_sub(z, d)) / 2;
 		mse += 0.01f * (e - mse);
 		/* not on the fading end of a signal; smaller steps once

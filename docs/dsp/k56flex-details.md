@@ -18,12 +18,15 @@ Terms used on this page:
 
 Status:
 
-- D-Modem has K56flex's data mode encoder and decoder (`dsp/k56flex.h`), but
-  no K56flex modem yet. `AT+MS=56` (or `AT+MS=K56`) is accepted while V.90 is available, and runs V.90 (`Modem::change_dp()` in `core/modem.cpp`; `ms_choosable()` in `core/at.cpp`).
-- Known: the start-up from the first tone to the end of phase 4 (sections
-  1 to 4).
-- Known: the data mode encoder (section 5), in `dsp/k56flex.cpp`, checked
-  against sm56's own decoder.
+- D-Modem is a K56flex **server**: `AT+MS=56` (or `AT+MS=K56`) on an
+  8000 Hz G.711 line answers with V.8bis and K56flex, and with V.90 when the
+  caller has no K56flex (`DP_K56` on the V.34 pump, `dsp/v34_k56.h`). Calling,
+  it runs V.90 (`V34Pump::start()`; `Modem::change_dp()` in `core/modem.cpp`
+  maps `DP_K56` to V.90 only when no pump is registered for it).
+- The interop test `sm56_k56flex` (label `sm56`) connects sm56 as the client
+  at 44000 bit/s down and 31200 up, with V.42, and passes data [seen].
+- The training is `K56Train` (`dsp/k56flex_train.cpp`), the data mode
+  `K56Enc` and `K56Dec` (`dsp/k56flex.cpp`).
 - Conexant's HSF engine (`hsfengine.o`) is no help. Its K56flex slot is
   disabled (`"NOTSUPP"` in its `+MS` table), and when forced on, its CM offers
   no modulation. Its `k56*` files are the PCM base of its V.90 receiver.
@@ -44,7 +47,7 @@ upstream. The start-up:
 | 1 | V.8bis (the K56flex capability, in a non-standard field), then V.8 selecting V.34 | the server is the V.8bis initiator and the V.8 answerer |
 | 2 | V.34 phase 2, with K56flex in the INFO1 frequency offset field | the server is the V.34 *answer* modem (unlike V.90) |
 | 3 | downstream PCM training; upstream S, S-bar, PP, TRN, J | the client waits for the server's signal |
-| 4 | downstream TRN2, MP, MP', E; upstream J-bar, TRN, MP, MP', E, B1 | |
+| 4 | downstream R, TRN2, MP, MP', E; upstream J', TRN, MP, MP', E, B1 | |
 | data | downstream PCM at 32000 to 56000 bit/s in 2000 bit/s steps; upstream V.34 | section 5 |
 
 ## 1. Phase 1: V.8bis, then V.8
@@ -157,10 +160,18 @@ The upstream is V.34-shaped, modulated at 3200 baud (the client's codec runs at 
 | S-bar | 16 | |
 | PP | 288 | |
 | TRN | echo delay + 4000 to 6430 | rate dependent |
-| J | | V.34's J (`0x8990` 4-point, `0x89b0` 16-point), 4-point mapped; also carries the client's robbed-bit findings (2 bits) |
+| J | | 24 bits again and again: V.34's J (`0x8990` 4-point, `0x89b0` 16-point), then an octet from `SC_A56_Gen_JA_RBS` (the client's robbed-bit findings; 0 on a clean line), all 4-point mapped and differentially coded as V.34's |
 
 The J tells the server how many levels to use in phase 4: `0x8990` means 1 bit
-per symbol and `0x89b0` means 2 [seen].
+per symbol and `0x89b0` means 2 [seen]. sm56 sends `0x89b0`. Our receiver
+(`V34Rx::j24`) takes two Js 24 bits apart as the J, and keeps the octet in
+`j_rbs`.
+
+The client's phase 4 upstream is V.34's caller's with J' for S and S-bar: J'
+(`0x899f`) right after the last whole J, then TRN, MP, MP', E and B1 [seen].
+They are 16-point (V.34's 10.1.3.8: TRN with 4 bits a symbol, MP and E too)
+when the server's Js asked for 16 levels, as ours does; `V34Rx::trn16` decodes
+them from J' on.
 
 ### Server downstream
 
@@ -180,18 +191,24 @@ The durations in its table, in 8 kHz symbols (-1 means "until an event"), are:
     0 48 -1 -1 51 390 10 9000 6 7046 8448 4096 6 12273 2000 -1 -1 76 6
     16328 6 2040 14322 1420 62 13999 0
 
-Its phase 3 detector advances when the front end is in TRN1C with more than
-4000 symbols counted. It then decodes Js from the signs, as a 16-bit word of descrambled bits,
-MSB first: `0x991` means 4-level and `0xd91` 16-level,
-and the latter moves the client on [seen]. These are V.34's J words
-bit-reversed, so the server sends `0x8990` or `0x89b0` LSB first [inferred].
-Phase 3 ends when the front end reaches TRN2A.
+In the state list the index of a state's length is one more than its
+name's place, so `8448` is TRN1B's and `4096` TRN1C's reference-directed part.
+Its phase 3 detector (`SC_Phase3_Wait_TRN1B`) moves the front end on to
+TRN1C's decision-directed part once 4000 symbols of its reference-directed
+part have passed. `SC_Phase3_Det_Js` then decodes Js from the signs, as a
+16-bit word of descrambled bits, MSB first: `0x991` means 4-level and `0xd91`
+16-level. Only `0xd91` moves the client on: after `0x991` the detector
+clears its own flag on the next comparison, so a 4-level Js is never taken
+[seen]. These are V.34's J words bit-reversed: the server sends `0x89b0`, LSB
+first [seen]. The client's front end then passes 12273 symbols (silence 2)
+and looks for the second R.
 
 sm56 also contains a digital-side transmitter (`isdn_tx`) that is never called
-[seen]. It agrees with the client on R, TRN1C, Js, TRN2A and TRN2B. It has no
-TRN1B of the client's 3-bit kind, though, and its lengths differ from the
-client's table, so it may be an older version of the protocol [inferred]. Its
-sequence, with lengths in 8 kHz codes, is:
+[seen]. It agrees with the client on R, TRN1A, TRN1C (its "TRN1B"), Js, TRN2A
+and TRN2B. It has no TRN1B of the client's 3-bit kind, though, so it may be an
+older version of the protocol [inferred]. Without that TRN1B the client takes
+our Js 8448 symbols too early and never finds it [seen]. Its sequence, with
+lengths in 8 kHz codes, is:
 
 | Segment | Length | Codes |
 |---|---|---|
@@ -216,25 +233,50 @@ expects) [seen]:
 | Segment | Codes |
 |---|---|
 | TRN1A | scrambled bit → `0x4f` or `0xcf` (its sign) |
-| TRN1B | 3 bits → one of `0x40 0x41 0x4b 0x4c 0x50 0x51`, then the sign |
+| TRN1B | 3 scrambled bits (`MOD_RefGenTRN1B`) → magnitude `40 41 4b 4c 50 51 50 51` (b0 + 2·b1 + 4·b2), then the sign |
 | TRN1C, TRN2A | 1 bit → `0x4f` or `0xcf`, corrected for robbed bits and digital loss |
 | TRN2B | 3 bits → the 4 magnitudes `0x2f 0x45 0x51 0x57` and a sign |
 
-The scrambler is V.34's (GPA, `1 + x^-5 + x^-23`) [seen].
+The scrambler is V.34's (GPA, `1 + x^-5 + x^-23`) [seen]. It runs on through
+TRN1A, TRN1B and TRN1C (the client's reference generators share one state),
+and TRN1B scrambles 3 bits every symbol, the sign symbols' too. TRN1B's signs:
+every other one (from its first symbol on) the bit 23 scrambled bits back, set
+for positive; the others against the running sum [seen in
+`MOD_RefGenTRN1B`].
+
+The server's sequence that sm56 takes, as D-Modem sends it (`K56Train`):
+
+| Segment | Length |
+|---|---|
+| Silence 1, R, TRN1A | 512, 288, 16368, as `isdn_tx` |
+| TRN1B | 8448, the client's 3-bit kind |
+| TRN1C | 8448, `isdn_tx`'s "TRN1B" |
+| Js | 128, J = `0x89b0` |
+| Silence 2 | until the client's J, 12288 at least, rounded up to 8 symbols |
+| R, TRN2A, MARK, TRN2B | 288, 16336, 32, then TRN2B until the client's MP and 2048 symbols at least |
+| MP, MP', E | 704, 704, 12 |
+| data | B1 first (6 frames of ones) |
+
+After its J the client waits only about 0.75 s for the second R, so the
+server must hear that J (its 24-bit kind) and not wait for a timeout [seen].
 
 Code conventions [seen]:
 
-- A code with bit 7 clear is a positive magnitude index, `seg << 4 | mant`.
-  A negative code is the one's complement of the positive one.
+- In `isdn_tx`, a code with bit 7 clear is a positive magnitude index,
+  `seg << 4 | mant`. A negative code is the one's complement of the positive
+  one. It converts its code `c` to µ-law as `c & 0x80 ? c ^ 0x7f : c`,
+  inverted, which makes silence `0xff`.
 - The magnitude is `((2·mant + 33) << seg) - 33` in the 14-bit scale; `0x4f` is ±975.
-- The transmitter converts its code `c` to µ-law as `c & 0x80 ? c ^ 0x7f : c`
-  inverted. The final inversion is [inferred]; it makes silence `0xff`.
+- The client's decoder (`putBIOS`) and D-Modem (`K56Enc`, `K56Train`,
+  `k56_g711()`) take bit 7 the other way, as G.711's: set is positive. The
+  client's reference tables above are in that convention. Sent with bit 7
+  negative, our data reached the client with every sign flipped [seen].
 
 ## 4. Phase 4
 
 The client [seen]:
 
-1. Sends J-bar once the front end is in TRN2A.
+1. Sends J-bar (V.34's J', `0x899f`) once the front end is in TRN2A.
 2. Waits for 16 descrambled ones followed by 16 zeros: TRN2A's end and MARK.
 3. Takes the server's **MP**: V.34's type 0 MP (88 bits), sent as 2 bits per
    symbol with LSB first, descrambled, and checked by V.34's MP detector. `rate_ca`, `rate_ac`
@@ -330,10 +372,10 @@ pad the 72 magnitudes are 3, 8, 12, 16, 18, ... 101.
 
 ### Signs and shaping
 
-A symbol's sign (bit 7 of the code: 1 negative) is a data bit, the symbol's
+A symbol's sign (bit 7 of the code: 1 positive) is a data bit, the symbol's
 first: the code's q bits are the next q. Every r-th symbol (counted over the
 whole call, across frames) has no sign bit. Its sign is chosen against the
-running sum of all sent values: negative when the sum is 0 or more,
+running sum of all sent values: negative when the sum is above 0,
 positive otherwise. The values are µ-law's in 14 bit units
 (`((2m + 33) << seg) − 33`), or A-law's for an A-law line. This keeps the
 downstream's DC near 0, and since a point and its mirror are in the same
@@ -356,12 +398,12 @@ lose their code's last bit:
 
 ### Codes on the line
 
-The encoder's code is the magnitude index with the sign in bit 7. As a G.711
-octet this is 0xff − m (positive) or 0x7f − m (negative) for µ-law
-(`k56_g711()`). sm56's encoder writes the code with `c ^ 0x7f` for negative
-codes and leaves the final inversion to its hardware layer [seen in
-`isdn_tx`]. For A-law the octet D-Modem sends is the standard one; no A-law
-client has been tried.
+The encoder's code is the magnitude index with the sign in bit 7, set for
+positive. As a G.711 octet this is 0xff − m (positive) or 0x7f − m (negative)
+for µ-law, and the code xor 0x55 for A-law (`k56_g711()`). sm56's encoder
+writes its own codes with `c ^ 0x7f` for negative codes and leaves the final
+inversion to its hardware layer [seen in `isdn_tx`]. No A-law client has been
+tried.
 
 ### Data after phase 4
 
@@ -370,12 +412,8 @@ client discards its first 48 symbols (B1) [seen].
 
 ## Open questions
 
-- When the server ends each R. The inference is: the first R until the client is ready,
-  then a reversal and TRN1A; and the second R until the client's J is in, then
-  a reversal and TRN2A.
-- Which downstream sequence today's clients expect: `isdn_tx`'s or one with
-  the client's 3-bit TRN1B.
-- The polarity of the Js word.
+- Whether other clients take a 4-level Js (sm56's detector cannot), and
+  TRN1C's real length: sm56 takes anything from about 4000 symbols on.
 - An A-law client: what sets its law, and whether the INFO1a codes 5 and 13 work. Not tested.
 - The meaning of INFO1a's x bit and of NS octets 3 to 7.
 - Retrains and rate renegotiation.

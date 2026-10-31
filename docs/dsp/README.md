@@ -43,9 +43,9 @@ recording sound), and **fax** (see [Fax](fax.md)).
 
 When a modem calls, the V.8 negotiation lets both ends agree on the best
 standard they share. The page on [V.8 and V.34](v34.md) explains it.
-K56flex, an older 56k standard from before V.90, is not supported yet.
-Its data mode is built, but its start-up is not; what is known of it is
-on [its own page](k56flex.md).
+K56flex, an older 56k standard from before V.90, works on the digital
+end: D-Modem answers a K56flex modem with it. See
+[its own page](k56flex.md).
 
 ## The two ends of a 56k call
 

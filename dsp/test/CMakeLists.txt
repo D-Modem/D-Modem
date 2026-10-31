@@ -394,6 +394,7 @@ if(EXISTS "${DMODEM_SM56_KO}")
 	target_link_libraries(half_sm56 PRIVATE ${DMODEM_LIBM})
 	# our K56flex data mode encoder into SM56's own decoder
 	add_executable(k56flex_sm56 k56flex_sm56.cpp ${S}/k56flex.cpp
+		${S}/k56flex_train.cpp
 		${S}/k56flex_tables.cpp ${_sm56o})
 	target_include_directories(k56flex_sm56 PRIVATE ${S})
 	target_compile_options(k56flex_sm56 PRIVATE ${DMODEM_M32} -g -O1)

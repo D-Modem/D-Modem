@@ -22,7 +22,7 @@ s32 k56_value(unsigned char code, s16 alaw)
 		v = seg ? (2 * (m & 15) + 33) << (seg - 1) : 2 * m + 1;
 	else
 		v = ((2 * (m & 15) + 33) << seg) - 33;
-	return code & 0x80 ? -v : v;
+	return code & 0x80 ? v : -v;
 }
 
 /* a code as a G.711 octet of the law */
@@ -30,18 +30,16 @@ unsigned char k56_g711(unsigned char code, s16 alaw)
 {
 	unsigned char m = code & 0x7f;
 	if (alaw)
-		return static_cast<unsigned char>(((code & 0x80) ? m : m | 0x80) ^ 0x55);
-	return static_cast<unsigned char>((code & 0x80) ? 0x7f - m : 0xff - m);
+		return static_cast<unsigned char>(code ^ 0x55);
+	return static_cast<unsigned char>((code & 0x80) ? 0xff - m : 0x7f - m);
 }
 
 /* a G.711 octet of the law as a code */
 unsigned char k56_code(unsigned char g, s16 alaw)
 {
-	if (alaw) {
-		g ^= 0x55;
-		return static_cast<unsigned char>((g & 0x80) ? g & 0x7f : 0x80 | g);
-	}
-	return static_cast<unsigned char>((g & 0x80) ? 0xff - g : 0x80 | (0x7f - g));
+	if (alaw)
+		return static_cast<unsigned char>(g ^ 0x55);
+	return static_cast<unsigned char>((g & 0x80) ? 0x80 | (0xff - g) : 0x7f - g);
 }
 
 /* the codec for line l; -1 for a rate or pad that K56flex does not have */
@@ -186,18 +184,18 @@ void K56Enc::frame(const unsigned char *bits, unsigned char code[8])
 	   symbol against the running sum */
 	u32 qm = (1u << q) - 1;
 	for (i = 0; i < 8; i++) {
-		bool rb = rob[8 * f + i], neg;
+		bool rb = rob[8 * f + i], pos;
 		u32 p = static_cast<u32>(ring[m[i]]) << q;
 		if (shaping_next()) {
-			neg = rds >= 0;
+			pos = rds <= 0;
 			p |= (rb ? U << 1 : U) & qm;
 			U >>= rb ? q - 1 : q;
 		} else {
-			neg = U & 1;
+			pos = U & 1;
 			p |= (rb ? U & ~1u : U >> 1) & qm;
 			U >>= rb ? q : q + 1;
 		}
-		code[i] = static_cast<unsigned char>(bios[p] | (neg ? 0x80 : 0));
+		code[i] = static_cast<unsigned char>(bios[p] | (pos ? 0x80 : 0));
 		sent(code[i]);
 	}
 	half ^= 1;
@@ -235,7 +233,7 @@ s16 K56Dec::frame(const unsigned char code[8], unsigned char *bits)
 	s16 adj, ks = shell_bits(&adj), m[8], i, nu = 0;
 	u32 U = 0, qm = (1u << q) - 1;
 	for (i = 0; i < 8; i++) {
-		bool rb = rob[8 * f + i], neg = code[i] & 0x80;
+		bool rb = rob[8 * f + i], pos = code[i] & 0x80;
 		s16 p = static_cast<s16>(inv[code[i] & 0x7f] - 1);
 		/* a robbed symbol's point is even, its code's last bit lost */
 		if (rb && (p < 0 || p & 1)) {
@@ -258,10 +256,10 @@ s16 K56Dec::frame(const unsigned char code[8], unsigned char *bits)
 			}
 		} else {
 			if (rb) {
-				U |= (w | (neg ? 1u : 0u)) << nu;
+				U |= (w | (pos ? 1u : 0u)) << nu;
 				nu = static_cast<s16>(nu + q);
 			} else {
-				U |= (w << 1 | (neg ? 1u : 0u)) << nu;
+				U |= (w << 1 | (pos ? 1u : 0u)) << nu;
 				nu = static_cast<s16>(nu + q + 1);
 			}
 		}

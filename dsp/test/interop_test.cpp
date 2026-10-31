@@ -978,6 +978,12 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
 		      "DSP_G711=" + law, "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
+	/* K56flex: the SM56 modem as the analogue modem, ours the digital
+	   modem (docs/dsp/k56flex.md) */
+	add("sm56", "sm56_k56flex", "sm56", "open8", "ATX3;AT+MS=K56FLEX",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect",
+	      "PROTO_B=ATX3;AT+MS=56" });
 	/* V.92: its QC1a on the first call already; on the second, quick
 	   connect with short phase 2.  (Its upstream stays V.34: the module
 	   chooses PCM upstream only in quick connect's INFO1a, from an
