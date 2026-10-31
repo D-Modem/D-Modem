@@ -3,7 +3,8 @@
  * Copyright (C) 2026 D-Modem Authors
  *
  *    dp_fsk.cpp - FSK data pumps: ITU V.21 (300 bit/s), ITU V.23
- *               (1200/75 bit/s) and Bell 103 (300 bit/s)
+ *               (1200/75 bit/s), Bell 103 (300 bit/s) and Bell 202
+ *               (1200 bit/s both ways on a 4-wire leased line)
  *
  */
 
@@ -160,8 +161,15 @@ static const struct fsk_params v23_params[2] = {
 	{ "V23", 1300, 2100, 1200, 390, 450, 75 },
 };
 
+/* Bell 202 on 4 wires: each end sends 1200 bit/s on its own pair, mark
+   1200 Hz, space 2200 Hz */
+static const struct fsk_params b202_params[2] = {
+	{ "Bell202", 1200, 2200, 1200, 1200, 2200, 1200 },
+	{ "Bell202", 1200, 2200, 1200, 1200, 2200, 1200 },
+};
+
 struct FskPump : PumpBase<FskPump, fsk_state> {
-	static constexpr const char *name = "FSK (V.21/V.23/Bell103) data pump";
+	static constexpr const char *name = "FSK (V.21/V.23/Bell103/Bell202) data pump";
 
 	const struct fsk_params *par;
 	s32 mark_count;         /* consecutive samples of steady mark */
@@ -212,6 +220,7 @@ s16 FskPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	case DP_V21:  par_ = v21_params; break;
 	case DP_V23:  par_ = v23_params; break;
 	case DP_B103: par_ = b103_params; break;
+	case DP_B202: par_ = b202_params; break;
 	default: return -1;
 	}
 	par_ += caller_ ? 0 : 1;
@@ -227,7 +236,11 @@ s16 FskPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	g_lo.init(par_->rx_mark - 350, srate_ / 100, srate_);
 	g_hi.init(par_->rx_mark + 350, srate_ / 100, srate_);
 
-	if (caller_) {
+	if (id == DP_B202) {
+		/* a leased line's ends alike: the mark at once, the data
+		   when the far end's is steady */
+		state = FSK_TRAIN;
+	} else if (caller_) {
 		state = FSK_WAIT_CARRIER;
 		if (rt && rt->after_v8) {
 			/* after V.8's CJ the caller's carrier comes first
@@ -399,12 +412,13 @@ s16 FskPump::sample(float x, float *y)
 	return ret;
 }
 
-/* registers the pump as DP_V21, DP_V23 and DP_B103; 0 */
+/* registers the pump as DP_V21, DP_V23, DP_B103 and DP_B202; 0 */
 s16 dp_fsk_init(void)
 {
 	modem_dp_register(DP_V21, &PumpOps<FskPump>::ops);
 	modem_dp_register(DP_V23, &PumpOps<FskPump>::ops);
 	modem_dp_register(DP_B103, &PumpOps<FskPump>::ops);
+	modem_dp_register(DP_B202, &PumpOps<FskPump>::ops);
 	return 0;
 }
 
@@ -414,6 +428,7 @@ void dp_fsk_exit(void)
 	modem_dp_deregister(DP_V21, &PumpOps<FskPump>::ops);
 	modem_dp_deregister(DP_V23, &PumpOps<FskPump>::ops);
 	modem_dp_deregister(DP_B103, &PumpOps<FskPump>::ops);
+	modem_dp_deregister(DP_B202, &PumpOps<FskPump>::ops);
 }
 
 } // namespace dsp

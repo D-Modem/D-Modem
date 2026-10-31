@@ -1512,8 +1512,9 @@ directions' rates (sent in its \std{MP} sequences).
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
 \item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
-\item +MS=? (gives \rc{(21,22,23,27,29,122,32,132,33,34,103,18,45,}\allowbreak
-\rc{110,5,212,56,90,91,92,150,200,64),(0,1),(300-56000),}\allowbreak
+\item +MS=? (gives \rc{(21,22,23,26,27,29,122,32,132,33,34,103,18,}\allowbreak
+\rc{45,110,5,212,201,202,208,56,90,91,92,150,200,64),(0,1),}\allowbreak
+\rc{(300-56000),}\allowbreak
 \rc{(300-56000)}, the
   modulations the program has)
 \end{syntax}
@@ -1534,6 +1535,10 @@ directions' rates (sent in its \std{MP} sequences).
 29 & V29 & \std{ITU} \std{V.29} & \std{4800} to \std{9600} bit/s, 4-wire leased. \\ \hline
 33 & V33 & \std{ITU} \std{V.33} & \std{12000} and \std{14400} bit/s, 4-wire leased. \\ \hline
 27 & V27TC & \std{ITU} \std{V.27ter} & \std{2400} and \std{4800} bit/s, 4-wire leased. \\ \hline
+26 & V26 & \std{ITU} \std{V.26} & \std{2400} bit/s \std{DPSK} (alternative A), 4-wire leased. \\ \hline
+201 & B201, BELL201 & Bell 201 & \std{2400} bit/s \std{DPSK} (\std{V.26}'s alternative B), 4-wire leased. \\ \hline
+202 & B202, BELL202 & Bell 202 & \std{1200} bit/s \std{FSK} both ways, 4-wire leased. \\ \hline
+208 & B208, BELL208 & Bell 208 & \std{4800} bit/s 8-phase \std{DPSK}, 4-wire leased. \\ \hline
 34 & V34 & \std{ITU} \std{V.34} & \std{2400} to \std{33600} bit/s, after \std{V.8}. \\ \hline
 90 & V90 & \std{ITU} \std{V.90} & As the digital modem, after \std{V.8}. \\ \hline
 91 & V91 & \std{ITU} \std{V.91} & Two digital modems, after \std{V.8}. \\ \hline
@@ -1556,9 +1561,16 @@ directions' rates (sent in its \std{MP} sequences).
   (\hyperref[sec:contactid]{Section~\ref*{sec:contactid}}). \\ \hline
 \end{vtable}
 
-\paragraph{The 4-Wire Modulations.}  \std{V.29}, \std{V.33} and \std{V.27ter} are the
-4-wire leased line modulations (\cmdl[ampL]{\&L2}): each end sends on
-its own pair, on a carrier that stays on.  \p{max} sets the rate each
+\paragraph{The 4-Wire Modulations.}  \std{V.29}, \std{V.33}, \std{V.27ter}, \std{V.26} and Bell
+201, 202 and 208 are the 4-wire leased line modulations
+(\cmdl[ampL]{\&L2}): each end sends on its own pair, on a carrier that
+stays on.  \std{V.26} and Bell 201 send their data unscrambled, as those
+modems do, with the phase changes of \std{V.26}'s alternative A or B; Bell
+208 sends \std{V.27ter}'s 4800 bit/s signal, the modulation \std{V.27} took from
+it; Bell 202 is 1200~Hz mark and 2200~Hz space at 1200 bit/s each way.
+The \std{DPSK} ones start with \std{V.27ter}'s training as their synchronizing
+signal, which another D-Modem needs: an old modem of these kinds that
+sends none is not found.  \p{max} sets the rate each
 end sends at, \p{min} the lowest it comes down to: a receiver finds the
 far end's rate by itself, an end faster than the far end comes down to
 its rate, and one that loses its equalization twice in 20~s at its own
