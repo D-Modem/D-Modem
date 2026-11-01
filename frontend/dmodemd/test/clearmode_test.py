@@ -304,20 +304,40 @@ def their_key(body, tag):
         fail("a %d byte master key" % len(key))
     return key
 
+# a line each way.  Each is sent again, a second after the last, until
+# it has come: this script's far end is Python on a clock of its own, and
+# on a loaded runner (CI's macOS) it can stall past dmodemd's jitter
+# buffer (60 ms); its late packets are dropped, their time played as
+# silence (on a clear channel, A-law 0xD5 octets, which come out at the
+# DTE as "u]W" over and over), and a line sent then is lost: plain
+# asynchronous characters (\N0) have no retransmission of their own
 def data_both_ways(dte, far):
     m = dte.expect(rb"CONNECT (\d+)", 5)
     if not m or m.group(1) != b"64000":
         fail("no CONNECT 64000: %r" % dte.buf)
     time.sleep(0.2)
-    dte.send(b"hello from dmodemd\r\n")
-    far.send(b"hello from the far end\r\n")
-    end = time.time() + 5
-    while time.time() < end and b"hello from dmodemd\r\n" not in far.got:
-        time.sleep(0.05)
-    if b"hello from dmodemd\r\n" not in far.got:
-        fail("the far end got %r" % far.got)
-    if not dte.expect(rb"hello from the far end\r\n", 5):
-        fail("dmodemd's DTE got %r" % dte.buf)
+    to_far, to_dte = b"hello from dmodemd\r\n", b"hello from the far end\r\n"
+    dte_ok = False
+    end = time.time() + 15
+    last = 0
+    while True:
+        far_ok = to_far in far.got
+        dte_ok = dte_ok or dte.expect(re.escape(to_dte), 0.05) is not None
+        if far_ok and dte_ok:
+            return
+        if time.time() > end:
+            if not far_ok:
+                fail("the far end got %r" % far.got)
+            fail("dmodemd's DTE got %r" % dte.buf)
+        if time.time() - last >= 1:
+            last = time.time()
+            if not far_ok:
+                dte.send(to_far)
+            # (the far end's line again once the last has gone)
+            with far.lock:
+                idle = not far.tx_bits
+            if not dte_ok and idle:
+                far.send(to_dte)
 
 # out: dmodemd dials with +MS=CLEAR
 def outgoing():
