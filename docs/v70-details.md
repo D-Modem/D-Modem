@@ -16,7 +16,7 @@ editions extend compatibly).
 | `Mux` | `link/v76.h`, `link/v76.cpp` | V.76's multiplexer and V.75's control entity for the data channel, below |
 | `Lapm` as a DLC | `link/lapm.cpp` | `set_dlc()`: the DLCI and the role in the address octet; `open()`: L-ESTABLISH (a SABME with no XID before it); `set_user_data()`: V.75's messages in our SABME and DISC, or in the UA and DM answering the remote's. The rest is LAPM's data phase, as V.76's ERM with Annex C's defaults is (REJ recovery, k 15, N401 128, the 16 bit FCS) |
 | `g729::Encoder`, `g729::Decoder` | `link/g729a.h`, `link/g729a_*.cpp` | G.729 Annex A, below |
-| `Owner::voice()`, `voice_state()`, `voice_in()`, `voice_out()` | `link/link.h`, `core/modem.cpp` | The voice path: `Host::dsvd_voice()` and its hooks where the host has one (dmodemd's SmartUSB56 with a handset), else `Options::dsvd`'s `VoicePath` (dmodemd's `--dsvd-audio`, `dmodemd/dsvd_audio.cpp`); with neither, no voice channel |
+| `Owner::voice()`, `voice_state()`, `voice_in()`, `voice_out()` | `link/link.h`, `core/modem.cpp` | The voice path: `Host::dsvd_voice()` and its hooks where the host has one (dmodemd's SmartUSB56 with a handset), else `Options::dsvd`'s `VoicePath` (dmodemd's `--dsvd-audio`, `frontend/dmodemd/dsvd_audio.cpp`); with neither, no voice channel |
 | `h245::encode()`, `decode()` | `link/h245.h`, `link/h245.cpp` | H.245's messages in aligned PER (X.691): OpenLogicalChannel (a data or G.729 Annex A channel, V76LogicalChannelParameters both ways), its Ack and Reject, CloseLogicalChannel and its Ack, TerminalCapabilitySet's number, its Ack and Reject. A later encoder's extension additions are passed over; a message cut short is not one |
 
 ## The data channel

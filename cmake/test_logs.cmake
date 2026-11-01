@@ -44,8 +44,8 @@ if(CMAKE_CROSSCOMPILING_EMULATOR)
 	list(APPEND DMODEM_TEST_LAUNCHER ${CMAKE_CROSSCOMPILING_EMULATOR})
 endif()
 # a cross build with nothing here to run its programs (Haiku's, from
-# cmake/haiku.cmake): the gtest programs built, their tests not found
-# (that runs them) nor registered; ctest runs them on that system
+# platforms/haiku/haiku.cmake): the gtest programs built, their tests not
+# found (that runs them) nor registered; ctest runs them on that system
 if(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
 	set(DMODEM_TESTS_RUN OFF)
 	message(STATUS "tests: built, not run here (no emulator for this "

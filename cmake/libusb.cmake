@@ -87,8 +87,8 @@ if(MSVC)
 else()
 	target_compile_options(dmodem_libusb PRIVATE -w -UNOMINMAX)
 endif()
-# (nor the project's POSIX for MSVC, compat/msvc/dmodem_msvc.h, forced
-# into every file: libusb has its own Windows code)
+# (nor the project's POSIX for MSVC, platforms/windows/msvc/dmodem_msvc.h,
+# forced into every file: libusb has its own Windows code)
 get_target_property(_usb_opts dmodem_libusb COMPILE_OPTIONS)
 if(_usb_opts)
 	list(FILTER _usb_opts EXCLUDE REGEX "^/FI")

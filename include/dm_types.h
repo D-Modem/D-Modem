@@ -9,8 +9,8 @@
  *                 code means the same where int is 16 bits.
  *
  *    C linkage; the header is valid C as well as C++.  The public
- *    libdmodem header (dmodemd/dmodem.h) keeps the <stdint.h> names, so
- *    that programs using it don't get these short names.
+ *    libdmodem header (frontend/dmodemd/dmodem.h) keeps the <stdint.h>
+ *    names, so that programs using it don't get these short names.
  *
  */
 

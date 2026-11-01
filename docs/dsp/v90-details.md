@@ -173,7 +173,7 @@ it used to be 300 ms, which was enough only for the original library.
 
 ### Over SIP
 
-Through Asterisk and DModem (`asterisk/test/sip.sh AT+MS=90`, with
+Through Asterisk and DModem (`frontend/asterisk/test/sip.sh AT+MS=90`, with
 `CODEC=alaw` for A-law), the original library connected at 56000/31200
 in both laws. That was while dmodemd (then slmodemd) still ran the
 original library at 9600 Hz, and its SIP side did the 8000/9600 Hz

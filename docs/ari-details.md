@@ -2,7 +2,7 @@
 
 This is the technical companion to [dmodem-ari: D-Modem beside Asterisk](ari.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
-`dmodem-ari` (`ari/`) does the job of the `app_dmodem` module, but as a
+`dmodem-ari` (`frontend/ari/`) does the job of the `app_dmodem` module, but as a
 separate program beside Asterisk rather than a module inside it:
 
 - It answers (or makes) Asterisk calls with D-Modem's modem, like
@@ -148,7 +148,7 @@ For each call that enters the app, `dmodem-ari` does the following:
      other, faster than real time, as two `DModem()` calls do.
 5. **Pass the data.** Once the modems are connected, the data goes to
    the profile's server or program through the PBX modules' bridge
-   (`pbx/dmodem_bridge.c`). The call's details go in the program's
+   (`frontend/pbx/dmodem_bridge.c`). The call's details go in the program's
    environment or the server's header:
    `DMODEM_CHANNEL`, `DMODEM_PROFILE`, `DMODEM_RATE`, `DMODEM_CALLERID`,
    `DMODEM_DIALED` and `DMODEM_CONNECTED`.
@@ -321,18 +321,18 @@ codes come through it unchanged, as they do through external media.
 ## Testing
 
 `ARI=1` runs the Asterisk tests ([asterisk.md](asterisk-details.md#testing))
-through `dmodem-ari` instead of the module (`asterisk/test/ari_env.sh`).
+through `dmodem-ari` instead of the module (`frontend/asterisk/test/ari_env.sh`).
 It turns on Asterisk's HTTP server and ARI, does not load `app_dmodem`,
 and rewrites the dialplan's `DModem(...)`, `DModemSendFax(...)` and
 `DModemReceiveFax(...)` as `Stasis(dmodem,...)`.
 
-- **`ARI=1 asterisk/test/sip.sh`:** D-Modem's dmodemd calling over SIP.
+- **`ARI=1 frontend/asterisk/test/sip.sh`:** D-Modem's dmodemd calling over SIP.
   The script's variants work the same way (`INCOMING=1` for the modem
   calling, `CALLS=3`, `CODEC=alaw`, and so on). They connect at
   62666/62666 bit/s, V.91, which only exact G.711 codes allow.
-- **`ARI=1 asterisk/test/run.sh`:** two `dmodem-ari` modems on the two
+- **`ARI=1 frontend/asterisk/test/run.sh`:** two `dmodem-ari` modems on the two
   halves of a Local channel (no clock), also at 62666/62666 bit/s.
-- **`ARI=1 asterisk/test/fax.sh` and `ARI=1 asterisk/test/fax_spandsp.sh`:**
+- **`ARI=1 frontend/asterisk/test/fax.sh` and `ARI=1 frontend/asterisk/test/fax_spandsp.sh`:**
   the faxes. They run between `dmodem-ari`'s own machines (a modem
   profile receiving, `receivefax`, `sendfax`) and against Asterisk's
   `SendFAX` and `ReceiveFAX` (spandsp). The `h` extensions must have the
@@ -341,6 +341,6 @@ and rewrites the dialplan's `DModem(...)`, `DModemSendFax(...)` and
   legs (a `dmodem` endpoint is added to `pjsip.conf`). The modems still
   connect at 62666/62666. The faxes between `dmodem-ari`'s own machines
   go over T.38, even through a Local channel.
-- **`ARI=1 asterisk/test/t38.sh`:** the module's T.38 test
+- **`ARI=1 frontend/asterisk/test/t38.sh`:** the module's T.38 test
   ([asterisk.md](asterisk-details.md#testing)) through `dmodem-ari`,
   with `t38 = yes` and its SIP side on the `dmodem` endpoint.

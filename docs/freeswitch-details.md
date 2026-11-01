@@ -5,7 +5,7 @@ This is the technical companion to [FreeSWITCH: mod_dmodem](freeswitch.md), the 
 `mod_dmodem` is the FreeSWITCH version of [Asterisk's app_dmodem](asterisk.md).
 It has the same modem and fax, with FreeSWITCH's applications,
 configuration and channel variables. Both modules share the code that
-connects the modem to a server or program (`pbx/dmodem_bridge.c`).
+connects the modem to a server or program (`frontend/pbx/dmodem_bridge.c`).
 
 ## Overview
 
@@ -62,7 +62,7 @@ FreeSWITCH can serve several numbers in several ways:
 </configuration>
 ```
 
-[dmodem.conf.xml](../freeswitch/dmodem.conf.xml) lists all the options.
+[dmodem.conf.xml](../frontend/freeswitch/dmodem.conf.xml) lists all the options.
 
 ### Profile params
 
@@ -114,7 +114,7 @@ with a space does need quotes, as in
 
 ### The modem
 
-The modem is `libdmodem` ([dmodemd/dmodem.h](../dmodemd/dmodem.h)). It
+The modem is `libdmodem` ([frontend/dmodemd/dmodem.h](../frontend/dmodemd/dmodem.h)). It
 is D-Modem's modem core (AT commands, V.42 error correction, V.44 or
 V.42bis compression) with the open data pumps of `dsp`. It supports:
 
@@ -372,8 +372,8 @@ one (`FS_PREFIX`, default `/usr/local/freeswitch`), with the module built
 here and the configuration in `test/freeswitch.xml`: one SIP profile on
 127.0.0.1:5080, G.711 only. The scripts take the binaries from `build/`
 (`DMODEM_BUILD` names another build directory). They reuse the Asterisk
-tests' BBS and user scripts (`asterisk/test/bbs_sim.py`,
-`asterisk/test/sip_call.py`).
+tests' BBS and user scripts (`frontend/asterisk/test/bbs_sim.py`,
+`frontend/asterisk/test/sip_call.py`).
 
 ```
 test/run.sh                       # dmodem calls dmodem over SIP, V.34

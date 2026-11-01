@@ -41,7 +41,7 @@ Each profile, in `dmodem.conf`, says where the call's data goes:
 
 So one Asterisk can offer a BBS on one number and dial-up internet on
 another. All the options are in
-[dmodem.conf.sample](../asterisk/dmodem.conf.sample).
+[dmodem.conf.sample](../frontend/asterisk/dmodem.conf.sample).
 
 `DModem(profile,o)` does the opposite: the modem dials out to a remote
 modem, on a call Asterisk has placed, so your server can reach a remote

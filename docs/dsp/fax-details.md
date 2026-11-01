@@ -143,7 +143,7 @@ Tests:
   ECM, both packet versions, and a switch to T.38 after a while on the
   audio. The `Class1T38Packets` cases check the packets' fields and
   times.
-- `asterisk/test/efax.sh` runs efax on dmodemd against Asterisk's fax
+- `frontend/asterisk/test/efax.sh` runs efax on dmodemd against Asterisk's fax
   over T.38 (dmodemd's `SIP_T38`; see the [README](../../README.md)).
 
 ### Class 1.0: V.34 half-duplex

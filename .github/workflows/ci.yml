@@ -1,6 +1,7 @@
 # Every job but windows-msvc builds with Clang: the build takes it where it
-# is installed (DMODEM_PREFER_CLANG, cmake/mingw-w64.cmake for Windows),
-# with GCC's C++ library (libstdc++; g++ and g++-multilib stay for it).
+# is installed (DMODEM_PREFER_CLANG; for Windows
+# platforms/windows/mingw-w64.cmake), with GCC's C++ library (libstdc++;
+# g++ and g++-multilib stay for it).
 #
 # build: everything (with the 32 bit interop test programs, against Smart
 # Link's original DSP library) and the offline tests, V.110's against
@@ -26,15 +27,16 @@
 # there); dmodemd kept as an artifact.
 #
 # haiku: the Haiku build (x86_64, Clang, cross from Linux against a
-# sysroot of Haiku's own packages, cmake/haiku_sysroot.py), warnings as
-# errors; nothing here runs its programs, so no tests; dmodemd kept as an
-# artifact.
+# sysroot of Haiku's own packages, platforms/haiku/haiku_sysroot.py),
+# warnings as errors; nothing here runs its programs, so no tests;
+# dmodemd kept as an artifact.
 #
-# asterisk, freeswitch: the modules' tests (asterisk/test, freeswitch/test)
-# in a private Asterisk (Ubuntu's packages) and FreeSWITCH (built from
-# source by freeswitch/test/build_freeswitch.sh, cached): calls between
-# two modems of the module, D-Modem (dmodemd) over SIP both ways, and
-# faxes on the audio and over T.38, also against their own fax (spandsp);
+# asterisk, freeswitch: the modules' tests (frontend/asterisk/test,
+# frontend/freeswitch/test) in a private Asterisk (Ubuntu's packages) and
+# FreeSWITCH (built from source by
+# frontend/freeswitch/test/build_freeswitch.sh, cached): calls between two
+# modems of the module, D-Modem (dmodemd) over SIP both ways, and faxes
+# on the audio and over T.38, also against their own fax (spandsp);
 # in Asterisk also through dmodem-ari, D-Modem as an ARI application, and
 # dmodemd's class 1 fax with efax on its pty.
 #
@@ -45,6 +47,10 @@
 #
 # ccache keeps the jobs' compiles (all but windows-msvc): restored before
 # the build, saved after it (in a sharded job by its first shard alone).
+#
+# Packages: apt's and Homebrew's downloads are cached
+# (.github/actions/apt, .github/actions/brew), keyed on the runner image
+# and the package list, so a mirror that stalls doesn't stall the run.
 #
 # A push or pull request that changes only documentation (docs/, the
 # Markdown files and COPYING: nothing builds or tests from them) runs
@@ -89,14 +95,14 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev \
-            libspandsp-dev libtiff-tools asterisk-dev g++-multilib \
+        uses: ./.github/actions/apt
+        with:
+          packages: >-
+            cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev
+            libspandsp-dev libtiff-tools asterisk-dev g++-multilib
             libasound2-dev libusb-1.0-0-dev ccache libbcg729-dev
 
       # G.729 Annex A's test vectors for g729a_test (ITU's site is
@@ -106,13 +112,13 @@ jobs:
 
       # libre is fetched and built while configuring: keep it
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/_deps/libre-install
           key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-build-${{ github.sha }}
@@ -134,7 +140,7 @@ jobs:
         run: cmake --build build && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-build-${{ github.sha }}
@@ -146,7 +152,7 @@ jobs:
       # a run without a failure keeps none)
       - name: Test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-logs
           path: |
@@ -157,7 +163,7 @@ jobs:
 
       # dmodemd started as root (ctest skips it as the runner's user)
       - name: dmodemd as root
-        run: sudo python3 dmodemd/test/root_test.py build/dmodemd/dmodemd
+        run: sudo python3 frontend/dmodemd/test/root_test.py build/dmodemd/dmodemd
 
   musl:
     runs-on: ubuntu-24.04
@@ -173,10 +179,10 @@ jobs:
             openssl-dev gtest-dev linux-headers alsa-lib-dev libusb-dev python3 \
             bash coreutils spandsp-dev tiff-dev tiff-tools ccache tar zstd
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-musl-${{ github.sha }}
@@ -189,7 +195,7 @@ jobs:
         run: cmake --build build && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-musl-${{ github.sha }}
@@ -205,25 +211,25 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix \
+        uses: ./.github/actions/apt
+        with:
+          packages: >-
+            cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix
             clang lld wine wine64 ccache
 
       # libre and Mbed TLS are fetched and built while configuring: keep
       # them
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-win/_deps/libre-install
-          key: libre-v4.12.0-mingw-${{ hashFiles('cmake/libre.cmake', 'cmake/mingw-w64.cmake') }}
+          key: libre-v4.12.0-mingw-${{ hashFiles('cmake/libre.cmake', 'platforms/windows/mingw-w64.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-mingw-${{ github.sha }}
@@ -232,13 +238,13 @@ jobs:
       - name: Configure
         run: |
           cmake -B build-win -G Ninja -DDMODEM_WERROR=ON \
-            -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
+            -DCMAKE_TOOLCHAIN_FILE=platforms/windows/mingw-w64.cmake
 
       - name: Build
         run: cmake --build build-win && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-mingw-${{ github.sha }}
@@ -260,7 +266,7 @@ jobs:
 
       - name: Test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-logs-windows
           path: |
@@ -270,7 +276,7 @@ jobs:
           retention-days: 14
 
       - name: dmodemd.exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodemd-windows-x86_64
           path: build-win/dmodemd/dmodemd.exe
@@ -283,7 +289,7 @@ jobs:
       - name: Line endings
         run: git config --global core.autocrlf false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # cl.exe and the SDK: the Developer Command Prompt's environment,
       # for every later step
@@ -302,7 +308,7 @@ jobs:
             }
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-msvc/_deps/libre-install
           key: libre-v4.12.0-msvc-${{ hashFiles('cmake/libre.cmake') }}
@@ -320,7 +326,7 @@ jobs:
 
       - name: Test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-logs-windows-msvc
           path: |
@@ -330,7 +336,7 @@ jobs:
           retention-days: 14
 
       - name: dmodemd.exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodemd-windows-msvc-x86_64
           path: build-msvc/dmodemd/dmodemd.exe
@@ -338,13 +344,13 @@ jobs:
 
       # (unsigned: docs/windows.md has the test signing)
       - name: Virtual modem driver
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodem-driver-windows-x86_64-unsigned
           path: |
             build-msvc/winmodem/dmodemvm.dll
             build-msvc/winmodem/dmodem-driver.exe
-            winmodem/dmodem.inf
+            platforms/windows/winmodem/dmodem.inf
           if-no-files-found: warn
           retention-days: 30
 
@@ -354,19 +360,21 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
-        run: brew install ninja ccache
+        uses: ./.github/actions/brew
+        with:
+          packages: ninja ccache
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-mac/_deps/libre-install
           key: libre-v4.12.0-macos-universal-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-macos-${{ github.sha }}
@@ -383,7 +391,7 @@ jobs:
         run: cmake --build build-mac && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-macos-${{ github.sha }}
@@ -404,7 +412,7 @@ jobs:
 
       - name: Test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-logs-macos
           path: |
@@ -414,7 +422,7 @@ jobs:
           retention-days: 14
 
       - name: dmodemd
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodemd-macos-universal
           path: build-mac/dmodemd/dmodemd
@@ -426,32 +434,32 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+        uses: ./.github/actions/apt
+        with:
+          packages: >-
             cmake ninja-build pkg-config clang lld libzstd1 python3 ccache
 
       # Haiku's packages (checked against their repositories' SHA-256)
       - name: Haiku packages cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: haiku-packages
-          key: haiku-packages-${{ hashFiles('cmake/haiku_sysroot.py') }}
+          key: haiku-packages-${{ hashFiles('platforms/haiku/haiku_sysroot.py') }}
 
       - name: Sysroot
-        run: python3 cmake/haiku_sysroot.py haiku-sysroot --cache haiku-packages
+        run: python3 platforms/haiku/haiku_sysroot.py haiku-sysroot --cache haiku-packages
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-haiku/_deps/libre-install
-          key: libre-v4.12.0-haiku-${{ hashFiles('cmake/libre.cmake', 'cmake/libre-haiku.patch', 'cmake/haiku.cmake', 'cmake/haiku_sysroot.py') }}
+          key: libre-v4.12.0-haiku-${{ hashFiles('cmake/libre.cmake', 'platforms/haiku/libre-haiku.patch', 'platforms/haiku/haiku.cmake', 'platforms/haiku/haiku_sysroot.py') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-haiku-${{ github.sha }}
@@ -460,20 +468,20 @@ jobs:
       - name: Configure
         run: |
           cmake -B build-haiku -G Ninja -DDMODEM_WERROR=ON \
-            -DCMAKE_TOOLCHAIN_FILE=cmake/haiku.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=platforms/haiku/haiku.cmake \
             -DHAIKU_SYSROOT=$PWD/haiku-sysroot
 
       - name: Build
         run: cmake --build build-haiku && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-haiku-${{ github.sha }}
 
       - name: dmodemd
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodemd-haiku-x86_64
           path: build-haiku/dmodemd/dmodemd
@@ -493,99 +501,99 @@ jobs:
         include:
           - shard: calls
             run: |
-              timeout 300 asterisk/test/run.sh
-              timeout 300 asterisk/test/run.sh AT+MS=132
-              LAW=alaw timeout 300 asterisk/test/run.sh
-              timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
-              BBS_LINGER=1 timeout 300 asterisk/test/run.sh AT+MS=34 bbsexec
-              ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/14400' timeout 300 asterisk/test/run.sh
-              ARI=1 timeout 300 asterisk/test/run.sh
+              timeout 300 frontend/asterisk/test/run.sh
+              timeout 300 frontend/asterisk/test/run.sh AT+MS=132
+              LAW=alaw timeout 300 frontend/asterisk/test/run.sh
+              timeout 300 frontend/asterisk/test/run.sh AT+MS=34 bbsexec
+              BBS_LINGER=1 timeout 300 frontend/asterisk/test/run.sh AT+MS=34 bbsexec
+              ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/14400' timeout 300 frontend/asterisk/test/run.sh
+              ARI=1 timeout 300 frontend/asterisk/test/run.sh
           # SIP (D-Modem); CODEC=clearmode: an ISDN data call in RFC 4040's
           # CLEARMODE (codec_clearmode), X.75 on D-Modem's clear channel
           - shard: sip
             run: |
-              timeout 300 asterisk/test/sip.sh
-              INCOMING=1 timeout 300 asterisk/test/sip.sh
-              CALLS=3 timeout 300 asterisk/test/sip.sh
-              DIAL=ATDT timeout 300 asterisk/test/sip.sh
-              HOLD=1 timeout 300 asterisk/test/sip.sh
-              BBS_CONNECT_DELAY=15 timeout 300 asterisk/test/sip.sh
-              CODEC=clearmode timeout 300 asterisk/test/sip.sh 'AT+MS=CLEAR'
-              CODEC=clearmode INCOMING=1 timeout 300 asterisk/test/sip.sh
-              ARI=1 timeout 300 asterisk/test/sip.sh
-              ARI=1 INCOMING=1 timeout 300 asterisk/test/sip.sh
-              ARI=1 CODEC=alaw timeout 300 asterisk/test/sip.sh
-              ARI=1 ARI_SIP=1 timeout 300 asterisk/test/sip.sh
+              timeout 300 frontend/asterisk/test/sip.sh
+              INCOMING=1 timeout 300 frontend/asterisk/test/sip.sh
+              CALLS=3 timeout 300 frontend/asterisk/test/sip.sh
+              DIAL=ATDT timeout 300 frontend/asterisk/test/sip.sh
+              HOLD=1 timeout 300 frontend/asterisk/test/sip.sh
+              BBS_CONNECT_DELAY=15 timeout 300 frontend/asterisk/test/sip.sh
+              CODEC=clearmode timeout 300 frontend/asterisk/test/sip.sh 'AT+MS=CLEAR'
+              CODEC=clearmode INCOMING=1 timeout 300 frontend/asterisk/test/sip.sh
+              ARI=1 timeout 300 frontend/asterisk/test/sip.sh
+              ARI=1 INCOMING=1 timeout 300 frontend/asterisk/test/sip.sh
+              ARI=1 CODEC=alaw timeout 300 frontend/asterisk/test/sip.sh
+              ARI=1 ARI_SIP=1 timeout 300 frontend/asterisk/test/sip.sh
           # the FreePBX module, then the same through the latest FreePBX's
           # own dialplan classes (its framework's extensions.class.php in
           # place of the tests' stand-in)
           - shard: freepbx
             run: |
-              php freepbx/test/unit.php
-              timeout 300 freepbx/test/e2e.sh
-              ARI=1 timeout 300 freepbx/test/e2e.sh
+              php frontend/freepbx/test/unit.php
+              timeout 300 frontend/freepbx/test/e2e.sh
+              ARI=1 timeout 300 frontend/freepbx/test/e2e.sh
               git clone -q --depth 1 -b release/18.0.1.3 \
                 https://github.com/FreePBX/framework /tmp/freepbx-framework
               export FREEPBX_FRAMEWORK=/tmp/freepbx-framework
-              php freepbx/test/unit.php
-              timeout 300 freepbx/test/e2e.sh
-              ARI=1 timeout 300 freepbx/test/e2e.sh
+              php frontend/freepbx/test/unit.php
+              timeout 300 frontend/freepbx/test/e2e.sh
+              ARI=1 timeout 300 frontend/freepbx/test/e2e.sh
           - shard: fax
             run: |
-              timeout 900 asterisk/test/fax.sh
-              timeout 900 asterisk/test/fax_spandsp.sh
-              ARI=1 timeout 900 asterisk/test/fax.sh
-              ARI=1 timeout 900 asterisk/test/fax_spandsp.sh
-              ARI=1 ARI_SIP=1 timeout 900 asterisk/test/fax.sh
+              timeout 900 frontend/asterisk/test/fax.sh
+              timeout 900 frontend/asterisk/test/fax_spandsp.sh
+              ARI=1 timeout 900 frontend/asterisk/test/fax.sh
+              ARI=1 timeout 900 frontend/asterisk/test/fax_spandsp.sh
+              ARI=1 ARI_SIP=1 timeout 900 frontend/asterisk/test/fax.sh
           # (about ten minutes each)
           - shard: t38
-            run: timeout 1500 asterisk/test/t38.sh
+            run: timeout 1500 frontend/asterisk/test/t38.sh
           - shard: t38-ari
-            run: ARI=1 timeout 1500 asterisk/test/t38.sh
+            run: ARI=1 timeout 1500 frontend/asterisk/test/t38.sh
           # dmodemd's class 1 fax with efax on its pty, over T.38 and not
           - shard: efax
             run: |
-              timeout 900 asterisk/test/efax.sh
-              T38=no timeout 900 asterisk/test/efax.sh
-              DMODEMD_T38=no timeout 900 asterisk/test/efax.sh
+              timeout 900 frontend/asterisk/test/efax.sh
+              T38=no timeout 900 frontend/asterisk/test/efax.sh
+              DMODEMD_T38=no timeout 900 frontend/asterisk/test/efax.sh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev \
-            libtiff-tools python3 efax php-cli \
-            libjansson-dev libxml2-dev libsqlite3-dev uuid-dev libedit-dev \
+        uses: ./.github/actions/apt
+        with:
+          packages: >-
+            cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev
+            libtiff-tools python3 efax php-cli
+            libjansson-dev libxml2-dev libsqlite3-dev uuid-dev libedit-dev
             libspandsp-dev libtiff-dev libcurl4-openssl-dev bzip2 patch ccache
 
       # Asterisk 22 (LTS) built from source, as Ubuntu 24.04's 20.6 has a
       # T.38 gateway that passes no fax (t38.sh's cases 6 and 7)
       - name: Asterisk cache
         id: asterisk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/asterisk
-          key: asterisk-${{ runner.os }}-${{ hashFiles('asterisk/test/build_asterisk.sh') }}
+          key: asterisk-${{ runner.os }}-${{ hashFiles('frontend/asterisk/test/build_asterisk.sh') }}
 
       - name: Asterisk
         run: |
           [ -x ~/asterisk/sbin/asterisk ] ||
-            SRC=/tmp/asterisk-src asterisk/test/build_asterisk.sh ~/asterisk
+            SRC=/tmp/asterisk-src frontend/asterisk/test/build_asterisk.sh ~/asterisk
           echo ~/asterisk/sbin >> "$GITHUB_PATH"
           echo "AST_MODULES=$HOME/asterisk/lib/asterisk/modules" >> "$GITHUB_ENV"
           echo "AST_DATA=$HOME/asterisk/var/lib/asterisk" >> "$GITHUB_ENV"
           ~/asterisk/sbin/asterisk -V
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/_deps/libre-install
           key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-asterisk-${{ github.sha }}
@@ -604,7 +612,7 @@ jobs:
 
       - name: ccache save
         if: matrix.shard == 'calls'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-asterisk-${{ github.sha }}
@@ -636,55 +644,55 @@ jobs:
           # the calls, then SIP (D-Modem)
           - shard: calls
             run: |
-              timeout 300 freeswitch/test/run.sh
-              timeout 300 freeswitch/test/run.sh AT+MS=132
-              LAW=alaw timeout 300 freeswitch/test/run.sh
-              timeout 300 freeswitch/test/run.sh AT+MS=34 bbsalaw
-              timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
-              BBS_LINGER=1 timeout 300 freeswitch/test/run.sh AT+MS=34 bbsexec
-              ANSWER='AT+MS=132;A' EXPECT='ANSWERER .*dmodem_rate=14400/14400' timeout 300 freeswitch/test/run.sh
-              timeout 300 freeswitch/test/sip.sh
-              INCOMING=1 timeout 300 freeswitch/test/sip.sh
-              BBS_CONNECT_DELAY=15 timeout 300 freeswitch/test/sip.sh
+              timeout 300 frontend/freeswitch/test/run.sh
+              timeout 300 frontend/freeswitch/test/run.sh AT+MS=132
+              LAW=alaw timeout 300 frontend/freeswitch/test/run.sh
+              timeout 300 frontend/freeswitch/test/run.sh AT+MS=34 bbsalaw
+              timeout 300 frontend/freeswitch/test/run.sh AT+MS=34 bbsexec
+              BBS_LINGER=1 timeout 300 frontend/freeswitch/test/run.sh AT+MS=34 bbsexec
+              ANSWER='AT+MS=132;A' EXPECT='ANSWERER .*dmodem_rate=14400/14400' timeout 300 frontend/freeswitch/test/run.sh
+              timeout 300 frontend/freeswitch/test/sip.sh
+              INCOMING=1 timeout 300 frontend/freeswitch/test/sip.sh
+              BBS_CONNECT_DELAY=15 timeout 300 frontend/freeswitch/test/sip.sh
           # (about seven minutes each)
           - shard: fax
-            run: timeout 1200 freeswitch/test/fax.sh
+            run: timeout 1200 frontend/freeswitch/test/fax.sh
           - shard: fax-t38
-            run: T38=yes timeout 1200 freeswitch/test/fax.sh
+            run: T38=yes timeout 1200 frontend/freeswitch/test/fax.sh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build pkg-config clang g++ libssl-dev uuid-dev libgtest-dev \
-            libtiff-tools python3 build-essential autoconf automake \
-            libtool libtool-bin yasm libcurl4-openssl-dev libpcre3-dev \
-            libspeex-dev libspeexdsp-dev libsqlite3-dev libedit-dev \
-            libldns-dev libjpeg-dev libtiff-dev libsndfile1-dev \
+        uses: ./.github/actions/apt
+        with:
+          packages: >-
+            cmake ninja-build pkg-config clang g++ libssl-dev uuid-dev libgtest-dev
+            libtiff-tools python3 build-essential autoconf automake
+            libtool libtool-bin yasm libcurl4-openssl-dev libpcre3-dev
+            libspeex-dev libspeexdsp-dev libsqlite3-dev libedit-dev
+            libldns-dev libjpeg-dev libtiff-dev libsndfile1-dev
             zlib1g-dev libpq-dev ccache
 
       - name: FreeSWITCH cache
         id: fs-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /home/runner/freeswitch
-          key: freeswitch-1.11.3-${{ runner.os }}-${{ hashFiles('freeswitch/test/build_freeswitch.sh') }}
+          key: freeswitch-1.11.3-${{ runner.os }}-${{ hashFiles('frontend/freeswitch/test/build_freeswitch.sh') }}
 
       - name: FreeSWITCH
         if: steps.fs-cache.outputs.cache-hit != 'true'
         run: |
-          SRC=/tmp/fs-src freeswitch/test/build_freeswitch.sh $FS_PREFIX
+          SRC=/tmp/fs-src frontend/freeswitch/test/build_freeswitch.sh $FS_PREFIX
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/_deps/libre-install
           key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-freeswitch-${{ github.sha }}
@@ -700,7 +708,7 @@ jobs:
 
       - name: ccache save
         if: matrix.shard == 'calls'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-freeswitch-${{ github.sha }}

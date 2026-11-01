@@ -31,7 +31,7 @@ headers).
 
 ### Windows
 
-A Windows build (MinGW-w64, `-DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake`)
+A Windows build (MinGW-w64, `-DCMAKE_TOOLCHAIN_FILE=platforms/windows/mingw-w64.cmake`)
 runs its tests under Wine: `ctest --test-dir build-win -L quick`. The
 interop tests are left out there, since netsim is not built for Windows
 ([windows.md](windows.md)).
@@ -94,7 +94,7 @@ list with its task number.
 
 The test programs are in `dsp/test/`; the link layer's and the core's are
 in `link/test/` and `core/test/`, and dmodemd's and the Windows driver's
-in `dmodemd/test/` and `winmodem/test/`.
+in `frontend/dmodemd/test/` and `platforms/windows/winmodem/test/`.
 
 Most of them are GoogleTest programs (the system's libgtest-dev, or
 fetched while configuring). ctest runs each of their cases as a test of
@@ -170,7 +170,7 @@ The details of the fax tests are in [Fax](dsp/fax-details.md).
 |---|---|
 | `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `intel_test`, `ess_test`, `spanpeer_test`, `open_test`, `hda_test`, `ring_test`, `adaptive_test` | Calls between this modem and the others ([interop.md](interop.md)). `hda` is the open modem on an emulated HD-audio modem codec; `ring` has netsim put the call through as each country's exchange does (dial tone, digits, ringing, busy and congestion tones); `adaptive` sends fax senders and data callers into the open modem answering with `AT+FAA=1`. All the calls are in one table in `interop_test.cpp`; each program runs one label's |
 
-**dmodemd and the hardware** (`dmodemd/test/`):
+**dmodemd and the hardware** (`frontend/dmodemd/test/`):
 
 | Test | What it tests |
 |---|---|
@@ -194,14 +194,14 @@ The details of the fax tests are in [Fax](dsp/fax-details.md).
 | `Si3056.*` (`si3056_test.cpp`, label `quick`) | The Si3056 datasheet's country settings (`si3056.h`): the names, and the registers they give on a Si3018 and a Si3019 line side, with the other bits kept |
 | `Si3054.*` (`si3054_test.cpp`, label `quick`) | The Si3054 datasheet's country settings (`si3054.h`): the names, the chip ID check, the registers on and off hook, with the other bits kept |
 
-**The Windows driver** (`winmodem/test/`):
+**The Windows driver** (`platforms/windows/winmodem/test/`):
 
 | Test | What it tests |
 |---|---|
-| `PortTest.*`, `Wire.*` (`port_test.cpp`, label `quick`) | The virtual modem driver's COM port (`winmodem/port.h`): reads under each kind of serial timeout, writes held and timed, `WaitCommEvent`'s events, the modem's lines and the application's DTR and RTS, `LSRMST_INSERT`, purges, the settings; the frames to dmodemd ([windows.md](windows-details.md#the-virtual-modem-driver---driver)) |
-| `VirtualModem.*` (`vmodem_test.cpp`, label `quick`, Windows under Wine) | dmodemd.exe on the driver's pipe (`--driver`), with the driver's end of it (port and pipe) in the test: AT commands and the INF's settings, DSR following dmodemd, the driver coming back, `--driver auto`, a name already taken; its `bridge` for `asterisk/test/sip.sh`'s `WIN_DRIVER=1` |
+| `PortTest.*`, `Wire.*` (`port_test.cpp`, label `quick`) | The virtual modem driver's COM port (`platforms/windows/winmodem/port.h`): reads under each kind of serial timeout, writes held and timed, `WaitCommEvent`'s events, the modem's lines and the application's DTR and RTS, `LSRMST_INSERT`, purges, the settings; the frames to dmodemd ([windows.md](windows-details.md#the-virtual-modem-driver---driver)) |
+| `VirtualModem.*` (`vmodem_test.cpp`, label `quick`, Windows under Wine) | dmodemd.exe on the driver's pipe (`--driver`), with the driver's end of it (port and pipe) in the test: AT commands and the INF's settings, DSR following dmodemd, the driver coming back, `--driver auto`, a name already taken; its `bridge` for `frontend/asterisk/test/sip.sh`'s `WIN_DRIVER=1` |
 | `umdf1_test` (label `quick`, Windows) | The driver for Windows 7 and 8 (`dmodemvm7.dll`, UMDF 1) in a host of the test's own, with dmodemd.exe on its pipe |
-| `winmodem_inf`, `dmodem_driver_list` (label `quick`) | `dmodem.inf` as `winmodem/make_inf.py` makes it from the core's result codes; `dmodem-driver.exe list` (Windows) |
+| `winmodem_inf`, `dmodem_driver_list` (label `quick`) | `dmodem.inf` as `platforms/windows/winmodem/make_inf.py` makes it from the core's result codes; `dmodem-driver.exe list` (Windows) |
 
 ## Test logs
 

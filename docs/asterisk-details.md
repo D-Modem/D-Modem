@@ -51,7 +51,7 @@ mode = exec
 command = exec /usr/sbin/pppd nodetach noauth local lock passive 192.168.77.1:192.168.77.2
 ```
 
-[dmodem.conf.sample](../asterisk/dmodem.conf.sample) lists every option.
+[dmodem.conf.sample](../frontend/asterisk/dmodem.conf.sample) lists every option.
 
 The same calls and faxes can instead go to [dmodem-ari](ari.md), which
 is D-Modem as an ARI (Asterisk REST Interface) application beside
@@ -106,7 +106,7 @@ The profile's server or program then talks to the remote BBS or ISP.
 
 ### The modem
 
-The modem is `libdmodem` ([dmodemd/dmodem.h](../dmodemd/dmodem.h)). It
+The modem is `libdmodem` ([frontend/dmodemd/dmodem.h](../frontend/dmodemd/dmodem.h)). It
 is D-Modem's modem core (AT commands, V.42 error correction, V.44 or
 V.42bis compression) with the open data pumps of `dsp`. It supports:
 
