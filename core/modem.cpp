@@ -2005,6 +2005,51 @@ bool Modem::dsvd_offered() const
 	return d && d[0] == 1 && v8bis_call();
 }
 
+/* see dcore.h */
+bool Modem::asvd_offered() const
+{
+	const u32 *a = kept("+ASVD");
+	return a && a[0] == 1 && v8bis_call();
+}
+
+/* see dcore.h */
+bool Modem::has_voice()
+{
+	return host_.dsvd_voice(*this) || dsvd_path_;
+}
+
+/* struct dp_voice's state(): the voice path opened or closed */
+void Modem::voice_state_cb(void *ctx, int on)
+{
+	Modem *m = static_cast<Modem *>(ctx);
+	m->logf("V.61: voice channel %s\n", on ? "open" : "closed");
+	if (m->host_.dsvd_voice(*m))
+		m->host_.dsvd_voice_state(*m, on != 0);
+	else if (m->dsvd_path_)
+		m->dsvd_path_->state(on != 0);
+}
+
+/* struct dp_voice's mic(): up to n samples of the near speech */
+int Modem::voice_mic_cb(void *ctx, s16 *pcm, int n)
+{
+	Modem *m = static_cast<Modem *>(ctx);
+	s16 k = static_cast<s16>(n > 32767 ? 32767 : n);
+	if (m->host_.dsvd_voice(*m))
+		return m->host_.dsvd_mic(*m, pcm, k);
+	return m->dsvd_path_ ? m->dsvd_path_->mic(pcm, k) : 0;
+}
+
+/* struct dp_voice's ear(): n samples of the far speech */
+void Modem::voice_ear_cb(void *ctx, const s16 *pcm, int n)
+{
+	Modem *m = static_cast<Modem *>(ctx);
+	s16 k = static_cast<s16>(n > 32767 ? 32767 : n);
+	if (m->host_.dsvd_voice(*m))
+		m->host_.dsvd_ear(*m, pcm, k);
+	else if (m->dsvd_path_)
+		m->dsvd_path_->ear(pcm, k);
+}
+
 /* struct dp_relay's state(): the Host's */
 int Modem::relay_state_cb(void *ctx, s32 *tx, s32 *rx)
 {

@@ -218,6 +218,7 @@ enum v61_rxp {
 struct V61Pump : PumpBase<V61Pump, v61_state> {
 	static constexpr const char *name = "V.61 data pump";
 
+	/* frees the receiver's and echo canceller's buffers */
 	~V61Pump() { cleanup(); }
 
 	s32 baud;               /* 3000 or 2800 */
@@ -320,6 +321,7 @@ struct V61Pump : PumpBase<V61Pump, v61_state> {
 
 	void make_points();
 	void init_rate(s32 b);
+	/* the 4 point constellation's point in quadrant quad */
 	cplx point4(s16 quad) const { return pts4[quad]; }
 	cplx tx_symbol();
 	void set_tx(enum v61_txm m);
@@ -336,7 +338,9 @@ struct V61Pump : PumpBase<V61Pump, v61_state> {
 	void rx_control_end();
 	void ear_put(cplx a);
 	void rx_sample(float x);
+	/* its name in the log */
 	const char *tag() const { return "v61"; }
+	/* connected (PumpBase's statistics) */
 	bool in_data() const { return state == V61_DATA; }
 	s16 connect();
 	void retrain(bool remote);
@@ -348,6 +352,7 @@ struct V61Pump : PumpBase<V61Pump, v61_state> {
 		  s32 max_frag);
 	void cleanup();
 	s16 sample(float x, float *y);
+	/* cnt samples in and out, through sample() */
 	s16 process(void *in, void *out, s32 cnt) override
 	{
 		return pump_loop(in, out, cnt);

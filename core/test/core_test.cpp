@@ -2626,6 +2626,110 @@ TEST(Core, DsvdCallerAlone)
 	EXPECT_TRUE(logged(l, "ec: connected."));
 }
 
+/* V.61: both with V.8 bis and +ASVD, no voice path: V.8 bis chooses
+   ASVD, V.61's start-up follows (no V.8), every frame data alone at
+   14400 bit/s, V.42 on it */
+TEST(Core, AsvdDataAlone)
+{
+	std::vector<std::string> l = v8bis_call("AT+A8E=1,1,,1+ASVD=1\r",
+						"AT+A8E=1,1,,1+ASVD=1\r", 9600);
+	EXPECT_TRUE(logged(l, "v8bis: ASVD chosen"));
+	EXPECT_TRUE(logged(l, "A: V.8 bis: ASVD (V.61)"));
+	EXPECT_TRUE(logged(l, "B: V.8 bis: ASVD (V.61)"));
+	EXPECT_TRUE(logged(l, "A: pump 61 (driver 61), caller"));
+	EXPECT_TRUE(logged(l, "B: pump 61 (driver 61), answerer"));
+	EXPECT_FALSE(logged(l, "V.8 CM received"));
+	EXPECT_TRUE(logged(l, "v61: data, data alone at"));
+	EXPECT_TRUE(logged(l, "ec: connected."));
+}
+
+/* +ASVD at the caller alone: V.8 bis chooses data, then V.8 */
+TEST(Core, AsvdCallerAlone)
+{
+	std::vector<std::string> l = v8bis_call("AT+A8E=1,1,,1+ASVD=1\r",
+						"AT+A8E=1,1,,1\r", 24000);
+	EXPECT_TRUE(logged(l, "v8bis: data chosen"));
+	EXPECT_FALSE(logged(l, "ASVD (V.61)"));
+	EXPECT_TRUE(logged(l, "V.8 CM received"));
+}
+
+/* both offer DSVD and ASVD: the caller picks DSVD (V.70) */
+TEST(Core, AsvdAndDsvdPicksDsvd)
+{
+	std::vector<std::string> l = v8bis_call(
+		"AT+A8E=1,1,,1+DSVD=1+ASVD=1\r",
+		"AT+A8E=1,1,,1+DSVD=1+ASVD=1\r", 9600);
+	EXPECT_TRUE(logged(l, "v8bis: DSVD chosen"));
+	EXPECT_FALSE(logged(l, "ASVD (V.61)"));
+	EXPECT_TRUE(logged(l, "v76: initiator"));
+}
+
+/* V.61 with a voice path at both ends (Host::dsvd_voice()): speech
+   and 4800 bit/s of data on one carrier, each end hearing the other's
+   tone while V.42's data goes; the hang-up closes the voice path */
+TEST(Core, AsvdVoice)
+{
+	std::vector<std::string> lines;
+	Pair p("");
+	log_kept = &lines;
+	dcore::log_set_hook([](const char *s) {
+		if (log_kept)
+			log_kept->push_back(s);
+	});
+	dcore::log_level = 2;
+	dsplibs_debug_level = 2;
+	p.la.dsvd = p.lb.dsvd = true;
+	p.la.tone = 440;
+	p.lb.tone = 700;
+	EXPECT_EQ(cmd(p.a, p.la, "AT+A8E=1,1,,1+ASVD=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(p.b, p.lb, "AT+A8E=1,1,,1+ASVD=1\r"), "OK\r\n");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online &&
+			q.la.dsvd_on && q.lb.dsvd_on; }, 40000));
+	EXPECT_EQ(p.a->tx_rate(), 4800u);
+	p.la.ear.clear();
+	p.lb.ear.clear();
+	std::string da = data('a', 1500), db = data('b', 1000);
+	size_t sa = 0, sb = 0;
+	p.got_a.clear();
+	p.got_b.clear();
+	for (int t = 0; t < 4000; t += 20) {
+		int n = std::min<int>(p.a->dte_space(),
+				      static_cast<int>(da.size() - sa));
+		sa += p.a->dte_input(da.data() + sa, n);
+		n = std::min<int>(p.b->dte_space(),
+				  static_cast<int>(db.size() - sb));
+		sb += p.b->dte_input(db.data() + sb, n);
+		p.step();
+	}
+	const double ha = tone_share(p.la.ear, 700),
+		hb = tone_share(p.lb.ear, 440);
+	EXPECT_GT(p.la.ear.size(), 28000u);
+	EXPECT_GT(p.lb.ear.size(), 28000u);
+	EXPECT_GT(ha, 0.8) << "A hears B's 700 Hz";
+	EXPECT_GT(hb, 0.8) << "B hears A's 440 Hz";
+	EXPECT_TRUE(p.got_b == da) << "B got " << p.got_b.size();
+	EXPECT_TRUE(p.got_a == db) << "A got " << p.got_a.size();
+	p.b->hangup();
+	p.run_until([](Pair &q) {
+		return !q.a->started() && !q.b->started(); }, 15000);
+	if (getenv("SHOW"))
+		for (const std::string &l : lines)
+			printf("%s", l.c_str());
+	dcore::log_level = 0;
+	dsplibs_debug_level = 0;
+	dcore::log_set_hook(nullptr);
+	log_kept = nullptr;
+	EXPECT_FALSE(p.la.dsvd_on || p.lb.dsvd_on);
+	EXPECT_EQ(p.la.dsvd_opened, 1);
+	EXPECT_TRUE(logged(lines, "A: V.61: voice channel open"));
+	EXPECT_TRUE(logged(lines, "B: V.61: voice channel closed"));
+	EXPECT_TRUE(logged(lines, "v61: voice plus data"));
+}
+
 /* the caller alone: no V.8 bis at all */
 TEST(Core, V8bisCallerAlone)
 {

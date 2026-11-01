@@ -710,6 +710,7 @@ rarer ones.
  &  & \cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (\std{TTY}, telex) settings. \\ \hline
  &  & \cmdl[plusA8E]{+A8E} & \std{V.8} and \std{V.8 bis}. \\ \hline
  &  & \cmdl[plusDSVD]{+DSVD} & \std{V.70} voice and data (\std{DSVD}). \\ \hline
+ &  & \cmdl[plusASVD]{+ASVD} & \std{V.61} voice and data (\std{ASVD}). \\ \hline
  &  & \cmdl[plusTMO]{+TMO} & \std{V.59} diagnostics. \\ \hline
  &  & \cmdl[plusT]{+TRDL, +TAL, +TTER, \ldots} & Loop and error rate tests (\std{V.58}). \\ \hline
 \end{vtable}}
@@ -1615,7 +1616,7 @@ directions' rates (sent in its \std{MP} sequences).
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
 \item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
-\item +MS=? (gives \rc{(21,22,23,26,27,29,122,32,132,232,33,34,103,18,}\allowbreak
+\item +MS=? (gives \rc{(21,22,23,26,27,29,122,32,132,232,61,33,34,103,18,}\allowbreak
 \rc{45,110,5,12,212,201,202,208,56,90,91,92,150,200,64),(0,1),}\allowbreak
 \rc{(300-56000),}\allowbreak
 \rc{(300-56000)}, the
@@ -1637,6 +1638,8 @@ directions' rates (sent in its \std{MP} sequences).
 132 & V32B & \std{ITU} \std{V.32bis} & \std{4800} to \std{14400} bit/s. \\ \hline
 232 & V32T, V32TERBO & \std{V.32terbo} & \std{V.32bis} and \std{16800}, \std{19200} bit/s
   (AT\&T's; D-Modem's number). \\ \hline
+61 & V61 & \std{ITU} \std{V.61} & \std{4800} bit/s with speech, \std{4800} to \std{14400} bit/s
+  without (\cmdl[plusASVD]{+ASVD}; D-Modem's number). \\ \hline
 29 & V29 & \std{ITU} \std{V.29} & \std{4800} to \std{9600} bit/s, 4-wire leased. \\ \hline
 33 & V33 & \std{ITU} \std{V.33} & \std{12000} and \std{14400} bit/s, 4-wire leased. \\ \hline
 27 & V27TC & \std{ITU} \std{V.27ter} & \std{2400} and \std{4800} bit/s, 4-wire leased. \\ \hline
@@ -1775,6 +1778,31 @@ send \std{V.75}'s audio header.  Without
 \item +DSVD=[\p{on}]
 \item +DSVD? (gives \rc{+DSVD: 0})
 \item +DSVD=? (gives \rc{+DSVD: (0,1)})
+\end{syntax}
+\begin{results}
+\res{\rc{OK}}{Always.}
+\res{\rc{ERROR}}{For a value outside its range.}
+\end{results}
+\end{command}
+
+\begin{command}{plusASVD}{+ASVD}{Analogue Voice and Data Together}
+D-Modem's own: \p{on} 1 offers \std{V.61}'s analogue simultaneous voice and
+data (\std{ASVD}) in \std{V.8 bis} (\cmdl[plusA8E]{+A8E}'s \p{v8b} 1), and chooses it
+when the other modem offers it too.  The call then goes on with \std{V.61}'s
+own start-up instead of \std{V.8}: one carrier of \std{3000} (or \std{2800})
+symbols a second carries \std{4800}~bit/s of data with the speech around it,
+and data alone at up to \std{14400}~bit/s while neither end speaks.  The
+\std{DTE}'s data has \std{V.42}'s error correction as on any call.  The speech
+comes from and goes to the same voice path as \cmdl[plusDSVD]{+DSVD}'s (a
+SmartUSB56's handset, or dmodemd's \cmd{--dsvd-audio} command); without
+one every frame is data alone.  When both ends offer \cmdl[plusDSVD]{+DSVD} as
+well, \std{DSVD} is chosen.  Without \std{ASVD} at the other end the call is an
+ordinary data call.  \cmdl[plusMS]{AT+MS=V61} runs \std{V.61} without
+\std{V.8 bis}.  See \cmd{docs/dsp/v61.md}.
+\begin{syntax}
+\item +ASVD=[\p{on}]
+\item +ASVD? (gives \rc{+ASVD: 0})
+\item +ASVD=? (gives \rc{+ASVD: (0,1)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{Always.}
@@ -3663,6 +3691,7 @@ modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \textbf{\stdb{ADPCM}} & Adaptive Differential Pulse Code Modulation.  Compressed audio, one of the voice formats of \cmdl[plusVSM]{+VSM}. \\ \hline
 \textbf{\stdb{ADSI}} & Analog Display Services Interface.  A telephone's screen and keys, driven by tones. \\ \hline
 \textbf{\stdb{ALSA}} & Advanced Linux Sound Architecture.  The sound system of Linux; \texttt{dmodemd} uses it to reach a telephone line through a sound card. \\ \hline
+\textbf{\stdb{ASVD}} & Analogue Simultaneous Voice and Data.  Speech and data on one modem carrier (\std{V.61}, \cmdl[plusASVD]{+ASVD}). \\ \hline
 \textbf{Automode} & Trying modulations from the fastest down until both modems have one (\cmdl[N]{N}, \cmdl[plusMS]{+MS}). \\ \hline
 \textbf{Baudot} & The 5-bit code (ITA2) of teleprinters, of the deaf community's \std{TTY}, of telex and of \std{RTTY}. \\ \hline
 \textbf{Bell 103, Bell 212A} & The North American \std{300} and \std{1200}~bit/s modulations, akin to \std{V.21} and \std{V.22}. \\ \hline

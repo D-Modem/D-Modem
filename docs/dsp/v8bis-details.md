@@ -58,7 +58,9 @@ answerer's ANSam, so an ACK(1) lost on the way does not hold it up.
 
 With `+DSVD=1` the CL offers the SVD mode too, and the caller's MS
 chooses it when both have what V.70 needs; the details are in
-[v70-details.md](../v70-details.md).
+[v70-details.md](../v70-details.md). With `+ASVD=1` the SVD mode has
+V.61, and an MS with it leads both ends to V.61's start-up in place of
+V.8 ([v61-details.md](v61-details.md#v8-bis)).
 
 ## `+A8E`
 
@@ -89,7 +91,8 @@ subparameters are `ERROR`.
 
 - The other modes (H.324, V.18, T.30, telephony) are coded and read,
   but only data and SVD (V.70, with `+DSVD`; see
-  [v70-details.md](../v70-details.md)) are chosen.
+  [v70-details.md](../v70-details.md); V.61, with `+ASVD`; see
+  [v61-details.md](v61-details.md)) are chosen.
 - Transactions where the caller receives MS (2, 3, 7 to 9, 11 to 13
   from the answerer's side, 4 and 6 after ESi): D-Modem's caller would
   have to be V.8's answering modem.

@@ -59,6 +59,7 @@ static DpDriver pump_table[] = {
 	{ DP_V32, "V32", "32", nullptr },
 	{ DP_V32BIS, "V32bis", "132", nullptr },
 	{ DP_V32TERBO, "V32terbo", "232", nullptr },
+	{ DP_V61, "V61", "61", nullptr },
 	{ DP_V33, "V33", "33", nullptr },
 	{ DP_V34, "V34", "34", nullptr },
 	{ DP_B103, "Bell103", "103", nullptr },
@@ -161,13 +162,20 @@ intptr_t Modem::get_param(u32 name)
 	case MDMPRM_TEXT:
 		return text_pump() ? param_address(&text_) : 0;
 	case MDMPRM_V8BIS:
-		return v8bis_call() ? 1 | (dsvd_offered() ? 2 : 0) : 0;
+		return v8bis_call() ? 1 | (dsvd_offered() ? 2 : 0) |
+			(asvd_offered() ? 4 : 0) : 0;
 	case MDMPRM_RELAY:
 		if (!relay_channel())
 			return 0;
 		relay_ = { this, relay_state_cb, relay_read_cb,
 			   relay_write_cb };
 		return param_address(&relay_);
+	case MDMPRM_VOICE:
+		if (!has_voice())
+			return 0;
+		asvd_voice_ = { this, voice_state_cb, voice_mic_cb,
+				voice_ear_cb };
+		return param_address(&asvd_voice_);
 	case MDMPRM_MAX_RX_RATE:
 		return max_rx_rate_ ? max_rx_rate_ : max_rate_;
 
@@ -292,10 +300,12 @@ s32 Modem::set_param(u32 name, s32 val)
 		moh_req_ = val;
 		return 0;
 	case MDMPRM_V8BIS:
-		/* V.8 bis chose DSVD (2) or data (1) */
+		/* V.8 bis chose DSVD (2), ASVD (3) or data (1) */
 		svd_ = val == 2;
 		if (svd_)
 			logf("V.8 bis: DSVD (V.70)\n");
+		else if (val == 3)
+			logf("V.8 bis: ASVD (V.61)\n");
 		return 0;
 	case MDMPRM_LINK_REQ:
 		/* taken: counted, not to be told the DTE (V.80) */

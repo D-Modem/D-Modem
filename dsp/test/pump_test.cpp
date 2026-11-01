@@ -207,10 +207,29 @@ static void v61_voice(float snr, int srate, const char *baud)
 	}
 }
 
-TEST(V61, VoicePlusData) { v61_voice(30, 9600, nullptr); }
-TEST(V61, VoicePlusDataSnr20) { v61_voice(20, 9600, nullptr); }
-TEST(V61, VoicePlusData8000) { v61_voice(30, 8000, nullptr); }
-TEST(V61, VoicePlusData2800) { v61_voice(30, 9600, "2800"); }
+/* (see v61_voice()) at 30 dB */
+TEST(V61, VoicePlusData)
+{
+	v61_voice(30, 9600, nullptr);
+}
+
+/* at 20 dB: the speech's headroom keeps the data clean */
+TEST(V61, VoicePlusDataSnr20)
+{
+	v61_voice(20, 9600, nullptr);
+}
+
+/* on a line sampled at 8000 Hz */
+TEST(V61, VoicePlusData8000)
+{
+	v61_voice(30, 8000, nullptr);
+}
+
+/* at 2800 symbols/s (the 1680 Hz carrier, 1493.3 Hz audio carrier) */
+TEST(V61, VoicePlusData2800)
+{
+	v61_voice(30, 9600, "2800");
+}
 
 /* V.61 with the answerer's microphone silent: it sends data alone
    (14400 bit/s here) between the caller's speech frames, so the

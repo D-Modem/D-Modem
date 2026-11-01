@@ -12,7 +12,7 @@ cd "$(dirname "$0")"
 RECS="G.711 T.4 T.6 T.30 T.31 T.32 T.38 V.8 V.13 V.17 V.18 V.21 V.22 V.22bis
 V.23 V.25 V.27ter V.29 V.32 V.32bis V.33 V.34 V.42 V.42bis V.44 V.52 V.54 V.58 V.59 V.80
 V.90 V.91 V.92 V.110 V.120 V.150.1 V.152 V.250 V.251 V.253 X.75 V.8bis
-V.70 V.75 V.76 H.245"
+V.70 V.75 V.76 H.245 V.61"
 [ $# -gt 0 ] && RECS="$*"
 base=https://www.itu.int/rec
 for r in $RECS; do

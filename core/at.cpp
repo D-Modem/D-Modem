@@ -207,6 +207,10 @@ const struct Kept {
 	   (<v8b> 1), its data channel the DTE's; modem.cpp's
 	   dsvd_offered() */
 	{ "+DSVD", 1, { 0 }, "(0,1)" },
+	/* D-Modem's own: V.61's ASVD offered and chosen in V.8 bis
+	   (<v8b> 1), speech and data on one analogue carrier; modem.cpp's
+	   asvd_offered() */
+	{ "+ASVD", 1, { 0 }, "(0,1)" },
 	/* V.42bis and V.44 (6.6.1, 6.6.2/V.250): the directions and largest
 	   parameters offered, by default ours (V42BIS_MAX_*, V44_MAX_*);
 	   modem.cpp's link_init() reads them */
@@ -287,6 +291,7 @@ const struct {
 	{ "V21", DP_V21 }, { "V22", DP_V22 }, { "V22B", DP_V22BIS },
 	{ "V23C", DP_V23 }, { "V32", DP_V32 }, { "V32B", DP_V32BIS },
 	{ "V32T", DP_V32TERBO }, { "V32TERBO", DP_V32TERBO },
+	{ "V61", DP_V61 },
 	{ "V34", DP_V34 }, { "V90", DP_V90 }, { "V91", DP_V91 },
 	{ "V92", DP_V92 }, { "B103", DP_B103 }, { "BELL103", DP_B103 },
 	{ "B212", DP_B212 }, { "BELL212A", DP_B212 }, { "K56", DP_K56 },
