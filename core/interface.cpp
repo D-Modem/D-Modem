@@ -274,10 +274,12 @@ s32 Modem::set_param(u32 name, s32 val)
 	case MDMPRM_RX_RATE:
 		rx_rate_ = static_cast<u32>(val);
 		rate_sets_++;
+		rate_history(tx_rate_, rx_rate_);
 		return 0;
 	case MDMPRM_TX_RATE:
 		tx_rate_ = static_cast<u32>(val);
 		rate_sets_++;
+		rate_history(tx_rate_, rx_rate_);
 		return 0;
 	case MDMPRM_DP_REQUESTED:
 		/* change_dp() takes it when the pump says DPSTAT_CHANGEDP */

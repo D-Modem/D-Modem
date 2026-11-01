@@ -754,6 +754,11 @@ s16 Modem::at_command(char *cmd)
 				case 'P':
 					ret = at_PMH(p, &len);
 					break;
+				case 'T':
+					ret = starts_nocase(p, "+TMO") &&
+						!starts_nocase(p, "+TMODE") ?
+						at_TMO(p, &len) : at_T(p, &len);
+					break;
 				case 'V':
 					ret = at_voice(p, &len);
 					break;
@@ -1036,6 +1041,7 @@ s16 Modem::at_ampT(char *p, s16 *len)
 		return test_end(false);
 	case 1:
 	case 8:
+		test_cmd_ = false;
 		return loop3_start(n == 8);
 	case 3:
 		if (!online || !link_plain() || test_.active())
@@ -1053,6 +1059,7 @@ s16 Modem::at_ampT(char *p, s16 *len)
 			return -1;
 		logf("loop 2 at the far end%s\n",
 		     n == 7 ? " with the self-test" : "");
+		test_cmd_ = false;
 		test_.remote(n == 7);
 		return 1;
 	default:

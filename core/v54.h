@@ -195,6 +195,38 @@ public:
 		event_ = Event::None;
 		return e;
 	}
+	/* the far end asked for the loop here (B, not AT&T3) */
+	bool asked() const { return asked_; }
+	/* a loop of ours runs that a pattern can go round: A's loop 2 in
+	   its test phase, or loop 3 */
+	bool loop_up() const
+	{
+		return phase_ == Phase::Test || phase_ == Phase::Local3;
+	}
+
+	/* V.250's error rate test (+TTER) on the loop that runs: V.52's
+	   pattern in place of the DTE's data, for blocks blocks of
+	   block_len bits (the pattern's bits once the checker has
+	   synchronised), its type (1 bit errors, 2 block errors, 3 both:
+	   both are counted); false when no loop runs */
+	bool ber_start(u8 type, u32 block_len, u32 blocks);
+	/* +TTER=0: the test stops (its counts kept) */
+	void ber_stop();
+	/* the error rate test, and its counts (kept after it, and after
+	   the call, until the next one starts) */
+	struct Ber {
+		bool on = false;
+		bool own_self = false;  /* it put the pattern on */
+		u8 type = 0;
+		u32 block_len = 0, left = 0;
+		u32 in_block = 0;
+		bool block_bad = false;
+		u32 bit_errors = 0, block_errors = 0;
+		u32 seen_bits = 0, seen_errors = 0;
+	};
+	/* (see Ber) */
+	const Ber &ber() const { return ber_; }
+
 	/* the self-test's bit errors so far */
 	u32 errors() const { return check_.errors(); }
 	/* the checker */
@@ -227,7 +259,15 @@ private:
 	Prbs9 gen_;
 	Checker check_;
 	std::deque<u8> loop_;
+	Ber ber_;
+	/* an error rate test's bits, from the checker */
+	void ber_count();
 };
+
+/* +TSELF: the test machinery checks itself (V.52's pattern found and
+   checked, with and without errors put in; V.54's patterns through
+   the scrambler recognised, and the others not): whether it passes */
+bool self_check();
 
 }  // namespace v54
 }  // namespace dcore

@@ -1,0 +1,69 @@
+# AT+TMO, V.59's diagnostic objects (V.250 6.9): what there is (by tag,
+# by name, the high-level objects, 4: names and tags), the identity and
+# capabilities, and the objects before any call (NULL, CallProgress's
+# 0); a V.34 call (V.42 with V.44) on a line with A's echoes: its
+# objects online and after A's hangup, by tag and by name, a common
+# object by name alone (the call's modulation's), another modulation's
+# (NULL but its mode), +TMO alone (the last one again); a V.32bis call
+# without error correction that B ends (ErrorControl's NULL); a bad
+# request (ERROR)
+A ATE0X3+MS=34\r
+B ATE0\r
+A AT+TMO4=?\r
+A AT+TMO1=?\r
+A AT+TMO1N=?\r
+A AT+TMO3=?\r
+A AT+TMO4N=?\r
+A AT+TMO ModemIdentity\r
+A AT+TMO 01\r
+A AT+TMO CallProgress All\r
+A AT+TMO CnxDiag\r
+echo A -12 0 -30 40
+B ATA\r
+A ATD123\r
+until A CONNECT 40000
+until B CONNECT 2000
+send A 3000
+send B 3000
+run 6000
+A +++
+run 1000
+A AT+TMO 0C\r
+A AT+TMO ModeSelected\r
+A AT+TMO 2E02\r
+A ATH\r
+until B NO CARRIER 10000
+run 500
+A AT+TMO V34 All\r
+A AT+TMO txDataHistory\r
+A AT+TMO V34 rxDataHistory\r
+A AT+TMO V90\r
+A AT+TMO\r
+A AT+TMO V8Diag\r
+A AT+TMO 2C\r
+A AT+TMO 2E\r
+A AT+TMO ErrorControl\r
+A AT+TMO Compression\r
+A AT+TMO DTEDCE\r
+B AT+TMO 2C0A;+TMO2E02\r
+echo A off
+# V.32bis without error correction: B hangs up
+A AT\\N0+MS=132\r
+until A OK 1000
+B AT\\N0+MS=132\r
+until B OK 1000
+B ATA\r
+A ATD\r
+until A CONNECT 30000
+until B CONNECT 2000
+send A 1000
+run 3000
+hangup B
+until A NO CARRIER 10000
+run 500
+A AT+TMO V32\r
+A AT+TMO 2F\r
+A AT+TMO 2E\r
+A AT+TMO NoSuchObject\r
+A AT+TMO 0999\r
+A AT+TMO 5=?\r

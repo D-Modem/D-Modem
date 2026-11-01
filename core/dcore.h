@@ -561,6 +561,16 @@ private:
 	void set_cause(Cause c);
 	void call_stats();
 	void unimodem_diag();
+	/* V.59's managed objects (v59.cpp): +TMO; the high-level object
+	   of the last call's modulation, a mode object's code, an object's
+	   value by its tag */
+	s16 at_TMO(char *p, s16 *len);
+	s16 v59_high_now() const;
+	u32 v59_mode(u16 tag) const;
+	std::string v59_value(u16 tag) const;
+	/* V.250's +T commands on V.58's test objects (v58.cpp) */
+	s16 at_T(char *p, s16 *len);
+	void rate_history(u32 tx, u32 rx);
 
 	/* the AT interpreter (at.cpp) */
 	void at_process();
@@ -742,6 +752,11 @@ private:
 	std::deque<s16> loop3_buf_;
 	u64 test_end_ms_ = 0;
 	bool test_reply_ = false;
+	/* the test was started by V.250's +TRDL or +TAL: OK when it runs,
+	   in online command state (AT&T6 and AT&T1: CONNECT, online);
+	   +TRES's result of the last +TSELF (0 none, 1 pass, 2 fail) */
+	bool test_cmd_ = false;
+	u8 tres_ = 0;
 	/* V.13's simulated carrier (S48=1, a call with no error
 	   correction), the bits to the link through it */
 	v13::SimCarrier sim_;
@@ -767,6 +782,7 @@ private:
 	struct dp_vcvm vcvm_ = {};      /* V.cvm's: +CVM's settings, the
 					   pump's figures (MDMPRM_VCVM) */
 	void vcvm_refresh();
+	enum { RATE_HISTORY = 16 };
 	struct CallStats {
 		bool call, fax, connected, ended;
 		bool caller;
@@ -779,7 +795,13 @@ private:
 		Cause cause;
 		double rx_pow, tx_pow;
 		u64 samples;
+		/* the rates each way from CONNECT on, as they changed (the
+		   last RATE_HISTORY) */
+		u32 tx_hist[RATE_HISTORY], rx_hist[RATE_HISTORY];
+		u8 tx_hist_n, rx_hist_n;
 	} stats_ = {};
+	/* the last +TMO's arguments (+TMO alone repeats it) */
+	std::string last_tmo_;
 	s16 *scratch_ = nullptr;
 	s32 scratch_len_ = 0;
 	void *voice_ = nullptr;

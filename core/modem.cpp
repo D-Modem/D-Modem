@@ -690,6 +690,7 @@ s16 Modem::stop_call()
 	test_.reset();
 	test_end_ms_ = 0;
 	test_reply_ = false;
+	test_cmd_ = false;
 	loop3_ = false;
 	loop3_buf_.clear();
 	sim_on_ = false;
@@ -1080,11 +1081,12 @@ void Modem::update_status(Status s)
 			stats_.dp = modulation(dp_stats_, dp_);
 			stats_.tx0 = tx_rate_;
 			stats_.rx0 = rx_rate_;
+			rate_history(tx_rate_, rx_rate_);
 		}
-		/* loop 3 (AT&T1, AT&T8): its test from now */
+		/* loop 3 (AT&T1, AT&T8, +TAL): its test from now */
 		if (loop3_) {
 			test_started();
-			if (test_.self_test()) {
+			if (test_.self_test() || test_cmd_) {
 				set_state(COMMAND_ONLINE);
 				report(Result::Ok);
 				break;
@@ -1219,7 +1221,7 @@ void Modem::test_events()
 	case v54::LoopTest::Event::Started:
 		logf("loop 2: the far end loops\n");
 		test_started();
-		if (test_.self_test()) {
+		if (test_.self_test() || test_cmd_) {
 			report(Result::Ok);
 		} else {
 			set_state(ONLINE);
@@ -2293,6 +2295,7 @@ s16 Modem::reset()
 	moh_req_ = 0;
 	link_req_ = 0;
 	max_rx_rate_ = 0;
+	tres_ = 0;
 	sregs_init();
 	kept_init();
 	fax2_reset();
@@ -2594,6 +2597,26 @@ void Modem::call_stats()
 	if (stats_.ended)
 		row("Call Termination Cause",
 		    cause_text[static_cast<s16>(stats_.cause)]);
+}
+
+/* a call's rates now (V.59's txDataHistory and rxDataHistory): kept
+   from CONNECT until it ends, each direction's when it changes (the
+   oldest gone when there are RATE_HISTORY) */
+void Modem::rate_history(u32 tx, u32 rx)
+{
+	if (!stats_.connected || stats_.ended)
+		return;
+	auto add = [](u32 *h, u8 &n, u32 v) {
+		if (!v || (n && h[n - 1] == v))
+			return;
+		if (n == RATE_HISTORY) {
+			std::copy(h + 1, h + n, h);
+			n--;
+		}
+		h[n++] = v;
+	};
+	add(stats_.tx_hist, stats_.tx_hist_n, tx);
+	add(stats_.rx_hist, stats_.rx_hist_n, rx);
 }
 
 /* AT#UD: the last call's statistics (or this one's) as Microsoft's

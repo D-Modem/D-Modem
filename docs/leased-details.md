@@ -206,6 +206,28 @@ after 16.
 The code is `core/v54.h` and `core/v54.cpp`. It sits between the link
 and the data pump, in `Modem::get_bits()` and `put_bits()`.
 
+### V.250's test commands (V.58)
+
+V.250 6.7 has AT commands for V.58's test objects. They drive the same
+loops (`core/v58.cpp`):
+
+| Command | Test |
+|---|---|
+| `AT+TERDL=1` / `0` | as `&T4` / `&T5` |
+| `AT+TLDL=1` / `0` | loop 2 here (as `&T3`), and its end |
+| `AT+TRDL=1` / `0` | loop 2 at the far end (as `&T6`), but OK when the far end loops, staying in online command state; `0` sends the TERM (OK after it) |
+| `AT+TAL=1[,band]` / `0` | loop 3 (as `&T1`), but OK in online command state; `0` ends it |
+| `AT+TTER=type,len,blocks,1` | the error rate test on the loop that runs (loop 2 at the far end, or loop 3), from online command state: V.52's pattern for `blocks` blocks of `len` bits, then the DTE's data again; `AT+TTER=0` stops it |
+| `AT+TNUM?` | its bit errors and errored blocks (`+TNUM: bits,blocks`; V.250's text prints `+TTER:` here, a slip) |
+| `AT+TALS?`, `AT+TDLS?`, `AT+TRDLS?` | the loops' status: loop 3 (0, 3), loop 2 here (1; 3 ours; 4 the far end's), loop 2 there (1, 4) |
+| `AT+TSELF=0` / `1`, `AT+TRES?` | the self-test: the pattern generator, checker and recognisers check themselves (1 pass, 2 fail) |
+| `AT+TE140`, `+TE141`, `+TEPDL`, `+TEPAL`, `+TMODE`, `+TADR` | 0 only: no circuits 140 and 141, no front panel, point to point |
+
+The error rate test counts once the checker has synchronised; a block
+is errored when one of its bits is. The pattern is V.52's 511-bit one
+only (`pattern` 1): `+TTER`'s 63-bit, 2047-bit and fixed patterns give
+ERROR.
+
 ## Simulated carrier: S48 (V.13)
 
 On a continuous carrier the far end's carrier detect never drops. With

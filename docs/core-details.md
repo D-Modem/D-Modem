@@ -83,6 +83,26 @@ Specification 1.0 (`docs/specs/umud10.rtf`):
 - `ATZ` clears the log. After `ATZ` has ended a call, only the keys 0, 1
   and `60=52` remain.
 
+**`AT+TMO`** (V.250 6.9) reads the same facts as V.59's managed objects
+(`v59.cpp`). Each object has a name and a four-digit tag: the high
+two digits name its high-level object (`V34Diag` 0C, `CnxDiag` 2C,
+`CallProgress` 2E, ...), and 40 to 5F in the low two are the "common"
+objects every modulation may have (`txDataHistory` 4C: 0C4C for V.34).
+
+- `+TMO 0=?` lists the tags (`+TMO 0N=?` the names), `+TMO 4=?` gives
+  `(0,1)` (names and tags both);
+- `+TMO 0C` or `+TMO V34 All` gives every object of V.34's, a line
+  `tag{value}` or `name{value}` each; `+TMO txDataHistory` alone is the
+  last call's modulation's; `+TMO` alone repeats the last one;
+- an object that does not apply to the last call is `NULL`; the values
+  are V.59's (its tables' codes, levels with their units, `TRUE` and
+  `FALSE`, octets in hexadecimal separated by `;`);
+- the rates each way are kept from CONNECT as they change (the last 16),
+  for `txDataHistory` and `rxDataHistory`;
+- the objects made of exchanged sequences the core does not record
+  (V.8's CI, V.34's INFO and MP, V.90's CP, V.92's QC, V.8 bis's) are
+  not there.
+
 ### The call's state machine
 
 The state machine is in `modem.cpp`. A call goes through: idle,
@@ -154,7 +174,8 @@ pumps' bits. On calls with no error correction, two more layers sit
 between the link and the pumps:
 
 - V.13's simulated carrier (`v13.cpp`, S48);
-- V.54's loop tests with V.52's self-test (`v54.cpp`, `AT&T`).
+- V.54's loop tests with V.52's self-test (`v54.cpp`, `AT&T`; and
+  V.250's `+T` commands on V.58's test objects, `v58.cpp`).
 
 Both are described in [leased.md](leased-details.md).
 

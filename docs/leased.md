@@ -58,6 +58,11 @@ and it comes back to it. D-Modem has the standard ones (V.54 and V.52):
 | `AT&T4` / `AT&T5` | allow / refuse the far end's request for a loop (refuse is the default) |
 | `AT&T0` | end the test (after a pattern test, it reports the error count) |
 
+The same loops also answer to V.250's standard test commands
+(`AT+TRDL`, `AT+TAL`, `AT+TLDL`), which add an error rate test you can
+run on a loop that is already up (`AT+TTER`, its counts with
+`AT+TNUM?`).
+
 ## Simulated carrier (S48)
 
 On a 4-wire line the signal never stops, so the far computer never sees
