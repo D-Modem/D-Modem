@@ -23,6 +23,7 @@ receiver works inside, see [the technical details](dsp-details.md).
 | Bell 212A, V.22 | 1200 bit/s | |
 | V.22bis | 2400 bit/s | |
 | [V.26 ter](v26.md) | 2400 bit/s | duplex on a dial-up line with echo cancelling, mostly European |
+| [V.26 bis](v26.md) | 2400 bit/s one way, 75 the other | the older dial-up version, run like V.23 |
 | V.32, V.32bis | 9600, 14400 bit/s | |
 | [V.32terbo](v32terbo.md) | 19200 bit/s | AT&T's unpublished extension of V.32bis, rebuilt from a modem that has it |
 | [V.61](v61.md) | 4800 bit/s with speech, 14400 without | talking and sending data at once, the voice added onto the modem's carrier (ASVD) |
