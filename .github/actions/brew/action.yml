@@ -24,7 +24,7 @@ runs:
         echo "key=brew-${ImageOS:-none}-$RUNNER_ARCH-${ImageVersion:-none}-$(printf '%s' "$pkgs" | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
 
     - id: restore
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: /tmp/brew-cache
         key: ${{ steps.key.outputs.key }}
@@ -43,7 +43,7 @@ runs:
         exit 1
 
     - if: steps.restore.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       continue-on-error: true
       with:
         path: /tmp/brew-cache

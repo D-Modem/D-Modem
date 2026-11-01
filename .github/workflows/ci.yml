@@ -93,7 +93,7 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
         uses: ./.github/actions/apt
@@ -105,13 +105,13 @@ jobs:
 
       # libre is fetched and built while configuring: keep it
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/_deps/libre-install
           key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-build-${{ github.sha }}
@@ -133,7 +133,7 @@ jobs:
         run: cmake --build build && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-build-${{ github.sha }}
@@ -145,7 +145,7 @@ jobs:
       # a run without a failure keeps none)
       - name: Test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-logs
           path: |
@@ -172,10 +172,10 @@ jobs:
             openssl-dev gtest-dev linux-headers alsa-lib-dev libusb-dev python3 \
             bash coreutils spandsp-dev tiff-dev tiff-tools ccache tar zstd
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-musl-${{ github.sha }}
@@ -188,7 +188,7 @@ jobs:
         run: cmake --build build && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-musl-${{ github.sha }}
@@ -204,7 +204,7 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
         uses: ./.github/actions/apt
@@ -216,13 +216,13 @@ jobs:
       # libre and Mbed TLS are fetched and built while configuring: keep
       # them
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-win/_deps/libre-install
           key: libre-v4.12.0-mingw-${{ hashFiles('cmake/libre.cmake', 'cmake/mingw-w64.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-mingw-${{ github.sha }}
@@ -237,7 +237,7 @@ jobs:
         run: cmake --build build-win && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-mingw-${{ github.sha }}
@@ -259,7 +259,7 @@ jobs:
 
       - name: Test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-logs-windows
           path: |
@@ -269,7 +269,7 @@ jobs:
           retention-days: 14
 
       - name: dmodemd.exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodemd-windows-x86_64
           path: build-win/dmodemd/dmodemd.exe
@@ -282,7 +282,7 @@ jobs:
       - name: Line endings
         run: git config --global core.autocrlf false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # cl.exe and the SDK: the Developer Command Prompt's environment,
       # for every later step
@@ -301,7 +301,7 @@ jobs:
             }
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-msvc/_deps/libre-install
           key: libre-v4.12.0-msvc-${{ hashFiles('cmake/libre.cmake') }}
@@ -319,7 +319,7 @@ jobs:
 
       - name: Test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-logs-windows-msvc
           path: |
@@ -329,7 +329,7 @@ jobs:
           retention-days: 14
 
       - name: dmodemd.exe
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodemd-windows-msvc-x86_64
           path: build-msvc/dmodemd/dmodemd.exe
@@ -337,7 +337,7 @@ jobs:
 
       # (unsigned: docs/windows.md has the test signing)
       - name: Virtual modem driver
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodem-driver-windows-x86_64-unsigned
           path: |
@@ -353,7 +353,7 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
         uses: ./.github/actions/brew
@@ -361,13 +361,13 @@ jobs:
           packages: ninja ccache
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-mac/_deps/libre-install
           key: libre-v4.12.0-macos-universal-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-macos-${{ github.sha }}
@@ -384,7 +384,7 @@ jobs:
         run: cmake --build build-mac && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-macos-${{ github.sha }}
@@ -405,7 +405,7 @@ jobs:
 
       - name: Test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-logs-macos
           path: |
@@ -415,7 +415,7 @@ jobs:
           retention-days: 14
 
       - name: dmodemd
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodemd-macos-universal
           path: build-mac/dmodemd/dmodemd
@@ -427,7 +427,7 @@ jobs:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
         uses: ./.github/actions/apt
@@ -437,7 +437,7 @@ jobs:
 
       # Haiku's packages (checked against their repositories' SHA-256)
       - name: Haiku packages cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: haiku-packages
           key: haiku-packages-${{ hashFiles('cmake/haiku_sysroot.py') }}
@@ -446,13 +446,13 @@ jobs:
         run: python3 cmake/haiku_sysroot.py haiku-sysroot --cache haiku-packages
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build-haiku/_deps/libre-install
           key: libre-v4.12.0-haiku-${{ hashFiles('cmake/libre.cmake', 'cmake/libre-haiku.patch', 'cmake/haiku.cmake', 'cmake/haiku_sysroot.py') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-haiku-${{ github.sha }}
@@ -468,13 +468,13 @@ jobs:
         run: cmake --build build-haiku && ccache -s
 
       - name: ccache save
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-haiku-${{ github.sha }}
 
       - name: dmodemd
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dmodemd-haiku-x86_64
           path: build-haiku/dmodemd/dmodemd
@@ -550,7 +550,7 @@ jobs:
               T38=no timeout 900 asterisk/test/efax.sh
               DMODEMD_T38=no timeout 900 asterisk/test/efax.sh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
         uses: ./.github/actions/apt
@@ -565,7 +565,7 @@ jobs:
       # T.38 gateway that passes no fax (t38.sh's cases 6 and 7)
       - name: Asterisk cache
         id: asterisk-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/asterisk
           key: asterisk-${{ runner.os }}-${{ hashFiles('asterisk/test/build_asterisk.sh') }}
@@ -580,13 +580,13 @@ jobs:
           ~/asterisk/sbin/asterisk -V
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/_deps/libre-install
           key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-asterisk-${{ github.sha }}
@@ -605,7 +605,7 @@ jobs:
 
       - name: ccache save
         if: matrix.shard == 'calls'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-asterisk-${{ github.sha }}
@@ -653,7 +653,7 @@ jobs:
           - shard: fax-t38
             run: T38=yes timeout 1200 freeswitch/test/fax.sh
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Packages
         uses: ./.github/actions/apt
@@ -668,7 +668,7 @@ jobs:
 
       - name: FreeSWITCH cache
         id: fs-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: /home/runner/freeswitch
           key: freeswitch-1.11.3-${{ runner.os }}-${{ hashFiles('freeswitch/test/build_freeswitch.sh') }}
@@ -679,13 +679,13 @@ jobs:
           SRC=/tmp/fs-src freeswitch/test/build_freeswitch.sh $FS_PREFIX
 
       - name: libre cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: build/_deps/libre-install
           key: libre-v4.12.0-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake') }}
 
       - name: ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
           key: ccache-freeswitch-${{ github.sha }}
@@ -701,7 +701,7 @@ jobs:
 
       - name: ccache save
         if: matrix.shard == 'calls'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
           key: ccache-freeswitch-${{ github.sha }}

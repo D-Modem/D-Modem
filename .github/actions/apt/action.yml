@@ -34,7 +34,7 @@ runs:
         echo "key=apt-${ImageOS:-none}-$RUNNER_ARCH-${ImageVersion:-none}-$(printf '%s|%s|%s' "$pkgs" "$PPA" "$REC" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
 
     - id: restore
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         path: /tmp/apt-cache
         key: ${{ steps.key.outputs.key }}
@@ -73,7 +73,7 @@ runs:
         echo "fresh=$fresh" >> "$GITHUB_OUTPUT"
 
     - if: steps.install.outputs.fresh == 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       continue-on-error: true
       with:
         path: /tmp/apt-cache
