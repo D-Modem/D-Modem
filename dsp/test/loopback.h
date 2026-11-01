@@ -35,6 +35,10 @@ struct LoopbackConfig {
 					   Hz alone), e.g. "amr:12.2" */
 	const char *dump = nullptr;     /* what each side hears: <dump>.a
 					   (answerer), <dump>.c (caller) */
+	/* a voice path at each side (MDMPRM_VOICE: V.61's speech), the
+	   caller's first: 0 none, > 0 a tone of that many Hz into its
+	   microphone, < 0 a silent microphone */
+	int voice_hz[2] = { 0, 0 };
 };
 
 struct LoopbackSide {
@@ -46,6 +50,12 @@ struct LoopbackSide {
 	   CONNECT to the end (the bits kept at most) */
 	long carried = 0, expected = 0;
 	long checked = 0, errors = 0, resyncs = 0;
+	/* with a voice path: whether the pump turned it on, the far end's
+	   speech it played (samples), the share of its last second's
+	   energy at the far end's tone (voice_hz) */
+	bool voice_on = false;
+	long ear = 0;
+	double tone_share = 0;
 	/* connected, CARRIED_MIN of the bits expected carried (a call
 	   that stalls is no good however few errors its first bits have),
 	   and a bit error rate of 1e-3 at most */

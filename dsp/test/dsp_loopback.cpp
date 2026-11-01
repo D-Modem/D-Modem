@@ -64,6 +64,9 @@ int main(int argc, char **argv)
 	c.flat = getenv("FLAT") != nullptr;
 	c.dump = getenv("DUMP");
 	c.codec = getenv("CODEC");
+	if (getenv("VOICE"))
+		sscanf(getenv("VOICE"), "%d:%d", &c.voice_hz[0],
+		       &c.voice_hz[1]);
 	r = loopback_run(c);
 	fail = r.dp_failed;
 	for (int k = 0; k < 2; k++) {

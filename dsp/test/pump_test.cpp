@@ -6,7 +6,8 @@
  *    modulation on a clean and a noisy line, at 8000 Hz, with clock
  *    offsets, line gains, near and far echoes; and the answering automode,
  *    a caller of another modulation finding its way to it.  Both ways
- *    connected, with a bit error rate of 1e-3 at most.
+ *    connected, with a bit error rate of 1e-3 at most.  V.61 also with
+ *    speech: a tone on each side's microphone heard at the other.
  *
  *    DSP_DEBUG=<level>   the pumps' log
  */
@@ -84,8 +85,8 @@ static std::string name(const testing::TestParamInfo<Pumps> &i)
 	return i.param.name;
 }
 
-/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 232 V.32terbo, 22 V.22,
-   122 V.22bis, 212 Bell 212A, 21 V.21, 23 V.23, 103 Bell 103 */
+/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 232 V.32terbo, 61 V.61,
+   22 V.22, 122 V.22bis, 212 Bell 212A, 21 V.21, 23 V.23, 103 Bell 103 */
 INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v32bis", line(132, 40, 20) },
 	Pumps{ "v32bis_snr25", line(132, 25, 20) },
@@ -107,6 +108,12 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v32terbo_8000", line(232, 40, 20, 8000) },
 	Pumps{ "v32terbo_300ppm", line(232, 40, 30, 9600, 0.5f, 300) },
 	Pumps{ "v32terbo_echo6", line(232, 40, 20, 9600, 0.5f, 0, -6) },
+	/* V.61 without speech: data alone, 14400 bit/s down to 4800 */
+	Pumps{ "v61", line(61, 40, 15) },
+	Pumps{ "v61_snr15", line(61, 15, 15) },
+	Pumps{ "v61_8000", line(61, 30, 15, 8000) },
+	Pumps{ "v61_gain2_m300ppm", line(61, 30, 15, 9600, 2, -300) },
+	Pumps{ "v61_echoes", line(61, 30, 15, 9600, 0.5f, 0, -10, -15) },
 	Pumps{ "v22bis", line(122, 40, 20) },
 	Pumps{ "v22bis_snr15", line(122, 15, 20) },
 	Pumps{ "v22bis_8000", line(122, 30, 20, 8000) },
@@ -174,6 +181,77 @@ TEST(V32Terbo, Rates)
 						      << r.side[k].text(who);
 		}
 	}
+}
+
+/* V.61 with speech both ways (tones on the two microphones): 4800 bit/s
+   of data and each side hearing the other's tone, on a line of snr dB;
+   at 2800 symbols/s too */
+static void v61_voice(float snr, int srate, const char *baud)
+{
+	if (baud)
+		setenv("DSP_V61_BAUD", baud, 1);
+	LoopbackConfig c = line(61, snr, 15, srate);
+	c.voice_hz[0] = 440;
+	c.voice_hz[1] = 700;
+	LoopbackResult r = loopback_run(c);
+	unsetenv("DSP_V61_BAUD");
+
+	EXPECT_FALSE(r.dp_failed);
+	for (int k = 0; k < 2; k++) {
+		const char *who = k ? "answerer" : "caller";
+		EXPECT_TRUE(r.side[k].ok()) << r.side[k].text(who);
+		EXPECT_EQ(r.side[k].errors, 0) << r.side[k].text(who);
+		EXPECT_EQ(r.side[k].rx_rate, 4800) << r.side[k].text(who);
+		EXPECT_TRUE(r.side[k].voice_on) << r.side[k].text(who);
+		EXPECT_GT(r.side[k].tone_share, 0.85) << r.side[k].text(who);
+	}
+}
+
+/* (see v61_voice()) at 30 dB */
+TEST(V61, VoicePlusData)
+{
+	v61_voice(30, 9600, nullptr);
+}
+
+/* at 20 dB: the speech's headroom keeps the data clean */
+TEST(V61, VoicePlusDataSnr20)
+{
+	v61_voice(20, 9600, nullptr);
+}
+
+/* on a line sampled at 8000 Hz */
+TEST(V61, VoicePlusData8000)
+{
+	v61_voice(30, 8000, nullptr);
+}
+
+/* at 2800 symbols/s (the 1680 Hz carrier, 1493.3 Hz audio carrier) */
+TEST(V61, VoicePlusData2800)
+{
+	v61_voice(30, 9600, "2800");
+}
+
+/* V.61 with the answerer's microphone silent: it sends data alone
+   (14400 bit/s here) between the caller's speech frames, so the
+   caller receives far more than the 4800 bit/s the call connected at,
+   and hears nothing of the far tone */
+TEST(V61, SilenceSendsDataAlone)
+{
+	LoopbackConfig c = line(61, 40, 15);
+	c.voice_hz[0] = 440;
+	c.voice_hz[1] = -1;
+	LoopbackResult r = loopback_run(c);
+
+	EXPECT_FALSE(r.dp_failed);
+	for (int k = 0; k < 2; k++) {
+		const char *who = k ? "answerer" : "caller";
+		EXPECT_TRUE(r.side[k].ok()) << r.side[k].text(who);
+		EXPECT_EQ(r.side[k].errors, 0) << r.side[k].text(who);
+	}
+	EXPECT_GT(r.side[0].carried, 2 * r.side[1].carried)
+		<< r.side[0].text("caller");
+	EXPECT_LT(r.side[0].tone_share, 0.1) << r.side[0].text("caller");
+	EXPECT_GT(r.side[1].tone_share, 0.85) << r.side[1].text("answerer");
 }
 
 /* V.22 through AMR 12.2 (a mobile call): the codec turns the points by

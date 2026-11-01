@@ -41,6 +41,8 @@ measurements, and test lists.
     as the customer's modem)
   - [V.8bis](dsp/v8bis.md): agreeing on the kind of call before the
     modems start, the first part of voice and data together (V.70)
+  - [V.61](dsp/v61.md): voice and data together on one analogue
+    carrier (ASVD)
   - [Fax](dsp/fax.md): fax modem classes 1, 2 and 2.0, a built-in fax
     machine, and fax over the internet (T.38)
 - [The data link layer](link.md): error correction and compression
@@ -48,7 +50,8 @@ measurements, and test lists.
 - [ISDN](isdn.md): 64000 bit/s ISDN data calls
 - [Voice and data together (V.70)](v70.md): DSVD, a telephone
   conversation and a data connection on one call (its data channel so
-  far)
+  far); or V.61's ASVD ([V.61](dsp/v61.md)), the voice sent as
+  sound on the modem's own carrier
 - [Modem relay (V.150.1)](v150.md): data calls through a gateway that
   answers the far modem itself, the data sent as bytes over the internet
 - [Leased lines and dry pairs](leased.md): private circuits with no

@@ -461,4 +461,64 @@ void QamRx::recompute()
 	z = cplx_mul(out, rot);
 }
 
+
+/*
+ *    tone tracker
+ */
+
+/* tracks a tone at freq Hz: two pole low pass of 1.5 ms after the down
+   conversion, phase compared with 10 ms ago */
+void ToneTrk::init(float freq, s32 srate)
+{
+	reinit(*this);
+	lo.set_freq(-freq, srate);
+	a = 1.0f / (0.0015f * srate);
+	lag = srate / 100;   /* compare with 10 ms ago */
+	if (lag > 127)
+		lag = 127;
+}
+
+/* returns 1 on a phase reversal; the tone has to carry a fair part of
+   the total input power (in_power), noise alone does not turn it on */
+s16 ToneTrk::run(float x, float in_power, s32 srate)
+{
+	cplx v = cplx_scale(lo.next_cplx(), x), old;
+	float p, po;
+	s16 rev = 0;
+
+	lp1.re += a * (v.re - lp1.re);
+	lp1.im += a * (v.im - lp1.im);
+	lp2.re += a * (lp1.re - lp2.re);
+	lp2.im += a * (lp1.im - lp2.im);
+	old = hist[(pos - lag) & 255];
+	cplx older = hist[(pos - 2 * lag) & 255];
+	hist[pos++ & 255] = lp2;
+	p = cplx_pow(lp2);
+	po = cplx_pow(old);
+	/* tone amplitude A gives |lp|^2 = A^2 / 4 */
+	if (p > 120.0f * 120.0f / 4 && 2 * p > 0.15f * in_power)
+		on_count = on_count > 0 ? on_count + 1 : 1;
+	else
+		on_count = on_count < 0 ? on_count - 1 : -1;
+	/* 20 ms to switch on or off: a phase reversal dips the level */
+	if (on_count > srate / 50)
+		on = 1;
+	else if (on_count < -srate / 50)
+		on = 0;
+	if (hold > 0)
+		hold--;
+	else if (on && po > p * 0.25f && p > po * 0.25f) {
+		/* turned over against 10 ms ago, steady the 10 ms before:
+		   a tone a little off freq turns too, but all the while */
+		cplx c = cplx_mulc(lp2, old), c2 = cplx_mulc(old, older);
+		float pe = cplx_pow(older);
+		if (c.re < -0.7f * sqrtf(p * po) &&
+		    c2.re > 0.7f * sqrtf(po * pe)) {
+			rev = 1;
+			hold = srate / 20;
+		}
+	}
+	return rev;
+}
+
 } // namespace dsp

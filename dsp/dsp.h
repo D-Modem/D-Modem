@@ -488,6 +488,8 @@ s16 dp_v22_init(void);
 void dp_v22_exit(void);
 s16 dp_v32_init(void);
 void dp_v32_exit(void);
+s16 dp_v61_init(void);
+void dp_v61_exit(void);
 s16  dp_v34_init(void);
 void dp_v34_exit(void);
 s16  dp_vcvm_init(void);

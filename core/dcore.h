@@ -146,9 +146,10 @@ public:
 		(void)m;
 		return device == VOICE_DEVICE_LINE ? 0 : -1;
 	}
-	/* DSVD's voice (V.70, +DSVD): a voice path for its voice channel,
-	   the handset's (has_handset()) or the host's own audio; without
-	   one a DSVD call has its data channel alone */
+	/* DSVD's voice (V.70, +DSVD) and ASVD's (V.61, +ASVD): a voice
+	   path for its voice channel, the handset's (has_handset()) or the
+	   host's own audio; without one a DSVD call has its data channel
+	   alone, an ASVD call data alone */
 	virtual bool dsvd_voice(Modem &m) { (void)m; return false; }
 	/* the voice channel is open (on): the voice path's audio from now
 	   on through dsvd_mic() and dsvd_ear(); or closed */
@@ -205,8 +206,9 @@ protected:
 	~Host() = default;
 };
 
-/* DSVD's voice path outside the Host (Options::dsvd): a program's own
-   audio for the voice channel, where the Host has none of its own
+/* DSVD's (and ASVD's) voice path outside the Host (Options::dsvd): a
+   program's own audio for the voice channel, where the Host has none of
+   its own
    (Host::dsvd_voice()); as the Host's dsvd_* */
 class VoicePath {
 public:
@@ -545,6 +547,15 @@ private:
 	bool v8bis_call() const;
 	/* and offers V.70's DSVD in it (+DSVD=1) */
 	bool dsvd_offered() const;
+	/* and offers V.61's ASVD in it (+ASVD=1) */
+	bool asvd_offered() const;
+	/* the call has a voice path: the Host's (dsvd_voice()) or the
+	   program's (Options::dsvd) */
+	bool has_voice();
+	/* struct dp_voice's calls (V.61's speech), to that path */
+	static void voice_state_cb(void *ctx, int on);
+	static int voice_mic_cb(void *ctx, s16 *pcm, int n);
+	static void voice_ear_cb(void *ctx, const s16 *pcm, int n);
 	/* struct dp_relay's calls, to the Host's */
 	static int relay_state_cb(void *ctx, s32 *tx, s32 *rx);
 	static int relay_read_cb(void *ctx, unsigned char *buf, int max);
@@ -884,6 +895,8 @@ private:
 	struct dp_text text_ = {};
 	/* DP_RELAY's way to the Host (MDMPRM_RELAY) */
 	struct dp_relay relay_ = {};
+	/* DP_V61's way to the voice path (MDMPRM_VOICE) */
+	struct dp_voice asvd_voice_ = {};
 	u32 mv18s_[5] = {};
 	u32 mv18r_ = 0, mv18p_ = 2;
 	bool f2_cs_set_ = false;

@@ -36,6 +36,12 @@
  *    The station that receives MS is V.8's answering modem (9.9), which
  *    in both cases here is the one that answered the call.
  *
+ *    With +DSVD the CL and MS offer V.70's DSVD (on V.8's start-up
+ *    after this), with +ASVD V.61's ASVD; the caller picks DSVD where
+ *    both have both.  ASVD has no V.8: at the ACK(1) both ends go on to
+ *    V.61's own start-up (DP_V61, its answer tone first), the caller as
+ *    soon as the ACK(1) comes or the answer tone is heard.
+ *
  */
 
 #include <algorithm>
@@ -80,16 +86,20 @@ public:
 	bool in_data() const { return false; }
 
 private:
-	enum class Then { V8, FALLBACK };
+	enum class Then { V8, FALLBACK, V61 };
 
 	/* what DSVD needs of the other end (5.8/V.70: V.70 with V.76's
 	   multiplexer, on V.34 or V.32 bis) */
 	static constexpr u32 SVD_NEED = SVD_V70 | SVD_V76;
 	static constexpr u32 SVD_MODS = SVD_V34 | SVD_V32BIS;
 
+	/* what ASVD needs of the other end: V.61 (its data channel V.42's
+	   or V.14's) */
+	static constexpr u32 ASVD_NEED = SVD_V61;
+
 	/* what we have: the V.8 start-up, data with these; with +DSVD,
 	   DSVD (V.70) on V.34 or V.32 bis, its data channel V.14's
-	   characters */
+	   characters; with +ASVD, ASVD (V.61) */
 	Caps ours() const
 	{
 		Caps c;
@@ -101,10 +111,17 @@ private:
 			c.modes |= MODE_SVD;
 			c.svd = SVD_NEED | SVD_MODS | SVD_V14;
 		}
+		if (asvd_) {
+			c.modes |= MODE_SVD;
+			c.svd |= ASVD_NEED | SVD_V42 | SVD_V14;
+		}
 		return c;
 	}
-	/* the mode chosen, to the core (MDMPRM_V8BIS: 1 data, 2 DSVD) */
-	void chosen(bool svd);
+	/* the mode chosen, to the core (MDMPRM_V8BIS: 1 data, 2 DSVD, 3
+	   ASVD) */
+	enum Mode { DATA = 1, DSVD = 2, ASVD = 3 };
+	void chosen(Mode mode);
+	int to_v61();
 	void signal(u8 s, bool initiating, float amp);
 	void send(u8 type, const Caps &c = Caps());
 	float tx();
@@ -128,6 +145,8 @@ private:
 	s16 run2100_ = 0, run2225_ = 0;
 	bool acked_ = false;            /* the answerer's ACK(1) came */
 	bool dsvd_ = false;             /* DSVD offered (+DSVD) */
+	bool asvd_ = false;             /* ASVD offered (+ASVD) */
+	bool v61_ = false;              /* the caller's MS asked for ASVD */
 };
 
 /* the answerer's MRe after its silence, or the caller's answer to the
@@ -147,6 +166,7 @@ s16 V8bisPump::start(struct modem *m, enum DP_ID, s16 caller_, s32 srate_,
 	{
 		long v = modem_get_param(m, MDMPRM_V8BIS);
 		dsvd_ = v > 0 && (v & 2);
+		asvd_ = v > 0 && (v & 4);
 	}
 	if (caller_ && rt) {
 		heard_ = static_cast<u8>(rt->v8bis_sig);
@@ -214,17 +234,39 @@ int V8bisPump::to_v8(s16 tone)
 	return DPSTAT_CHANGEDP;
 }
 
-/* (see the class) */
-void V8bisPump::chosen(bool svd)
+/* both ends on to V.61's start-up (ASVD): DPSTAT_CHANGEDP, the core's
+   next pump DP_V61 */
+int V8bisPump::to_v61()
 {
-	DSP_DBG("v8bis: %s chosen\n", svd ? "DSVD" : "data");
-	modem_set_param(modem, MDMPRM_V8BIS, svd ? 2 : 1);
+	DSP_DBG("v8bis: on to V.61\n");
+	modem_set_param(modem, MDMPRM_DP_REQUESTED, DP_V61);
+	return DPSTAT_CHANGEDP;
+}
+
+/* (see the class) */
+void V8bisPump::chosen(Mode mode)
+{
+	DSP_DBG("v8bis: %s chosen\n", mode == DSVD ? "DSVD" :
+		mode == ASVD ? "ASVD" : "data");
+	modem_set_param(modem, MDMPRM_V8BIS, mode);
 }
 
 /* the answerer: the caller's MS (c): DSVD when we offered it and it has
-   what DSVD needs, else data with a modulation we have */
+   what DSVD needs, ASVD likewise, else data with a modulation we have */
 int V8bisPump::answer_ms(const Caps &c)
 {
+	if ((c.modes & MODE_SVD) && !(c.svd & SVD_V70) &&
+	    (c.svd & ASVD_NEED)) {
+		if (!asvd_ || (c.modes & MODE_DATA) || (c.id & ID_SHORT_V8)) {
+			send(NAK3);
+			return finish(Then::FALLBACK,
+				      "MS: an ASVD we have not got");
+		}
+		if (c.id & ID_ACK1)
+			send(ACK1);
+		chosen(ASVD);
+		return finish(Then::V61, "MS: ASVD");
+	}
 	if (c.modes & MODE_SVD) {
 		if (!dsvd_ || (c.modes & MODE_DATA) ||
 		    (c.svd & SVD_NEED) != SVD_NEED ||
@@ -235,7 +277,7 @@ int V8bisPump::answer_ms(const Caps &c)
 		}
 		if (c.id & ID_ACK1)
 			send(ACK1);
-		chosen(true);
+		chosen(DSVD);
 		return finish(Then::V8, "MS: DSVD");
 	}
 	u32 mods = c.data & DATA_MODS;
@@ -246,13 +288,14 @@ int V8bisPump::answer_ms(const Caps &c)
 	}
 	if (c.id & ID_ACK1)
 		send(ACK1);
-	chosen(false);
+	chosen(DATA);
 	return finish(Then::V8, "MS: data");
 }
 
 /* the caller: the answerer's CL (c), our MS: DSVD when both offer it
    (V.70, V.76, the faster modulation both have, V.14 if both have it),
-   else data */
+   else ASVD when both offer that (V.61, V.42 and V.14 where both have
+   them), else data */
 int V8bisPump::caller_cl(const Caps &c)
 {
 	static const u32 best[] = { DATA_V34, DATA_V32BIS, DATA_V32,
@@ -267,7 +310,18 @@ int V8bisPump::caller_cl(const Caps &c)
 		ms.svd = SVD_NEED | (svd & SVD_V14) |
 			((svd & SVD_V34) ? SVD_V34 : SVD_V32BIS);
 		send(MS, ms);
-		chosen(true);
+		chosen(DSVD);
+		set_state(Vb::WAIT_ACK);
+		return DPSTAT_OK;
+	}
+	if (asvd_ && (c.modes & MODE_SVD) && (svd & ASVD_NEED)) {
+		/* (no V.8 after it: ID_V8 clear) */
+		ms.id = ID_ACK1;
+		ms.modes = MODE_SVD;
+		ms.svd = ASVD_NEED | (svd & (SVD_V42 | SVD_V14));
+		send(MS, ms);
+		chosen(ASVD);
+		v61_ = true;
 		set_state(Vb::WAIT_ACK);
 		return DPSTAT_OK;
 	}
@@ -291,7 +345,7 @@ int V8bisPump::caller_cl(const Caps &c)
 	ms.modes = MODE_DATA;
 	ms.data |= both & (DATA_V42 | DATA_V42BIS);
 	send(MS, ms);
-	chosen(false);
+	chosen(DATA);
 	set_state(Vb::WAIT_ACK);
 	return DPSTAT_OK;
 }
@@ -323,10 +377,14 @@ int V8bisPump::message(const Msg &m)
 		if (m.type == ACK1) {
 			acked_ = true;
 			DSP_DBG("v8bis: ACK(1) in\n");
+			/* ASVD: V.61's start-up, its answer tone next */
+			if (v61_)
+				return to_v61();
 		} else {
-			/* a NAK: the MS (DSVD) is not taken */
+			/* a NAK: the MS (DSVD, ASVD) is not taken */
 			DSP_DBG("v8bis: no ACK(1)\n");
-			chosen(false);
+			chosen(DATA);
+			v61_ = false;
 		}
 		set_state(Vb::ANSWER);
 		return DPSTAT_OK;
@@ -367,6 +425,8 @@ int V8bisPump::sample(float x, float *y)
 			return DPSTAT_OK;
 		if (then_ == Then::FALLBACK)
 			DSP_DBG("v8bis: V.8 without V.8 bis\n");
+		if (then_ == Then::V61)
+			return to_v61();
 		return to_v8(ANSTONE_NONE);
 	}
 	/* an invalid frame (9.8): NAK(1) */
@@ -444,9 +504,9 @@ int V8bisPump::sample(float x, float *y)
 		}
 		break;
 	case Vb::WAIT_ACK:
-		/* ANSam: the ACK(1) was lost */
+		/* ANSam (V.61's ANS): the ACK(1) was lost */
 		if (tone == 1)
-			return to_v8(ANSTONE_2100);
+			return v61_ ? to_v61() : to_v8(ANSTONE_2100);
 		if (count >= ms2samples(5000, srate)) {
 			DSP_DBG("v8bis: no ACK(1)\n");
 			set_state(Vb::ANSWER);
