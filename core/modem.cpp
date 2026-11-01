@@ -600,6 +600,7 @@ s16 Modem::start_call(bool keep_line)
 	if (started_ && !keep_line && stop_call())
 		return -1;
 	have_result_ = false;
+	svd_ = false;
 	stats_ = CallStats();
 	stats_.call = true;
 	/* V.cvm: +CVM's settings kept, this call's figures cleared */
@@ -955,6 +956,8 @@ const char *Modem::protocol_name() const
 		return "PPP";
 	if (link_->protocol() == dlink::Protocol::V120)
 		return "V.120";
+	if (link_->protocol() == dlink::Protocol::V76)
+		return "V.76";
 	if (v110_ && !cfg_.ec && !cfg_.mnp_on)
 		return "V.110";
 	return cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" : "NONE";
@@ -1014,6 +1017,12 @@ void Modem::update_status(Status s)
 		if (v110_ && !kept("+CBST")[1])
 			link_->set_b2(dlink::B2::Modem);
 		set_state(EC_ESTAB);
+		/* V.70: V.8 bis chose DSVD; V.76's initiator is V.8 bis's,
+		   the answerer here (6.1.4/V.70) */
+		if (svd_) {
+			link_->start_v76(!caller_);
+			break;
+		}
 		link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
 			     !(caller_ && dsp_info_.qc_lapm) &&
 			     !(dp_ && dp_->id == DP_VCVM));
@@ -1958,6 +1967,13 @@ bool Modem::v8bis_call() const
 		id = DP_V34;
 	return id == DP_V8 || id == DP_V34 || id == DP_V90 ||
 	       id == DP_V91 || id == DP_V92 || id == DP_VCVM || id == DP_K56;
+}
+
+/* see dcore.h */
+bool Modem::dsvd_offered() const
+{
+	const u32 *d = kept("+DSVD");
+	return d && d[0] == 1 && v8bis_call();
 }
 
 /* struct dp_relay's state(): the Host's */

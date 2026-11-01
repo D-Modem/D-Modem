@@ -82,16 +82,29 @@ public:
 private:
 	enum class Then { V8, FALLBACK };
 
-	/* what we have: the V.8 start-up, data with these */
-	static Caps ours()
+	/* what DSVD needs of the other end (5.8/V.70: V.70 with V.76's
+	   multiplexer, on V.34 or V.32 bis) */
+	static constexpr u32 SVD_NEED = SVD_V70 | SVD_V76;
+	static constexpr u32 SVD_MODS = SVD_V34 | SVD_V32BIS;
+
+	/* what we have: the V.8 start-up, data with these; with +DSVD,
+	   DSVD (V.70) on V.34 or V.32 bis, its data channel V.14's
+	   characters */
+	Caps ours() const
 	{
 		Caps c;
 		c.id = ID_V8;
 		c.modes = MODE_DATA;
 		c.data = DATA_V42 | DATA_V42BIS | DATA_V34 | DATA_V32BIS |
 			DATA_V32 | DATA_V22BIS | DATA_V22 | DATA_V21;
+		if (dsvd_) {
+			c.modes |= MODE_SVD;
+			c.svd = SVD_NEED | SVD_MODS | SVD_V14;
+		}
 		return c;
 	}
+	/* the mode chosen, to the core (MDMPRM_V8BIS: 1 data, 2 DSVD) */
+	void chosen(bool svd);
 	void signal(u8 s, bool initiating, float amp);
 	void send(u8 type, const Caps &c = Caps());
 	float tx();
@@ -114,6 +127,7 @@ private:
 	float blk_e_ = 0;
 	s16 run2100_ = 0, run2225_ = 0;
 	bool acked_ = false;            /* the answerer's ACK(1) came */
+	bool dsvd_ = false;             /* DSVD offered (+DSVD) */
 };
 
 /* the answerer's MRe after its silence, or the caller's answer to the
@@ -130,6 +144,10 @@ s16 V8bisPump::start(struct modem *m, enum DP_ID, s16 caller_, s32 srate_,
 	sigrx_.init(srate_, caller_ ? SigRx::PAIR_INIT : SigRx::PAIR_RESP);
 	g2100_.init(2100, static_cast<s16>(srate_ / 100), srate_);
 	g2225_.init(2225, static_cast<s16>(srate_ / 100), srate_);
+	{
+		long v = modem_get_param(m, MDMPRM_V8BIS);
+		dsvd_ = v > 0 && (v & 2);
+	}
 	if (caller_ && rt) {
 		heard_ = static_cast<u8>(rt->v8bis_sig);
 		rt->v8bis_sig = SIG_NONE;
@@ -196,9 +214,30 @@ int V8bisPump::to_v8(s16 tone)
 	return DPSTAT_CHANGEDP;
 }
 
-/* the answerer: the caller's MS (c) */
+/* (see the class) */
+void V8bisPump::chosen(bool svd)
+{
+	DSP_DBG("v8bis: %s chosen\n", svd ? "DSVD" : "data");
+	modem_set_param(modem, MDMPRM_V8BIS, svd ? 2 : 1);
+}
+
+/* the answerer: the caller's MS (c): DSVD when we offered it and it has
+   what DSVD needs, else data with a modulation we have */
 int V8bisPump::answer_ms(const Caps &c)
 {
+	if (c.modes & MODE_SVD) {
+		if (!dsvd_ || (c.modes & MODE_DATA) ||
+		    (c.svd & SVD_NEED) != SVD_NEED ||
+		    !(c.svd & SVD_MODS) || (c.id & ID_SHORT_V8)) {
+			send(NAK3);
+			return finish(Then::FALLBACK,
+				      "MS: a DSVD we have not got");
+		}
+		if (c.id & ID_ACK1)
+			send(ACK1);
+		chosen(true);
+		return finish(Then::V8, "MS: DSVD");
+	}
 	u32 mods = c.data & DATA_MODS;
 	if (!(c.modes & MODE_DATA) || (c.id & ID_SHORT_V8) ||
 	    (mods && !(mods & ours().data))) {
@@ -207,16 +246,31 @@ int V8bisPump::answer_ms(const Caps &c)
 	}
 	if (c.id & ID_ACK1)
 		send(ACK1);
+	chosen(false);
 	return finish(Then::V8, "MS: data");
 }
 
-/* the caller: the answerer's CL (c), our MS */
+/* the caller: the answerer's CL (c), our MS: DSVD when both offer it
+   (V.70, V.76, the faster modulation both have, V.14 if both have it),
+   else data */
 int V8bisPump::caller_cl(const Caps &c)
 {
 	static const u32 best[] = { DATA_V34, DATA_V32BIS, DATA_V32,
 				    DATA_V22BIS, DATA_V22, DATA_V21 };
 	Caps o = ours(), ms;
 	u32 both = c.data & o.data;
+	const u32 svd = c.svd & o.svd;
+	if (dsvd_ && (c.modes & MODE_SVD) &&
+	    (svd & SVD_NEED) == SVD_NEED && (svd & SVD_MODS)) {
+		ms.id = ID_ACK1 | (c.id & ID_V8);
+		ms.modes = MODE_SVD;
+		ms.svd = SVD_NEED | (svd & SVD_V14) |
+			((svd & SVD_V34) ? SVD_V34 : SVD_V32BIS);
+		send(MS, ms);
+		chosen(true);
+		set_state(Vb::WAIT_ACK);
+		return DPSTAT_OK;
+	}
 	if (!(c.modes & MODE_DATA)) {
 		DSP_DBG("v8bis: CL: no data mode\n");
 		set_state(Vb::ANSWER);
@@ -237,6 +291,7 @@ int V8bisPump::caller_cl(const Caps &c)
 	ms.modes = MODE_DATA;
 	ms.data |= both & (DATA_V42 | DATA_V42BIS);
 	send(MS, ms);
+	chosen(false);
 	set_state(Vb::WAIT_ACK);
 	return DPSTAT_OK;
 }
@@ -269,7 +324,9 @@ int V8bisPump::message(const Msg &m)
 			acked_ = true;
 			DSP_DBG("v8bis: ACK(1) in\n");
 		} else {
+			/* a NAK: the MS (DSVD) is not taken */
 			DSP_DBG("v8bis: no ACK(1)\n");
+			chosen(false);
 		}
 		set_state(Vb::ANSWER);
 		return DPSTAT_OK;

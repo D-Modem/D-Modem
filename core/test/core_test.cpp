@@ -2409,7 +2409,7 @@ static bool logged(const std::vector<std::string> &lines, const char *s)
 	return false;
 }
 
-/* +A8E: its values, its ranges, the values it refuses */
+/* +A8E and +DSVD: their values, their ranges, the values they refuse */
 TEST(Core, A8e)
 {
 	Line l;
@@ -2420,6 +2420,13 @@ TEST(Core, A8e)
 	EXPECT_EQ(cmd(m, l, "AT+A8E=1,1,,1\r"), "AT+A8E=1,1,,1\r\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+A8E?\r"), "AT+A8E?\r\r\n+A8E: 1,1,0,1\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+A8E=,,,2\r"), "AT+A8E=,,,2\r\r\nERROR\r\n");
+	/* +DSVD, D-Modem's own: DSVD offered in V.8 bis */
+	EXPECT_EQ(cmd(m, l, "AT+DSVD?\r"), "AT+DSVD?\r\r\n+DSVD: 0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+DSVD=?\r"), "AT+DSVD=?\r\r\n+DSVD: (0,1)\r\n"
+		  "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+DSVD=1\r"), "AT+DSVD=1\r\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+DSVD?\r"), "AT+DSVD?\r\r\n+DSVD: 1\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+DSVD=2\r"), "AT+DSVD=2\r\r\nERROR\r\n");
 	delete m;
 }
 
@@ -2447,6 +2454,79 @@ TEST(Core, V8bisAnswererAlone)
 	EXPECT_TRUE(logged(l, "B: pump 108 (driver 108), answerer"));
 	EXPECT_TRUE(logged(l, "v8bis: no answer to MRe"));
 	EXPECT_TRUE(logged(l, "V.8 CM received"));
+}
+
+/* V.70: both with V.8 bis and +DSVD; V.8 bis chooses DSVD, the link is
+   V.76's multiplexer, its data channel (opened by the answerer, V.75's
+   OpenLogicalChannel) carries the DTEs' characters both ways */
+TEST(Core, DsvdBoth)
+{
+	std::vector<std::string> lines;
+	Pair p("");
+	log_kept = &lines;
+	dcore::log_set_hook([](const char *s) {
+		if (log_kept)
+			log_kept->push_back(s);
+	});
+	dcore::log_level = 2;
+	dsplibs_debug_level = 2;
+	EXPECT_EQ(cmd(p.a, p.la, "AT+A8E=1,1,,1+DSVD=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(p.b, p.lb, "AT+A8E=1,1,,1+DSVD=1\r"), "OK\r\n");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	EXPECT_NE(p.got_a.find("CONNECT"), std::string::npos);
+	std::string da = data('a', 3000), db = data('b', 2000);
+	size_t sa = 0, sb = 0;
+	p.got_a.clear();
+	p.got_b.clear();
+	for (int t = 0; t < 60000; t += 20) {
+		int n = std::min<int>(p.a->dte_space(),
+				      static_cast<int>(da.size() - sa));
+		sa += p.a->dte_input(da.data() + sa, n);
+		n = std::min<int>(p.b->dte_space(),
+				  static_cast<int>(db.size() - sb));
+		sb += p.b->dte_input(db.data() + sb, n);
+		p.step();
+		if (p.got_b.size() >= da.size() && p.got_a.size() >= db.size())
+			break;
+	}
+	EXPECT_TRUE(p.got_b == da) << "B got " << p.got_b.size();
+	EXPECT_TRUE(p.got_a == db) << "A got " << p.got_a.size();
+	/* the answerer hangs up: its DISC closes the channel */
+	p.b->hangup();
+	p.run_until([](Pair &q) {
+		return !q.a->started() && !q.b->started(); }, 15000);
+	if (getenv("SHOW"))
+		for (const std::string &l : lines)
+			printf("%s", l.c_str());
+	dcore::log_level = 0;
+	dsplibs_debug_level = 0;
+	dcore::log_set_hook(nullptr);
+	log_kept = nullptr;
+	EXPECT_TRUE(logged(lines, "v8bis: DSVD chosen"));
+	EXPECT_TRUE(logged(lines, "A: V.8 bis: DSVD (V.70)"));
+	EXPECT_TRUE(logged(lines, "B: V.8 bis: DSVD (V.70)"));
+	EXPECT_TRUE(logged(lines, "v76: initiator"));
+	EXPECT_TRUE(logged(lines, "v76: responder"));
+	EXPECT_TRUE(logged(lines, "v76: DLCI 0 in: OpenLogicalChannel, "
+			   "channel 1, data, ERM"));
+	EXPECT_TRUE(logged(lines, "v76: DLCI 0 in: OpenLogicalChannelAck"));
+	EXPECT_TRUE(logged(lines, "v76: DLCI 0 in: CloseLogicalChannel,"));
+	EXPECT_TRUE(logged(lines, "A: v76: DLCI 0 out: CloseLogicalChannelAck"));
+}
+
+/* +DSVD at the caller alone: V.8 bis chooses data, then V.42 as usual */
+TEST(Core, DsvdCallerAlone)
+{
+	std::vector<std::string> l = v8bis_call("AT+A8E=1,1,,1+DSVD=1\r",
+						"AT+A8E=1,1,,1\r", 24000);
+	EXPECT_TRUE(logged(l, "v8bis: data chosen"));
+	EXPECT_FALSE(logged(l, "DSVD (V.70)"));
+	EXPECT_FALSE(logged(l, "v76:"));
+	EXPECT_TRUE(logged(l, "ec: connected."));
 }
 
 /* the caller alone: no V.8 bis at all */

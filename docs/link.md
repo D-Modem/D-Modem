@@ -50,6 +50,10 @@ better than V.44.
   turns off error correction and compression and passes the program's own
   data straight through. Video phones (H.324) and some other programs
   need this because they do their own framing.
+- **V.76's multiplexer** for voice and data together (V.70, DSVD): when
+  V.8bis has chosen DSVD, the data travels on one of V.76's channels,
+  opened with V.75's messages, instead of plain V.42. See
+  [V.70](v70.md).
 - **ISDN protocols.** On a digital ISDN channel the link layer also does
   X.75, V.120 and synchronous PPP. See [ISDN](isdn.md).
 

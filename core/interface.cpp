@@ -161,7 +161,7 @@ intptr_t Modem::get_param(u32 name)
 	case MDMPRM_TEXT:
 		return text_pump() ? param_address(&text_) : 0;
 	case MDMPRM_V8BIS:
-		return v8bis_call() ? 1 : 0;
+		return v8bis_call() ? 1 | (dsvd_offered() ? 2 : 0) : 0;
 	case MDMPRM_RELAY:
 		if (!relay_channel())
 			return 0;
@@ -288,6 +288,12 @@ s32 Modem::set_param(u32 name, s32 val)
 		return 0;
 	case MDMPRM_MOH_REQ:
 		moh_req_ = val;
+		return 0;
+	case MDMPRM_V8BIS:
+		/* V.8 bis chose DSVD (2) or data (1) */
+		svd_ = val == 2;
+		if (svd_)
+			logf("V.8 bis: DSVD (V.70)\n");
 		return 0;
 	case MDMPRM_LINK_REQ:
 		/* taken: counted, not to be told the DTE (V.80) */
