@@ -391,6 +391,10 @@ INSTANTIATE_TEST_SUITE_P(Modulations, DmodemPair, testing::Values(
 	   rate alone */
 	pair("v26ter", "+MS=V26T", 2, 30),
 	pair("v26ter_1200", "+MS=V26T,0,1200,1200", 1, 30),
+	/* V.26 bis: 2400 bit/s from the answerer, 75 back (the text
+	   takes 31 s that way); and 1200 */
+	pair("v26bis", "+MS=V26B", 1, 60),
+	pair("v26bis_1200", "+MS=V26B,0,1200,1200", 1, 60),
 	v8_to_122("v8_to_122_d0", 0), v8_to_122("v8_to_122_d5", 5)), name);
 
 /* retrains in the middle of the data (V.42 carries on): by both modems,

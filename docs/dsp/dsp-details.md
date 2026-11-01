@@ -78,6 +78,7 @@ The DTE selects one with `AT+MS=` and either the number or a name.
 | 29 | ITU V.29, 4800 to 9600 bit/s, 4-wire leased line | `dp_4wire.cpp`. The fax modulators of `fax_modems.cpp` run as a duplex pump on a continuous carrier (`AT&L2`): each end's synchronizing signal, the far end's rate found by receivers running in parallel, resynchronizing and fallback (see [leased lines](../leased.md)) |
 | 33 | ITU V.33, 12000 and 14400 bit/s, 4-wire leased line | V.17's trellis coded modulation with V.33's rate signals, in `dp_4wire.cpp` |
 | 27 | ITU V.27ter, 2400 and 4800 bit/s, 4-wire leased line | In `dp_4wire.cpp` |
+| 226 | ITU V.26 bis, 2400 or 1200 bit/s DPSK one way, the 75 baud backward channel the other | `dp_v26bis.cpp`. The answering side sends the forward channel (V.26's alternative B at 2400, 90 and 270 degrees at 1200), unscrambled, after the answer tone and 1 s of the synchronizing signal; the calling side finds the rate from that signal and sends the 390/450 Hz backward channel (see [V.26 bis](v26-details.md#v26-bis)). D-Modem's number |
 | 26, 201 | ITU V.26 (alternative A) and Bell 201 (alternative B), 2400 bit/s DPSK, 4-wire leased line | In `dp_4wire.cpp`. V.27ter's 2400 bit/s symbols with the data unscrambled (`FM_V26_A`, `FM_V26_B`) |
 | 208 | Bell 208, 4800 bit/s 8-phase DPSK, 4-wire leased line | In `dp_4wire.cpp`. V.27ter's 4800 bit/s signal, at that rate alone |
 | 202 | Bell 202, 1200 bit/s FSK both ways, 4-wire leased line | `dp_fsk.cpp`. 1200 Hz mark and 2200 Hz space; each end sends its mark at once on its own pair |
@@ -212,7 +213,7 @@ Everything here is in `namespace dsp`, except the C entry points of
 Every data pump derives from `Pump` (`pump.h`):
 
 - `CallProgPump` (call progress), `FskPump` (V.21, V.23, Bell 103),
-  `TextPump` (V.18, Baudot, EDT), `ContactIdPump`, `V22Pump`, `V26Pump`,
+  `TextPump` (V.18, Baudot, EDT), `ContactIdPump`, `V22Pump`, `V26Pump`, `V26bisPump`,
   `V32Pump`;
 - `V34Pump`, which is also V.8, V.90, V.91 and V.92;
 - `FourWirePump` (V.29, V.33, V.27ter), `ClearPump`, `VcvmPump`, and

@@ -1,8 +1,9 @@
-# V.26 ter: technical details
+# V.26 ter and V.26 bis: technical details
 
-This is the technical companion to [V.26 ter](v26.md). The code is
-`dsp/dp_v26.cpp` (`V26Pump`, `DP_V26TER`, 126). Clause numbers are
-V.26 ter's (1988, the Blue Book).
+This is the technical companion to [V.26 ter and V.26 bis](v26.md).
+V.26 ter's code is `dsp/dp_v26.cpp` (`V26Pump`, `DP_V26TER`, 126);
+V.26 bis has [its own section](#v26-bis) at the end. Clause numbers up
+to there are V.26 ter's (1988, the Blue Book).
 
 ## The signal
 
@@ -83,8 +84,7 @@ for (`V.26ter` in 0x0101).
 
 ## Not done
 
-- The optional half-duplex mode (clause 7) and V.26 bis, the
-  half-duplex dial-up modem.
+- The optional half-duplex mode (clause 7).
 - Refinement of the echo canceller during data (6.3.1.3 c and e: it is
   trained once, before the data).
 - Test loops 2 and 3 (clause 8, V.54).
@@ -98,3 +98,67 @@ for (`V.26ter` in 0x0101).
 | `Line/PumpLoopback.DataBothWays/v26ter*` (`dsp/test/pump_test.cpp`) | Two pumps back to back: a clean line, 15 dB of SNR, 8000 Hz, a gain of 2 with -300 ppm, each modem's own echo at -6 dB. Each connects at 2400 bit/s and carries its data at a bit error rate of 1e-3 at most (none in these runs) |
 | `Modulations/DmodemPair.DataBothWays/v26ter`, `v26ter_1200` (`dsp/test/dmodem_test.cpp`) | Two libdmodem modems with `AT+MS=V26T`: dialling, the answer tone, the start-up, text both ways; with `AT+MS=V26T,0,1200,1200` at 1200 bit/s |
 | `Scripts/CoreEquiv.SameTranscript/at`, `v59` | `+MS=?` lists 126; V.59's 0x0101 lists V.26ter |
+
+## V.26 bis
+
+The code is `dsp/dp_v26bis.cpp` (`V26bisPump`, `DP_V26BIS`, 226).
+Clause numbers here are V.26 bis's (1984, the Blue Book).
+
+### The signal
+
+| | |
+|---|---|
+| Forward channel | 1800 Hz carrier (2.1), 1200 baud (2.4.3) |
+| 2400 bit/s | a dibit a symbol, V.26's alternative B: the phase change 45, 135, 225, 315 degrees for 00, 01, 11, 10, the first bit on the left (Table 1) |
+| 1200 bit/s | a bit a symbol, 90 degrees for 0 and 270 for 1 (2.5.1) |
+| Scrambler | none |
+| Shaping | not set by V.26 bis; D-Modem uses a root raised cosine of roll-off 1 at each end, as V.26 ter's, whose spectrum (600 to 3000 Hz) leaves the backward channel clear |
+| Points | 8 at 45 degree steps, radius sqrt(2): the phase changes are odd steps at 2400, even ones at 1200 |
+| Backward channel | FSK at 75 baud, 390 Hz mark, 450 Hz space (4.1), the mark when idle |
+| Synchronizing signal | the continuous dibit 11 (2.4.2), 225 degrees a symbol. V.26 bis gives none for 1200 bit/s; D-Modem sends continuous ones there, 270 degrees a symbol |
+
+### The call
+
+Table 2/V.26 bis allows a one-way forward channel with or without the
+backward channel, or one that goes either way (half duplex). D-Modem
+runs the one-way system with the backward channel, both channels on for
+the whole call, as its V.23 runs:
+
+| Step | Answerer (forward channel) | Caller (backward channel) |
+|---|---|---|
+| 1 | 200 ms of silence, ANS (2100 Hz) for 3.3 s, 75 ms of silence | (call progress has heard the answer tone) |
+| 2 | The synchronizing signal at `+MS`'s highest rate (1200 when that is below 2400) | On 32 symbols of either synchronizing signal in a row (each phase change within 22.5 degrees of 225 or of 270): that rate |
+| 3 | | The backward channel's mark; `CONNECT` after 150 ms of it (75/2400 or 75/1200) |
+| 4 | After 1 s of the synchronizing signal (106's delay at call establishment is 750 to 1400 ms, Table 3) and 150 ms of the caller's mark: `CONNECT` (2400/75 or 1200/75) and the data | The mark for 1.5 s more, then the link's data (the answerer may still be in its synchronizing signal) |
+
+V.42 and MNP are off on V.26 bis calls, as on V.23's: a 75 bit/s
+backward channel is too slow for their acknowledgements to keep 2400
+bit/s going.
+
+### The receivers
+
+The forward channel's is `QamRx` (`qam.h`), with no training sequence:
+its carrier loop runs on the synchronizing signal (decisions on the 8
+points), and its equalizer adapts on the data, decision directed. The
+synchronizing signal is a single tone (a constant phase change), from
+which an equalizer cannot learn the line; adapting on it spoils the
+equalizer for the data. The phase change is taken from the symbol and
+the one before it (the angle of z times the conjugate of the last z),
+in quadrants at 2400 and halves at 1200.
+
+The backward channel's is `FskDemod`, V.23's.
+
+### Not done
+
+- The half-duplex (either-way) system, with its turnarounds and
+  circuit 105, 106 and 109 timings (Table 3).
+- The forward channel from the caller.
+- Interop with another maker's V.26 bis modem.
+
+### Tests
+
+| Test | What it covers |
+|---|---|
+| `Line/PumpLoopback.DataBothWays/v26bis*` (`dsp/test/pump_test.cpp`) | Two pumps back to back: a clean line, 15 dB of SNR, 8000 Hz, a gain of 2 with -300 ppm, each modem's own echo at -6 dB. Both connect, 2400/75, the bit error rate 1e-3 at most (none in these runs) |
+| `Modulations/DmodemPair.DataBothWays/v26bis`, `v26bis_1200` (`dsp/test/dmodem_test.cpp`) | Two libdmodem modems with `AT+MS=V26B`: text both ways (31 s for it at 75 bit/s); with `AT+MS=V26B,0,1200,1200`, the caller finding 1200 bit/s |
+| `Scripts/CoreEquiv.SameTranscript/at`, `v59` | `+MS=?` lists 226; V.59's 0x0101 lists V.26bis |
