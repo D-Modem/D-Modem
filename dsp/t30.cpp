@@ -50,6 +50,7 @@
 #include "bits.h"
 #include "fax.h"
 #include "fax_hdlc.h"
+#include "jbig.h"
 #include "t30.h"
 
 namespace dsp {
@@ -93,6 +94,7 @@ enum {
 
 /* error correction mode */
 #define ECM_FRAMES      256     /* in a block at most */
+#define T85_MAX_ROWS    32768   /* in a T.85 page at most */
 #define ECM_SIZE        256     /* octets in our frames */
 #define ECM_RX_MAX      (ECM_SIZE + 8)  /* a received frame and its FCS */
 #define ECM_PPRS        4       /* PPRs for a block before CTC */
@@ -260,6 +262,8 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	s16 ecm_page, ecm_block;        /* the counters of PPS (the pages of
 					   the call, the blocks of the page) */
 	s16 ecm_long_train;             /* after CTC */
+	s16 t85;                        /* the pages in T.85 (JBIG), not MH
+					   or MR (with ECM only) */
 	/* sending */
 	std::vector<unsigned char> ecm_doc;     /* the page's coded data */
 	size_t ecm_doc_pos;             /* where the block starts */
@@ -270,6 +274,7 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	s16 etx_frame, etx_rcp;         /* the next frame to look at, RCPs */
 	/* receiving */
 	std::vector<unsigned char> ecm_rx;      /* the block's frames */
+	std::vector<unsigned char> jbig_rx;     /* T.85: the page so far */
 	s16 ecm_rx_len[ECM_FRAMES]; /* -1: not (yet) received */
 	s16 ecm_rx_frames;              /* in the block, -1: not known */
 	s16 ecm_rx_redo;                /* the block's frames asked for
@@ -374,6 +379,7 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 			   bool whole);
 	void ecm_frame_in(const unsigned char *d, s16 len);
 	bool ecm_block_decodes(bool last, unsigned char *map);
+	void jbig_page();
 	void got_pps(const unsigned char *fif, s16 len);
 	void ecm_respond(s16 fcf, const unsigned char *fif, s16 len,
 			 enum state next_);
@@ -418,6 +424,20 @@ static s16 get_bit(const unsigned char *fif, s16 len, s16 bit)
 	if ((bit - 1) / 8 >= len)
 		return 0;
 	return (fif[(bit - 1) / 8] >> ((bit - 1) % 8)) & 1;
+}
+
+/* the extension bits up to the octet of T.85's bits 78 and 79 */
+static void t85_octets(unsigned char *fif)
+{
+	for (s16 bit = 32; bit <= 72; bit += 8)
+		set_bit(fif, bit);
+}
+
+/* a DCS's T.85: bit 78, or bit 79 (another L0) alone as spandsp sends
+   it */
+static s16 dcs_t85(const unsigned char *fif, s16 len)
+{
+	return get_bit(fif, len, 78) || get_bit(fif, len, 79);
 }
 
 /* the minimum scan line time a DIS asks for (bits 21-23), ms */
@@ -668,7 +688,7 @@ void T30::send_dtc()
 /* the DIS (dtc 0) or DTC */
 void T30::send_dis_dtc(s16 dtc)
 {
-	unsigned char fif[4] = { 0 }, id[20];
+	unsigned char fif[10] = { 0 }, id[20];
 	s16 len = 3;
 
 	if (!dtc && cfg.polled)
@@ -692,6 +712,12 @@ void T30::send_dis_dtc(s16 dtc)
 		set_bit(fif, 24);               /* a fourth octet */
 		set_bit(fif, 27);               /* error correction mode */
 		len = 4;
+		if (!cfg.no_t85) {
+			t85_octets(fif);
+			set_bit(fif, 78);       /* T.85 */
+			set_bit(fif, 79);       /* any L0 */
+			len = 10;
+		}
 	}
 	new_frames();
 	if (dtc)
@@ -714,6 +740,7 @@ void T30::start_page_rx()
 	rx_page.init(T4_WIDTH, fine);
 	t4rx.init(&rx_page, mr);
 	rx_page_on = 1;
+	jbig_rx.clear();
 	if (ecm_on) {
 		/* the blocks of the page */
 		ecm_block = 0;
@@ -803,10 +830,12 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 		fine = get_bit(fif, len, 15);
 		mr = get_bit(fif, len, 16);
 		ecm_on = cfg.ecm && get_bit(fif, len, 27);
+		t85 = ecm_on && dcs_t85(fif, len);
 		ecm_size = get_bit(fif, len, 28) ? 64 : 256;
 		ecm_long_train = 0;
 		DSP_DBG("t30: DCS on V.34: %s, %s%s\n",
-			fine ? "fine" : "standard", mr ? "MR" : "MH",
+			fine ? "fine" : "standard",
+			t85 ? "T.85" : mr ? "MR" : "MH",
 			ecm_on ? ", ECM" : "");
 		if (!ecm_on) {
 			send_dcn(T30_ERR_INCOMPATIBLE);
@@ -830,11 +859,12 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 	fine = get_bit(fif, len, 15);
 	mr = get_bit(fif, len, 16);
 	ecm_on = cfg.ecm && get_bit(fif, len, 27);
+	t85 = ecm_on && dcs_t85(fif, len);
 	ecm_size = get_bit(fif, len, 28) ? 64 : 256;
 	ecm_long_train = 0;
 	DSP_DBG("t30: DCS: %" PRId32 " bit/s, %s, %s%s\n", rates[k].bps,
-		fine ? "fine" : "standard", mr ? "MR" : "MH",
-		ecm_on ? ", ECM" : "");
+		fine ? "fine" : "standard",
+		t85 ? "T.85" : mr ? "MR" : "MH", ecm_on ? ", ECM" : "");
 	/* the training check follows on the fast modulation */
 	zero_run = max_zero_run = tcf_trained = 0;
 	zero(mem);
@@ -1048,7 +1078,7 @@ void T30::send_tcf()
    ECM; the TCF follows */
 void T30::send_dcs()
 {
-	unsigned char fif[4] = { 0 }, id[20];
+	unsigned char fif[10] = { 0 }, id[20];
 	u16 v = v34_on ? 0 : rates[rate].bits;  /* (V.34: not used) */
 	s16 len = 3;
 
@@ -1067,10 +1097,16 @@ void T30::send_dcs()
 		set_bit(fif, 24);
 		set_bit(fif, 27);               /* bit 28 0: 256 octets */
 		len = 4;
+		if (t85) {
+			t85_octets(fif);
+			set_bit(fif, 78);       /* L0 128 (bit 79 0) */
+			len = 10;
+		}
 	}
-	DSP_DBG("t30: DCS: %" PRId32 " bit/s, %s, min scan %d ms%s\n",
+	DSP_DBG("t30: DCS: %" PRId32 " bit/s, %s, min scan %d ms%s%s\n",
 		rates[rate].bps, fine ? "fine" : "standard",
-		ecm_on ? 0 : min_ms, ecm_on ? ", ECM" : "");
+		ecm_on ? 0 : min_ms, ecm_on ? ", ECM" : "",
+		t85 ? ", T.85" : "");
 	new_frames();
 	add_frame(FCF_TSI, id, put_ident(id, cfg.ident));
 	add_frame(FCF_DCS, fif, len);
@@ -1146,6 +1182,7 @@ s16 T30::choose()
 	rate = k;
 	min_ms = dis_min_ms(dis, dis_len);
 	ecm_on = cfg.ecm && get_bit(dis, dis_len, 27);
+	t85 = ecm_on && !cfg.no_t85 && get_bit(dis, dis_len, 78);
 	ecm_size = ECM_SIZE;
 	if (v34_on && !ecm_on)
 		return -1;      /* (T.30 Annex F: ECM only) */
@@ -1438,12 +1475,18 @@ void T30::start_ecm_page()
 	if (cfg.host && !have_page && !host_page(&T30::start_ecm_page))
 		return;
 	page_bits.release();
-	page.encode_mh(&page_bits, 0, 0, 1);
-	ecm_doc.assign((page_bits.n + 7) / 8, 0);
-	for (k = 0; k < page_bits.n; k++)
-		if (t4_bits_get(&page_bits, k))
-			ecm_doc[k / 8] |= 1 << (k % 8);
-	page_bits.release();
+	if (t85) {
+		/* T.85: the BIE's octets as they are (its bit order the
+		   frames') */
+		jbig_encode(&page, JbigOptions(), &ecm_doc);
+	} else {
+		page.encode_mh(&page_bits, 0, 0, 1);
+		ecm_doc.assign((page_bits.n + 7) / 8, 0);
+		for (k = 0; k < page_bits.n; k++)
+			if (t4_bits_get(&page_bits, k))
+				ecm_doc[k / 8] |= 1 << (k % 8);
+		page_bits.release();
+	}
 	ecm_doc_pos = 0;
 	ecm_block = 0;
 	DSP_DBG("t30: page %d: %" PRId32 " rows, %zu octets in ECM\n",
@@ -1667,7 +1710,10 @@ enum state T30::ecm_page_end(s16 fcf2)
 	T4Page *p = &rx_page;
 	bool came = false;
 	if (rx_page_on) {
-		t4rx.end();
+		if (t85)
+			jbig_page();
+		else
+			t4rx.end();
 		page_ok = p->rows > 0 && p->bad_rows * 20 < p->rows;
 		came = page_ok;
 		DSP_DBG("t30: ECM page of %" PRId32 " rows, %" PRId32
@@ -1699,6 +1745,26 @@ enum state T30::ecm_page_end(s16 fcf2)
 	return S_CED;                   /* EOM: phase B again */
 }
 
+/* T.85: the page's BIE into rx_page (T4_WIDTH wide; one that does not
+   decode whole has its rows so far, and 1 of them bad) */
+void T30::jbig_page()
+{
+	T4Page jp;
+	jp.fine = fine;
+	s16 r = jbig_decode(jbig_rx.data(), jbig_rx.size(), T85_MAX_ROWS, &jp);
+	DSP_DBG("t30: T.85 page of %zu octets: %d by %" PRId32 " %s\n",
+		jbig_rx.size(), jp.width, jp.rows,
+		r == 0 ? "" : r > 0 ? "(cut short)" : "(no T.85 header)");
+	rx_page.release();
+	rx_page.init(T4_WIDTH, fine);
+	if (r >= 0)
+		rx_page.fit(&jp, 1);
+	if (r)
+		rx_page.bad_rows = rx_page.rows ? 1 : 0;
+	jp.release();
+	jbig_rx.clear();
+}
+
 /* the block's frames into the page (last: it ends the page); true if
    they decode without errors, or would not by asking again.  ECM's
    frames came with good FCSs, so a row with errors is data lost on the
@@ -1709,9 +1775,19 @@ enum state T30::ecm_page_end(s16 fcf2)
    data may be wrong) */
 bool T30::ecm_block_decodes(bool last, unsigned char *map)
 {
+	s16 k, bad = -1;
+	if (t85) {
+		/* the BIE is decoded at the end of the page; its frames came
+		   with good FCSs */
+		for (k = 0; k < ecm_rx_frames; k++)
+			jbig_rx.insert(jbig_rx.end(),
+				       &ecm_rx[static_cast<size_t>(k) * ECM_SIZE],
+				       &ecm_rx[static_cast<size_t>(k) * ECM_SIZE] +
+				       ecm_rx_len[k]);
+		return true;
+	}
 	T4Page page = rx_page;
 	T4Rx rx = t4rx;
-	s16 k, bad = -1;
 
 	rx.page = &page;
 	for (k = 0; k < ecm_rx_frames && !rx.done; k++) {
@@ -2783,6 +2859,7 @@ void t30_get_status(T30 *t, struct t30_status *s)
 	s->v34 = t->v34_on;
 	s->fine = t->fine;
 	s->ecm = t->ecm_on;
+	s->t85 = t->t85;
 	copy_array(s->remote_ident, t->remote_ident);
 	s->phase = state_name[t->state];
 	s->waiting = t->state == S_HOST ? t->waiting : T30_WAIT_NONE;

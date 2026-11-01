@@ -136,6 +136,9 @@ dmodem_test_exe(k56flex_test k56flex_test.cpp ${S}/k56flex.cpp
 dmodem_gtest(k56flex_test LABELS quick)
 dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
 dmodem_gtest(rs_test LABELS quick)
+# jbig.h: T.82's coder test and artificial image, T.85's markers
+dmodem_test_exe(jbig_test jbig_test.cpp ${S}/jbig.cpp ${S}/t4.cpp)
+dmodem_gtest(jbig_test LABELS quick)
 # V.wb, the wideband mode: its parts, and caller and answerer on a
 # simulated bare pair (vwb_line.cpp: cable, noise, interferers, the
 # hybrid's echo, clocks apart, a dropout)
@@ -210,30 +213,30 @@ set(_tiffcp "${TIFFCP}")
 if(NOT TIFFCP)
 	set(_tiffcp "")
 endif()
-dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/t38.cpp
+dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/jbig.cpp ${S}/t38.cpp
 	${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 target_compile_definitions(fax_test PRIVATE "TIFFCP=\"${_tiffcp}\"")
 dmodem_gtest(fax_test LABELS quick)
 # T.38: its packets, UDPTL, and two T.30 machines over it
 dmodem_test_exe(t38_test t38_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp
-	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp ${_fax})
+	${S}/t30.cpp ${S}/jbig.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 dmodem_gtest(t38_test LABELS quick)
 # T.30 Annex F: two T.30 machines on V.34 half-duplex, and with one
 # without it
 dmodem_test_exe(t30_v34_test t30_v34_test.cpp fax_docs.cpp test_util.cpp
-	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp)
+	${S}/t30.cpp ${S}/jbig.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(t30_v34_test PRIVATE dmodem_dsp)
 dmodem_gtest(t30_v34_test LABELS quick)
 # class 1 over T.38: a DTE of its own through T.30 on the engine, our
 # T.30 machine at the other end
 dmodem_test_exe(class1_t38_test class1_t38_test.cpp fax_docs.cpp fax_stubs.cpp
-	v34_hdx_stubs.cpp test_util.cpp ${S}/fax_class1.cpp ${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp
+	v34_hdx_stubs.cpp test_util.cpp ${S}/fax_class1.cpp ${S}/t30.cpp ${S}/jbig.cpp ${S}/t38.cpp ${S}/t4.cpp
 	${S}/tiff.cpp ${_fax})
 dmodem_gtest(class1_t38_test LABELS quick)
 # class 1.0: a DTE of its own on V.34 half-duplex (T.31's V.34 data
 # mode) against our T.30 machine on it, sending and receiving
 dmodem_test_exe(class1_v34_test class1_v34_test.cpp fax_docs.cpp test_util.cpp
-	${S}/t30.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp)
+	${S}/t30.cpp ${S}/jbig.cpp ${S}/t38.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(class1_v34_test PRIVATE dmodem_dsp)
 dmodem_gtest(class1_v34_test LABELS quick)
 # fixed-line SMS's TPDUs: SMS-SUBMIT and SMS-DELIVER, the 7-bit
@@ -267,7 +270,7 @@ if(SPANDSP_FOUND)
 	# against its (fax_state_t), both ways, with and without error
 	# correction mode, ECM also with line hits
 	dmodem_test_exe(spandsp_test spandsp_test.cpp spandsp_tx.cpp
-		t30_spandsp.cpp t38_spandsp.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/t38.cpp
+		t30_spandsp.cpp t38_spandsp.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/jbig.cpp ${S}/t38.cpp
 		${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 	target_include_directories(spandsp_test PRIVATE ${SPANDSP_INCLUDE_DIRS})
 	target_link_libraries(spandsp_test PRIVATE ${SPANDSP_LDFLAGS})

@@ -22,7 +22,7 @@ set(_dsp
 	dp_v34.cpp dp_vcvm.cpp dp_vwb.cpp dp_4wire.cpp dp_clear.cpp v110.cpp vwb.cpp v34_tables.cpp v34_modem.cpp v34_cc.cpp t30_v34.cpp v34_data.cpp v90.cpp v90a.cpp v91.cpp k56flex.cpp k56flex_rx.cpp k56flex_tables.cpp k56flex_train.cpp v92.cpp v92a.cpp vcvm.cpp vcvm_msg.cpp vcvm_probe.cpp vcvm_startup.cpp vcvm_data.cpp vcvm_modem.cpp rs.cpp
 	dp_dummy.cpp dp_sinus.cpp)
 list(TRANSFORM _dsp PREPEND ${DMODEM_DSP_DIR}/)
-set(_t30 t30.cpp t38.cpp t4.cpp tiff.cpp fax_class2.cpp)
+set(_t30 t30.cpp t38.cpp t4.cpp jbig.cpp tiff.cpp fax_class2.cpp)
 list(TRANSFORM _t30 PREPEND ${DMODEM_DSP_DIR}/)
 
 foreach(_lib dsp t30)

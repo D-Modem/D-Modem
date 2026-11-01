@@ -152,6 +152,8 @@ struct t30_config {
 				   after the DIS) */
 	struct modem *modem;    /* the core's, for the V.34 modem (its S
 				   registers and settings; NULL: none) */
+	s16 no_t85;             /* with ECM, offer and use only MH and MR,
+				   not T.85 (JBIG) */
 };
 
 struct t30_status {
@@ -165,6 +167,7 @@ struct t30_status {
 	s32 bps;                /* the rate of the pages */
 	s16 fine;
 	s16 ecm;                /* the call has error correction mode */
+	s16 t85;                /* its pages in T.85 (JBIG) */
 	char remote_ident[21];
 	const char *phase;      /* what it is doing, for the log */
 	s16 waiting;            /* enum t30_wait */

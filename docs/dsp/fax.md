@@ -46,6 +46,11 @@ by the [Asterisk](../asterisk.md), [FreeSWITCH](../freeswitch.md) and
 receives TIFF fax files, and uses error correction mode when the other
 machine supports it, so pages arrive without damaged lines.
 
+With error correction on, the pages also go in **T.85** (JBIG) coding
+when the other machine takes it: a better compression than the usual
+MH coding, so a page of text takes about half the time on the line.
+Pages that come in T.85 are saved as ordinary fax TIFF files.
+
 ## Fax over the internet (T.38)
 
 Fax tones do not survive many internet phone calls well. **T.38** sends
