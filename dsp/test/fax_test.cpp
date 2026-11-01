@@ -343,6 +343,7 @@ struct Session {
 	bool ecm;       /* both with error correction mode */
 	double snr;     /* dB, 0: no noise */
 	bool light;     /* the lighter document */
+	bool no_t85;    /* ECM in MH, not T.85 (JBIG) */
 };
 
 struct Doc {
@@ -380,6 +381,7 @@ static void send_document(const Session &s, const std::string &in)
 	c.srate = 8000;
 	c.max_bps = s.bps;
 	c.ecm = s.ecm;
+	c.no_t85 = s.no_t85;
 	c.sending = 1;
 	c.ident = "+1 555 0100";
 	c.next_page = next_page;
@@ -411,10 +413,12 @@ static void send_document(const Session &s, const std::string &in)
 	EXPECT_EQ(sa.pages, 2);
 	EXPECT_EQ(sb.pages, 2);
 	EXPECT_EQ(!!sa.ecm, s.ecm);
+	EXPECT_EQ(!!sa.t85, s.ecm && !s.no_t85);
+	EXPECT_EQ(!!sb.t85, s.ecm && !s.no_t85);
 	EXPECT_STREQ(sa.remote_ident, "+1 555 0199");
 	EXPECT_STREQ(sb.remote_ident, "+1 555 0100");
-	printf("%d pages at %d bit/s%s in %.1f s\n", sa.pages, sa.bps,
-	       sa.ecm ? " (ECM)" : "", n / 8000.0);
+	printf("%d pages at %d bit/s%s%s in %.1f s\n", sa.pages, sa.bps,
+	       sa.ecm ? " (ECM)" : "", sa.t85 ? " T.85" : "", n / 8000.0);
 	t30_free(a);
 	t30_free(b);
 	EXPECT_TRUE(same_pages(in, out));
@@ -434,15 +438,15 @@ TEST_P(T30Pair, SendsTheDocument)
 	send_document(s, in);
 }
 
-/* error correction mode: the page in blocks of HDLC frames; on a line of
-   19 dB the frames errors spoil are sent again (without ECM the page
-   comes with bad rows) */
+/* error correction mode: the page in blocks of HDLC frames, coded in
+   T.85 (JBIG) unless _mh; on a line of 19 dB the frames errors spoil
+   are sent again (without ECM the page comes with bad rows) */
 INSTANTIATE_TEST_SUITE_P(Rates, T30Pair, testing::Values(
 	Session{ 14400, false, 0, true }, Session{ 12000, false, 0, true },
 	Session{ 9600, false, 0, true }, Session{ 7200, false, 0, true },
 	Session{ 4800, false, 0, true }, Session{ 2400, false, 0, true },
 	Session{ 14400, true, 0, false }, Session{ 9600, true, 0, false },
-	Session{ 14400, true, 19, true }),
+	Session{ 14400, true, 19, true }, Session{ 14400, true, 0, false, true }),
 	/* <bps>, then _ecm and _snr<dB> as the case has them */
 	[](const testing::TestParamInfo<Session> &i) {
 		std::string n = std::to_string(i.param.bps);
@@ -450,6 +454,8 @@ INSTANTIATE_TEST_SUITE_P(Rates, T30Pair, testing::Values(
 			n += "_ecm";
 		if (i.param.snr)
 			n += "_snr" + std::to_string((int)i.param.snr);
+		if (i.param.no_t85)
+			n += "_mh";
 		return n;
 	});
 

@@ -8,6 +8,7 @@ Terms used on this page:
 - **T.30**: the fax protocol itself (the frames DIS, DCS, CFR, MCF and so
   on, sent on V.21 at 300 bit/s), with the pages on a faster modulation.
 - **ECM**: T.30's error correction mode (T.30 Annex A, T.4 Annex A).
+- **T.85**: the JBIG (T.82) coding of fax pages, with ECM only.
 - **T.38**: fax over IP, as IFP packets carried in UDPTL.
 
 ## Fax (class 1)
@@ -252,7 +253,7 @@ machine sends a document and the answering one receives it.
 Both machines offer ECM by default (DIS and DCS bit 27), with frames of
 256 octets:
 
-1. The page goes as its MH coding, in blocks of up to 256 HDLC frames
+1. The page goes as its MH coding (or T.85, below), in blocks of up to 256 HDLC frames
    (FCD) on the fast modulation, with three RCP frames after each block.
 2. A PPS follows on V.21, with the page and block counters.
 3. The receiver answers MCF, or PPR with a map of the frames to send
@@ -266,6 +267,52 @@ as T.30 says.
 The receiver ends a block at its RCP. The V.17 short training of the
 next block starts from the receiver's state at the end of this block,
 and the V.21 PPS after it would spoil that state.
+
+### T.85 (JBIG) pages
+
+With ECM the DIS also offers T.85 (bits 78 and 79: any stripe height
+L0), its octets carried to the tenth with the extension bits. A sender
+whose remote offers bit 78 sets it in its DCS and sends each page as a
+T.85 bi-level image entity (BIE) instead of MH; `t30_config`'s
+`no_t85` keeps a machine to MH and MR, and `t30_status`'s `t85` says
+which the call has.
+
+`jbig.cpp` is the coder (T.82 as T.85 profiles it: one layer, one
+bit-plane, sequential stripes):
+
+- **Sending:** stripes of 128 lines (T.85's basic L0, so DCS bit 79 is
+  0), the three-line template with the AT pixel in its default place
+  (MX 0), typical prediction (TPBON), and the page's height in the
+  header (no NEWLEN). The BIE's octets go into the ECM frames as they
+  are: T.85 sends it least significant bit first, as ECM sends octets.
+- **Receiving:** the frames' octets are kept until the page ends (they
+  came with good FCSs, so there are no bad rows to look for block by
+  block), then decoded and scaled or centred to 1728 pels. The decoder
+  takes what T.85 lets a sender use: any L0, the two-line template
+  (LRLTWO), typical prediction, AT moves (ATMOVE, a lag up to MX and
+  127), an unknown height (YD of all ones) ended by NEWLEN, COMMENT
+  segments, SDRST, and ABORT. A BIE that ends early or is cut by ABORT
+  keeps the lines decoded; one that is not T.85 (more layers or planes,
+  deterministic prediction) loses the page. A page is at most 32768
+  lines.
+
+The QM coder follows T.82's flow diagrams, with the carry-free branch of
+FINALWRITES writing BUFFER, not BUFFER + 1 as Figure 30 shows. Each
+stripe's coded data drops its trailing 0x00 octets, which the decoder
+reads past the end anyway.
+
+`jbig_test` checks the coder against T.82 clause 7: the 256-pixel
+arithmetic coder sequence of 7.1 (its 25 coded octets, and decoded
+back), and the 1960 by 1951 artificial image of 7.2.1 in its three
+sequential codings (no TP with 1951-line stripes, the same with the
+two-line template, and TP with 128-line stripes and an AT move to lag 8
+at stripe 9), whose stripe coded data, stripe data entities and BIE
+match Table 29's byte counts exactly. It also round-trips fax-like
+pages, and decodes a BIE with YD of all ones, a comment and NEWLEN, one
+cut short, one capped in lines, and random data.
+
+spandsp 0.0.6 is built without T.85 (`SPANDSP_SUPPORT_T85` is off in
+its configure), so the calls against it stay in MH or MR.
 
 ### Without ECM
 
@@ -307,9 +354,11 @@ without it, both ways round (they fall back to V.17).
 ### Tests
 
 - `fax_test`'s `Rates/T30Pair.*` cases put two machines back to back, at
-  each rate from 14400 down to 2400, with ECM, and with ECM on a noisy
-  line. At 19 dB, ECM sends a few frames again and the page comes out
-  right; without ECM, some two thousand rows came out damaged.
+  each rate from 14400 down to 2400, with ECM (in T.85, and once in MH:
+  `14400_ecm_mh`), and with ECM on a noisy line. At 19 dB, ECM sends a
+  few frames again and the page comes out right; without ECM, some two
+  thousand rows came out damaged. The two test pages take 88 s at
+  14400 bit/s with ECM in T.85, 175 s in MH.
 - `spandsp_test`'s `Calls/T30Spandsp.*` cases (label `spandsp`) run one
   machine against spandsp's fax machine in both directions, with and
   without ECM, and with line hits.
