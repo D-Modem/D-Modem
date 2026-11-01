@@ -74,8 +74,61 @@ void Checker::bit(u8 b)
 void LoopTest::reset()
 {
 	bool g = grant_;
+	Ber b = ber_;
 	*this = LoopTest();
 	grant_ = g;
+	ber_ = b;
+	ber_.on = ber_.own_self = false;
+}
+
+/* see v54.h */
+bool LoopTest::ber_start(u8 type, u32 block_len, u32 blocks)
+{
+	if (!loop_up())
+		return false;
+	ber_ = Ber();
+	ber_.on = true;
+	ber_.type = type;
+	ber_.block_len = block_len;
+	ber_.left = blocks;
+	if (!self_) {
+		self_ = true;
+		ber_.own_self = true;
+	}
+	gen_ = Prbs9();
+	check_.reset();
+	return true;
+}
+
+/* see v54.h */
+void LoopTest::ber_stop()
+{
+	if (ber_.own_self)
+		self_ = false;
+	ber_.on = ber_.own_self = false;
+}
+
+/* see v54.h */
+void LoopTest::ber_count()
+{
+	u32 bits = check_.bits(), errors = check_.errors();
+	for (; ber_.seen_bits < bits; ber_.seen_bits++) {
+		if (errors > ber_.seen_errors) {
+			/* (the errors of this bit, when one came) */
+			ber_.bit_errors++;
+			ber_.seen_errors++;
+			ber_.block_bad = true;
+		}
+		if (++ber_.in_block < ber_.block_len)
+			continue;
+		ber_.block_errors += ber_.block_bad;
+		ber_.in_block = 0;
+		ber_.block_bad = false;
+		if (--ber_.left == 0) {
+			ber_stop();
+			return;
+		}
+	}
 }
 
 /* see v54.h */
@@ -230,6 +283,8 @@ void LoopTest::rx(u8 b)
 	case Phase::Local3:
 		if (self_)
 			check_.bit(b);
+		if (ber_.on)
+			ber_count();
 		break;
 	case Phase::Loop:
 		if (loop_.size() < LOOP_MAX)
@@ -251,6 +306,42 @@ void LoopTest::rx(u8 b)
 	default:
 		break;
 	}
+}
+
+/* see v54.h */
+bool self_check()
+{
+	/* the pattern back as it went: found, no errors */
+	Prbs9 g;
+	Checker c;
+	for (int i = 0; i < 4096; i++)
+		c.bit(g.bit());
+	if (!c.locked() || c.errors() || c.bits() < 4000)
+		return false;
+	/* one bit in 256 wrong: still synchronised, each one counted */
+	Checker e;
+	Prbs9 h;
+	u32 put = 0;
+	for (int i = 0; i < 8192; i++) {
+		u8 b = h.bit();
+		if (e.locked() && i % 256 == 100) {
+			b ^= 1;
+			put++;
+		}
+		e.bit(b);
+	}
+	if (!e.locked() || e.errors() != put || !put)
+		return false;
+	/* scrambled 0s (PREP) recognised as such, not as 1s (ACK) */
+	Scrambler s;
+	Recogniser prep(0, 4), ack(1, 3);
+	bool p = false, a = false;
+	for (int i = 0; i < 2048; i++) {
+		u8 b = s.bit(0);
+		p = prep.bit(b);
+		a = ack.bit(b);
+	}
+	return p && !a;
 }
 
 }  // namespace v54

@@ -710,6 +710,8 @@ rarer ones.
  &  & \cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (\std{TTY}, telex) settings. \\ \hline
  &  & \cmdl[plusA8E]{+A8E} & \std{V.8} and \std{V.8 bis}. \\ \hline
  &  & \cmdl[plusDSVD]{+DSVD} & \std{V.70} voice and data (\std{DSVD}). \\ \hline
+ &  & \cmdl[plusTMO]{+TMO} & \std{V.59} diagnostics. \\ \hline
+ &  & \cmdl[plusT]{+TRDL, +TAL, +TTER, \ldots} & Loop and error rate tests (\std{V.58}). \\ \hline
 \end{vtable}}
 
 \mainmatter
@@ -1158,6 +1160,64 @@ DIAG <2A4D3263 10=0C>
 \end{verbatim}
 \end{command}
 
+\begin{command}{plusTMO}{+TMO}{V.59 Diagnostics}
+This command gives \std{V.59}'s managed objects: the facts about the last
+call (or this one), from its start until the next call starts, as
+\std{V.250}'s \cmd{+TMO} reads them.  Each object has a name and a
+four-digit hexadecimal tag: the first two digits its high-level object
+(\cmd{V34Diag} 0C, \cmd{CnxDiag} 2C, \ldots), the last two the object
+within it.  An object that does not apply to the last call is \rc{NULL}.
+Blanks between the parts may be left out; case does not matter.
+\begin{results}
+\res{\rc{OK}}{After the objects asked for.}
+\res{\rc{ERROR}}{For a name or tag the modem does not have, or \cmd{+TMO}
+  alone before any other.}
+\end{results}
+\begin{vtable}{2}{|T{0.3\textwidth}|L{0.56\textwidth}|}{+TMO Forms}
+  {\thd{Command} & \thd{Function}}
++TMO & The last \cmd{+TMO} again. \\ \hline
++TMO \p{level}=?, +TMO \p{level}N=? & The objects there are, as tags (\cmd{N}: as names): 0 all, 1 the
+  high-level ones, 2 the mid-level ones, 3 the low-level ones; 4 gives
+  \rc{+TMO: (0,1)} (names and tags both). \\ \hline
++TMO \p{tag} & A four-digit tag: that object, as \rc{\p{tag}\{\p{value}\}};
+  two digits: every object of that high-level object. \\ \hline
++TMO \p{name} [All] & An object by name, or every object of a high-level one
+  (\cmd{V34Diag}, or \cmd{V34} alone), as \rc{\p{name}\{\p{value}\}}.  A
+  modulation's object by name alone is the last call's modulation's. \\ \hline
++TMO \p{high} \p{name} & That high-level object's object
+  (\cmd{+TMO V34 rxDataHistory}). \\ \hline
+\end{vtable}
+\begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{+TMO High-Level Objects}
+  {\thd{Tag} & \thd{Objects}}
+00 & \cmd{ModemIdentity}: the maker, model, version, \std{V.59}'s
+  version (1), what the modem does (a bit string, in hexadecimal). \\ \hline
+01 & \cmd{ModemCapability}: each modulation's and protocol's mode
+  (0 not there, 1 the preferred, 2 enabled, 3 disabled), the others there are. \\ \hline
+02 & \cmd{ModeSelected}: the call's modulation. \\ \hline
+07 & \cmd{V8Diag}: \std{V.8}'s \std{CM} and \std{JM} (their octets in hexadecimal), its result. \\ \hline
+09--23 & Each modulation's: its mode, the transmit and receive levels and
+  the noise (dBm0), the symbol rates and carriers (\std{V.59}'s codes),
+  the rates during the call, the echoes, the round trip delay, \std{V.90}'s and
+  \std{V.92}'s robbed bits, digital loss and \std{G.711} law. \\ \hline
+26 & \cmd{NSMDiag}: a modulation \std{V.59} has none for (K56flex, \ldots). \\ \hline
+2C & \cmd{CnxDiag}: the carriers, carrier losses, renegotiations,
+  retrains, the call's length, whether we called. \\ \hline
+2E & \cmd{CallProgress}: how far the call got, why it ended (\std{V.59}'s codes). \\ \hline
+2F & \cmd{ErrorControl}: the protocol, its frame sizes and windows, its frames and errors, the throughput. \\ \hline
+30 & \cmd{Compression}: what was agreed, each way, its dictionary and string sizes. \\ \hline
+31 & \cmd{DTEDCE}: the flow control, framing, rate, throughput and characters lost. \\ \hline
+\end{vtable}
+\example{Example: AT+TMO V34 txDataHistory, AT+TMO 2E}
+\begin{verbatim}
+txDataHistory{33600;31200}
+OK
+2E01{40}
+2E02{90}
+OK
+\end{verbatim}
+\end{command}
+
+
 \begin{command}{ampT}{\&T\p{n}}{Loop Tests}
 \std{V.54}'s loop tests, with Hayes' numbers.  Loop 3 runs offline on a
 leased line (\cmdl[ampL]{\&L}) with a 4-wire modulation (\cmdl[plusMS]{+MS=V29},
@@ -1185,6 +1245,47 @@ that many seconds.
 \&T8 & Loop 3 with the self-test. \\ \hline
 \end{vtable}
 \end{command}
+
+\begin{command}{plusT}{+T\ldots}{Loop and Error Rate Tests}
+\std{V.250}'s test commands, made from \std{V.58}'s test objects: the
+loop tests of \cmdl[ampT]{\&T}, an error rate test round them, and their
+status.  Each also takes \cmd{?} (its value) and \cmd{=?} (its range).
+\begin{results}
+\res{\rc{OK}}{When the command is done: for \cmd{+TRDL=1} when the far
+  end loops, for \cmd{+TAL=1} when loop 3 runs, both in online command
+  state (not \rc{CONNECT}: \cmdl[O]{ATO} for the \std{DTE}'s data); for
+  \cmd{+TRDL=0} when the \std{TERM} has gone.}
+\res{\rc{ERROR}}{Outside the state the test needs, when the far end does
+  not loop, or for a value it does not have.}
+\end{results}
+\begin{vtable}{2}{|T{0.3\textwidth}|L{0.56\textwidth}|}{+T Commands}
+  {\thd{Command} & \thd{Function}}
++TERDL=\p{n} & 1: the far end may ask for loop 2 (\cmdl[ampT]{\&T4}); 0 it may not
+  (\emph{default}). \\ \hline
++TLDL=\p{n} & 1: loop 2 here, from online command state (\cmdl[ampT]{\&T3}); 0 ends it. \\ \hline
++TRDL=\p{n} & 1: loop 2 at the far end, from online command state (\cmdl[ampT]{\&T6});
+  0 ends it. \\ \hline
++TAL=\p{n}[,\p{band}] & 1: loop 3, offline on a 4-wire leased line (\cmdl[ampT]{\&T1});
+  0 ends it. \p{band} is taken and ignored. \\ \hline
++TTER=\p{type},\p{len},\p{blocks},\p{pattern} & The error rate test on the loop that runs (loop 2
+  at the far end, loop 3), from online command state: \std{V.52}'s
+  511-bit pattern (\p{pattern} 1, the only one) for \p{blocks} blocks of
+  \p{len} bits (1--65535 each); \p{type} 1 bit errors, 2 block errors, 3
+  both (both are counted).  \cmd{+TTER=0} stops it.  \cmd{+TTER?} gives
+  the type running (0 none), \p{len}, the blocks left and the pattern. \\ \hline
++TNUM? & The last error rate test's bit and block errors, \rc{+TNUM: \p{bits},\p{blocks}}
+  (65535 at most). \\ \hline
++TALS? & Loop 3: 0 none, 3 running. \\ \hline
++TDLS? & Loop 2 here: 1 none, 3 ours (\cmd{+TLDL}, \cmdl[ampT]{\&T3}), 4 the far end's. \\ \hline
++TRDLS? & Loop 2 at the far end: 1 none, 4 running. \\ \hline
++TSELF=\p{n} & The self-test (0 full, offline only; 1 partial): the loop tests'
+  pattern generator, checker and recognisers check themselves. \\ \hline
++TRES? & Its result: 0 none since \cmdl[Z]{ATZ}, 1 pass, 2 fail. \\ \hline
++TE140, +TE141, +TEPDL, +TEPAL, +TMODE, +TADR & 0 alone: no circuits 140 and 141, no front panel,
+  point to point, no \std{V.54} address. \\ \hline
+\end{vtable}
+\end{command}
+
 
 \begin{command}{pctE}{\%E\p{n}}{Line Quality Monitor}
 The modem keeps the value in \sreg{39}.  Its modulations retrain and

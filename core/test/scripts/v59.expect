@@ -1,0 +1,384 @@
+      0 A< ATE0X3+MS=34\r
+      0 A: ATE0X3+MS=34\r\r\n
+      0 A: OK\r\n
+      0 B< ATE0\r
+      0 B: ATE0\r\r\n
+      0 B: OK\r\n
+      0 A< AT+TMO4=?\r
+      0 A: +TMO: (0,1)\r\n
+      0 A: OK\r\n
+      0 A< AT+TMO1=?\r
+      0 A: +TMO: (00,01,02,07,09,0A,0B,0C,0D,0E,0F,10,15,16,17,18,23,26,2C,2E,2F,30,31)\r\n
+      0 A: OK\r\n
+      0 A< AT+TMO1N=?\r
+      0 A: +TMO: (ModemIdentity,ModemCapability,ModeSelected,V8Diag,V90Diag,V91Diag,V92ModDiag,V34Diag,V32Diag,V22Diag,V23Diag,V21Diag,V34HdxDiag,V17Diag,V29faxDiag,V27tfaxDiag,V18Diag,NSMDiag,CnxDiag,CallProgress,ErrorControl,Compression,DTEDCE)\r\n
+      0 A: OK\r\n
+      0 A< AT+TMO3=?\r
+      0 A: +TMO: (0947,0A47,0B47,0C47,0D47,0E47,0F47,1047,2347)\r\n
+      0 A: OK\r\n
+      0 A< AT+TMO4N=?\r
+      0 A: ERROR\r\n
+      0 A< AT+TMO ModemIdentity\r
+      0 A: manufacturer{D-Modem project}\r\n
+      0 A: model{D-Modem}\r\n
+      0 A: firmwareVersion{1.0.0}\r\n
+      0 A: diagnosticVersion{1}\r\n
+      0 A: multimediaMode{33B}\r\n
+      0 A: OK\r\n
+      0 A< AT+TMO 01\r
+      0 A: 0900{2}\r\n
+      0 A: 0A00{2}\r\n
+      0 A: 0B00{2}\r\n
+      0 A: 0C00{1}\r\n
+      0 A: 0D00{2}\r\n
+      0 A: 0E00{2}\r\n
+      0 A: 0F00{2}\r\n
+      0 A: 1000{2}\r\n
+      0 A: 1500{2}\r\n
+      0 A: 1600{2}\r\n
+      0 A: 1700{2}\r\n
+      0 A: 1800{2}\r\n
+      0 A: 2300{2}\r\n
+      0 A: 0101{K56flex;V.32terbo;Bell103;Bell212A;V.cvm;V.wb}\r\n
+      0 A: 2F00{1}\r\n
+      0 A: 3000{1}\r\n
+      0 A: 300A{1}\r\n
+      0 A: 0102{MNP4;MNP5;zstd}\r\n
+      0 A: OK\r\n
+      0 A< AT+TMO CallProgress All\r
+      0 A: callProgressResult{0}\r\n
+      0 A: callTerminate{NULL}\r\n
+      0 A: OK\r\n
+      0 A< AT+TMO CnxDiag\r
+      0 A: txCarrier{NULL}\r\n
+      0 A: rxCarrier{NULL}\r\n
+      0 A: carrierLosses{NULL}\r\n
+      0 A: renegRequests{NULL}\r\n
+      0 A: renegSuccesses{NULL}\r\n
+      0 A: retrainRequests{NULL}\r\n
+      0 A: retrainSuccesses{NULL}\r\n
+      0 A: duration{NULL}\r\n
+      0 A: caller{NULL}\r\n
+      0 A: OK\r\n
+      0 B< ATA\r
+      0 A< ATD123\r
+  15320 B: CONNECT 33600\r\n
+  15380 A: CONNECT 24000\r\n
+  15380 until A 'CONNECT': yes
+  15380 until B 'CONNECT': yes
+  15480 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15480 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 A: B0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0032 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0033 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0034 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0035 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0036 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0037 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0038 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0039 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0040 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0041 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0042 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0043 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0044 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0045 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0046 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15500 B: A0047 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0032 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0033 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0034 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0035 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0036 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0037 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0038 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0039 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0040 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0041 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0042 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0043 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0044 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0045 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0046 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  15520 A: B0047 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  21380 A< +++
+  21880 A: B0048 The quick brown fo\r\n
+  21880 A: OK\r\n
+  22380 A< AT+TMO 0C\r
+  22380 A: 0C00{1}\r\n
+  22380 A: 0C47{-15.1dBm0}\r\n
+  22380 A: 0C48{1}\r\n
+  22380 A: 0C49{1}\r\n
+  22380 A: 0C4A{9}\r\n
+  22380 A: 0C4B{9}\r\n
+  22380 A: 0C4C{33600}\r\n
+  22380 A: 0C4D{24000}\r\n
+  22380 A: 0C4E{-14.8dBm0}\r\n
+  22380 A: 0C4F{-43.8dBm0}\r\n
+  22380 A: 0C51{-57.8dBm0}\r\n
+  22380 A: 0C52{-27.2dBm0}\r\n
+  22380 A: 0C53{37ms}\r\n
+  22380 A: OK\r\n
+  22380 A< AT+TMO ModeSelected\r
+  22380 A: modulationHistory{V.34}\r\n
+  22380 A: OK\r\n
+  22380 A< AT+TMO 2E02\r
+  22380 A: 2E02{NULL}\r\n
+  22380 A: OK\r\n
+  22380 A< ATH\r
+  22380 A: OK\r\n
+  22400 A: NO CARRIER\r\n
+  22460 B: A0048 The quick brown fo+++NO CARRIER\r\n
+  22460 until B 'NO CARRIER': yes
+  22960 A< AT+TMO V34 All\r
+  22960 A: modeV34{1}\r\n
+  22960 A: txPower{-15.1dBm0}\r\n
+  22960 A: txSymbolRate{1}\r\n
+  22960 A: rxSymbolRate{1}\r\n
+  22960 A: txCarrierFreq{9}\r\n
+  22960 A: rxCarrierFreq{9}\r\n
+  22960 A: txDataHistory{33600}\r\n
+  22960 A: rxDataHistory{24000}\r\n
+  22960 A: rxLevelEstimate{-14.8dBm0}\r\n
+  22960 A: noiseEstimate{-43.8dBm0}\r\n
+  22960 A: nearEchoEstimate{-57.8dBm0}\r\n
+  22960 A: farEchoEstimate{-27.2dBm0}\r\n
+  22960 A: roundTripDelay{37ms}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO txDataHistory\r
+  22960 A: txDataHistory{33600}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO V34 rxDataHistory\r
+  22960 A: rxDataHistory{24000}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO V90\r
+  22960 A: modeV90{2}\r\n
+  22960 A: txPower{NULL}\r\n
+  22960 A: txSymbolRate{NULL}\r\n
+  22960 A: rxSymbolRate{NULL}\r\n
+  22960 A: txCarrierFreq{NULL}\r\n
+  22960 A: rxCarrierFreq{NULL}\r\n
+  22960 A: txDataHistory{NULL}\r\n
+  22960 A: rxDataHistory{NULL}\r\n
+  22960 A: rxLevelEstimate{NULL}\r\n
+  22960 A: noiseEstimate{NULL}\r\n
+  22960 A: nearEchoEstimate{NULL}\r\n
+  22960 A: farEchoEstimate{NULL}\r\n
+  22960 A: roundTripDelay{NULL}\r\n
+  22960 A: rBSPattern{NULL}\r\n
+  22960 A: digitalPadLoss{NULL}\r\n
+  22960 A: codecLaw{NULL}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO\r
+  22960 A: modeV90{2}\r\n
+  22960 A: txPower{NULL}\r\n
+  22960 A: txSymbolRate{NULL}\r\n
+  22960 A: rxSymbolRate{NULL}\r\n
+  22960 A: txCarrierFreq{NULL}\r\n
+  22960 A: rxCarrierFreq{NULL}\r\n
+  22960 A: txDataHistory{NULL}\r\n
+  22960 A: rxDataHistory{NULL}\r\n
+  22960 A: rxLevelEstimate{NULL}\r\n
+  22960 A: noiseEstimate{NULL}\r\n
+  22960 A: nearEchoEstimate{NULL}\r\n
+  22960 A: farEchoEstimate{NULL}\r\n
+  22960 A: roundTripDelay{NULL}\r\n
+  22960 A: rBSPattern{NULL}\r\n
+  22960 A: digitalPadLoss{NULL}\r\n
+  22960 A: codecLaw{NULL}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO V8Diag\r
+  22960 A: cm{C1;45;13;94;2A;0D}\r\n
+  22960 A: jm{C1;45;13;94;2A;0D}\r\n
+  22960 A: v8Result{0}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO 2C\r
+  22960 A: 2C01{V34}\r\n
+  22960 A: 2C02{V34}\r\n
+  22960 A: 2C03{0}\r\n
+  22960 A: 2C04{1}\r\n
+  22960 A: 2C05{1}\r\n
+  22960 A: 2C06{0}\r\n
+  22960 A: 2C07{0}\r\n
+  22960 A: 2C09{00H00M07S}\r\n
+  22960 A: 2C0A{TRUE}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO 2E\r
+  22960 A: 2E01{40}\r\n
+  22960 A: 2E02{90}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO ErrorControl\r
+  22960 A: modeV42{1}\r\n
+  22960 A: protocolNegotiation{1}\r\n
+  22960 A: txFrameSize{128}\r\n
+  22960 A: rxFrameSize{128}\r\n
+  22960 A: txWindow{15}\r\n
+  22960 A: rxWindow{15}\r\n
+  22960 A: linkTimeout{0}\r\n
+  22960 A: framesSentAck{9}\r\n
+  22960 A: framesRetransmitted{0}\r\n
+  22960 A: framesReceivedAck{7}\r\n
+  22960 A: framesReceivedDiscard{14}\r\n
+  22960 A: txErrors{0}\r\n
+  22960 A: rxErrors{14}\r\n
+  22960 A: txThroughput{3422}\r\n
+  22960 A: rxThroughput{3419}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO Compression\r
+  22960 A: modeV42B{1}\r\n
+  22960 A: compressionNegotiationResult{5}\r\n
+  22960 A: v42bisCompressionActive{0}\r\n
+  22960 A: v42bisDictionarySize{NULL}\r\n
+  22960 A: v42bisStringLength{NULL}\r\n
+  22960 A: modeV44{1}\r\n
+  22960 A: v44CompressionActive{0}\r\n
+  22960 A: v44EncoderDictionarySize{NULL}\r\n
+  22960 A: v44EncoderStringLength{NULL}\r\n
+  22960 A: v44DecoderDictionarySize{NULL}\r\n
+  22960 A: v44DecoderStringLength{NULL}\r\n
+  22960 A: OK\r\n
+  22960 A< AT+TMO DTEDCE\r
+  22960 A: txFlowControl{None}\r\n
+  22960 A: rxFlowControl{None}\r\n
+  22960 A: protocol{8N1}\r\n
+  22960 A: txSpeed{NULL}\r\n
+  22960 A: rxSpeed{NULL}\r\n
+  22960 A: txThroughput{3422}\r\n
+  22960 A: rxThroughput{3419}\r\n
+  22960 A: txErrors{0}\r\n
+  22960 A: rxErrors{0}\r\n
+  22960 A: OK\r\n
+  22960 B< AT+TMO 2C0A;+TMO2E02\r
+  22960 B: 2C0A{FALSE}\r\n
+  22960 B: 2E02{65}\r\n
+  22960 B: OK\r\n
+  22960 A< AT\\N0+MS=132\r
+  22960 A: OK\r\n
+  22960 until A 'OK': yes
+  22960 B< AT\\N0+MS=132\r
+  22960 B: OK\r\n
+  22960 until B 'OK': yes
+  22960 B< ATA\r
+  22960 A< ATD\r
+  32180 B: CONNECT 14400\r\n
+  32220 A: CONNECT 14400\r\n
+  32220 until A 'CONNECT': yes
+  32220 until B 'CONNECT': yes
+  32300 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32360 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32400 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32440 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32480 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32520 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32560 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32600 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32660 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32700 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32740 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32780 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32820 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32860 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32920 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  32960 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  35240 B: A0016 ThNO CARRIER\r\n
+  36100 A: \x9f\x98\xf7\xcf\xbd\xdf\xef\x8f\xdf\x1d\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1c\x1cNO CARRIER\r\n
+  36100 until A 'NO CARRIER': yes
+  36600 A< AT+TMO V32\r
+  36600 A: modeV32B{1}\r\n
+  36600 A: txPower{-17.8dBm0}\r\n
+  36600 A: txDataHistory{14400}\r\n
+  36600 A: rxDataHistory{14400}\r\n
+  36600 A: rxLevelEstimate{-18.8dBm0}\r\n
+  36600 A: noiseEstimate{-65.1dBm0}\r\n
+  36600 A: nearEchoEstimate{NULL}\r\n
+  36600 A: farEchoEstimate{NULL}\r\n
+  36600 A: roundTripDelay{NULL}\r\n
+  36600 A: OK\r\n
+  36600 A< AT+TMO 2F\r
+  36600 A: 2F00{3}\r\n
+  36600 A: 2F01{0}\r\n
+  36600 A: 2F03{NULL}\r\n
+  36600 A: 2F04{NULL}\r\n
+  36600 A: 2F05{NULL}\r\n
+  36600 A: 2F06{NULL}\r\n
+  36600 A: 2F07{NULL}\r\n
+  36600 A: 2F08{NULL}\r\n
+  36600 A: 2F09{NULL}\r\n
+  36600 A: 2F0A{NULL}\r\n
+  36600 A: 2F0B{NULL}\r\n
+  36600 A: 2F0C{NULL}\r\n
+  36600 A: 2F0D{NULL}\r\n
+  36600 A: 2F0E{NULL}\r\n
+  36600 A: 2F0F{NULL}\r\n
+  36600 A: OK\r\n
+  36600 A< AT+TMO 2E\r
+  36600 A: 2E01{40}\r\n
+  36600 A: 2E02{53}\r\n
+  36600 A: OK\r\n
+  36600 A< AT+TMO NoSuchObject\r
+  36600 A: ERROR\r\n
+  36600 A< AT+TMO 0999\r
+  36600 A: ERROR\r\n
+  36600 A< AT+TMO 5=?\r
+  36600 A: ERROR\r\n

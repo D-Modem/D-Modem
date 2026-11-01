@@ -32,7 +32,8 @@ The code is in `core/`. For the full technical description, see
   `AT&V1`) shows what happened: the speed, the signal quality, how many
   times the line had to retrain, and why the call ended. `AT#UD` gives the
   same in the format of Microsoft's Unimodem diagnostics specification
-  (`ATZ` clears it).
+  (`ATZ` clears it), and `AT+TMO` the standard way, as ITU-T V.59's
+  named diagnostic objects (`AT+TMO V34 All`, `AT+TMO CallProgress`).
 
 ## How it fits with the rest
 

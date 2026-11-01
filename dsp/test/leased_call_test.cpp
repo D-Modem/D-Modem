@@ -764,6 +764,152 @@ TEST(LocalLoop, TestTimer)
 	EXPECT_NE(st.link, DMODEM_ONLINE);
 }
 
+/* V.250's +T commands (V.58's test objects) on the same loops: the far
+   end grants loop 2 with +TERDL=1; +TRDL=1 asks for it and answers OK
+   when it loops, in online command state; +TTER runs V.52's pattern
+   round it for its blocks, and +TNUM has no errors on a clean line;
+   +TRDL=0 sends the TERM (OK), and the call goes on */
+TEST(V250Test, RemoteLoopErrorRate)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0", "+MS=29\\N0+TERDL=1");
+	ASSERT_TRUE(p.connect()) << p.c.text << p.a.text;
+	ASSERT_TRUE(escape(p, p.c)) << p.c.text;
+	EXPECT_TRUE(command(p, p.c, "AT+TRDLS?", "+TRDLS: 1"));
+	EXPECT_TRUE(command(p, p.c, "AT+TTER=1,100,10,1", "ERROR"));
+	ASSERT_TRUE(command(p, p.c, "AT+TRDL=1", "OK", 20)) << p.c.text;
+	EXPECT_TRUE(command(p, p.c, "AT+TRDLS?", "+TRDLS: 4"));
+	EXPECT_TRUE(command(p, p.c, "AT+TRDL?", "+TRDL: 1"));
+	/* (the 2047-bit pattern: not here) */
+	EXPECT_TRUE(command(p, p.c, "AT+TTER=3,1000,20,2", "ERROR"));
+	ASSERT_TRUE(command(p, p.c, "AT+TTER=3,1000,20,1", "OK"));
+	EXPECT_TRUE(command(p, p.c, "AT+TTER?", "+TTER: 3,1000,"));
+	run(p.line, p.c, p.a, 4, [] { return false; });
+	EXPECT_TRUE(command(p, p.c, "AT+TTER?", "+TTER: 0,1000,0,1"))
+		<< p.c.text;
+	EXPECT_TRUE(command(p, p.c, "AT+TNUM?", "+TNUM: 0,0")) << p.c.text;
+	size_t from = p.c.text.size();
+	ASSERT_TRUE(command(p, p.c, "AT+TRDL=0", "OK", 60)) << since(p.c, from);
+	EXPECT_EQ(since(p.c, from).find("000\r\n"), std::string::npos);
+	EXPECT_TRUE(command(p, p.c, "AT+TRDL?", "+TRDL: 0"));
+	EXPECT_EQ(p.a.no_carriers, 0);
+	ASSERT_TRUE(command(p, p.c, "ATO", "CONNECT"));
+	run(p.line, p.c, p.a, 1, [] { return false; });
+	EXPECT_TRUE(p.exchange(1200, 30, 31));
+}
+
+/* a burst of noise during +TTER: the errors counted, bit errors and
+   the blocks they fell in */
+TEST(V250Test, RemoteLoopErrorsCounted)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0", "+MS=29\\N0+TERDL=1");
+	ASSERT_TRUE(p.connect());
+	ASSERT_TRUE(escape(p, p.c));
+	ASSERT_TRUE(command(p, p.c, "AT+TRDL=1", "OK", 20)) << p.c.text;
+	ASSERT_TRUE(command(p, p.c, "AT+TTER=3,1000,40,1", "OK"));
+	p.line.hit_at = static_cast<double>(p.line.t) / p.line.rate + 1;
+	p.line.hit_s = 0.02;
+	p.line.hit_noise = 600;
+	run(p.line, p.c, p.a, 6, [] { return false; });
+	size_t from = p.c.text.size();
+	ASSERT_TRUE(command(p, p.c, "AT+TNUM?", "OK"));
+	std::string t = since(p.c, from);
+	unsigned bits = 0, blocks = 0;
+	ASSERT_EQ(sscanf(t.c_str() + t.find("+TNUM: "), "+TNUM: %u,%u", &bits,
+			 &blocks), 2) << t;
+	EXPECT_GT(bits, 0u) << t;
+	EXPECT_GE(blocks, 1u) << t;
+	EXPECT_LE(blocks, std::min(bits, 40u)) << t;
+}
+
+/* +TERDL=0 (as after ATZ): the far end does not loop, +TRDL=1 ERROR */
+TEST(V250Test, RemoteLoopRefused)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0", "+MS=29\\N0+TERDL=0");
+	ASSERT_TRUE(p.connect());
+	ASSERT_TRUE(escape(p, p.c));
+	EXPECT_TRUE(command(p, p.c, "AT+TRDL=1", "ERROR", 20)) << p.c.text;
+}
+
+/* +TLDL=1: loop 2 here (the far end's data back to it), +TDLS 3, and
+   4 at the far end of a +TRDL; +TLDL=0 ends it */
+TEST(V250Test, LocalDigitalLoop)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0", "+MS=29\\N0");
+	ASSERT_TRUE(p.connect());
+	ASSERT_TRUE(escape(p, p.a));
+	EXPECT_TRUE(command(p, p.a, "AT+TDLS?", "+TDLS: 1"));
+	ASSERT_TRUE(command(p, p.a, "AT+TLDL=1", "OK"));
+	EXPECT_TRUE(command(p, p.a, "AT+TDLS?", "+TDLS: 3"));
+	EXPECT_TRUE(command(p, p.a, "AT+TLDL?", "+TLDL: 1"));
+	p.c.data.clear();
+	std::string msg = "back from the far end\r\n";
+	p.c.dte.write_some(msg, 0);
+	run(p.line, p.c, p.a, 5, [&] {
+		return p.c.data.find(msg) != std::string::npos;
+	});
+	EXPECT_NE(p.c.data.find(msg), std::string::npos) << p.c.data;
+	EXPECT_TRUE(command(p, p.a, "AT+TLDL=0", "OK"));
+	EXPECT_TRUE(command(p, p.a, "AT+TDLS?", "+TDLS: 1"));
+}
+
+/* +TAL=1: loop 3 on the 4-wire pump, OK in online command state (not
+   CONNECT), +TALS 3; +TTER round it with no errors; +TAL=0 ends it */
+TEST(V250Test, LocalAnalogueLoop)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0", "S0=0");
+	EXPECT_TRUE(command(p, p.c, "AT+TALS?", "+TALS: 0"));
+	ASSERT_TRUE(command(p, p.c, "AT+TAL=1,0", "OK", 20)) << p.c.text;
+	EXPECT_EQ(p.c.text.find("CONNECT"), std::string::npos) << p.c.text;
+	EXPECT_TRUE(command(p, p.c, "AT+TALS?", "+TALS: 3"));
+	EXPECT_TRUE(command(p, p.c, "AT+TAL?", "+TAL: 1"));
+	ASSERT_TRUE(command(p, p.c, "AT+TTER=2,500,10,1", "OK"));
+	run(p.line, p.c, p.a, 3, [] { return false; });
+	EXPECT_TRUE(command(p, p.c, "AT+TTER?", "+TTER: 0,500,0,1"))
+		<< p.c.text;
+	EXPECT_TRUE(command(p, p.c, "AT+TNUM?", "+TNUM: 0,0"));
+	ASSERT_TRUE(command(p, p.c, "AT+TAL=0", "OK"));
+	run(p.line, p.c, p.a, 1, [] { return false; });
+	EXPECT_TRUE(command(p, p.c, "AT+TALS?", "+TALS: 0"));
+	EXPECT_EQ(p.a.connects, 0);
+	/* (none on a 2-wire modulation) */
+	Pair v("&L2", "\\N0+MS=132", "S0=0");
+	EXPECT_TRUE(command(v, v.c, "AT+TAL=1", "ERROR"));
+}
+
+/* the rest: +TSELF and +TRES, the parameters that are 0 alone, the
+   ranges */
+TEST(V250Test, SelfTestAndFixed)
+{
+	dmodem_init();
+	debug();
+	Pair p("&L2", "+MS=29\\N0", "S0=0");
+	EXPECT_TRUE(command(p, p.c, "AT+TRES?", "+TRES: 0"));
+	EXPECT_TRUE(command(p, p.c, "AT+TSELF=0", "OK"));
+	EXPECT_TRUE(command(p, p.c, "AT+TRES?", "+TRES: 1"));
+	EXPECT_TRUE(command(p, p.c, "AT+TSELF=2", "ERROR"));
+	EXPECT_TRUE(command(p, p.c, "AT+TE140?", "+TE140: 0"));
+	EXPECT_TRUE(command(p, p.c, "AT+TE141=0", "OK"));
+	EXPECT_TRUE(command(p, p.c, "AT+TEPAL=1", "ERROR"));
+	EXPECT_TRUE(command(p, p.c, "AT+TMODE=?", "+TMODE: (0)"));
+	EXPECT_TRUE(command(p, p.c, "AT+TERDL=1;+TERDL?", "+TERDL: 1"));
+	EXPECT_TRUE(command(p, p.c, "AT&T5+TERDL?", "+TERDL: 0"));
+	EXPECT_TRUE(command(p, p.c, "AT+TTER=?",
+			    "+TTER: (0-3),(1-65535),(1-65535),(1)"));
+	EXPECT_TRUE(command(p, p.c, "AT+TTER=0", "OK"));
+	EXPECT_TRUE(command(p, p.c, "AT+TAL=?", "+TAL: (0,1),(0,1)"));
+	EXPECT_TRUE(command(p, p.c, "AT+TFOO?", "ERROR"));
+}
+
 /* V.13's simulated carrier control (S48=1) on a 4-wire line with no
    error correction: between the DTE's bursts the line carries the idle
    pattern, which the far end's V.13 takes for 109 OFF (its DTE gets

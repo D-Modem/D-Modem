@@ -40,6 +40,8 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.44](https://www.itu.int/rec/T-REC-V.44) | Data compression (LZJH) | `link/v44.cpp` | [V.44.pdf](V.44.pdf) |
 | [V.52](https://www.itu.int/rec/T-REC-V.52) | Test patterns (the 511-bit pattern) | `core/v54.cpp` (`AT&T7`, `AT&T8`) | [V.52.pdf](V.52.pdf) |
 | [V.54](https://www.itu.int/rec/T-REC-V.54) | Loop test devices (loops 2 and 3) | `core/v54.cpp` (`AT&T`) | [V.54.pdf](V.54.pdf) |
+| [V.58](https://www.itu.int/rec/T-REC-V.58) | Management information model for V-series DCEs (its test objects, V.250's `+T` commands; its codes in `AT#UD`) | `core/v58.cpp`, `core/modem.cpp` (`unimodem_diag()`) | [V.58.pdf](V.58.pdf) |
+| [V.59](https://www.itu.int/rec/T-REC-V.59) | Managed objects for diagnostic information (V.250's `+TMO`) | `core/v59.cpp` | [V.59.pdf](V.59.pdf) |
 | [V.80](https://www.itu.int/rec/T-REC-V.80) | Synchronous access mode (in-band DTE control) | `link/v80.cpp`, `core/modem.cpp` | [V.80.pdf](V.80.pdf) |
 | [V.90](https://www.itu.int/rec/T-REC-V.90) | 56000 bit/s downstream, digital modem | `dsp/v90.cpp`, `dsp/dp_v34.cpp` | [V.90.pdf](V.90.pdf) |
 | [V.91](https://www.itu.int/rec/T-REC-V.91) | PCM between two digital modems | `dsp/v91.cpp` | [V.91.pdf](V.91.pdf) |
