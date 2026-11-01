@@ -2,7 +2,8 @@
 # Copyright (C) 2026 D-Modem Authors
 # The data link layer (C++, namespace dlink): the V.42 detection phase,
 # V.42 LAPM over HDLC, MNP 2 to 4 and 5, V.42bis, V.44, zstd, asynchronous
-# characters, and V.80 synchronous access.  It does not depend on the modem core; the core is its
+# characters, V.80 synchronous access, and V.70's multiplexer (V.76, V.75
+# with H.245) and voice coder (G.729 Annex A).  It does not depend on the modem core; the core is its
 # Owner (link.h).
 #
 #   dmodem_link        object library
@@ -10,7 +11,7 @@
 #   DMODEM_LINK_DIR
 
 set(DMODEM_LINK_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(_link h245.cpp hdlc.cpp lapb.cpp lapm.cpp ppp_sync.cpp mnp.cpp mnp5.cpp v42bis.cpp v44.cpp v44_preset.cpp v76.cpp v80.cpp zstd_codec.cpp zstd_dict.cpp link.cpp)
+set(_link g729a_common.cpp g729a_dec.cpp g729a_enc.cpp g729a_tab.cpp h245.cpp hdlc.cpp lapb.cpp lapm.cpp ppp_sync.cpp mnp.cpp mnp5.cpp v42bis.cpp v44.cpp v44_preset.cpp v76.cpp v80.cpp zstd_codec.cpp zstd_dict.cpp link.cpp)
 list(TRANSFORM _link PREPEND ${DMODEM_LINK_DIR}/)
 add_library(dmodem_link OBJECT ${_link})
 target_include_directories(dmodem_link PUBLIC ${DMODEM_LINK_DIR})
@@ -24,6 +25,42 @@ if(DMODEM_TESTS)
 	target_link_libraries(link_test PRIVATE dmodem_link)
 	dmodem_flags(link_test EXTRA)
 	dmodem_gtest(link_test LABELS quick)
+	# G.729 Annex A; its vectors where docs/specs/fetch_g729.sh puts them
+	add_executable(g729a_test test/g729a_test.cpp)
+	target_link_libraries(g729a_test PRIVATE dmodem_link)
+	target_compile_definitions(g729a_test PRIVATE
+		DMODEM_G729_VECTORS="${PROJECT_SOURCE_DIR}/docs/specs/g729a")
+	dmodem_flags(g729a_test EXTRA)
+	dmodem_gtest(g729a_test LABELS quick)
+	# and against bcg729 where it is found (GPL: a test only)
+	find_path(DMODEM_BCG729_INCLUDE bcg729/encoder.h)
+	find_library(DMODEM_BCG729_LIB bcg729)
+	set(_bcg729 OFF)
+	if(DMODEM_BCG729_INCLUDE AND DMODEM_BCG729_LIB)
+		include(CheckCXXSourceCompiles)
+		set(CMAKE_REQUIRED_INCLUDES ${DMODEM_BCG729_INCLUDE})
+		set(CMAKE_REQUIRED_LIBRARIES ${DMODEM_BCG729_LIB})
+		check_cxx_source_compiles([[
+extern "C" {
+#include <bcg729/encoder.h>
+}
+int main() { return initBcg729EncoderChannel(0) == nullptr; }
+]] DMODEM_BCG729_LINKS)
+		unset(CMAKE_REQUIRED_INCLUDES)
+		unset(CMAKE_REQUIRED_LIBRARIES)
+		set(_bcg729 ${DMODEM_BCG729_LINKS})
+	endif()
+	if(_bcg729)
+		add_executable(g729a_bcg729_test test/g729a_bcg729_test.cpp)
+		target_include_directories(g729a_bcg729_test PRIVATE
+			${DMODEM_BCG729_INCLUDE})
+		target_link_libraries(g729a_bcg729_test PRIVATE dmodem_link
+			${DMODEM_BCG729_LIB})
+		target_compile_definitions(g729a_bcg729_test PRIVATE
+			DMODEM_G729_VECTORS="${PROJECT_SOURCE_DIR}/docs/specs/g729a")
+		dmodem_flags(g729a_bcg729_test EXTRA)
+		dmodem_gtest(g729a_bcg729_test LABELS quick)
+	endif()
 	# zstd against the reference library, where it is found
 	find_path(DMODEM_ZSTD_INCLUDE zstd.h)
 	find_library(DMODEM_ZSTD_LIB zstd)

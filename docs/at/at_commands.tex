@@ -1663,7 +1663,9 @@ other modem offers it too.  The call then goes on with \std{V.8} and its
 modulation, and the link is \std{V.76}'s multiplexer: the \std{DTE}'s data goes
 on its data channel, opened with \std{V.75}'s messages, with error correction
 and no compression.  The protocol is then \cmd{V.76} (\cmdl[I]{ATI11}, the
-\cmd{Protocol:} report).  The voice channel is not there yet.  Without
+\cmd{Protocol:} report).  Where the modem has a voice path (a SmartUSB56's
+handset, or dmodemd's \cmd{--dsvd-audio} command), a voice channel opens
+beside the data, the speech coded with \std{G.729} Annex A.  Without
 \std{DSVD} at the other end the call is an ordinary data call.  See
 \cmd{docs/v70.md}.
 \begin{syntax}

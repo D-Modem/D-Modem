@@ -59,6 +59,7 @@
 #include "misdn_line.h"
 #endif
 #include "datafile.h"
+#include "dsvd_audio.h"
 #include "options.h"
 #include "pty.h"
 #include "run_loop.h"
@@ -257,6 +258,8 @@ int main(int argc, char *argv[])
 	dmd::Pty pty;
 	dmd::PtyDte dte(pty);
 	dcore::Options mo;
+	/* (before the modems: they may close its voice channel as they go) */
+	std::unique_ptr<dmd::DsvdAudio> dsvd;
 	sip::Config cfg;
 	const char *name, *slash;
 	s16 ret;
@@ -290,6 +293,10 @@ int main(int argc, char *argv[])
 	mo.dev_name = opt.name;
 	mo.rate = RATE;
 	mo.country = opt.country;
+	if (opt.dsvd_audio) {
+		dsvd.reset(new dmd::DsvdAudio(opt.dsvd_audio));
+		mo.dsvd = dsvd.get();
+	}
 	/* the modem: on the ALSA line (the core on it alone), or on SIP */
 	std::unique_ptr<dmd::SipModem> sm;
 	dcore::Modem *m;

@@ -1606,7 +1606,12 @@ s16 UsbLine::pump(dcore::Modem &m)
 		if (hook_ != MODEM_HOOK_OFF)
 			m.ring();
 	}
-	if (viso_.ep_in) {
+	if (viso_.ep_in && dsvd_) {
+		/* the handset's microphone for DSVD's voice channel */
+		dsvd_mic_.insert(dsvd_mic_.end(), viso_.in_buf.begin(),
+				 viso_.in_buf.end());
+		viso_.in_buf.clear();
+	} else if (viso_.ep_in) {
 		/* the handset's microphone at the line's rate */
 		resample(viso_.in_buf.data(), viso_.in_buf.size(), VOICE_RATE,
 			 rate_, mic_pos_, mic_last_, mic_);
@@ -1686,6 +1691,9 @@ s16 UsbLine::pump(dcore::Modem &m)
 				    (viso_.out_buf.size() - vmost));
 	if (mic_.size() > most)
 		mic_.erase(mic_.begin(), mic_.begin() + (mic_.size() - most));
+	if (dsvd_mic_.size() > vmost)
+		dsvd_mic_.erase(dsvd_mic_.begin(), dsvd_mic_.begin() +
+				(dsvd_mic_.size() - vmost));
 	return 0;
 }
 
@@ -1763,8 +1771,40 @@ void UsbLine::voice_frame(dcore::Modem &m)
 		m.process(frame_in_.data(), frame_out_.data(), frame_);
 		std::fill_n(frame_ear_.data(), frame_, 0);
 	}
-	resample(frame_ear_.data(), static_cast<size_t>(frame_), rate_,
-		 VOICE_RATE, ear_pos_, ear_last_, viso_.out_buf);
+	/* (DSVD's voice channel has the earpiece: dsvd_ear()) */
+	if (!dsvd_)
+		resample(frame_ear_.data(), static_cast<size_t>(frame_), rate_,
+			 VOICE_RATE, ear_pos_, ear_last_, viso_.out_buf);
+}
+
+/* see usb_line.h: the handset's audio for the voice channel, or back
+   to the voice engine's */
+void UsbLine::dsvd_voice_state(dcore::Modem &, bool on)
+{
+	if (on == dsvd_)
+		return;
+	DBG("voice: %s\n", on ? "the handset on DSVD's voice channel" :
+	    "DSVD's voice channel closed");
+	dsvd_ = on;
+	dsvd_mic_.clear();
+}
+
+/* see usb_line.h: the microphone's samples so far, up to n */
+s16 UsbLine::dsvd_mic(dcore::Modem &, s16 *pcm, s16 n)
+{
+	s16 k = 0;
+	for (; k < n && !dsvd_mic_.empty(); k++) {
+		pcm[k] = dsvd_mic_.front();
+		dsvd_mic_.pop_front();
+	}
+	return k;
+}
+
+/* see usb_line.h: to the earpiece (at its rate, the voice channel's) */
+void UsbLine::dsvd_ear(dcore::Modem &, const s16 *pcm, s16 n)
+{
+	if (dsvd_)
+		viso_.out_buf.insert(viso_.out_buf.end(), pcm, pcm + n);
 }
 
 /* the transfers cancelled (and their callbacks run), on hook, the codec

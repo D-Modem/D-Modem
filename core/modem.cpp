@@ -252,6 +252,32 @@ struct LinkOwner final : public dlink::Owner {
 	}
 	/* a line of the link's in the modem's log */
 	void log(const char *line) override { m_.logf("%s\n", line); }
+	/* DSVD's voice: the Host's (dsvd_voice()), else the program's
+	   (Options::dsvd) */
+	bool voice() override {
+		return m_.host_.dsvd_voice(m_) || m_.dsvd_path_;
+	}
+	/* (see voice()) */
+	void voice_state(bool on) override {
+		m_.logf("DSVD: voice channel %s\n", on ? "open" : "closed");
+		if (m_.host_.dsvd_voice(m_))
+			m_.host_.dsvd_voice_state(m_, on);
+		else if (m_.dsvd_path_)
+			m_.dsvd_path_->state(on);
+	}
+	/* (see voice()) */
+	s16 voice_in(s16 *pcm, s16 n) override {
+		if (m_.host_.dsvd_voice(m_))
+			return m_.host_.dsvd_mic(m_, pcm, n);
+		return m_.dsvd_path_ ? m_.dsvd_path_->mic(pcm, n) : 0;
+	}
+	/* (see voice()) */
+	void voice_out(const s16 *pcm, s16 n) override {
+		if (m_.host_.dsvd_voice(m_))
+			m_.host_.dsvd_ear(m_, pcm, n);
+		else if (m_.dsvd_path_)
+			m_.dsvd_path_->ear(pcm, n);
+	}
 
 	Modem &m_;
 };
@@ -271,6 +297,7 @@ Modem::Modem(Host &host, const Options &opt)
 {
 	handle_->self = this;
 	fax_detect_ = opt.fax_detect;
+	dsvd_path_ = opt.dsvd;
 	cng_ = new dsp::CngDetect();
 	cng_->init(srate_);
 	link_owner_ = new LinkOwner(*this);

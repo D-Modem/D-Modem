@@ -146,6 +146,22 @@ public:
 		(void)m;
 		return device == VOICE_DEVICE_LINE ? 0 : -1;
 	}
+	/* DSVD's voice (V.70, +DSVD): a voice path for its voice channel,
+	   the handset's (has_handset()) or the host's own audio; without
+	   one a DSVD call has its data channel alone */
+	virtual bool dsvd_voice(Modem &m) { (void)m; return false; }
+	/* the voice channel is open (on): the voice path's audio from now
+	   on through dsvd_mic() and dsvd_ear(); or closed */
+	virtual void dsvd_voice_state(Modem &m, bool on) { (void)m; (void)on; }
+	/* up to n samples (16 bit, 8000 a second) of the near end's speech
+	   (the microphone's), how many there were */
+	virtual s16 dsvd_mic(Modem &m, s16 *pcm, s16 n) {
+		(void)m; (void)pcm; (void)n; return 0;
+	}
+	/* the far end's speech (to the earpiece) */
+	virtual void dsvd_ear(Modem &m, const s16 *pcm, s16 n) {
+		(void)m; (void)pcm; (void)n;
+	}
 	/* the speaker's volume (ATL, S30 with ATM2), 0: off */
 	virtual void speaker(Modem &m, s16 volume) { (void)m; (void)volume; }
 	/* the line's delay, which Smart Link's original library asks for
@@ -189,6 +205,21 @@ protected:
 	~Host() = default;
 };
 
+/* DSVD's voice path outside the Host (Options::dsvd): a program's own
+   audio for the voice channel, where the Host has none of its own
+   (Host::dsvd_voice()); as the Host's dsvd_* */
+class VoicePath {
+public:
+	/* the voice channel open (on) or closed */
+	virtual void state(bool on) = 0;
+	/* up to n samples of the near end's speech, how many there were */
+	virtual s16 mic(s16 *pcm, s16 n) = 0;
+	/* the far end's speech */
+	virtual void ear(const s16 *pcm, s16 n) = 0;
+protected:
+	~VoicePath() = default;
+};
+
 struct Options {
 	const char *name = "modem";     /* for the log */
 	const char *dev_name = nullptr; /* for ATI3 */
@@ -199,6 +230,9 @@ struct Options {
 	   (fax_caller()) and, for a V.8 fax call, stops its data answer;
 	   with +FAA=1 it takes the call on in class 1 instead */
 	bool fax_detect = false;
+	/* DSVD's voice path where the Host has none (VoicePath); NULL:
+	   none */
+	VoicePath *dsvd = nullptr;
 };
 
 enum class Result {
@@ -799,6 +833,7 @@ private:
 	   tone starts (count_) */
 	enum class Adapt { Off, Detect, Data, Fax };
 	Adapt adapt_ = Adapt::Off;
+	VoicePath *dsvd_path_ = nullptr;     /* Options::dsvd */
 	bool fax_detect_ = false;
 	bool fax_caller_ = false;
 	dsp::CngDetect *cng_ = nullptr;

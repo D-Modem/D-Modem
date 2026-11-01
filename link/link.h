@@ -163,6 +163,24 @@ public:
 	virtual s32 tx_buffered() { return 0; }
 	/* one line of debug output (without the modem's name) */
 	virtual void log(const char *line) { (void)line; }
+	/* DSVD's voice (V.70, v76.h): whether there is a voice path for a
+	   voice channel (the initiator opens one, the responder takes one,
+	   only then) */
+	virtual bool voice() { return false; }
+	/* the voice channel is open (on) or closed */
+	virtual void voice_state(bool on) { (void)on; }
+	/* up to n samples (16 bit, 8000 a second) of the near end's speech
+	   for it; how many there were */
+	virtual s16 voice_in(s16 *pcm, s16 n) {
+		(void)pcm;
+		(void)n;
+		return 0;
+	}
+	/* the far end's speech from it */
+	virtual void voice_out(const s16 *pcm, s16 n) {
+		(void)pcm;
+		(void)n;
+	}
 protected:
 	~Owner() = default;
 };
@@ -246,6 +264,14 @@ public:
 	s32 tx_rate() const { return owner_->tx_rate(); }
 	/* the DTE's octets waiting (the owner's) */
 	s32 tx_buffered() const { return owner_->tx_buffered(); }
+	/* DSVD's voice, the owner's (see Owner) */
+	bool voice() const { return owner_->voice(); }
+	/* (see Owner) */
+	void voice_state(bool on) { owner_->voice_state(on); }
+	/* (see Owner) */
+	s16 voice_in(s16 *pcm, s16 n) { return owner_->voice_in(pcm, n); }
+	/* (see Owner) */
+	void voice_out(const s16 *pcm, s16 n) { owner_->voice_out(pcm, n); }
 	/* the DTE's in-band command, to the owner */
 	void sync_command(SyncCommand c, u8 tx, u8 rx) {
 		owner_->sync_command(c, tx, rx);

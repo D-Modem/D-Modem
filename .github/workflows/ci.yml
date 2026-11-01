@@ -103,7 +103,12 @@ jobs:
           packages: >-
             cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev
             libspandsp-dev libtiff-tools asterisk-dev g++-multilib
-            libasound2-dev libusb-1.0-0-dev ccache
+            libasound2-dev libusb-1.0-0-dev ccache libbcg729-dev
+
+      # G.729 Annex A's test vectors for g729a_test (ITU's site is
+      # sometimes down: the test is skipped without them)
+      - name: G.729 vectors
+        run: docs/specs/fetch_g729.sh || true
 
       # libre is fetched and built while configuring: keep it
       - name: libre cache

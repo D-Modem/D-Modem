@@ -117,6 +117,31 @@ struct Line final : public dcore::Host {
 		routes.push_back(device);
 		return device == VOICE_DEVICE_LINE || handset ? 0 : -1;
 	}
+	/* DSVD's voice path (dsvd): a tone of tone Hz for the microphone,
+	   the earpiece's samples kept, the voice channel's state */
+	bool dsvd = false, dsvd_on = false;
+	int dsvd_opened = 0;
+	double tone = 440;
+	long mic_sent = 0;
+	std::vector<s16> ear;
+	/* (see dsvd) */
+	bool dsvd_voice(Modem &) override { return dsvd; }
+	/* (see dsvd) */
+	void dsvd_voice_state(Modem &, bool on) override {
+		dsvd_on = on;
+		dsvd_opened += on;
+	}
+	/* (see dsvd) */
+	s16 dsvd_mic(Modem &, s16 *pcm, s16 n) override {
+		for (s16 i = 0; i < n; i++, mic_sent++)
+			pcm[i] = static_cast<s16>(8000 * sin(2 * M_PI * tone *
+							     mic_sent / 8000));
+		return n;
+	}
+	/* (see dsvd) */
+	void dsvd_ear(Modem &, const s16 *pcm, s16 n) override {
+		ear.insert(ear.end(), pcm, pcm + n);
+	}
 	/* a relayed call (relay): its state and rates as the test sets
 	   them; the far end's octets in rx, ours to the far end's
 	   (peer_rx) while it has fewer than window */
@@ -2516,6 +2541,78 @@ TEST(Core, DsvdBoth)
 	EXPECT_TRUE(logged(lines, "v76: DLCI 0 in: OpenLogicalChannelAck"));
 	EXPECT_TRUE(logged(lines, "v76: DLCI 0 in: CloseLogicalChannel,"));
 	EXPECT_TRUE(logged(lines, "A: v76: DLCI 0 out: CloseLogicalChannelAck"));
+}
+
+/* the share of the samples' energy at f Hz */
+static double tone_share(const std::vector<s16> &x, double f)
+{
+	double c = 0, sn = 0, all = 0;
+	for (size_t i = 0; i < x.size(); i++) {
+		c += x[i] * cos(2 * M_PI * f * i / 8000);
+		sn += x[i] * sin(2 * M_PI * f * i / 8000);
+		all += double(x[i]) * x[i];
+	}
+	return all > 0 ? 2 * (c * c + sn * sn) / double(x.size()) / all : 0;
+}
+
+/* DSVD with a voice path at both ends (Host::dsvd_voice()): the
+   initiator opens the voice channel beside the data channel, each end
+   hears the other's tone through G.729 Annex A while the data goes;
+   the hang-up closes it */
+TEST(Core, DsvdVoice)
+{
+	std::vector<std::string> lines;
+	Pair p("");
+	log_kept = &lines;
+	dcore::log_set_hook([](const char *s) {
+		if (log_kept)
+			log_kept->push_back(s);
+	});
+	dcore::log_level = 2;
+	p.la.dsvd = p.lb.dsvd = true;
+	p.la.tone = 440;
+	p.lb.tone = 700;
+	EXPECT_EQ(cmd(p.a, p.la, "AT+A8E=1,1,,1+DSVD=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(p.b, p.lb, "AT+A8E=1,1,,1+DSVD=1\r"), "OK\r\n");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online &&
+			q.la.dsvd_on && q.lb.dsvd_on; }, 40000));
+	p.la.ear.clear();
+	p.lb.ear.clear();
+	std::string da = data('a', 3000);
+	size_t sa = 0;
+	p.got_b.clear();
+	for (int t = 0; t < 2000; t += 20) {
+		int n = std::min<int>(p.a->dte_space(),
+				      static_cast<int>(da.size() - sa));
+		sa += p.a->dte_input(da.data() + sa, n);
+		p.step();
+	}
+	const double ha = tone_share(p.la.ear, 700),
+		hb = tone_share(p.lb.ear, 440);
+	EXPECT_GT(p.la.ear.size(), 14000u);
+	EXPECT_GT(p.lb.ear.size(), 14000u);
+	EXPECT_GT(ha, 0.8) << "A hears B's 700 Hz";
+	EXPECT_GT(hb, 0.8) << "B hears A's 440 Hz";
+	EXPECT_TRUE(p.got_b == da) << "B got " << p.got_b.size();
+	p.b->hangup();
+	p.run_until([](Pair &q) {
+		return !q.a->started() && !q.b->started(); }, 15000);
+	if (getenv("SHOW"))
+		for (const std::string &l : lines)
+			printf("%s", l.c_str());
+	dcore::log_level = 0;
+	dcore::log_set_hook(nullptr);
+	log_kept = nullptr;
+	EXPECT_FALSE(p.la.dsvd_on || p.lb.dsvd_on);
+	EXPECT_EQ(p.la.dsvd_opened, 1);
+	EXPECT_TRUE(logged(lines, "v76: DLCI 1 in: OpenLogicalChannel, "
+			   "channel 2, audio, UNERM"));
+	EXPECT_TRUE(logged(lines, "A: DSVD: voice channel open"));
+	EXPECT_TRUE(logged(lines, "B: DSVD: voice channel closed"));
 }
 
 /* +DSVD at the caller alone: V.8 bis chooses data, then V.42 as usual */

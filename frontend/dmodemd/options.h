@@ -48,6 +48,9 @@ struct Options {
 	/* the SmartUSB56's second codec as a handset, its octets "ulaw",
 	   "alaw" or "linear" (--usb-voice-codec); NULL: not used */
 	const char *usb_voice_codec = nullptr;
+	/* DSVD's voice through a command (--dsvd-audio, dsvd_audio.h);
+	   NULL: none */
+	const char *dsvd_audio = nullptr;
 	/* the ST7554's RHOM bit while the modem runs (--usb-rhom) */
 	bool usb_rhom = false;
 	/* the SmartUSB56's buzzer as the speaker (--usb-buzzer) */
