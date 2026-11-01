@@ -93,7 +93,7 @@ static std::vector<std::string> lines(const std::string &s)
 	return v;
 }
 
-/* an ATI11 (or AT#UD) line's measurement: its field and value; false if
+/* an ATI11 (or AT#UD, or +TMO) line's measurement: its field and value; false if
    line is not one of them */
 static bool measurement(const std::string &line, std::string *field,
 			double *value)
@@ -120,6 +120,33 @@ static bool measurement(const std::string &line, std::string *field,
 		{ "DIAG <2A4D3263 15=", "DIAG 15" },
 		{ "DIAG <2A4D3263 59=", "DIAG 59 Error Count" },
 	};
+	/* +TMO's (V.59's): a level in dBm0, and the receive frame errors
+	   (2F0B, 2F0D by name or tag) */
+	size_t brace = line.find('{');
+	if (brace != std::string::npos && line.size() >= brace + 10 &&
+	    line.compare(line.size() - 9, 9, "dBm0}\\r\\n") == 0) {
+		char *end;
+		*value = strtod(line.c_str() + brace + 1, &end);
+		if (end == line.c_str() + brace + 1)
+			return false;
+		*field = line.substr(0, brace + 1) + "dB";
+		return true;
+	}
+	static const char *const tmo_errors[] = {
+		"framesReceivedDiscard{", "rxErrors{", "2F0B{", "2F0D{",
+	};
+	for (const char *k : tmo_errors) {
+		size_t at = line.find(std::string(": ") + k);
+		if (at == std::string::npos)
+			continue;
+		const char *v = line.c_str() + at + 2 + strlen(k);
+		char *end;
+		*value = strtod(v, &end);
+		if (end == v)
+			return false;
+		*field = line.substr(0, at + 2 + strlen(k)) + " Error Count";
+		return true;
+	}
 	for (const auto &d : diag) {
 		size_t at = line.find(std::string(": ") + d.key);
 		if (at == std::string::npos)
