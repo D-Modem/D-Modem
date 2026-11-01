@@ -20,13 +20,14 @@ runs:
       run: |
         pkgs=$(printf '%s\n' $PKGS | sort -u | tr '\n' ' ')
         echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
-        echo "hash=$(printf '%s' "$pkgs" | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        # (ImageOS, ImageVersion: the runner's environment, not the env context)
+        echo "key=brew-${ImageOS:-none}-$RUNNER_ARCH-${ImageVersion:-none}-$(printf '%s' "$pkgs" | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
 
     - id: restore
       uses: actions/cache/restore@v4
       with:
         path: /tmp/brew-cache
-        key: brew-${{ env.ImageOS }}-${{ runner.arch }}-${{ env.ImageVersion }}-${{ steps.key.outputs.hash }}
+        key: ${{ steps.key.outputs.key }}
 
     - shell: bash
       env:

@@ -30,13 +30,14 @@ runs:
       run: |
         pkgs=$(printf '%s\n' $PKGS | sort -u | tr '\n' ' ')
         echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
-        echo "hash=$(printf '%s|%s|%s' "$pkgs" "$PPA" "$REC" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+        # (ImageOS, ImageVersion: the runner's environment, not the env context)
+        echo "key=apt-${ImageOS:-none}-$RUNNER_ARCH-${ImageVersion:-none}-$(printf '%s|%s|%s' "$pkgs" "$PPA" "$REC" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
 
     - id: restore
       uses: actions/cache/restore@v4
       with:
         path: /tmp/apt-cache
-        key: apt-${{ env.ImageOS }}-${{ runner.arch }}-${{ env.ImageVersion }}-${{ steps.key.outputs.hash }}
+        key: ${{ steps.key.outputs.key }}
 
     - id: install
       shell: bash
