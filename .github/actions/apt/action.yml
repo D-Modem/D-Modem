@@ -1,0 +1,80 @@
+# apt-get install with its downloads cached (actions/cache): the .debs and
+# the package lists they were resolved from, kept together, keyed on the
+# runner image (ImageOS, ImageVersion: a new image every week or so) and
+# the package list.  On a hit the install is offline (--no-download): no
+# mirror, nothing to stall on.  On a miss, or if the offline install
+# can't be done, the usual update and install, with retries and timeouts
+# so a stalled mirror fails over instead of hanging; then the cache is
+# saved for the next run.
+name: apt packages
+description: apt-get install, cached
+inputs:
+  packages:
+    description: the packages (spaces or newlines between)
+    required: true
+  ppa:
+    description: a PPA to add first (ppa:owner/name), or empty
+    default: ''
+  recommends:
+    description: "'true' installs recommended packages too"
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        PKGS: ${{ inputs.packages }}
+        PPA: ${{ inputs.ppa }}
+        REC: ${{ inputs.recommends }}
+      run: |
+        pkgs=$(printf '%s\n' $PKGS | sort -u | tr '\n' ' ')
+        echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
+        # (ImageOS, ImageVersion: the runner's environment, not the env context)
+        echo "key=apt-${ImageOS:-none}-$RUNNER_ARCH-${ImageVersion:-none}-$(printf '%s|%s|%s' "$pkgs" "$PPA" "$REC" | sha256sum | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+    - id: restore
+      uses: actions/cache/restore@v5
+      with:
+        path: /tmp/apt-cache
+        key: ${{ steps.key.outputs.key }}
+
+    - id: install
+      shell: bash
+      env:
+        PKGS: ${{ steps.key.outputs.pkgs }}
+        PPA: ${{ inputs.ppa }}
+        REC: ${{ inputs.recommends }}
+        HIT: ${{ steps.restore.outputs.cache-hit }}
+      run: |
+        set -euo pipefail
+        C=/tmp/apt-cache
+        sudo mkdir -p "$C/archives/partial" "$C/lists/partial"
+        rec=--no-install-recommends
+        [ "$REC" = true ] && rec=
+        apt=(sudo DEBIAN_FRONTEND=noninteractive apt-get -y -q $rec
+          -o Dir::Cache::Archives="$C/archives" -o Dir::State::Lists="$C/lists"
+          -o APT::Keep-Downloaded-Packages=true
+          -o Acquire::Retries=5
+          -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+        if [ -n "$PPA" ]; then
+          for i in 1 2 3; do sudo add-apt-repository -y -n "$PPA" && break; sleep $((i * 10)); done
+        fi
+        fresh=false
+        if [ "$HIT" = true ] && "${apt[@]}" install --no-download $PKGS; then
+          echo "installed from the cache"
+        else
+          for i in 1 2 3; do "${apt[@]}" update && break; sleep $((i * 10)); done
+          for i in 1 2 3; do "${apt[@]}" install $PKGS && break; [ $i = 3 ] && exit 1; sleep $((i * 10)); done
+          fresh=true
+        fi
+        sudo rm -rf "$C/archives/partial" "$C/lists/partial" "$C/archives/lock" "$C/lists/lock"
+        sudo chown -R "$(id -u):$(id -g)" "$C"
+        echo "fresh=$fresh" >> "$GITHUB_OUTPUT"
+
+    - if: steps.install.outputs.fresh == 'true'
+      uses: actions/cache/save@v5
+      continue-on-error: true
+      with:
+        path: /tmp/apt-cache
+        key: ${{ steps.restore.outputs.cache-primary-key }}
