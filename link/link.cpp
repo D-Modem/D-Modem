@@ -77,6 +77,7 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 /* the end of the call: coders freed, no mode, no timer */
 void Link::exit()
 {
+	mux_.end();
 	lapm_.exit();
 	mnp_.exit();
 	enc_.exit();
@@ -334,6 +335,8 @@ s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 	case Mode::X75:
 	case Mode::Ppp:
 		n = hdlc_.get_bits(nbits, buf, n);
+		if (proto_ == Protocol::V76)
+			mux_.clock(static_cast<s32>(nbits) * n);
 		break;
 	case Mode::Mnp:
 		n = mnp_.bit_tx() ? hdlc_.get_bits(nbits, buf, n) :

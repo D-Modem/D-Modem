@@ -179,6 +179,16 @@ public:
 	/* where the modem's samples are (pump()): the line's, the
 	   handset's, or the line's with the handset on the call */
 	s16 voice_route(dcore::Modem &, u16 device) override;
+	/* DSVD's voice (V.70) on the handset, where there is one: its
+	   microphone to the voice channel, the far end's speech to its
+	   earpiece, the line's samples the modem's alone meanwhile */
+	bool dsvd_voice(dcore::Modem &m) override { return has_handset(m); }
+	/* (see dsvd_voice()) */
+	void dsvd_voice_state(dcore::Modem &m, bool on) override;
+	/* (see dsvd_voice()) */
+	s16 dsvd_mic(dcore::Modem &m, s16 *pcm, s16 n) override;
+	/* (see dsvd_voice()) */
+	void dsvd_ear(dcore::Modem &m, const s16 *pcm, s16 n) override;
 	/* the speaker's volume (set_buzzer()): the buzzer on or off */
 	void speaker(dcore::Modem &m, s16 volume) override;
 	/* an analogue line, the modem dialling it itself */
@@ -418,6 +428,10 @@ private:
 	double mic_pos_ = 0, ear_pos_ = 0;
 	s16 mic_last_ = 0, ear_last_ = 0;
 	std::vector<s16> frame_mic_, frame_ear_;
+	/* DSVD's voice channel open on the handset (dsvd_voice_state()):
+	   the microphone's samples for it (8000 a second) */
+	bool dsvd_ = false;
+	std::deque<s16> dsvd_mic_;
 	u64 samples_ = 0;
 	/* DMODEM_USB_REC: the line recorded while off hook (rec_start()) */
 	FILE *rec_ = nullptr;
