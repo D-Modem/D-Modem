@@ -9,6 +9,8 @@ Terms used on this page:
   on, sent on V.21 at 300 bit/s), with the pages on a faster modulation.
 - **ECM**: T.30's error correction mode (T.30 Annex A, T.4 Annex A).
 - **T.85**: the JBIG (T.82) coding of fax pages, with ECM only.
+- **T.42**: colour and grey-scale fax pages in JPEG (T.81) of CIELAB
+  samples (T.4 Annex E), with ECM only.
 - **T.38**: fax over IP, as IFP packets carried in UDPTL.
 
 ## Fax (class 1)
@@ -312,6 +314,61 @@ at stripe 9), whose stripe coded data, stripe data entities and BIE
 match Table 29's byte counts exactly. It also round-trips fax-like
 pages, and decodes a BIE with YD of all ones, a comment and NEWLEN, one
 cut short, one capped in lines, and random data.
+
+### T.42 (JPEG) colour and grey-scale pages
+
+With ECM the DIS also offers JPEG (bit 68), in full colour (69), and
+takes colour without subsampling (73); `t30_config`'s `no_colour` turns
+that off, and `t30_status`'s `jpeg` says what a call sends (1 grey, 2
+colour).
+
+- **Pages:** a `T4Page` may carry colour: `comps` 3 (sRGB) or 1 (grey)
+  and its 8-bit samples in `pix`, with `bits` a dithered copy (an 8x8
+  ordered dither of the lightness) for whatever takes only black and
+  white: the line without JPEG, class 2's DTE, MH TIFF readers.
+  `TiffIn` reads uncompressed 8-bit grey or RGB pages that way, scaled
+  to 1728 pels at 200 pels an inch; `TiffOut` writes such a page
+  uncompressed (RGB, or grey with black zero) at 200 pels an inch.
+- **Sending:** a page with colour goes in JPEG when the remote offers
+  bit 68 (and 15, 200 by 200): in colour if it offers 69, else its
+  lightness alone. The DCS sets 68, 69 for colour, 70 (the tables are
+  T.81's K.3 to K.6) and 15. A page without colour goes as before, so a
+  document that mixes them sends EOM between the two kinds, and a new
+  DCS (as for a change of resolution).
+- **Receiving:** a DCS with bit 68 (69: colour) means JPEG. The frames
+  are kept to the page's end as for T.85, decoded, turned from CIELAB
+  to sRGB, scaled or centred to 1728 pels, and dithered. A JPEG cut
+  short keeps its lines so far, with 1 row counted bad.
+
+`jpeg.cpp` is the coder:
+
+- **Encoder:** what T.4 E.6.2 lists: SOI, the G3FAX APP1 (version 1994,
+  200 pels an inch), DQT (K.1 and K.2 at quality 75), DHT (K.3 to K.6),
+  SOF0, one interleaved scan (four L* blocks, then a* and b*, for 4:1:1
+  with a* and b* averaged over 2x2, T.4 E.6.3), EOI. Optionally DRI with
+  RSTn, and DNL for an image whose length is not known at the start.
+- **Decoder:** any baseline or extended (SOF1) 8-bit Huffman sequential
+  frame of 1 or 3 components: sampling factors up to 4, one scan or
+  several, 8 or 16-bit quantisation tables, restarts, DNL (Y 0 in the
+  frame header), APPn and COM skipped, the octets after EOI ignored
+  (T.4's padding of the last frame). Progressive, lossless and
+  arithmetic-coded frames are refused.
+- **CIELAB:** T.4 E.6.4's defaults: D50, L = L* x 255/100, a = a* x
+  255/170 + 128, b = b* x 255/200 + 96, from sRGB through XYZ with the
+  Bradford-adapted sRGB matrix.
+- The JPEG's octets go into the ECM frames as they are, as spandsp does.
+
+`jpeg_test` checks the encoder's markers (and that each Huffman table
+is a whole code of T.81's symbols), round trips of grey and colour
+pictures (with 4:1:1 and without, odd sizes, restarts and DNL giving
+the same pels), damaged and cut-short data, and the CIELAB conversions
+(white is 255/128/96). Outside the tests, the encoder's JPEGs were
+decoded by libjpeg (through Python's Pillow) at 50 dB, and libjpeg's
+(with optimised tables, restarts, 4:2:0) decoded here within 52 to 68
+dB of libjpeg's own decoding. `fax_test`'s `T30Colour.SendsColourPages`
+sends a colour page, a black and white one and a grey one between two
+machines (JPEG colour, T.85, JPEG grey: 42 and 51 dB), and again to a
+receiver with `no_colour` (all dithered, the same bits).
 
 spandsp 0.0.6 is built without T.85 (`SPANDSP_SUPPORT_T85` is off in
 its configure), so `spandsp_test`'s calls stay in MH or MR. FreeSWITCH's

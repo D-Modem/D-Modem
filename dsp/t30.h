@@ -154,6 +154,8 @@ struct t30_config {
 				   registers and settings; NULL: none) */
 	s16 no_t85;             /* with ECM, offer and use only MH and MR,
 				   not T.85 (JBIG) */
+	s16 no_colour;          /* with ECM, offer and send no colour or
+				   grey-scale pages in T.42 (JPEG) */
 };
 
 struct t30_status {
@@ -168,6 +170,7 @@ struct t30_status {
 	s16 fine;
 	s16 ecm;                /* the call has error correction mode */
 	s16 t85;                /* its pages in T.85 (JBIG) */
+	s16 jpeg;               /* in T.42 (JPEG): 1 grey, 2 colour */
 	char remote_ident[21];
 	const char *phase;      /* what it is doing, for the log */
 	s16 waiting;            /* enum t30_wait */

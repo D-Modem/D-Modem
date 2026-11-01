@@ -11,7 +11,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <utility>
+#include <vector>
 
 #include "dm_types.h"
 #include "reinit.h"
@@ -87,6 +89,8 @@ s16 TiffOut::write_page(const T4Page *p)
 
 	if (!f_)
 		return -1;
+	if (p->comps && p->pix.size() >= static_cast<size_t>(p->width) * p->rows * p->comps)
+		return write_pix(p);
 	p->encode_mh(&b, 0, 1, rtc);
 	len = (b.n + 7) / 8;
 	fseek(f_, 0, SEEK_END);
@@ -136,6 +140,72 @@ s16 TiffOut::write_page(const T4Page *p)
 		return -1;
 
 	/* link it in */
+	put32(link, ifd_at);
+	fseek(f_, last_ifd_next, SEEK_SET);
+	if (fwrite(link, 1, 4, f_) != 4)
+		return -1;
+	last_ifd_next = ifd_at + 2 + n * 12;
+	pages++;
+	return fflush(f_) ? -1 : 0;
+}
+
+/* (t4.h) a colour or grey page: its samples uncompressed in one strip,
+   RGB or black is zero, 200 pels an inch */
+s16 TiffOut::write_pix(const T4Page *p)
+{
+	FILE *f_ = static_cast<FILE*>(f);
+	unsigned char ifd[2 + 20 * 12 + 4 + 16 + 6], *e = ifd + 2, link[4];
+	size_t len = static_cast<size_t>(p->width) * p->rows * p->comps;
+	s16 n = 0, spp = p->comps == 3 ? 3 : 1;
+	long data_at, ifd_at, res_at;
+
+	fseek(f_, 0, SEEK_END);
+	data_at = ftell(f_);
+	if (len && fwrite(p->pix.data(), 1, len, f_) != len)
+		return -1;
+	if (ftell(f_) & 1)
+		fputc(0, f_);
+	ifd_at = ftell(f_);
+	res_at = ifd_at + 2 + 16 * 12 + 4;
+
+	e = entry(e, 254, T_LONG, 1, 2), n++;
+	e = entry(e, 256, T_LONG, 1, p->width), n++;
+	e = entry(e, 257, T_LONG, 1, p->rows), n++;
+	if (spp == 3)
+		e = entry(e, 258, T_SHORT, 3, res_at + 16), n++;
+	else
+		e = entry(e, 258, T_SHORT, 1, 8), n++;
+	e = entry(e, 259, T_SHORT, 1, 1), n++;          /* none */
+	e = entry(e, 262, T_SHORT, 1, spp == 3 ? 2 : 1), n++;
+	e = entry(e, 273, T_LONG, 1, data_at), n++;
+	e = entry(e, 274, T_SHORT, 1, 1), n++;
+	e = entry(e, 277, T_SHORT, 1, spp), n++;
+	e = entry(e, 278, T_LONG, 1, p->rows), n++;
+	e = entry(e, 279, T_LONG, 1, len), n++;
+	e = entry(e, 282, T_RATIONAL, 1, res_at), n++;
+	e = entry(e, 283, T_RATIONAL, 1, res_at + 8), n++;
+	e = entry(e, 284, T_SHORT, 1, 1), n++;
+	e = entry(e, 296, T_SHORT, 1, 2), n++;
+	put16(e, 297);
+	put16(e + 2, T_SHORT);
+	put32(e + 4, 2);
+	put16(e + 8, pages);
+	put16(e + 10, 0);
+	e += 12, n++;
+	put16(ifd, n);
+	put32(e, 0);
+	e += 4;
+	put32(e, 200);
+	put32(e + 4, 1);
+	put32(e + 8, 200);
+	put32(e + 12, 1);
+	e += 16;
+	put16(e, 8);
+	put16(e + 2, 8);
+	put16(e + 4, 8);
+	e += 6;
+	if (fwrite(ifd, 1, e - ifd, f_) != static_cast<size_t>(e - ifd))
+		return -1;
 	put32(link, ifd_at);
 	fseek(f_, last_ifd_next, SEEK_SET);
 	if (fwrite(link, 1, 4, f_) != 4)
@@ -278,6 +348,50 @@ void T4Page::fit(const T4Page *src, s16 row_step)
 	}
 }
 
+/* (t4.h) uncompressed 8 bit grey or RGB strips, to T4_WIDTH at 200
+   pels an inch (its rows scaled as its width, for the resolutions'
+   ratio) */
+s16 TiffIn::read_pix(T4Page *p, u64 so_e, u64 sc_e, u64 nstrips, u64 width, u64 rows, u64 rps, u64 comp,
+		     u64 spp, u64 photo, u64 planar, double xres, double yres)
+{
+	if (!width || width > 10000 || !rows || rows > 20000 || !so_e || !sc_e || comp != 1 ||
+	    planar != 1 || !((spp == 1 && photo <= 1) || (spp == 3 && photo == 2)))
+		return -1;
+	if (!rps || rps > rows)
+		rps = rows;
+	size_t stride = static_cast<size_t>(width) * spp;
+	std::vector<unsigned char> src(stride * rows, 255);
+	u64 y = 0;
+	for (u64 s = 0; s < nstrips && y < rows; s++) {
+		u64 off = tag_value(so_e, s), n = tag_value(sc_e, s);
+		if (off >= len)
+			break;
+		if (off + n > len)
+			n = len - off;
+		u64 want = std::min(rps, rows - y);
+		size_t got = static_cast<size_t>(std::min<u64>(n, want * stride));
+		memcpy(src.data() + y * stride, data.data() + off, got);
+		y += want;
+	}
+	if (photo == 0)                         /* white is zero */
+		for (unsigned char &c : src)
+			c = static_cast<unsigned char>(255 - c);
+	double ratio = xres > 0 && yres > 0 ? xres / yres : 1;
+	u64 h = static_cast<u64>(rows * static_cast<double>(T4_WIDTH) / width * ratio + 0.5);
+	h = std::max<u64>(1, std::min<u64>(h, 8000));
+	std::vector<unsigned char> dst(static_cast<size_t>(T4_WIDTH) * h * spp);
+	for (u64 dy = 0; dy < h; dy++) {
+		u64 sy = std::min(rows - 1, dy * rows / h);
+		for (u64 dx = 0; dx < T4_WIDTH; dx++) {
+			u64 sx = dx * width / T4_WIDTH;
+			memcpy(&dst[(dy * T4_WIDTH + dx) * spp], &src[sy * stride + sx * spp], spp);
+		}
+	}
+	p->init(T4_WIDTH, 1);
+	p->set_pix(dst.data(), static_cast<s16>(spp), T4_WIDTH, static_cast<u32>(h));
+	return p->rows ? 1 : -1;
+}
+
 /* the next page (scaled to T4_WIDTH if narrower or wider, superfine to
    fine); 1, 0 when there are no more, -1 on an error */
 s16 TiffIn::read_page(T4Page *p)
@@ -285,7 +399,8 @@ s16 TiffIn::read_page(T4Page *p)
 	u64 e, ifd = next_ifd, nstrips = 0, so_e = 0, sc_e = 0;
 	u64 width = 0, rows = 0, rps = 0, bps = 1, comp = 1;
 	u64 photo = 0, fill = 1, t4opts = 0, unit = 2, s, k;
-	double yres = 98;
+	u64 spp = 1, planar = 1;
+	double yres = 98, xres = 0;
 	u32 n, i;
 	T4Page src;
 	s16 stride, fine, step = 1;
@@ -311,7 +426,10 @@ s16 TiffIn::read_page(T4Page *p)
 		case 262: photo = tag_value(e, 0); break;
 		case 266: fill = tag_value(e, 0); break;
 		case 273: so_e = e; nstrips = get32(e + 4); break;
+		case 277: spp = tag_value(e, 0); break;
 		case 278: rps = tag_value(e, 0); break;
+		case 282: xres = tag_rational(e); break;
+		case 284: planar = tag_value(e, 0); break;
 		case 279: sc_e = e; break;
 		case 283: yres = tag_rational(e); break;
 		case 292: t4opts = tag_value(e, 0); break;
@@ -320,6 +438,9 @@ s16 TiffIn::read_page(T4Page *p)
 	}
 	next_ifd = get32(ifd + 2 + n * 12);
 	page++;
+	if (bps == 8)
+		return read_pix(p, so_e, sc_e, nstrips, width, rows, rps, comp,
+				spp, photo, planar, xres, yres);
 	if (!width || width > 10000 || bps != 1 || !so_e || !sc_e ||
 	    (comp != 1 && comp != 2 && comp != 3 && comp != 4))
 		return -1;

@@ -460,6 +460,126 @@ INSTANTIATE_TEST_SUITE_P(Rates, T30Pair, testing::Values(
 	});
 
 /*
+ *    colour and grey-scale pages (T.42)
+ *
+ */
+
+/* a colour (comps 3) or grey (1) picture of rows, smooth and with
+   blocks of solid colour */
+static void colour_page(T4Page *p, s16 comps, s32 rows)
+{
+	std::vector<unsigned char> pix((size_t)T4_WIDTH * rows * comps);
+	for (s32 y = 0; y < rows; y++)
+		for (int x = 0; x < T4_WIDTH; x++)
+			for (int c = 0; c < comps; c++) {
+				double v = 128 + 90 * sin((x + 40 * c) / 70.0) * cos((y + 25 * c) / 45.0);
+				if ((x / 150 + y / 100) % 4 == 0)
+					v = c == 0 ? 200 : c == 1 ? 40 : 90;
+				pix[((size_t)y * T4_WIDTH + x) * comps + c] = (unsigned char)v;
+			}
+	p->init(T4_WIDTH, 1);
+	p->set_pix(pix.data(), comps, T4_WIDTH, (u32)rows);
+}
+
+/* the PSNR of two pages' samples, dB */
+static double page_psnr(const T4Page &a, const T4Page &b)
+{
+	double e = 0;
+	size_t n = std::min(a.pix.size(), b.pix.size());
+	for (size_t i = 0; i < n; i++)
+		e += ((double)a.pix[i] - b.pix[i]) * ((double)a.pix[i] - b.pix[i]);
+	return n && e ? 10 * log10(255.0 * 255 * n / e) : 99;
+}
+
+/* a colour page, a black and white one, a grey one, from one machine to
+   the other with ECM: in JPEG (EOM between them, for the DCS of each
+   coding) the colour ones come close, the black and white one the
+   same; to a receiver without colour (no_colour) all in black and
+   white, the colour ones dithered */
+TEST(T30Colour, SendsColourPages)
+{
+	std::string in = fax_file("colour_in.tif"), out = fax_file("colour_out.tif");
+	T4Page pg[3];
+	colour_page(&pg[0], 3, 300);
+	test_page(&pg[1], 1, 5, 300);
+	colour_page(&pg[2], 1, 200);
+	{
+		TiffOut t;
+		ASSERT_EQ(t.open(in.c_str()), 0);
+		for (auto &p : pg)
+			t.write_page(&p);
+		t.close();
+	}
+	debug_level();
+	for (int no_colour = 0; no_colour <= 1; no_colour++) {
+		Doc tx, rx;
+		struct t30_config c = {};
+		struct t30_status sa = {}, sb = {};
+		short ab[160] = { 0 }, ba[160] = { 0 }, oa[160], ob[160];
+		bool jpeg_seen[3] = { false, false, false }; /* while sending each */
+		ASSERT_EQ(tx.in.open(in.c_str()), 0);
+		ASSERT_EQ(rx.out.open(out.c_str()), 0);
+		c.srate = 8000;
+		c.max_bps = 14400;
+		c.ecm = 1;
+		c.sending = 1;
+		c.ident = "+1 555 0100";
+		c.next_page = next_page;
+		c.ctx = &tx;
+		T30 *a = t30_create(&c);
+		c.sending = 0;
+		c.no_colour = (s16)no_colour;
+		c.next_page = NULL;
+		c.page_received = page_received;
+		c.ctx = &rx;
+		T30 *b = t30_create(&c);
+		for (long n = 0; n < 8000L * 900; n += 160) {
+			t30_process(a, ba, oa, 160);
+			t30_process(b, ab, ob, 160);
+			for (int i = 0; i < 160; i++) {
+				ab[i] = g711_ulaw(oa[i]);
+				ba[i] = g711_ulaw(ob[i]);
+			}
+			t30_get_status(a, &sa);
+			t30_get_status(b, &sb);
+			if (sa.pages < 3)
+				jpeg_seen[sa.pages] |= sa.jpeg != 0;
+			if (sa.result != T30_RUNNING && sb.result != T30_RUNNING)
+				break;
+		}
+		rx.out.close();
+		tx.in.close();
+		t30_free(a);
+		t30_free(b);
+		EXPECT_EQ(sa.result, T30_OK) << t30_result_text(sa.result);
+		EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+		ASSERT_EQ(sb.pages, 3);
+		EXPECT_EQ(jpeg_seen[0], !no_colour);
+
+		TiffIn ti, to;
+		ASSERT_EQ(ti.open(in.c_str()), 0);
+		ASSERT_EQ(to.open(out.c_str()), 0);
+		for (int k = 0; k < 3; k++) {
+			T4Page pi, po;
+			ASSERT_EQ(ti.read_page(&pi), 1);
+			ASSERT_EQ(to.read_page(&po), 1);
+			ASSERT_EQ(pi.rows, po.rows) << "page " << k;
+			if (k == 1 || no_colour) {
+				EXPECT_EQ(po.comps, 0) << "page " << k;
+				EXPECT_EQ(pi.bits, po.bits) << "page " << k;
+			} else {
+				EXPECT_EQ(po.comps, pi.comps) << "page " << k;
+				double q = page_psnr(pi, po);
+				printf("page %d: %d components, %.1f dB\n", k + 1, po.comps, q);
+				EXPECT_GT(q, 28) << "page " << k;
+			}
+		}
+		ti.close();
+		to.close();
+	}
+}
+
+/*
  *    a response lost on the line (DSP_T30_LOSE)
  *
  */

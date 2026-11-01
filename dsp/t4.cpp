@@ -187,7 +187,57 @@ s16 T4Page::init(s16 width_, s16 fine_)
 void T4Page::release()
 {
 	free_buffer(bits);
+	free_buffer(pix);
 	rows = cap = 0;
+	comps = 0;
+}
+
+/* (t4.h) scaled or centred to width, as fit() does, then dithered */
+void T4Page::set_pix(const unsigned char *pix_, s16 comps_, u32 w, u32 h)
+{
+	bits.clear();
+	rows = cap = 0;
+	comps = comps_;
+	pix.assign(static_cast<size_t>(width) * h * comps, 255);
+	for (u32 y = 0; y < h; y++) {
+		unsigned char *o = pix.data() + static_cast<size_t>(y) * width * comps;
+		const unsigned char *s = pix_ + static_cast<size_t>(y) * w * comps;
+		for (s16 x = 0; x < width; x++) {
+			s32 sx = static_cast<s32>(w) > width ?
+				static_cast<s32>(static_cast<u64>(x) * w / width) :
+				x - (width - static_cast<s32>(w)) / 2;
+			if (sx >= 0 && sx < static_cast<s32>(w))
+				memcpy(o + x * comps, s + static_cast<size_t>(sx) * comps, comps);
+		}
+	}
+	for (u32 y = 0; y < h; y++)
+		if (!add_row(nullptr))
+			break;
+	dither();
+}
+
+/* (t4.h) Bayer's 8x8 threshold matrix against each pel's lightness */
+void T4Page::dither()
+{
+	static const unsigned char bayer[8][8] = {
+		{0, 32, 8, 40, 2, 34, 10, 42}, {48, 16, 56, 24, 50, 18, 58, 26},
+		{12, 44, 4, 36, 14, 46, 6, 38}, {60, 28, 52, 20, 62, 30, 54, 22},
+		{3, 35, 11, 43, 1, 33, 9, 41}, {51, 19, 59, 27, 49, 17, 57, 25},
+		{15, 47, 7, 39, 13, 45, 5, 37}, {63, 31, 55, 23, 61, 29, 53, 21},
+	};
+	s16 stride = T4_STRIDE(width);
+	if (!comps || pix.size() < static_cast<size_t>(width) * rows * comps)
+		return;
+	for (s32 y = 0; y < rows; y++) {
+		unsigned char *r = bits.data() + static_cast<size_t>(y) * stride;
+		const unsigned char *s = pix.data() + static_cast<size_t>(y) * width * comps;
+		memset(r, 0, stride);
+		for (s16 x = 0; x < width; x++, s += comps) {
+			s32 l = comps == 3 ? (299 * s[0] + 587 * s[1] + 114 * s[2]) / 1000 : s[0];
+			if (l * 64 < (bayer[y & 7][x & 7] * 2 + 1) * 128)
+				r[x >> 3] |= static_cast<unsigned char>(0x80 >> (x & 7));
+		}
+	}
 }
 
 /* a row added at the bottom; NULL: a copy of the last one (white for

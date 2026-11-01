@@ -51,6 +51,14 @@ when the other machine takes it: a better compression than the usual
 MH coding, so a page of text takes about half the time on the line.
 Pages that come in T.85 are saved as ordinary fax TIFF files.
 
+It also sends and receives **colour and grey-scale** pages (T.42, JPEG
+coding), again with error correction on. A colour or grey page in the
+TIFF file to send (8-bit RGB or grey, uncompressed) goes in colour when
+the other machine takes it, in grey when it takes only grey, and as a
+black-and-white dithered page otherwise. A colour page that comes in is
+saved in colour in the received TIFF file; programs that take only
+black and white (class 2 fax software) get a dithered copy.
+
 ## Fax over the internet (T.38)
 
 Fax tones do not survive many internet phone calls well. **T.38** sends
