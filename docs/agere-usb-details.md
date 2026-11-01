@@ -12,7 +12,7 @@ in the host's driver: `AGRSM.sys` on Windows, `agrmodem.ko` on Linux. The
 device is an Agere "USS" USB 2.0 controller, with an ARM core and a mask
 ROM, and behind it a Mercury codec or a "Polaris" DAA (data access
 arrangement, the line interface). dmodemd drives it through libusb
-(`dmodemd --usb`, `dmodemd/usb_agere.cpp`), as it does the SmartUSB56
+(`dmodemd --usb`, `frontend/dmodemd/usb_agere.cpp`), as it does the SmartUSB56
 ([hardware.md](hardware-details.md#agere-usb-20-soft-modem)). It needs a
 USB 2.0 (high speed) port.
 

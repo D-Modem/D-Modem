@@ -17,7 +17,7 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [T.30](https://www.itu.int/rec/T-REC-T.30) | Group 3 facsimile procedures, ECM | `dsp/t30.cpp` | [T.30.pdf](T.30.pdf) |
 | [T.31](https://www.itu.int/rec/T-REC-T.31) | Class 1 fax AT commands | `dsp/fax_class1.cpp` | [T.31.pdf](T.31.pdf) |
 | [T.32](https://www.itu.int/rec/T-REC-T.32) | Class 2 and 2.0 fax AT commands | `dsp/fax_class2.cpp` | [T.32.pdf](T.32.pdf) |
-| [T.38](https://www.itu.int/rec/T-REC-T.38) | Fax over IP: IFP packets, UDPTL | `dsp/t38.cpp`, `dsp/t30.cpp` (T.38 terminal), `ari/` | [T.38.pdf](T.38.pdf) |
+| [T.38](https://www.itu.int/rec/T-REC-T.38) | Fax over IP: IFP packets, UDPTL | `dsp/t38.cpp`, `dsp/t30.cpp` (T.38 terminal), `frontend/ari/` | [T.38.pdf](T.38.pdf) |
 | [V.8](https://www.itu.int/rec/T-REC-V.8) | Start-up: ANSam, CM/JM/CJ | `dsp/dp_v34.cpp` | [V.8.pdf](V.8.pdf) |
 | [V.13](https://www.itu.int/rec/T-REC-V.13) | Simulated carrier control | `core/v13.cpp` (S48) | [V.13.pdf](V.13.pdf) |
 | [V.17](https://www.itu.int/rec/T-REC-V.17) | 14400 bit/s fax modem | `dsp/fax_modems.cpp` | [V.17.pdf](V.17.pdf) |
@@ -46,8 +46,8 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.92](https://www.itu.int/rec/T-REC-V.92) | Quick connect, modem-on-hold, PCM upstream | `dsp/v92.cpp`, `dsp/dp_v34.cpp` | [V.92.pdf](V.92.pdf) |
 | [V.110](https://www.itu.int/rec/T-REC-V.110) | Rate adaption on an ISDN B-channel | `dsp/v110.cpp`, `dsp/dp_clear.cpp` | [V.110.pdf](V.110.pdf) |
 | [V.120](https://www.itu.int/rec/T-REC-V.120) | HDLC rate adaption on an ISDN B-channel | `link/lapb.cpp`, `core/modem.cpp` (`+B2`) | [V.120.pdf](V.120.pdf) |
-| [V.150.1](https://www.itu.int/rec/T-REC-V.150.1) | Modem-over-IP: modem relay (SSE, SPRT, the MoIP messages, SDP) | `dsp/dp_relay.cpp`, `dmodemd/v150.cpp`, `dmodemd/sip.cpp` ([v150-details.md](../v150-details.md)) | [V.150.1.pdf](V.150.1.pdf) |
-| [V.152](https://www.itu.int/rec/T-REC-V.152) | Voice band data over IP (`a=gpmd`) | `dmodemd/sip.cpp` | [V.152.pdf](V.152.pdf) |
+| [V.150.1](https://www.itu.int/rec/T-REC-V.150.1) | Modem-over-IP: modem relay (SSE, SPRT, the MoIP messages, SDP) | `dsp/dp_relay.cpp`, `frontend/dmodemd/v150.cpp`, `frontend/dmodemd/sip.cpp` ([v150-details.md](../v150-details.md)) | [V.150.1.pdf](V.150.1.pdf) |
+| [V.152](https://www.itu.int/rec/T-REC-V.152) | Voice band data over IP (`a=gpmd`) | `frontend/dmodemd/sip.cpp` | [V.152.pdf](V.152.pdf) |
 | [V.250](https://www.itu.int/rec/T-REC-V.250) | AT commands | `core/at.cpp` | [V.250.pdf](V.250.pdf) |
 | [V.70](https://www.itu.int/rec/T-REC-V.70) | Digital simultaneous voice and data (DSVD) | `dsp/dp_v8bis.cpp`, `link/v76.cpp` ([v70-details.md](../v70-details.md)) | [V.70.pdf](V.70.pdf) |
 | [V.75](https://www.itu.int/rec/T-REC-V.75) | DSVD's control: H.245's messages in V.76's frames | `link/v76.cpp`, `link/h245.cpp` | [V.75.pdf](V.75.pdf) |

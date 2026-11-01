@@ -202,10 +202,10 @@ endif()
 if(MSVC)
 	string(APPEND _re_cflags " -DDISABLE_RE_ARG")
 endif()
-# (Haiku: cmake/libre-haiku.patch, for its interface ioctls and its lack
-# of a routing table listing)
+# (Haiku: platforms/haiku/libre-haiku.patch, for its interface ioctls
+# and its lack of a routing table listing)
 if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
-	set(libre_PATCH ${CMAKE_CURRENT_LIST_DIR}/libre-haiku.patch)
+	set(libre_PATCH ${CMAKE_CURRENT_LIST_DIR}/../platforms/haiku/libre-haiku.patch)
 	set(_re_stamp ${_re_stamp}-haiku)
 endif()
 if(NOT EXISTS ${_re_lib} OR NOT EXISTS ${_re_stamp})

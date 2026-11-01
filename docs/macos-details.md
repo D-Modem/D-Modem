@@ -13,7 +13,7 @@ It is the same modem as on Linux:
 The USB modems (`--usb`) work too: Smart Link's SmartUSB56, the pico-serial Line and WB sticks, and Agere's USB 2.0 soft modem. dmodemd reaches them through libusb's IOKit backend, which is built along with dmodemd.
 
 These also build on macOS:
-- libdmodem (`dmodemd/dmodem.h`);
+- libdmodem (`frontend/dmodemd/dmodem.h`);
 - `libdmodem_sip.a`;
 - dmodem-ari;
 - the test programs.
@@ -80,7 +80,7 @@ dmodemd takes the same options as on Linux (see the [README](../README.md)). The
 - If `/dev` refuses the link, use the path that dmodemd prints at start-up (``Use `...' as modem device``).
 
 **Real-time scheduling.** macOS has no `SCHED_FIFO` for a process and no `mlockall()`.
-- Without `-n`, the line's thread gets Mach's time constraint policy, as audio threads do: a period of 10 ms, with up to 5 ms of computation in each (`go_realtime()` in `dmodemd/main.cpp`).
+- Without `-n`, the line's thread gets Mach's time constraint policy, as audio threads do: a period of 10 ms, with up to 5 ms of computation in each (`go_realtime()` in `frontend/dmodemd/main.cpp`).
 - This needs no root, and no memory is locked.
 - Threads made later, such as the SIP user agent's, keep the normal priority.
 
@@ -97,17 +97,17 @@ dmodemd takes the same options as on Linux (see the [README](../README.md)). The
 The offline tests (`ctest -L quick`) run as on Linux.
 
 The USB modems' calls need no `LD_PRELOAD` on macOS:
-- Each fake modem (`dmodemd/test/fake_*.cpp`) is linked into a dmodemd of its own in libusb's place: `dmodemd_fake_st7554`, `dmodemd_fake_pico_line`, `dmodemd_fake_pico_wb` and `dmodemd_fake_agere`. Windows' tests do the same.
+- Each fake modem (`frontend/dmodemd/test/fake_*.cpp`) is linked into a dmodemd of its own in libusb's place: `dmodemd_fake_st7554`, `dmodemd_fake_pico_line`, `dmodemd_fake_pico_wb` and `dmodemd_fake_agere`. Windows' tests do the same.
 - On macOS these tests keep their Linux names: `dmodemd_usb`, `dmodemd_pico_line`, `dmodemd_pico_wb` and `dmodemd_agere`.
-- They run dmodemd without `-n` on macOS (`dmodemd/test/usb_dte.py`). Without real-time scheduling the CI runner woke the line's loop tens of milliseconds late, and the calls failed.
-- The test's line programs (`line_exchange`, `wb_pair`) ask for the same time constraint policy (`dmodemd/test/mac_realtime.h`).
+- They run dmodemd without `-n` on macOS (`frontend/dmodemd/test/usb_dte.py`). Without real-time scheduling the CI runner woke the line's loop tens of milliseconds late, and the calls failed.
+- The test's line programs (`line_exchange`, `wb_pair`) ask for the same time constraint policy (`frontend/dmodemd/test/mac_realtime.h`).
 - The kernel's `power/wakeup` check is Linux's alone, since only Linux has it.
 
 The ALSA line's test is Linux's.
 
 ## What the port changed
 
-Most of the tree was POSIX already. `dmodemd/portable.h` already had macOS's ways of doing four things that Linux does its own way:
+Most of the tree was POSIX already. `frontend/dmodemd/portable.h` already had macOS's ways of doing four things that Linux does its own way:
 - closing descriptors on exec;
 - sending without raising SIGPIPE;
 - sleeping until a monotonic time;
@@ -117,8 +117,8 @@ For macOS the port added:
 - **libusb's IOKit backend** (`cmake/libusb.cmake`): the release's own `Xcode/config.h`, linked with IOKit, CoreFoundation, Security and the Objective-C runtime, as libusb's configure does.
 - **libre's system libraries** (`cmake/libre.cmake`): SystemConfiguration and CoreFoundation for its DNS servers, and libresolv for `res_ninit()`. libre's and Mbed TLS's builds get the build's architectures, passed as one argument.
 - **Mbed TLS** as the default crypto (`DMODEM_CRYPTO`), and macOS 11 as the default oldest macOS (`CMAKE_OSX_DEPLOYMENT_TARGET`).
-- **Real-time scheduling** through Mach's time constraint policy (`dmodemd/main.cpp`).
-- **The pty** (`dmodemd/pty.cpp`): a macOS pty master takes no terminal settings before its slave has been opened, so dmodemd opens the slave once while it sets the pty up.
+- **Real-time scheduling** through Mach's time constraint policy (`frontend/dmodemd/main.cpp`).
+- **The pty** (`frontend/dmodemd/pty.cpp`): a macOS pty master takes no terminal settings before its slave has been opened, so dmodemd opens the slave once while it sets the pty up.
 - **`snprintf()`, bounded, everywhere**, since `sprintf()` is deprecated in Apple's SDK.
 - **The test helpers**:
   - no `clock_nanosleep()`: a `nanosleep()` for the time that is left;

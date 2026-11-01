@@ -248,7 +248,7 @@ Other results:
   HostLatency), the call connects as before; V.42 then carries 83 kbit/s
   each way (LAPM's window waits a longer round trip). dmodemd itself
   runs the call between two fake WB sticks on this pair in real time
-  (`dmodemd/test/pico_wb_test.py`, [hardware.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).
+  (`frontend/dmodemd/test/pico_wb_test.py`, [hardware.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).
 - **Dropout.** A 0.5 s cut of the pair costs one retrain. The data goes
   on after it, and LAPM sends again what was lost.
 - **CPU.** One end takes about 1.5% of one x86 core at 96 kHz.

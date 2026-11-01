@@ -14,8 +14,8 @@ the references here are to ITU-T V.150.1 (01/2003).
 | `DP_RELAY` (151) | `dsp/dp_relay.cpp` | The relay pump. It waits for the relay to come up, `CONNECT`s at its rates, then moves octets between the host and the core's asynchronous link as start-stop characters (8N1), within the rate each way, and sends silence. No relay within S7, or the relay over, is `DPSTAT_ERROR` (`NO CARRIER`). It has no `AT+MS` name: the core picks it |
 | `struct dp_relay`, `MDMPRM_RELAY` (75) | `dsp/modem_defs.h`, `core/interface.cpp` | The pump's view of the host: `state()` (0 not up, 1 up with the rates, -1 over), `read()`, `write()` |
 | `Host::relay_line()`, `relay_state()`, `relay_read()`, `relay_write()` | `core/dcore.h` | The host says a call is relayed. `Modem::relay_channel()` is true for one at 8000 Hz in data mode (`+FCLASS=0`); `change_dp()` then starts `DP_RELAY` in place of `+MS`'s pump: at once when answering (the answer delay is short, as on a clear channel), after call progress hears the answer tone when calling. `DP_RELAY` is in the list of pumps with no V.42 and MNP of the core's own: the far gateway's link carries the error correction |
-| `dmd::v150::Sse`, `Sprt`, `Session` | `dmodemd/v150.h`, `v150.cpp` | Annex C's SSE coding, Annex B's SPRT, and the MoIP messages of clause 15.4 as a session, as plain data (the caller's clock, packets as octets) |
-| `Relay`, `Media` | `dmodemd/sip.cpp` | The session and its SPRT socket, shared by the audio thread (the SSEs, SPRT's packets every 20 ms, ANSam as events) and the modem thread (`sip::relay_state()` and friends, through `SipLine`) |
+| `dmd::v150::Sse`, `Sprt`, `Session` | `frontend/dmodemd/v150.h`, `v150.cpp` | Annex C's SSE coding, Annex B's SPRT, and the MoIP messages of clause 15.4 as a session, as plain data (the caller's clock, packets as octets) |
+| `Relay`, `Media` | `frontend/dmodemd/sip.cpp` | The session and its SPRT socket, shared by the audio thread (the SSEs, SPRT's packets every 20 ms, ANSam as events) and the modem thread (`sip::relay_state()` and friends, through `SipLine`) |
 
 ## The call set-up (Annex E)
 
@@ -112,9 +112,9 @@ disconnect) and ends.
 
 | Test | What it covers |
 |---|---|
-| `V150.*` (`dmodemd/test/v150_test.cpp`, label `quick`) | The SSE and `CONNECT` codings; SPRT's header, acknowledgement timing and BSN update; 5000 octets on TC1 with every third packet lost and a slow reader; two sessions through the start (V.34 33600), a V.22bis-only answerer, no modulation in common (cleared down), 20000 octets each way with every fifth packet lost, a hang-up (`CLEARDOWN`), and a far end that is not D-TCX and compresses |
+| `V150.*` (`frontend/dmodemd/test/v150_test.cpp`, label `quick`) | The SSE and `CONNECT` codings; SPRT's header, acknowledgement timing and BSN update; 5000 octets on TC1 with every third packet lost and a slow reader; two sessions through the start (V.34 33600), a V.22bis-only answerer, no modulation in common (cleared down), 20000 octets each way with every fifth packet lost, a hang-up (`CLEARDOWN`), and a far end that is not D-TCX and compresses |
 | `CoreRelay.*` (`core/test/core_test.cpp`, label `quick`) | Two modems on relayed lines joined by the test's own relay: the answerer in `DP_RELAY` at once, the caller after call progress hears 2100 Hz; `CONNECT 33600` at both, 2000 and 1500 octets through a 64-octet window, and `NO CARRIER` at both when the relay ends |
-| `dmodemd_v150` (`dmodemd/test/v150_test.py`, label `quick`) | dmodemd with `SIP_V150=yes` against the script's own SIP peer and gateway (SSE on RTP, SPRT with its acknowledgements): calling out (the offer's lines, ANSam events from the gateway, `SSE:M` CM, `INIT`, `JM_INFO`, `CONNECT`, a line each way, the gateway's `CLEARDOWN` giving `NO CARRIER`) and answering (dmodemd's ANSam events, `SSE:M` p', `INIT`, `JM_INFO`, `CONNECT`, a line each way) |
+| `dmodemd_v150` (`frontend/dmodemd/test/v150_test.py`, label `quick`) | dmodemd with `SIP_V150=yes` against the script's own SIP peer and gateway (SSE on RTP, SPRT with its acknowledgements): calling out (the offer's lines, ANSam events from the gateway, `SSE:M` CM, `INIT`, `JM_INFO`, `CONNECT`, a line each way, the gateway's `CLEARDOWN` giving `NO CARRIER`) and answering (dmodemd's ANSam events, `SSE:M` p', `INIT`, `JM_INFO`, `CONNECT`, a line each way) |
 
 ## Not done
 

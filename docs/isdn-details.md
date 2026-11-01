@@ -276,7 +276,7 @@ to E3 bits.
 
 RFC 4040's CLEARMODE carries the 64 kbit/s clear channel as an RTP
 payload (`CLEARMODE/8000`, on a dynamic payload type): the octets as
-they are, with no codec. dmodemd (`dmodemd/sip.cpp`) handles it as
+they are, with no codec. dmodemd (`frontend/dmodemd/sip.cpp`) handles it as
 follows.
 
 - **Dialling with `AT+MS=CLEAR`:** the offer lists CLEARMODE first (on
@@ -307,7 +307,7 @@ network. X.75 retransmits whatever is lost.
 
 ### Test
 
-`dmodemd/test/clearmode_test.py` plays the far end itself: a SIP peer,
+`frontend/dmodemd/test/clearmode_test.py` plays the far end itself: a SIP peer,
 and the far end of the clear channel pump on the call's RTP. It checks
 both directions:
 
@@ -352,7 +352,7 @@ carries on as `nobody`, as it does for its pty.
 - **Layer 2** (LAPD, including the TEI, the terminal endpoint
   identifier) is the kernel's.
 - **Call control** (Q.931) on top of it is dmodemd's own:
-  `dmodemd/q931.cpp`, the user side of ETSI's Euro-ISDN.
+  `frontend/dmodemd/q931.cpp`, the user side of ETSI's Euro-ISDN.
 
 ### Calls out
 
@@ -405,14 +405,14 @@ Overlap dialling, supplementary services, and PRI (primary rate) cards.
 
 **Untested on real hardware.**
 
-- `dmodemd/test/misdn_test.py` runs two dmodemd on fake cards
-  (`dmodemd/test/fake_misdn.cpp`, loaded with `LD_PRELOAD`), connected
+- `frontend/dmodemd/test/misdn_test.py` runs two dmodemd on fake cards
+  (`frontend/dmodemd/test/fake_misdn.cpp`, loaded with `LD_PRELOAD`), connected
   through the script's own ISDN network. It covers:
   - a clear channel call (X.75, caller ID, text each way);
   - a 3.1 kHz audio call with V.22bis;
   - `BUSY` (cause 17) and `NO ANSWER` (cause 19);
   - the bit-reversed idle A-law octets of the audio call.
-- `dmodemd/test/q931_test.cpp` covers Q.931's states, timers and
+- `frontend/dmodemd/test/q931_test.cpp` covers Q.931's states, timers and
   messages.
 
 The bit reversal follows Asterisk's chan_misdn and LCR, but no real card
@@ -441,7 +441,7 @@ The profile's `clear` option (in `dmodem.conf`) decides:
 | `no` | never: digital calls run as G.711 audio, as before |
 
 FreeSWITCH's `mod_dmodem` has the same option through the shared bridge
-(`pbx/dmodem_bridge.c`). There, `auto` behaves like `no`, because
+(`frontend/pbx/dmodem_bridge.c`). There, `auto` behaves like `no`, because
 FreeSWITCH does not tell the module the bearer capability.
 
 **Not yet tried on real ISDN hardware.** chan_dahdi is expected to hand a
@@ -452,7 +452,7 @@ taken as clear.
 
 ## codec_clearmode: CLEARMODE in Asterisk
 
-`asterisk/codec_clearmode.c` adds RFC 4040's codec to Asterisk.
+`frontend/asterisk/codec_clearmode.c` adds RFC 4040's codec to Asterisk.
 
 - **Build:** it is built and installed whenever Asterisk's headers are
   found. It contains no D-Modem code and is under Asterisk's
@@ -479,7 +479,7 @@ A call that reaches `DModem()` in CLEARMODE is clear, whatever the
 profile's `clear` option says (with `clear = no`, a notice is logged).
 The modem runs `AT+B2`'s protocol on it.
 
-`asterisk/test/sip.sh` with `CODEC=clearmode` runs dmodemd's X.75 call
+`frontend/asterisk/test/sip.sh` with `CODEC=clearmode` runs dmodemd's X.75 call
 through Asterisk in CLEARMODE, and checks that it connected at
 64000/64000 bit/s.
 
@@ -533,7 +533,7 @@ eight of them that `+CBST` has pass with D-Modem calling.
 
 ## CAPI 2.0: dmodem-capid
 
-`dmodem-capid` (`capi/`) makes a D-Modem a CAPI 2.0 controller. CAPI
+`dmodem-capid` (`frontend/capi/`) makes a D-Modem a CAPI 2.0 controller. CAPI
 (Common ISDN API) is the programming interface that much ISDN software
 was written for: capi4hylafax, chan_capi, pppd's capiplugin, and the BBS
 and mailer software of the isdn4linux years.
@@ -664,11 +664,11 @@ set-up, takes each plain `RING`, and offers every call as an audio call.
 - No Windows `capi2032.dll` yet.
 
 libdmodem's `dmodem_ring()` rings a modem, for a program that learns of
-calls itself; `capi/test/capi_test.cpp` uses it.
+calls itself; `frontend/capi/test/capi_test.cpp` uses it.
 
 ### Tests
 
-`capi/test/capi_test.cpp` runs the controller on one of two libdmodem
+`frontend/capi/test/capi_test.cpp` runs the controller on one of two libdmodem
 modems on a simulated line, with an application of the test's own. It
 covers:
 

@@ -101,7 +101,7 @@ On 2000 and XP (ME runs the same `.sys` files) [seen]:
 **Isochronous streams** (`KIsoBidiChannel`) [seen]:
 - 2 OUT and 2 IN transfers of 40 packets (1 ms each) are in flight.
   Linux's driver, and dmodemd, use 3 transfers of 5 packets
-  (`ISO_TRANSFERS`, `ISO_PACKETS` in `dmodemd/usb_line.h`). Property 0x5A
+  (`ISO_TRANSFERS`, `ISO_PACKETS` in `frontend/dmodemd/usb_line.h`). Property 0x5A
   changes the count.
 - First a 2-byte OUT "start" packet at the current frame + 10. IN
   transfers then go at explicit frames from + 13, OUT ones ASAP.
@@ -583,7 +583,7 @@ decodes caller ID itself; this one does not [inferred].
 
 ## What this means for dmodemd
 
-`dmodemd/usb_line.cpp` follows Linux, with more taken from Windows
+`frontend/dmodemd/usb_line.cpp` follows Linux, with more taken from Windows
 (items 1, 2, 6, 7, 8, 9, 10, 11 and 12). Against Windows:
 
 1. **Caller ID: done.** Caller ID is off by default (`AT#CID=0`). With
@@ -640,9 +640,9 @@ decodes caller ID itself; this one does not [inferred].
    (0x16d46) with `Options.Buzzer`: BUZEN (0x0800) set for any level but
    0, cleared at 0; dmodemd's levels are the core's ATM/ATL speaker.
 13. **Rates**: dmodemd has Windows' three control words, for 8000,
-   9600 and 16000 Hz (`cword()` in `dmodemd/usb_line.cpp`), and not
+   9600 and 16000 Hz (`cword()` in `frontend/dmodemd/usb_line.cpp`), and not
    Linux's 24000 Hz word (0x3E8). Its `-r` option takes only 8000 or
-   9600 for this modem (`line_rate_ok()` in `dmodemd/options.h`), so
+   9600 for this modem (`line_rate_ok()` in `frontend/dmodemd/options.h`), so
    16000 Hz is not reachable from the command line.
 
 ## Open questions

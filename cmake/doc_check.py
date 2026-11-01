@@ -25,8 +25,7 @@ import re
 import subprocess
 import sys
 
-DIRS = ('ari', 'asterisk', 'compat', 'core', 'dmodemd', 'dsp', 'freeswitch',
-        'link', 'pbx', 'winmodem')
+DIRS = ('core', 'dsp', 'frontend', 'include', 'link', 'platforms')
 EXTS = ('.c', '.cpp', '.h', '.hpp')
 KEYWORDS = re.compile(r'^(if|for|while|switch|catch|return|sizeof|decltype|'
                       r'alignof|alignas|static_assert|__attribute__|'

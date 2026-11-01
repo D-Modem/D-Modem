@@ -18,7 +18,7 @@ the port works, see [the technical details](windows-details.md).
 You can build it on Linux for Windows:
 
     sudo apt-get install cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix clang lld
-    cmake -B build-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/mingw-w64.cmake
+    cmake -B build-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=platforms/windows/mingw-w64.cmake
     cmake --build build-win
 
 Or on Windows, from a Developer Command Prompt for Visual Studio 2022:

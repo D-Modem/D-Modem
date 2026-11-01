@@ -143,19 +143,19 @@ dmodem_test_exe(vwb_test vwb_test.cpp vwb_line.cpp ${S}/vwb.cpp ${S}/rs.cpp)
 dmodem_gtest(vwb_test LABELS quick)
 # and under libdmodem: AT&L1, V.42 and V.44 on top
 dmodem_test_exe(vwb_call_test vwb_call_test.cpp vwb_line.cpp)
-target_include_directories(vwb_call_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
+target_include_directories(vwb_call_test PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 target_link_libraries(vwb_call_test PRIVATE dmodem)
 dmodem_gtest(vwb_call_test LABELS quick)
 # leased lines and dry pairs in the voice band: AT&L1 and AT&L2, the
 # 4-wire pumps, V.54's loops, V.13
 dmodem_test_exe(leased_call_test leased_call_test.cpp)
-target_include_directories(leased_call_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
+target_include_directories(leased_call_test PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 target_link_libraries(leased_call_test PRIVATE dmodem)
 dmodem_gtest(leased_call_test LABELS quick)
 # the clear 64 kbit/s channel (AT+MS=CLEAR): two libdmodem modems on a
 # simulated digital channel
 dmodem_test_exe(clear_call_test clear_call_test.cpp)
-target_include_directories(clear_call_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
+target_include_directories(clear_call_test PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 target_link_libraries(clear_call_test PRIVATE dmodem)
 dmodem_gtest(clear_call_test LABELS quick)
 # V.110 against libosmocore's (OSMOCORE_SRC: a libosmocore source tree,
@@ -185,7 +185,7 @@ if(OSMOCORE_SRC AND EXISTS ${OSMOCORE_SRC}/src/isdn/v110.c)
 	target_compile_options(osmo_v110_peer PRIVATE -w)
 	dmodem_test_exe(v110_osmo_test v110_osmo_test.cpp)
 	target_include_directories(v110_osmo_test PRIVATE
-		${PROJECT_SOURCE_DIR}/dmodemd)
+		${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 	target_link_libraries(v110_osmo_test PRIVATE dmodem osmo_v110_peer)
 	dmodem_gtest(v110_osmo_test LABELS quick osmocom)
 endif()
@@ -249,8 +249,8 @@ dmodem_test_exe(fax_doc fax_doc.cpp fax_docs.cpp ${S}/t4.cpp ${S}/tiff.cpp)
 target_link_libraries(fax_doc PRIVATE GTest::gtest)
 # libdmodem: pairs of its modems back to back
 dmodem_test_exe(dmodem_test dmodem_test.cpp
-	${PROJECT_SOURCE_DIR}/dmodemd/rtp_events.cpp)
-target_include_directories(dmodem_test PRIVATE ${PROJECT_SOURCE_DIR}/dmodemd)
+	${PROJECT_SOURCE_DIR}/frontend/dmodemd/rtp_events.cpp)
+target_include_directories(dmodem_test PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 target_link_libraries(dmodem_test PRIVATE dmodem)
 dmodem_gtest(dmodem_test LABELS quick)
 dmodem_test_exe(dmodem_fax_test dmodem_fax_test.cpp fax_docs.cpp)

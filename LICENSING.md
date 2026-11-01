@@ -18,16 +18,16 @@ applies to every module loaded into it. The AGPL-3.0 and the GPL-2.0-only
 can't be combined in one work, so D-Modem's modem is not shipped as an
 Asterisk module:
 
-- **dmodem-ari** (`ari/`) is how D-Modem serves Asterisk calls. It is a
+- **dmodem-ari** (`frontend/ari/`) is how D-Modem serves Asterisk calls. It is a
   program of its own that drives Asterisk over the Asterisk REST
   Interface, which Asterisk's `LICENSE` says need not be under the GPL
   (and grants a licence for in any case). It is under the AGPL-3.0, or
   the commercial licence, like the rest ([docs/ari.md](docs/ari.md)).
-- **codec_clearmode** (`asterisk/codec_clearmode.c`), RFC 4040's
+- **codec_clearmode** (`frontend/asterisk/codec_clearmode.c`), RFC 4040's
   CLEARMODE codec, has no D-Modem code in it and is under the GPL-2.0-only,
   Asterisk's licence. It can be built and shipped as any Asterisk module.
-- **app_dmodem** (`asterisk/app_dmodem.c`, GPL-2.0-only) is the glue for
-  running the modem inside Asterisk. Built, it holds `pbx/dmodem_bridge.c`
+- **app_dmodem** (`frontend/asterisk/app_dmodem.c`, GPL-2.0-only) is the glue for
+  running the modem inside Asterisk. Built, it holds `frontend/pbx/dmodem_bridge.c`
   and libdmodem (AGPL-3.0-only), so a built `app_dmodem.so` falls under
   both licences at once and may not be distributed by anyone, under the
   AGPL or the commercial licence. It is off by default
@@ -37,7 +37,7 @@ Asterisk module:
 
 ## Smart Link's ST7554 driver
 
-`dmodemd/usb_line.cpp` (the SmartUSB56 line) has the ST7554's registers,
+`frontend/dmodemd/usb_line.cpp` (the SmartUSB56 line) has the ST7554's registers,
 their values and its start-up from Smart Link's Linux driver for it
 (`drivers/st7554.c` of slmodem 2.9.11, copyright 2002 Smart Link Ltd.),
 under the BSD-3-Clause licence. The file keeps that licence's notice
@@ -79,7 +79,7 @@ the system:
 - **GoogleTest** (the tests only): BSD-3-Clause.
 - The **Windows Driver Kit**'s UMDF headers and stub library
   (`WdfDriverStubUm.lib`), which the virtual modem driver
-  (`winmodem/driver.cpp`) is built with on Windows: Microsoft's, under
+  (`platforms/windows/winmodem/driver.cpp`) is built with on Windows: Microsoft's, under
   the WDK's licence; the stub is linked into `dmodemvm.dll`. Where there
   is no WDK the driver is only compiled, against the UMDF headers of
   Microsoft's Windows-Driver-Frameworks (MIT). The driver's code and its
@@ -94,7 +94,7 @@ the system:
 D-Modem began as Aon's D-Modem (2021, GPL-2.0-or-later), on Smart Link's
 slmodemd (Smart Link Ltd., 2001 to 2004, under a BSD licence). None of
 their code is left (dmodemd's SmartUSB56 line takes the ST7554's registers
-from Smart Link's BSD-licensed driver for it, above). Aon's last, the SIP user agent `dmodemd/sip.cpp`,
+from Smart Link's BSD-licensed driver for it, above). Aon's last, the SIP user agent `frontend/dmodemd/sip.cpp`,
 and Smart Link's last (the modem core in `core/`, the HDLC framing, LAPM
 and V.42bis in `link/`, the data pumps' interface and two simple pumps in
 `dsp/`, the pumps' test loopback, and dmodemd's main program, options and

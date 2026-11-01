@@ -16,7 +16,7 @@ tree.
 This page is a record of what was fixed at the time. File names are
 given as they are now:
 
-- the daemon `slmodemd/` is now `dmodemd/` (its ctest `slmodemd_root` is
+- the daemon `slmodemd/` is now `frontend/dmodemd/` (its ctest `slmodemd_root` is
   now `dmodemd_root`);
 - the test harnesses `dsp/test/half_*.c` are now `half_*.cpp`, and the
   helpers they shared (`half_dte.h`, `half_stack.h`) are now part of
@@ -226,18 +226,18 @@ the test that now checks it, where there is one.
 
 The daemon was still called slmodemd at the time.
 
-- **`dmodemd/dmodem.cpp`**: `dmodem_dial()` with a number of 124
+- **`frontend/dmodemd/dmodem.cpp`**: `dmodem_dial()` with a number of 124
   characters or more read past its buffer. It now returns -1.
-- **`dmodemd/sip.cpp`**: the dial string went into the SIP URI as it
+- **`frontend/dmodemd/sip.cpp`**: the dial string went into the SIP URI as it
   was: `ATDT5551000` called `sip:T5551000@...` (NO CARRIER from
   Asterisk), and pauses and a formatted number's dashes went along. A
   telephone number is now its digits and DTMF characters only; anything
   else is a user name, taken as it is. Code: `sip::dial_user()`, now in
-  `dmodemd/sip_dial.cpp`. Tests: `sip_dial_test`;
-  `DIAL=ATDT asterisk/test/sip.sh`.
-- **`dmodemd/sip.cpp`**: a `SIP_LOGIN` with an '@' in the password was
+  `frontend/dmodemd/sip_dial.cpp`. Tests: `sip_dial_test`;
+  `DIAL=ATDT frontend/asterisk/test/sip.sh`.
+- **`frontend/dmodemd/sip.cpp`**: a `SIP_LOGIN` with an '@' in the password was
   split at the wrong '@'.
-- **`dmodemd/sip.cpp`**: the outgoing call's id was stored only once
+- **`frontend/dmodemd/sip.cpp`**: the outgoing call's id was stored only once
   `pjsua_call_make_call()` returned. An INVITE arriving in between (with
   `-L`) took the line and was left ringing, and the call's own
   DISCONNECTED arriving in between was not recognised as ours, so
@@ -248,7 +248,7 @@ The daemon was still called slmodemd at the time.
     `ringing` check;
   - the port goes into the bridge in the service thread, which alone
     keeps `conf_id`.
-- **`dmodemd/sip.cpp`**: one port served every call, without a group
+- **`frontend/dmodemd/sip.cpp`**: one port served every call, without a group
   lock of its own. From pjproject 2.15 on, the bridge gives such a port
   a group lock in its port pool, whose last reference the port keeps, so
   each call's pool was never freed. And `call_cleanup()` closed the
@@ -258,29 +258,29 @@ The daemon was still called slmodemd at the time.
   (the modem sees the end, and a read the media clock waits in returns)
   and it leaves the bridge; once the bridge is done with it, its
   `on_destroy` closes the socket and frees the pool. Test:
-  `CALLS=3 asterisk/test/sip.sh`.
-- *Since then*, `dmodemd/sip.cpp` has moved from pjproject to libre, so
+  `CALLS=3 frontend/asterisk/test/sip.sh`.
+- *Since then*, `frontend/dmodemd/sip.cpp` has moved from pjproject to libre, so
   the code of the last two entries (`pjsua_call_make_call()`,
   `audio_attach()`, `call_cleanup()`, `conf_id`, `on_destroy`) is gone.
-- **`dmodemd/pipe_modem.cpp`**: `MODEM_REC` called `fclose(NULL)` at
+- **`frontend/dmodemd/pipe_modem.cpp`**: `MODEM_REC` called `fclose(NULL)` at
   exit when one file could not be made, and leaked a `FILE` per block.
   The run loop spun at 100% CPU once the line's other end closed.
-- **`dmodemd/pty.cpp`**: the pty master leaked when `grantpt()` or
+- **`frontend/dmodemd/pty.cpp`**: the pty master leaked when `grantpt()` or
   `unlockpt()` failed.
-- **`dmodemd/dmodem.cpp`, `core/modem.cpp`**: the network's law went to
+- **`frontend/dmodemd/dmodem.cpp`, `core/modem.cpp`**: the network's law went to
   the pumps once, and again only after `dmodem_dial()` or
   `dmodem_answer()`. A later call that the DTE made (ATD, ATA) or the
   core answered (S0) ran on mu-law, whatever the configuration said. The
   core keeps the law now (`set_line_law()`) and gives it to each call's
   pumps. Test: `DmodemCxx.LawForEachCall`.
-- **`dmodemd/pipe_modem.cpp`**: `MODEM_REC` recorded nothing with
+- **`frontend/dmodemd/pipe_modem.cpp`**: `MODEM_REC` recorded nothing with
   `PIPE_SYNC`, the way the interop tests run `half_open`.
-- **`dmodemd/main.cpp`**: the pty's link was always `/dev/ttySL0`,
+- **`frontend/dmodemd/main.cpp`**: the pty's link was always `/dev/ttySL0`,
   whatever the device, so two daemons took the same link. It became
   `/dev/ttySL<n>`, n being the digits the device's name ends with
   (`/dev/slamr1` gave `/dev/ttySL1`). The link is now named
   `/dev/ttyDM<n>`.
-- **`dmodemd/main.cpp`, `pty.cpp`, `datafile.cpp`**: started as root, the
+- **`frontend/dmodemd/main.cpp`, `pty.cpp`, `datafile.cpp`**: started as root, the
   daemon went on as nobody before everything that needed root was done.
   - The data file was opened for saving only at the end, which failed
     silently with the usual layout (`/var/lib/slmodem` belonging to
@@ -298,29 +298,29 @@ The daemon was still called slmodemd at the time.
   passed to it on a socket, so it can only touch the pty the daemon
   holds.) That process also removes the link when the daemon ends, even
   if it is killed. Whatever cannot be done is logged. Test:
-  `dmodemd/test/root_test.py` (ctest `dmodemd_root`, as root).
-- **`asterisk/app_dmodem.c`, `freeswitch/mod_dmodem.c`**: the data the
+  `frontend/dmodemd/test/root_test.py` (ctest `dmodemd_root`, as root).
+- **`frontend/asterisk/app_dmodem.c`, `frontend/freeswitch/mod_dmodem.c`**: the data the
   link delivered in the block where it came up was thrown away with the
   modem's responses.
-- **`asterisk/app_dmodem.c`**: in exec mode the program was forked with
+- **`frontend/asterisk/app_dmodem.c`**: in exec mode the program was forked with
   `ast_safe_fork(0)`, so Asterisk's reaper could collect it during the
   call, and at the hangup its pid (perhaps another process's by then)
   got SIGHUP. Nothing came after that if the program ignored it. It is
   now forked with `ast_safe_fork(1)`, ours to reap: SIGHUP at the
   hangup, SIGKILL after 5 s, collected, then `ast_safe_fork_cleanup()`,
   as FreeSWITCH's module does. Test:
-  `BBS_LINGER=1 asterisk/test/run.sh AT+MS=34 bbsexec` (a program that
+  `BBS_LINGER=1 frontend/asterisk/test/run.sh AT+MS=34 bbsexec` (a program that
   closes its pty and ignores SIGHUP).
-- **`asterisk/app_dmodem.c`, `freeswitch/mod_dmodem.c`**: the TCP
+- **`frontend/asterisk/app_dmodem.c`, `frontend/freeswitch/mod_dmodem.c`**: the TCP
   connect to the profile's host (DNS and `connect()`) ran in the
   channel's thread after CONNECT, so the line's audio stopped until it
   was done. With a server slow to take the connection (9 s), D-Modem
   calling over SIP got NO CARRIER. The connect now runs in a thread of
   its own and hands its socket back on a socketpair, while the line goes
   on (what the remote sends waits in the DTE's socketpair). Tests:
-  `BBS_CONNECT_DELAY=15 asterisk/test/sip.sh` and
-  `freeswitch/test/sip.sh`.
-- **`asterisk/app_dmodem.c`**: `DMODEMSTATUS=FAX` was not documented.
+  `BBS_CONNECT_DELAY=15 frontend/asterisk/test/sip.sh` and
+  `frontend/freeswitch/test/sip.sh`.
+- **`frontend/asterisk/app_dmodem.c`**: `DMODEMSTATUS=FAX` was not documented.
 
 ### Tests
 
@@ -361,7 +361,7 @@ The daemon was still called slmodemd at the time.
   and the spandsp harness dropped what did not fit its line's queue.
   `half_dte.h` (now the `Pty` buffering in `modem_half.hpp`) keeps both
   until they are taken.
-- **`dmodemd/pipe_modem.cpp`, `dsp/test/legacy/modem_half.cpp`** (the
+- **`frontend/dmodemd/pipe_modem.cpp`, `dsp/test/legacy/modem_half.cpp`** (the
   latter since removed with `dsp/test/legacy`): with `PIPE_SYNC` the line
   of `half_open` and `half_smartlink` stood still until the first ATD or
   ATA, when its lead silence was written. While it stood, the commands
@@ -395,7 +395,7 @@ The daemon was still called slmodemd at the time.
   also gave `prctl(PR_SET_TSC)` only its two arguments, and valgrind
   reported the three after them unset (the kernel does not read them):
   they are now 0.
-- **`asterisk/test/sip_call.py`**: it printed a traceback instead of
+- **`frontend/asterisk/test/sip_call.py`**: it printed a traceback instead of
   FAIL when the daemon gave no pty or went away.
 - **`dsp/test/half_hsf.cpp`**: the INF's values were built in fixed
   buffers that a long value overran. Since the harness became a class
