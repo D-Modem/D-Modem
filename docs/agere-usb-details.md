@@ -469,8 +469,11 @@ is, on the calling side), the median of 10 frames.
 - Until a tone is heard (on the answering side), the gain is the one
   from the last call's tone; with no tone yet, +6 dB (-2 dB on the other
   USB modems).
-- For each second with more than 8 samples clipped, the gain goes a dB
-  softer.
+- For each second with more than 8 samples clipped, the gain goes
+  softer: the second's loudest sample to 1 dB below full scale, at least
+  a dB. Not once the call is online: the remote's receiver, trained on
+  the level it had, would lose the data until a retrain (the clipping is
+  logged instead).
 
 Both the gain and the tone's level are logged.
 

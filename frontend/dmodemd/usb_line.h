@@ -429,7 +429,8 @@ private:
 	/* DMODEM_USB_TX_GAIN=auto: the gain from the remote's answer tone
 	   (tx_auto_frame()), in dB: set for this call yet; the tone's frames
 	   heard (their levels, dBFS); the clipped samples at the start of
-	   this second, its frames */
+	   this second, its frames, the loudest of its samples before the
+	   gain */
 	bool tx_auto_ = false;
 	bool tx_auto_set_ = false;
 	double tx_auto_db_ = 0;
@@ -437,6 +438,7 @@ private:
 	double tx_tone_db_[10] = {};
 	u64 tx_clip_mark_ = 0;
 	s16 tx_clip_frames_ = 0;
+	s32 tx_clip_peak_ = 0;
 	/* the gain, dB */
 	/* the device's configuration: the active one's, else its first
 	   (Android: libusb asks the device for the active one when it wraps
@@ -446,8 +448,8 @@ private:
 	/* auto: the gain from the start of the call or the last one's tone */
 	void tx_auto_start();
 	/* auto: a frame looked at (the remote's 2100 Hz tone while the modem
-	   is quiet; clipping) */
-	void tx_auto_frame();
+	   is quiet; clipping), the call online or not */
+	void tx_auto_frame(bool online);
 	bool running_ = false;
 	bool dead_ = false;
 	s16 hook_ = MODEM_HOOK_ON;
