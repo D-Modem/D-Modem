@@ -85,7 +85,7 @@ static std::string name(const testing::TestParamInfo<Pumps> &i)
 	return i.param.name;
 }
 
-/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 232 V.32terbo, 61 V.61,
+/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 232 V.32terbo, 61 V.61, 126 V.26 ter,
    22 V.22, 122 V.22bis, 212 Bell 212A, 21 V.21, 23 V.23, 103 Bell 103 */
 INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v32bis", line(132, 40, 20) },
@@ -114,6 +114,12 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v61_8000", line(61, 30, 15, 8000) },
 	Pumps{ "v61_gain2_m300ppm", line(61, 30, 15, 9600, 2, -300) },
 	Pumps{ "v61_echoes", line(61, 30, 15, 9600, 0.5f, 0, -10, -15) },
+	/* V.26 ter: 2400 bit/s, its echo canceller on the near echo */
+	Pumps{ "v26ter", line(126, 40, 25) },
+	Pumps{ "v26ter_snr15", line(126, 15, 25) },
+	Pumps{ "v26ter_8000", line(126, 30, 25, 8000) },
+	Pumps{ "v26ter_gain2_m300ppm", line(126, 30, 25, 9600, 2, -300) },
+	Pumps{ "v26ter_echo6", line(126, 30, 25, 9600, 0.5f, 0, -6) },
 	Pumps{ "v22bis", line(122, 40, 20) },
 	Pumps{ "v22bis_snr15", line(122, 15, 20) },
 	Pumps{ "v22bis_8000", line(122, 30, 20, 8000) },

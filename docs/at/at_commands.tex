@@ -1616,7 +1616,7 @@ directions' rates (sent in its \std{MP} sequences).
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
 \item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
-\item +MS=? (gives \rc{(21,22,23,26,27,29,122,32,132,232,61,33,34,103,18,}\allowbreak
+\item +MS=? (gives \rc{(21,22,23,26,126,27,29,122,32,132,232,61,33,34,103,18,}\allowbreak
 \rc{45,110,5,12,212,201,202,208,56,90,91,92,150,200,64),(0,1),}\allowbreak
 \rc{(300-56000),}\allowbreak
 \rc{(300-56000)}, the
@@ -1644,6 +1644,8 @@ directions' rates (sent in its \std{MP} sequences).
 33 & V33 & \std{ITU} \std{V.33} & \std{12000} and \std{14400} bit/s, 4-wire leased. \\ \hline
 27 & V27TC & \std{ITU} \std{V.27ter} & \std{2400} and \std{4800} bit/s, 4-wire leased. \\ \hline
 26 & V26 & \std{ITU} \std{V.26} & \std{2400} bit/s \std{DPSK} (alternative A), 4-wire leased. \\ \hline
+126 & V26T, V26TER & \std{ITU} \std{V.26ter} & \std{2400} and \std{1200} bit/s \std{DPSK}, duplex on a
+  2-wire dial-up line with echo cancelling (D-Modem's number). \\ \hline
 201 & B201, BELL201 & Bell 201 & \std{2400} bit/s \std{DPSK} (\std{V.26}'s alternative B), 4-wire leased. \\ \hline
 202 & B202, BELL202 & Bell 202 & \std{1200} bit/s \std{FSK} both ways, 4-wire leased. \\ \hline
 208 & B208, BELL208 & Bell 208 & \std{4800} bit/s 8-phase \std{DPSK}, 4-wire leased. \\ \hline
