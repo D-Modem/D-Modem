@@ -138,7 +138,12 @@ class ClearEnd:
                 r, _, _ = select.select([self.rtp], [], [], max(left, 0))
                 if not r:
                     break
-                d, _ = self.rtp.recvfrom(2048)
+                d, src = self.rtp.recvfrom(2048)
+                # (the socket is the one call after another: a packet
+                # the last call's dmodemd sent before its kill, still
+                # queued, is not this call's, nor in its SRTP key)
+                if src != self.peer:
+                    continue
                 if self.rx:
                     d = self.rx.unprotect(d)
                     if d is None:
