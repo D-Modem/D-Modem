@@ -15,6 +15,8 @@
 #define DMODEM_LINK_LAPM_H
 
 
+#include <vector>
+
 #include "dm_types.h"
 #include "hdlc.h"
 
@@ -40,6 +42,18 @@ public:
 	void disconnect();
 	/* characters the DTE did not take: try again */
 	void push_rest();
+	/* V.76 (v76.h): this LAPM is a DLC of the multiplexer, which
+	   hands it its frames: the DLCI, our role (the initiator's
+	   commands have C/R 1), its windows and information fields */
+	void set_dlc(u8 dlci, bool initiator, s16 tx_win, s16 rx_win,
+		     s16 tx_info, s16 rx_info);
+	/* V.76's L-ESTABLISH: SABME, T401 for its answer */
+	void open();
+	/* V.76: the user data of our SABME and DISC (cmd), or of the UA or
+	   DM answering the remote's */
+	void set_user_data(bool cmd, const std::vector<u8> &u);
+	/* in the data phase */
+	bool up() const { return state_ == DATA; }
 	/* I frames not sent yet or not acknowledged */
 	bool tx_pending() const {
 		return sent_info_ && info_list_ && sent_info_ != info_list_;
@@ -96,6 +110,8 @@ private:
 	bool reject_ = false;
 	bool busy_ = false;     /* we cannot take more */
 	bool peer_busy_ = false;
+	bool v76_ = false;      /* a DLC of V.76's multiplexer */
+	std::vector<u8> cmd_ud_, rsp_ud_;
 	u8 cmd_addr_ = 0, rsp_addr_ = 0;
 	u8 vs_ = 0, va_ = 0, vr_ = 0;
 	u8 vs_hi_ = 0;                  /* the highest V(S) since V(A) */

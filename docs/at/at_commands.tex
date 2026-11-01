@@ -709,6 +709,7 @@ rarer ones.
  &  & \cmdl[plusMV18AM]{+MV18AM, +MV18P} & \std{V.18} answer message. \\ \hline
  &  & \cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (\std{TTY}, telex) settings. \\ \hline
  &  & \cmdl[plusA8E]{+A8E} & \std{V.8} and \std{V.8 bis}. \\ \hline
+ &  & \cmdl[plusDSVD]{+DSVD} & \std{V.70} voice and data (\std{DSVD}). \\ \hline
 \end{vtable}}
 
 \mainmatter
@@ -1653,6 +1654,27 @@ clear channel.  See \cmd{docs/dsp/v8bis.md}.
 \end{results}
 \std{V.251}'s \emph{default} \p{v8b} is 1; D-Modem's is 0, since answering with
 \std{V.8 bis} keeps a caller without it waiting about 3.5~s.
+\end{command}
+
+\begin{command}{plusDSVD}{+DSVD}{Voice and Data Together}
+D-Modem's own: \p{on} 1 offers \std{V.70}'s digital simultaneous voice and data
+(\std{DSVD}) in \std{V.8 bis} (\cmdl[plusA8E]{+A8E}'s \p{v8b} 1), and chooses it when the
+other modem offers it too.  The call then goes on with \std{V.8} and its
+modulation, and the link is \std{V.76}'s multiplexer: the \std{DTE}'s data goes
+on its data channel, opened with \std{V.75}'s messages, with error correction
+and no compression.  The protocol is then \cmd{V.76} (\cmdl[I]{ATI11}, the
+\cmd{Protocol:} report).  The voice channel is not there yet.  Without
+\std{DSVD} at the other end the call is an ordinary data call.  See
+\cmd{docs/v70.md}.
+\begin{syntax}
+\item +DSVD=[\p{on}]
+\item +DSVD? (gives \rc{+DSVD: 0})
+\item +DSVD=? (gives \rc{+DSVD: (0,1)})
+\end{syntax}
+\begin{results}
+\res{\rc{OK}}{Always.}
+\res{\rc{ERROR}}{For a value outside its range.}
+\end{results}
 \end{command}
 
 \begin{command}{B}{B\p{n}}{Communication Standard Setting}
@@ -3551,6 +3573,7 @@ modulations the modem has not got (\cmd{V23S}, \cmd{V26B}, \cmd{V26T},
 \textbf{\stdb{DIS}, \stdb{DTC}, \stdb{DCS}} & Digital Identification Signal, Digital Transmit Command and Digital Command Signal.  The fax messages that offer (\std{DIS}), ask for polling (\std{DTC}) and choose (\std{DCS}) the session's settings. \\ \hline
 \textbf{DLE} & Data Link Escape (10h).  In fax and voice modes, the character that starts a code in the data, such as \cmd{<DLE><ETX>}. \\ \hline
 \textbf{\stdb{DMT}} & Discrete Multitone.  Many carriers side by side, as in \std{V.wb} and \std{ADSL}. \\ \hline
+\textbf{\stdb{DSVD}} & Digital Simultaneous Voice and Data.  A conversation and a data connection on one modem call (\std{V.70}, \cmdl[plusDSVD]{+DSVD}). \\ \hline
 \textbf{\stdb{ECM}} & Error Correction Mode.  Fax pages sent in frames, and repeated where damaged. \\ \hline
 \textbf{\stdb{EDT}} & European Deaf Telephone.  A text telephone at \std{110}~bit/s (\std{V.18}). \\ \hline
 \textbf{\stdb{ETSI}} & European Telecommunications Standards Institute.  The European standards body. \\ \hline

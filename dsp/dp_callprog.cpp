@@ -165,7 +165,10 @@ s16 CallProgPump::start(struct modem *m, enum DP_ID id, s16 caller,
 	fine2225.init(2225, srate_ / 5, srate_);
 	fine2250.init(2250, srate_ / 5, srate_);
 	cpt_bp.bandpass(480, 1.2f, srate_);
-	v8bis = modem_get_param(m, MDMPRM_V8BIS) == 1;
+	{
+		long vb = modem_get_param(m, MDMPRM_V8BIS);
+		v8bis = vb > 0 && (vb & 1);
+	}
 	if (v8bis)
 		v8b.init(srate_, v8bis::SigRx::PAIR_INIT);
 

@@ -151,6 +151,28 @@ void Link::start(bool on, bool detect)
 		detected(true);
 }
 
+/* (see link.h): Detected, then the multiplexer on HDLC; the data
+   channel's LAPM (whatever Config asked for) without compression; Up
+   when the channel is open */
+void Link::start_v76(bool initiator)
+{
+	mnp_tried_ = false;
+	cfg_.ec = true;
+	cfg_.comp = 0;
+	cfg_.v44 = cfg_.zstd = false;
+	timer_ = 0;
+	timer_what_ = Timer::None;
+	push_pending = false;
+	proto_ = Protocol::V76;
+	owner_->status(Status::Detected);
+	mode_ = Mode::Lapm;
+	lapm_.init(this, asked_.tx_win, asked_.rx_win, asked_.tx_info,
+		   asked_.rx_info);
+	mux_.init(this, &lapm_);
+	hdlc_.start(this);
+	mux_.start(initiator);
+}
+
 /* an ISDN B-channel's own link layer (Config::b2), in place of the
    modem's: Detected, then X.75's link set-up (Up when it is done), or
    PPP's frames (Up at once) */
@@ -291,7 +313,10 @@ void Link::disconnect()
 		return;
 	timer_ = 0;
 	push_pending = false;
-	lapm_.disconnect();
+	if (proto_ == Protocol::V76)
+		mux_.disconnect();
+	else
+		lapm_.disconnect();
 }
 
 /* the data pump's transmitter: n items of nbits bits from the mode's
@@ -367,6 +392,9 @@ void Link::run_timer()
 		break;
 	case Timer::T1:
 		lapb_.t1_timeout();
+		break;
+	case Timer::Mux:
+		mux_.opening();
 		break;
 	case Timer::None:
 		break;

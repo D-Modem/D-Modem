@@ -11,9 +11,9 @@ conversation, quietly enough not to disturb the people talking.
 
 D-Modem needs it for **V.70**, voice and data at the same time on one
 call, where V.8bis is how the two ends agree to switch to that mode.
-This first part is V.8bis itself: D-Modem can now run a V.8bis exchange
-at the start of a data call, then carry on with V.8 and the usual
-modulations. Voice and data together come in later stages.
+D-Modem runs a V.8bis exchange at the start of a data call, then
+carries on with V.8 and the usual modulations; with `AT+DSVD=1` at both
+ends it chooses V.70 ([voice and data together](../v70.md)).
 
 For the full technical description, see
 [the technical details](v8bis-details.md).
@@ -45,8 +45,9 @@ two seconds longer to start, the time of the exchange.
 
 ## Limits
 
-- Only the data mode is chosen for now; voice and data together (V.70)
-  come with the next stages.
+- Only the data mode and V.70's voice and data (with `AT+DSVD=1`) are
+  chosen; the other modes V.8bis knows (video telephony, fax, text
+  telephones) are not.
 - D-Modem uses the exchanges where the answering modem stays the
   answering modem of the start-up that follows. A caller that asks the
   other way round (V.8bis transaction 7, or an answerer that sends its

@@ -203,6 +203,10 @@ const struct Kept {
 	   V.8 both ways), <v8cf> (none of the DTE's), <v8b> (0 none, 1
 	   V.8 bis at the start of a data call: modem.cpp's v8bis_call()) */
 	{ "+A8E", 4, { 1, 1, 0, 0 }, "(1),(1),(0),(0,1)" },
+	/* D-Modem's own: V.70's DSVD offered and chosen in V.8 bis
+	   (<v8b> 1), its data channel the DTE's; modem.cpp's
+	   dsvd_offered() */
+	{ "+DSVD", 1, { 0 }, "(0,1)" },
 	/* V.42bis and V.44 (6.6.1, 6.6.2/V.250): the directions and largest
 	   parameters offered, by default ours (V42BIS_MAX_*, V44_MAX_*);
 	   modem.cpp's link_init() reads them */
