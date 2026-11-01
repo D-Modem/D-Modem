@@ -1,0 +1,49 @@
+# brew install with Homebrew's downloads cached (actions/cache): the
+# bottles and its formula index (the API files), keyed on the runner image
+# (ImageOS, ImageVersion) and the package list.  No brew update (the slow,
+# networked part; the image's Homebrew is recent enough), and with the
+# index and bottles cached a hit downloads nothing.  Retried, in case a
+# download stalls.
+name: brew packages
+description: brew install, cached
+inputs:
+  packages:
+    description: the formulae (spaces or newlines between)
+    required: true
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        PKGS: ${{ inputs.packages }}
+      run: |
+        pkgs=$(printf '%s\n' $PKGS | sort -u | tr '\n' ' ')
+        echo "pkgs=$pkgs" >> "$GITHUB_OUTPUT"
+        echo "hash=$(printf '%s' "$pkgs" | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+    - id: restore
+      uses: actions/cache/restore@v4
+      with:
+        path: /tmp/brew-cache
+        key: brew-${{ env.ImageOS }}-${{ runner.arch }}-${{ env.ImageVersion }}-${{ steps.key.outputs.hash }}
+
+    - shell: bash
+      env:
+        PKGS: ${{ steps.key.outputs.pkgs }}
+        HOMEBREW_CACHE: /tmp/brew-cache
+        HOMEBREW_NO_AUTO_UPDATE: '1'
+        HOMEBREW_NO_INSTALL_CLEANUP: '1'
+        HOMEBREW_NO_ENV_HINTS: '1'
+        HOMEBREW_CURL_RETRIES: '5'
+      run: |
+        set -euo pipefail
+        for i in 1 2 3; do brew install $PKGS && exit 0; sleep $((i * 10)); done
+        exit 1
+
+    - if: steps.restore.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      continue-on-error: true
+      with:
+        path: /tmp/brew-cache
+        key: ${{ steps.restore.outputs.cache-primary-key }}
