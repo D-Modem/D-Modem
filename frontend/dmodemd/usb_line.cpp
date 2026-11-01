@@ -1649,7 +1649,8 @@ s16 UsbLine::pump(dcore::Modem &m)
 		}
 		/* (DMODEM_USB_TX_GAIN: louder or softer to the line) */
 		if (tx_auto_ && hook_ == MODEM_HOOK_OFF)
-			tx_auto_frame();
+			tx_auto_frame(m.link_state() == dcore::LinkState::Online ||
+				      m.link_state() == dcore::LinkState::HangingUp);
 		if (tx_gain_ != 4096)
 			for (s16 k = 0; k < frame_; k++) {
 				s32 x = (frame_out_[k] * tx_gain_) / 4096;
@@ -1935,10 +1936,11 @@ void UsbLine::tx_auto_start()
 	tx_tone_n_ = 0;
 	tx_clip_mark_ = tx_clipped_;
 	tx_clip_frames_ = 0;
+	tx_clip_peak_ = 0;
 }
 
 /* see usb_line.h */
-void UsbLine::tx_auto_frame()
+void UsbLine::tx_auto_frame(bool online)
 {
 	const s16 TONE_FRAMES = sizeof(tx_tone_db_) / sizeof(tx_tone_db_[0]);
 	if (!tx_auto_set_ && frame_ > 0) {
@@ -1956,16 +1958,27 @@ void UsbLine::tx_auto_frame()
 			}
 		}
 	}
-	/* (a dB softer for each second of clipping, more than 8 samples) */
+	/* (a second with more than 8 samples clipped: softer, its loudest
+	   sample 1 dB below full scale, a dB at least; not once the call is
+	   online, as the remote's receiver, trained on our level, would lose
+	   the data until a retrain) */
+	for (s16 k = 0; k < frame_; k++)
+		tx_clip_peak_ = std::max<s32>(tx_clip_peak_, std::abs(s32(frame_out_[k])));
 	if (++tx_clip_frames_ >= 50) {
 		double lo = cal_for(kind_ == Kind::Agere).min;
-		if (tx_clipped_ - tx_clip_mark_ > 8 && tx_auto_db_ > lo) {
-			tx_gain_db(std::max(lo, tx_auto_db_ - 1.0));
+		u64 clipped = tx_clipped_ - tx_clip_mark_;
+		if (clipped > 8 && tx_auto_db_ > lo && online) {
+			DBG("%" PRIu64 " samples clipped in a second: the gain kept "
+			    "online, %+.1f dB (auto)\n", clipped, tx_auto_db_);
+		} else if (clipped > 8 && tx_auto_db_ > lo) {
+			double peak = 20.0 * std::log10(std::max<s32>(tx_clip_peak_, 1) / 32768.0);
+			tx_gain_db(std::max(lo, std::min(tx_auto_db_ - 1.0, -1.0 - peak)));
 			DBG("%" PRIu64 " samples clipped in a second: the modem's samples to "
-			    "the line %+.1f dB (auto)\n", tx_clipped_ - tx_clip_mark_, tx_auto_db_);
+			    "the line %+.1f dB (auto)\n", clipped, tx_auto_db_);
 		}
 		tx_clip_mark_ = tx_clipped_;
 		tx_clip_frames_ = 0;
+		tx_clip_peak_ = 0;
 	}
 }
 
