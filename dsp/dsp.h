@@ -82,6 +82,9 @@ struct dp_runtime {
 				   the call runs at, 0 for none */
 	s16 vcvm_peer;          /* V.8 agreed on V.cvm: the peer's ... */
 	unsigned char vcvm_info[2];     /* ... information field (Annex A) */
+	s16 v8bis_sig;          /* V.8 bis: the initiating signal call
+				   progress heard (v8bis::Sig), for
+				   DP_V8BIS */
 };
 
 /*
@@ -478,6 +481,8 @@ s16 dp_sms_init(void);
 void dp_sms_exit(void);
 s16 dp_relay_init(void);
 void dp_relay_exit(void);
+s16 dp_v8bis_init(void);
+void dp_v8bis_exit(void);
 void dp_text_exit(void);
 s16 dp_v22_init(void);
 void dp_v22_exit(void);

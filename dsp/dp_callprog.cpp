@@ -25,6 +25,7 @@
 #include "dsp.h"
 #include "pump.h"
 #include "tones.h"
+#include "v8bis.h"
 
 namespace dsp {
 
@@ -116,6 +117,11 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 				   CNG (DSP_FAX_CNG=0); 0 data */
 	Osc ct;
 
+	/* V.8 bis (MDMPRM_V8BIS): an initiating signal hands the call to
+	   its pump (DP_V8BIS) */
+	s16 v8bis;
+	v8bis::SigRx v8b;
+
 	/* its name in the log */
 	const char *tag() const { return "callprog"; }
 	s16 block();
@@ -159,6 +165,9 @@ s16 CallProgPump::start(struct modem *m, enum DP_ID id, s16 caller,
 	fine2225.init(2225, srate_ / 5, srate_);
 	fine2250.init(2250, srate_ / 5, srate_);
 	cpt_bp.bandpass(480, 1.2f, srate_);
+	v8bis = modem_get_param(m, MDMPRM_V8BIS) == 1;
+	if (v8bis)
+		v8b.init(srate_, v8bis::SigRx::PAIR_INIT);
 
 	v = modem_get_sreg(m, SREG_DTMF_DURATION);
 	dial_on = ms2samples(v > 40 ? v : 95, srate_);
@@ -623,6 +632,25 @@ s16 CallProgPump::process(void *in, void *out, s32 cnt)
 				set_state(CP_DIAL);
 			break;
 		case CP_WAIT_ANSWER:
+			/* V.8 bis's initiating signal (10.2.1): its pump
+			   answers it */
+			if (v8bis && ret == DPSTAT_OK) {
+				u8 s = v8b.run(x);
+				if (s != v8bis::SIG_NONE) {
+					DSP_DBG("callprog: V.8 bis %s\n",
+						v8bis::sig_name(s));
+					if (!rt)
+						rt = reinterpret_cast<
+							struct dp_runtime *>(
+							modem_get_param(modem,
+							MDMPRM_DPRUNTIME));
+					if (rt)
+						rt->v8bis_sig = s;
+					set_state(CP_DONE);
+					std::fill(dst + i, dst + cnt, s16{0});
+					return hand_over(DP_V8BIS, 0);
+				}
+			}
 			/* a text telephone has no answer tone: its pump
 			   from the dialling's end */
 			if (text && ret == DPSTAT_OK) {

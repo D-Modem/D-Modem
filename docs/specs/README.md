@@ -32,6 +32,7 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.32](https://www.itu.int/rec/T-REC-V.32) | 9600 bit/s duplex, trellis coded | `dsp/dp_v32.cpp` | [V.32.pdf](V.32.pdf) |
 | [V.32bis](https://www.itu.int/rec/T-REC-V.32bis) | 14400 bit/s duplex | `dsp/dp_v32.cpp` | [V.32bis.pdf](V.32bis.pdf) |
 | [V.33](https://www.itu.int/rec/T-REC-V.33) | 14400 bit/s on 4-wire leased circuits | `dsp/dp_4wire.cpp`, `dsp/fax_modems.cpp` | [V.33.pdf](V.33.pdf) |
+| [V.8 bis](https://www.itu.int/rec/T-REC-V.8bis) | Identification and selection of a mode before V.8 (MR, CR, ES, MS, CL, ACK) | `dsp/v8bis.cpp`, `dsp/dp_v8bis.cpp` ([v8bis-details.md](../dsp/v8bis-details.md)) | [V.8bis.pdf](V.8bis.pdf) |
 | [V.34](https://www.itu.int/rec/T-REC-V.34) | 33600 bit/s duplex | `dsp/dp_v34.cpp`, `v34_modem.cpp`, `v34_data.cpp` | [V.34.pdf](V.34.pdf) |
 | [X.75](https://www.itu.int/rec/T-REC-X.75) | Packet-switched signalling (its LAPB, an ISDN data call's) | `link/lapb.cpp` (`+B2`, `docs/isdn.md`) | [X.75.pdf](X.75.pdf) |
 | [V.42](https://www.itu.int/rec/T-REC-V.42) | Error correction (LAPM) | `link/lapm.cpp`, `link/hdlc.cpp` | [V.42.pdf](V.42.pdf) |
@@ -48,6 +49,7 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.150.1](https://www.itu.int/rec/T-REC-V.150.1) | Modem-over-IP: modem relay (SSE, SPRT, the MoIP messages, SDP) | `dsp/dp_relay.cpp`, `dmodemd/v150.cpp`, `dmodemd/sip.cpp` ([v150-details.md](../v150-details.md)) | [V.150.1.pdf](V.150.1.pdf) |
 | [V.152](https://www.itu.int/rec/T-REC-V.152) | Voice band data over IP (`a=gpmd`) | `dmodemd/sip.cpp` | [V.152.pdf](V.152.pdf) |
 | [V.250](https://www.itu.int/rec/T-REC-V.250) | AT commands | `core/at.cpp` | [V.250.pdf](V.250.pdf) |
+| [V.251](https://www.itu.int/rec/T-REC-V.251) | AT commands for V.8 and V.8 bis (`+A8E`) | `core/at.cpp`, `core/modem.cpp` | [V.251.pdf](V.251.pdf) |
 | [V.253](https://www.itu.int/rec/T-REC-V.253) | Voice AT commands | `dsp/dsp_glue.cpp` (voice) | [V.253.pdf](V.253.pdf) |
 
 V.42's Annex A, the alternative procedure (MNP 4), which D-Modem

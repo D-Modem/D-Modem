@@ -39,6 +39,8 @@ measurements, and test lists.
   - [V.wb](dsp/vwb.md): about 149000 bit/s on a bare pair of wires
   - [K56flex](dsp/k56flex.md): the older 56k standard (as the server and
     as the customer's modem)
+  - [V.8bis](dsp/v8bis.md): agreeing on the kind of call before the
+    modems start, the first part of voice and data together (V.70)
   - [Fax](dsp/fax.md): fax modem classes 1, 2 and 2.0, a built-in fax
     machine, and fax over the internet (T.38)
 - [The data link layer](link.md): error correction and compression

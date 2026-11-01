@@ -160,6 +160,8 @@ intptr_t Modem::get_param(u32 name)
 		return link_req_;
 	case MDMPRM_TEXT:
 		return text_pump() ? param_address(&text_) : 0;
+	case MDMPRM_V8BIS:
+		return v8bis_call() ? 1 : 0;
 	case MDMPRM_RELAY:
 		if (!relay_channel())
 			return 0;

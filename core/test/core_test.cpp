@@ -2360,3 +2360,100 @@ TEST_F(CoreRelay, RelayOver)
 	EXPECT_TRUE(has(p.got_a, "NO CARRIER")) << p.got_a;
 	EXPECT_TRUE(has(p.got_b, "NO CARRIER")) << p.got_b;
 }
+
+/* the core's log lines while a test wants them */
+static std::vector<std::string> *log_kept;
+
+/* a call with V.8 bis (AT+A8E's <v8b>) at a (the caller) and b (the
+   answerer), the core's and the pumps' log kept: online at rate or
+   better, the log's lines; the call then hung up */
+static std::vector<std::string> v8bis_call(const char *a8e_a,
+					   const char *a8e_b, unsigned rate)
+{
+	std::vector<std::string> lines;
+	Pair p("");
+	log_kept = &lines;
+	dcore::log_set_hook([](const char *s) {
+		if (log_kept)
+			log_kept->push_back(s);
+	});
+	dcore::log_level = 2;
+	dsplibs_debug_level = 2;
+	EXPECT_EQ(cmd(p.a, p.la, a8e_a), "OK\r\n");
+	EXPECT_EQ(cmd(p.b, p.lb, a8e_b), "OK\r\n");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	EXPECT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	EXPECT_GE(p.a->tx_rate(), rate);
+	EXPECT_GE(p.b->tx_rate(), rate);
+	if (getenv("SHOW"))
+		for (const std::string &l : lines)
+			printf("%s", l.c_str());
+	dcore::log_level = 0;
+	dsplibs_debug_level = 0;
+	dcore::log_set_hook(nullptr);
+	log_kept = nullptr;
+	p.b->hangup_now();
+	p.run_until([](Pair &q) { return !q.a->started(); }, 15000);
+	return lines;
+}
+
+/* a line of lines has s in it */
+static bool logged(const std::vector<std::string> &lines, const char *s)
+{
+	for (const std::string &l : lines)
+		if (l.find(s) != std::string::npos)
+			return true;
+	return false;
+}
+
+/* +A8E: its values, its ranges, the values it refuses */
+TEST(Core, A8e)
+{
+	Line l;
+	Modem *m = make(l, "A");
+	EXPECT_EQ(cmd(m, l, "AT+A8E?\r"), "AT+A8E?\r\r\n+A8E: 1,1,0,0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+A8E=?\r"), "AT+A8E=?\r\r\n+A8E: (1),(1),(0),"
+		  "(0,1)\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+A8E=1,1,,1\r"), "AT+A8E=1,1,,1\r\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+A8E?\r"), "AT+A8E?\r\r\n+A8E: 1,1,0,1\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+A8E=,,,2\r"), "AT+A8E=,,,2\r\r\nERROR\r\n");
+	delete m;
+}
+
+/* both with V.8 bis: MRe, CRd, CL, MS, ACK(1) (transaction 10), then
+   V.8 */
+TEST(Core, V8bisBoth)
+{
+	std::vector<std::string> l = v8bis_call("AT+A8E=1,1,,1\r",
+						"AT+A8E=1,1,,1\r", 24000);
+	EXPECT_TRUE(logged(l, "A: pump 108 (driver 108), caller"));
+	EXPECT_TRUE(logged(l, "B: pump 108 (driver 108), answerer"));
+	EXPECT_TRUE(logged(l, "v8bis: CRd in"));
+	EXPECT_TRUE(logged(l, "v8bis: CL in"));
+	EXPECT_TRUE(logged(l, "v8bis: MS in"));
+	EXPECT_TRUE(logged(l, "v8bis: ACK(1) in"));
+	EXPECT_TRUE(logged(l, "V.8 CM received"));
+}
+
+/* the answerer alone: its MRe unanswered, V.8 after 3 s */
+TEST(Core, V8bisAnswererAlone)
+{
+	std::vector<std::string> l = v8bis_call("AT+A8E=1,1,,0\r",
+						"AT+A8E=1,1,,1\r", 24000);
+	EXPECT_FALSE(logged(l, "A: pump 108"));
+	EXPECT_TRUE(logged(l, "B: pump 108 (driver 108), answerer"));
+	EXPECT_TRUE(logged(l, "v8bis: no answer to MRe"));
+	EXPECT_TRUE(logged(l, "V.8 CM received"));
+}
+
+/* the caller alone: no V.8 bis at all */
+TEST(Core, V8bisCallerAlone)
+{
+	std::vector<std::string> l = v8bis_call("AT+A8E=1,1,,1\r",
+						"AT+A8E=1,1,,0\r", 24000);
+	EXPECT_FALSE(logged(l, "pump 108"));
+	EXPECT_TRUE(logged(l, "V.8 CM received"));
+}
