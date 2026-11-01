@@ -9,8 +9,8 @@
  *    the system side's (SSD's) registers (the answer, in 0x7a: reg << 8
  *    | its value), reg << 8 | value writes one.  Behind SSD registers 1
  *    to 4 are the line side chip's (LSD's), as Conexant's SOAR library
- *    drives them for the HSF codec (its kind 0x12, dmodemd/cx_daa.h):
- *    2 the byte to write, 3 the command (the LSD register in bits 5:0,
+ *    drives them for the HSF codec (its kind 0x12,
+ *    frontend/dmodemd/cx_daa.h): 2 the byte to write, 3 the command (the LSD register in bits 5:0,
  *    bit 7 a write), 1 the LSD's answer (the register's byte after the
  *    command), 4 the status (bit 4 the command done).  SSD register 0
  *    has the link up (bit 1) and a bit toggling at each frame over the

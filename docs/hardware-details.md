@@ -57,8 +57,8 @@ country's line settings (from `-c` or `AT+GCI`) into the codec's DAA
 (data access arrangement, the line interface) registers. It reaches them
 through the kernel's HD-audio hwdep device (`/dev/snd/hwC<card>D<codec>`),
 which needs a kernel built with `CONFIG_SND_HDA_HWDEP`. The code is in
-`dmodemd/si3054.cpp`, `dmodemd/hda_codec.cpp` and
-`dmodemd/alsa_line.cpp`.
+`frontend/dmodemd/si3054.cpp`, `frontend/dmodemd/hda_codec.cpp` and
+`frontend/dmodemd/alsa_line.cpp`.
 
 The values come from the datasheet (Si3054/18 Rev. 1.0, Table 19, the
 HD-audio columns). They are:
@@ -105,11 +105,11 @@ On an Intel ICH modem controller (`snd-intel8x0m`, on x86 Linux), dmodemd
 started as root also drives the hook in the SmartDAA. It reaches the
 codec's registers through the controller's I/O ports, under the codec
 access semaphore that the kernel's driver also respects
-(`dmodemd/ac97_ports.cpp`). It then logs `the hook in its SmartDAA`,
+(`frontend/dmodemd/ac97_ports.cpp`). It then logs `the hook in its SmartDAA`,
 with the line side's version. Without root, on another controller, or on
 another codec, it logs why, and the hook stays with the kernel's switch.
 
-The code is `dmodemd/cx_daa.cpp` and `dmodemd/cx_country.cpp`.
+The code is `frontend/dmodemd/cx_daa.cpp` and `frontend/dmodemd/cx_country.cpp`.
 
 #### How the SmartDAA's registers are reached
 
@@ -350,7 +350,7 @@ Conexant's HD-audio modems (`14f1:2bfa`, `14f1:2c06` and the others of
 vendor `14f1`) are of another kind. Their DAA is behind Conexant's own
 verbs, and this does not cover them.
 
-`dmodemd/test/hda_modem_setup_test.py` (ctest's `hda_modem_setup`, label
+`frontend/dmodemd/test/hda_modem_setup_test.py` (ctest's `hda_modem_setup`, label
 `quick`) runs the helper on a fake sysfs and kernel configuration. The
 patch itself has not been tried on a real codec.
 
@@ -387,7 +387,7 @@ on Windows 7 and 8, whose WinUSB cannot stream)
 
 The ST7554's register values and start-up are those of Smart Link's
 Linux driver for it (`drivers/st7554.c` of slmodem 2.9.11, under a BSD
-licence). The code is in `dmodemd/usb_line.cpp`:
+licence). The code is in `frontend/dmodemd/usb_line.cpp`:
 
 - **Samples.** S16 little-endian mono at 9600 Hz (the default) or 8000
   Hz, in isochronous packets of 1 ms. Three transfers of five packets
@@ -532,7 +532,7 @@ A udev rule to start dmodemd as a user, for example
 
 Its protocol is its firmware's (`firmware/PROTOCOL.md`, "Line stick"),
 shaped like the ST7554's on purpose. The code is in
-`dmodemd/usb_line.cpp`:
+`frontend/dmodemd/usb_line.cpp`:
 
 - **Samples.** S16 little-endian mono at 9600 Hz (the default) or 8000
   Hz, isochronous both ways in interface 0's alternate setting 1.
@@ -564,7 +564,7 @@ shaped like the ST7554's on purpose. The code is in
   - the on-hook speed (OHS, OHS2, with Australia's spark quenching).
 
   The values are the Si3056 datasheet's (Rev. 1.03, Table 15, "Country
-  Specific Register Settings"), in `dmodemd/si3056.cpp`. Each register
+  Specific Register Settings"), in `frontend/dmodemd/si3056.cpp`. Each register
   (16, 26, 31 and 59, and 30 on a Si3019) is read first (`DAA_READ`), and
   only the country's bits change (`DAA_WRITE`). A change made while off
   hook waits until the line is on hook again.
@@ -630,8 +630,8 @@ gone for S7 seconds (`ATS7=10` for 10).
 
 Its protocol is its firmware's (`firmware/PROTOCOL.md`, "WB stick", and
 `src/core/wb_proto.h`): the Line stick's USB device, with the WB stick's
-own requests. The code is in `dmodemd/usb_wb.cpp`, on top of
-`dmodemd/usb_line.cpp`'s transfers:
+own requests. The code is in `frontend/dmodemd/usb_wb.cpp`, on top of
+`frontend/dmodemd/usb_line.cpp`'s transfers:
 
 - **Samples.** S16 little-endian mono at 96000 Hz (48000 and 192000 Hz
   too), isochronous both ways in interface 0's alternate setting 1,
@@ -710,7 +710,7 @@ root:
     SUBSYSTEM=="usb", ATTR{idVendor}=="047e", ATTR{idProduct}=="2892", MODE="0660", GROUP="dialout"
 
 [agere-usb.md](agere-usb-details.md) has the full detail, read from the
-device's ROM and Agere's drivers. In short, `dmodemd/usb_agere.cpp`
+device's ROM and Agere's drivers. In short, `frontend/dmodemd/usb_agere.cpp`
 does this:
 
 - **Start-up.** Interface 0's alternate setting 1 (isochronous IN and
@@ -796,7 +796,7 @@ ordinary user, that user needs access to `/dev/snd/*`.
 
 ## How it works
 
-The ALSA line is `dmodemd/alsa_line.cpp`:
+The ALSA line is `frontend/dmodemd/alsa_line.cpp`:
 
 - **Samples.** The PCM runs both ways from the start, on hook too: S16
   mono at the line's rate, in periods of 20 ms, with a buffer of 8
@@ -893,17 +893,17 @@ The ALSA line is `dmodemd/alsa_line.cpp`:
 
 ### The ALSA line
 
-`dmodemd/test/alsa_test.py` (ctest's `dmodemd_alsa`, label `alsa`) runs
+`frontend/dmodemd/test/alsa_test.py` (ctest's `dmodemd_alsa`, label `alsa`) runs
 two dmodemd on fake ALSA modem cards whose lines belong to a simulated
 telephone exchange. It needs libasound2-dev.
 
-- `dmodemd/test/fake_modem_card.cpp` is alsa-lib's external PCM (ioplug)
+- `frontend/dmodemd/test/fake_modem_card.cpp` is alsa-lib's external PCM (ioplug)
   and control (ctl_ext) plugins, `dmline`. They are loaded through an
   ALSA configuration of the test's own (`ALSA_CONFIG_PATH`), so dmodemd
   goes through the same ALSA calls as with a real card. The capture is
   what the exchange sends, the playback's position runs on the clock
   like a DMA's, and the control has the two switches.
-- `dmodemd/test/line_exchange.cpp` is the exchange. Each number's line
+- `frontend/dmodemd/test/line_exchange.cpp` is the exchange. Each number's line
   gets:
   - a dial tone, then its DTMF or pulse digits collected and the number
     routed;
@@ -914,7 +914,7 @@ telephone exchange. It needs libasound2-dev.
   - once answered, the call, with a loss of 3 dB, noise, and an echo at
     -24 dB (`LINE_LOSS=<dB>`, `LINE_ECHO=<dB>|off`);
   - a busy tone after the other end hangs up.
-- `dmodemd/test/fake_hda_hwdep.cpp` is an HD-audio Si3054's hwdep
+- `frontend/dmodemd/test/fake_hda_hwdep.cpp` is an HD-audio Si3054's hwdep
   device, put in front of alsa-lib with `LD_PRELOAD`.
 
 In real time, the test checks:
@@ -945,10 +945,10 @@ the library's writes, [above](#conexant-ac97-codecs)).
 
 ### The SmartUSB56
 
-`dmodemd/test/usb_test.py` (ctest's `dmodemd_usb`, label `alsa`) runs
+`frontend/dmodemd/test/usb_test.py` (ctest's `dmodemd_usb`, label `alsa`) runs
 two dmodemd with `--usb` on the same exchange. It needs libusb-1.0-0-dev.
 
-`dmodemd/test/fake_st7554.cpp` is the part of libusb-1.0 that dmodemd
+`frontend/dmodemd/test/fake_st7554.cpp` is the part of libusb-1.0 that dmodemd
 uses, put in front of the real one with `LD_PRELOAD`. Its one device is
 an ST7554 whose line is the exchange's:
 
@@ -983,9 +983,9 @@ checks its start-up. The test checks:
 
 ### The pico-serial Line
 
-`dmodemd/test/pico_line_test.py` (ctest's `dmodemd_pico_line`, label
+`frontend/dmodemd/test/pico_line_test.py` (ctest's `dmodemd_pico_line`, label
 `alsa`) does the same with two pico-serial Line sticks.
-`dmodemd/test/fake_pico_line.cpp` is a stick (1209:0002) whose line is
+`frontend/dmodemd/test/fake_pico_line.cpp` is a stick (1209:0002) whose line is
 the exchange's, speaking its firmware's protocol: `SET_HOOK` and
 `SET_MONITOR` are the exchange's switches, alternate setting 1 starts its
 samples, and its ring detector's changes come as events. Besides the
@@ -1000,13 +1000,13 @@ calls, it checks:
 
 ### The pico-serial WB
 
-`dmodemd/test/pico_wb_test.py` (ctest's `dmodemd_pico_wb`, labels `alsa`
+`frontend/dmodemd/test/pico_wb_test.py` (ctest's `dmodemd_pico_wb`, labels `alsa`
 and `quick`; about 20 s) runs two pico-serial WB sticks on a bare pair
 instead of an exchange:
 
-- `dmodemd/test/fake_pico_wb.cpp` is a stick (1209:0003) speaking its
+- `frontend/dmodemd/test/fake_pico_wb.cpp` is a stick (1209:0003) speaking its
   firmware's protocol.
-- `dmodemd/test/wb_pair.cpp` is the pair between the two, in real time
+- `frontend/dmodemd/test/wb_pair.cpp` is the pair between the two, in real time
   at 96 kHz. It is the V.wb tests' simulated pair
   (`dsp/test/vwb_line.cpp`: 1 km of cable, the transformers, noise, each
   end's hybrid echo, and the two clocks 100 ppm apart). Each end's
@@ -1030,8 +1030,8 @@ It checks:
 
 ### The Agere USB modem
 
-`dmodemd/test/agere_test.py` (ctest's `dmodemd_agere`, label `alsa`)
-runs two Agere USB modems at 8000 Hz. `dmodemd/test/fake_agere.cpp` is
+`frontend/dmodemd/test/agere_test.py` (ctest's `dmodemd_agere`, label `alsa`)
+runs two Agere USB modems at 8000 Hz. `frontend/dmodemd/test/fake_agere.cpp` is
 one (047e:2892) whose line is the exchange's. It has:
 
 - its vendor commands, its ARM's memory and function table, and its

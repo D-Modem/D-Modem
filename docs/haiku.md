@@ -37,8 +37,8 @@ You can also build Haiku programs on a Linux machine. A script downloads
 Haiku's own packages (about 500 MB) to build against:
 
     sudo apt-get install cmake ninja-build pkg-config clang lld libzstd1
-    python3 cmake/haiku_sysroot.py ~/haiku-sysroot
-    cmake -B build-haiku -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/haiku.cmake \
+    python3 platforms/haiku/haiku_sysroot.py ~/haiku-sysroot
+    cmake -B build-haiku -G Ninja -DCMAKE_TOOLCHAIN_FILE=platforms/haiku/haiku.cmake \
           -DHAIKU_SYSROOT=$HOME/haiku-sysroot
     cmake --build build-haiku
 

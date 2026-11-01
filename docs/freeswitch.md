@@ -39,7 +39,7 @@ call's data goes:
 </profile>
 ```
 
-All the options are in [dmodem.conf.xml](../freeswitch/dmodem.conf.xml).
+All the options are in [dmodem.conf.xml](../frontend/freeswitch/dmodem.conf.xml).
 
 `dmodem <profile>,o` does the opposite: the modem dials out to a remote
 modem on a call FreeSWITCH has placed, for example

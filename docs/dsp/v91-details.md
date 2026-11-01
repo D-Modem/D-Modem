@@ -167,5 +167,5 @@ suite:
 - `v91_cc`: the control channel, on the robbed-bit network.
 - `v91_escape`: one modem silent in V.91; both escape to V.34 at 33600.
 
-Over SIP, `asterisk/test/sip.sh` (dmodemd calling DModem in Asterisk,
+Over SIP, `frontend/asterisk/test/sip.sh` (dmodemd calling DModem in Asterisk,
 also with `CODEC=alaw` and with `INCOMING=1`) connects at 62666/62666.

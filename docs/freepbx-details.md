@@ -2,7 +2,7 @@
 
 This is the technical companion to [FreePBX: the D-Modem module](freepbx.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
-`freepbx/dmodem/` is a FreePBX module (version 16.0.2, for FreePBX 16
+`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.2, for FreePBX 16
 and 17) for [app_dmodem](asterisk.md) or [dmodem-ari](ari.md). It
 provides:
 
@@ -252,7 +252,7 @@ The line check shows what is still wrong.
 
 ### unit.php
 
-`freepbx/test/unit.php` (ctest `freepbx_unit`, label `quick`, built when
+`frontend/freepbx/test/unit.php` (ctest `freepbx_unit`, label `quick`, built when
 PHP is installed) tests the module without FreePBX. It runs on stand-ins
 for what the module uses (`fpbx_env.php`):
 
@@ -282,7 +282,7 @@ through FreePBX's own `extensions.class.php` instead of the stand-in.
 
 ### e2e.sh
 
-`freepbx/test/e2e.sh` runs the module's output in a private Asterisk
+`frontend/freepbx/test/e2e.sh` runs the module's output in a private Asterisk
 (`ARI=1`: with dmodem-ari as the engine):
 
 1. `gen.php` makes `dmodem.conf` and the `app-dmodem` context the way the

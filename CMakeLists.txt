@@ -37,7 +37,7 @@ endif()
 # the compilers: Clang where it is installed (clang and clang++, else the
 # newest clang-<n>), GCC otherwise.  Only when nothing else chose them:
 # CC and CXX, -DCMAKE_C_COMPILER, a toolchain file (cross builds: their
-# own, cmake/mingw-w64.cmake takes Clang too), or an existing build
+# own, platforms/windows/mingw-w64.cmake takes Clang too), or an existing build
 # directory's cache; and not on Windows hosts (MSVC's cl.exe)
 option(DMODEM_PREFER_CLANG "Clang where it is installed, not GCC" ON)
 if(DMODEM_PREFER_CLANG AND NOT CMAKE_TOOLCHAIN_FILE AND NOT CMAKE_HOST_WIN32
@@ -57,14 +57,8 @@ if(DMODEM_PREFER_CLANG AND NOT CMAKE_TOOLCHAIN_FILE AND NOT CMAKE_HOST_WIN32
 		endif()
 	endforeach()
 endif()
-# macOS: 11 (Big Sur, the first for Apple silicon) and later, unless
-# asked otherwise; CMAKE_OSX_ARCHITECTURES="arm64;x86_64" builds both
-# (docs/macos.md)
-if(CMAKE_HOST_APPLE AND NOT CMAKE_TOOLCHAIN_FILE AND
-   NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-	set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING
-		"the oldest macOS to run on")
-endif()
+# macOS: 11 (Big Sur) and later, unless asked otherwise
+include(${CMAKE_CURRENT_LIST_DIR}/platforms/macos/macos.cmake)
 # MSVC: the static C runtime (/MT), here and in the projects built for
 # it (libre, Mbed TLS): one dmodemd.exe, no vcruntime DLL beside it
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -143,10 +137,10 @@ if(MSVC)
 	if(DMODEM_WERROR)
 		add_compile_options(/WX)
 	endif()
-	# what of POSIX the C library lacks (compat/msvc/dmodem_msvc.h),
+	# what of POSIX the C library lacks (platforms/windows/msvc/dmodem_msvc.h),
 	# and unistd.h, strings.h, sys/time.h on it
-	include_directories(BEFORE ${PROJECT_SOURCE_DIR}/compat/msvc)
-	add_compile_options(/FI${PROJECT_SOURCE_DIR}/compat/msvc/dmodem_msvc.h)
+	include_directories(BEFORE ${PROJECT_SOURCE_DIR}/platforms/windows/msvc)
+	add_compile_options(/FI${PROJECT_SOURCE_DIR}/platforms/windows/msvc/dmodem_msvc.h)
 else()
 	set(DMODEM_LIBM m)
 	# (Haiku: the sockets are libnetwork's, not the C library's)
@@ -233,26 +227,31 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 add_subdirectory(link)
 add_subdirectory(dsp)
 add_subdirectory(core)
-add_subdirectory(winmodem)
-add_subdirectory(dmodemd)
+
+# the programs and modules built on libdmodem are in frontend/, the
+# support for one system alone in platforms/<system>/.  Each builds in
+# build/<its name>: build/dmodemd/dmodemd, build/asterisk/... (README.md)
+add_subdirectory(platforms/windows/winmodem winmodem)
+add_subdirectory(frontend/dmodemd dmodemd)
 # dmodem-capid: CAPI 2.0 on a D-Modem (POSIX)
 if(NOT WIN32)
-	add_subdirectory(capi)
+	add_subdirectory(frontend/capi capi)
 endif()
 
-# the PBX modules' call on libdmodem (pbx/dmodem_bridge.c), built into each
-set(DMODEM_PBX_DIR ${PROJECT_SOURCE_DIR}/pbx)
+# the PBX modules' call on libdmodem (frontend/pbx/dmodem_bridge.c),
+# built into each
+set(DMODEM_PBX_DIR ${PROJECT_SOURCE_DIR}/frontend/pbx)
 if(DMODEM_ASTERISK)
-	add_subdirectory(asterisk)
+	add_subdirectory(frontend/asterisk asterisk)
 endif()
 if(DMODEM_FREESWITCH)
-	add_subdirectory(freeswitch)
+	add_subdirectory(frontend/freeswitch freeswitch)
 endif()
 if(DMODEM_ARI)
-	add_subdirectory(ari)
+	add_subdirectory(frontend/ari ari)
 endif()
 # the FreePBX module (PHP): its package and its tests
-add_subdirectory(freepbx)
+add_subdirectory(frontend/freepbx freepbx)
 
 if(DMODEM_TESTS)
 	add_subdirectory(dsp/test)
@@ -287,7 +286,7 @@ if(DMODEM_TESTS)
 			endforeach()
 			if(_win7)
 				dmodem_add_test(win7_imports ${Python3_EXECUTABLE}
-					${PROJECT_SOURCE_DIR}/cmake/win_imports.py
+					${PROJECT_SOURCE_DIR}/platforms/windows/win_imports.py
 					${_win7})
 				set_tests_properties(win7_imports PROPERTIES
 					LABELS quick TIMEOUT 60)

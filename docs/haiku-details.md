@@ -13,7 +13,7 @@ It is the same modem as on Linux:
 The USB modems (`--usb`) are built in too: Smart Link's SmartUSB56, the pico-serial Line and WB sticks, and Agere's USB 2.0 soft modem. dmodemd reaches them through HaikuPorts' libusb.
 
 These also build for Haiku:
-- libdmodem (`dmodemd/dmodem.h`);
+- libdmodem (`frontend/dmodemd/dmodem.h`);
 - `libdmodem_sip.a`;
 - dmodem-ari;
 - the test programs.
@@ -37,13 +37,13 @@ Haiku already has GCC and its headers (`haiku_devel`). The rest comes from Haiku
     cmake --build build
     ctest --test-dir build -L quick
 
-libre (the SIP library) is fetched and built while configuring, with a small patch for Haiku (`cmake/libre-haiku.patch`). Without `libusb_devel`, dmodemd builds without `--usb`.
+libre (the SIP library) is fetched and built while configuring, with a small patch for Haiku (`platforms/haiku/libre-haiku.patch`). Without `libusb_devel`, dmodemd builds without `--usb`.
 
 `cmake --install build` puts the programs in `/boot/system/non-packaged/bin`, which is on the `PATH`. `/boot/system` itself belongs to Haiku's packages and is read-only.
 
 ## Building on Linux
 
-Clang and lld (version 17 or later) can build for Haiku against a sysroot made of Haiku's own packages. `cmake/haiku_sysroot.py` makes one:
+Clang and lld (version 17 or later) can build for Haiku against a sysroot made of Haiku's own packages. `platforms/haiku/haiku_sysroot.py` makes one:
 1. It downloads the packages from Haiku's and HaikuPorts' repositories, once, into a cache (by default `haiku-packages` beside the sysroot).
 2. It checks each package against its repository's SHA-256.
 3. It extracts each one under `boot/system`, as Haiku installs it.
@@ -51,8 +51,8 @@ Clang and lld (version 17 or later) can build for Haiku against a sysroot made o
 The script reads Haiku's package format itself. Its zstd-compressed packages need the system's libzstd.
 
     sudo apt-get install cmake ninja-build pkg-config clang lld libzstd1
-    python3 cmake/haiku_sysroot.py ~/haiku-sysroot
-    cmake -B build-haiku -G Ninja -DCMAKE_TOOLCHAIN_FILE=cmake/haiku.cmake \
+    python3 platforms/haiku/haiku_sysroot.py ~/haiku-sysroot
+    cmake -B build-haiku -G Ninja -DCMAKE_TOOLCHAIN_FILE=platforms/haiku/haiku.cmake \
           -DHAIKU_SYSROOT=$HOME/haiku-sysroot
     cmake --build build-haiku
 
@@ -68,7 +68,7 @@ The tests are built but not registered with ctest, because nothing on Linux can 
 
 dmodemd takes the same options as on Linux (see the [README](../README.md)). The differences are these.
 
-**No users.** Every process on Haiku has uid 0, and there is no other user to run as. So dmodemd does not give up root's rights after start-up (`started_as_root()` in `dmodemd/main.cpp` is always false there), and it forks no keeper process for the pty's link.
+**No users.** Every process on Haiku has uid 0, and there is no other user to run as. So dmodemd does not give up root's rights after start-up (`started_as_root()` in `frontend/dmodemd/main.cpp` is always false there), and it forks no keeper process for the pty's link.
 
 **The pty.** The pty is one of Haiku's (`/dev/pt/<n>`, with its slave at `/dev/tt/<n>`).
 - dmodemd also tries to make the link `/dev/ttyDM<n>` to it.
@@ -92,9 +92,9 @@ Most of the tree was POSIX already and builds unchanged. For Haiku:
 
 - **Executables are shared objects.** Haiku's linkers make every executable a shared object (`-shared`). So CMake's `-fPIE` for position-independent executables becomes `-fPIC` (`cmake/rules.cmake`, which libre's build uses too).
 - **The sockets are libnetwork's**, not the C library's, so every program links `-lnetwork`.
-- **No `SOCK_CLOEXEC`, `MSG_CMSG_CLOEXEC` or `ptsname_r()`.** Descriptors are made close-on-exec with `fcntl()`, and a pty's slave is named with `ptsname()`. `dmodemd/portable.h` already did the first on Apple's systems.
-- **No `<sys/syscall.h>`**, so descriptors are closed one by one, without `close_range()` (`dmodemd/pty.cpp`).
-- **libre** (`cmake/libre-haiku.patch`):
+- **No `SOCK_CLOEXEC`, `MSG_CMSG_CLOEXEC` or `ptsname_r()`.** Descriptors are made close-on-exec with `fcntl()`, and a pty's slave is named with `ptsname()`. `frontend/dmodemd/portable.h` already did the first on Apple's systems.
+- **No `<sys/syscall.h>`**, so descriptors are closed one by one, without `close_range()` (`frontend/dmodemd/pty.cpp`).
+- **libre** (`platforms/haiku/libre-haiku.patch`):
   - Haiku's interface ioctls are in `<sys/sockio.h>`;
   - its `struct ifreq` has no `ifr_ifru`;
   - it has no way to list the routing table, so libre's own stub is used, as on iOS.
