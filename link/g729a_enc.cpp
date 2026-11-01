@@ -28,28 +28,40 @@ struct EncState {
 	i16 past_qua_en[4];
 	i32 exc_err[4];                 /* taming (3.10/G.729) */
 	HighPass hp;
+	/* Annex B's */
+	bool dtx_on;
+	Vad vad;
+	Dtx dtx;
+	bool pastVad, ppastVad;
+	i16 seed, frame;
 };
 
-/* the windowed autocorrelations r[0..M] in halves, r[0] normalised */
-static void autocorr(const i16 *x, i16 *r_h, i16 *r_l)
+/* the windowed autocorrelations r[0..NP] in halves, r[0] normalised;
+   exp_R0 r[0]'s exponent (Annex B's VAD) */
+static void autocorr(const i16 *x, i16 *r_h, i16 *r_l, i16 *exp_R0)
 {
 	i16 y[L_WINDOW];
 	for (int i = 0; i < L_WINDOW; i++)
 		y[i] = mult_r(x[i], hamwindow[i]);
 	i32 sum;
+	*exp_R0 = 1;
 	do {
 		overflow() = false;
 		sum = 1;
 		for (int i = 0; i < L_WINDOW; i++)
 			sum = L_mac(sum, y[i], y[i]);
-		if (overflow())
+		if (overflow()) {
 			for (int i = 0; i < L_WINDOW; i++)
 				y[i] = shr(y[i], 2);
+			*exp_R0 = add(*exp_R0, 4);
+			overflow() = true;
+		}
 	} while (overflow());
 	const i16 norm = norm_l(sum);
 	sum = L_shl(sum, norm);
 	L_Extract(sum, &r_h[0], &r_l[0]);
-	for (int i = 1; i <= M; i++) {
+	*exp_R0 = sub(*exp_R0, norm);
+	for (int i = 1; i <= NP; i++) {
 		sum = 0;
 		for (int j = 0; j < L_WINDOW - i; j++)
 			sum = L_mac(sum, y[j], y[j + i]);
@@ -58,19 +70,18 @@ static void autocorr(const i16 *x, i16 *r_h, i16 *r_l)
 	}
 }
 
-/* the lag window on r[1..M] */
+/* the lag window on r[1..NP] */
 static void lag_window(i16 *r_h, i16 *r_l)
 {
-	for (int i = 1; i <= M; i++) {
+	for (int i = 1; i <= NP; i++) {
 		const i32 x = Mpy_32(r_h[i], r_l[i], lag_h[i - 1], lag_l[i - 1]);
 		L_Extract(x, &r_h[i], &r_l[i]);
 	}
 }
 
-/* Levinson-Durbin: r to the LP filter a (Q12) and the reflection
-   coefficients; an unstable filter gives the last one again */
-static void levinson(EncState &s, const i16 *Rh, const i16 *Rl,
-		     i16 *A, i16 *rc)
+/* (see g729a_int.h) */
+void levinson(const i16 *Rh, const i16 *Rl, i16 *A, i16 *rc, i16 *err,
+	      i16 *old_A, i16 *old_rc)
 {
 	i16 hi, lo, Kh, Kl, alp_h, alp_l, alp_exp;
 	i16 Ah[MP1], Al[MP1], Anh[MP1], Anl[MP1];
@@ -109,9 +120,9 @@ static void levinson(EncState &s, const i16 *Rh, const i16 *Rl,
 		rc[i - 1] = Kh;
 		if (sub(abs_s(Kh), 32750) > 0) {
 			for (int j = 0; j <= M; j++)
-				A[j] = s.old_A[j];
-			rc[0] = s.old_rc[0];
-			rc[1] = s.old_rc[1];
+				A[j] = old_A[j];
+			rc[0] = old_rc[0];
+			rc[1] = old_rc[1];
 			return;
 		}
 		for (int j = 1; j < i; j++) {
@@ -135,13 +146,15 @@ static void levinson(EncState &s, const i16 *Rh, const i16 *Rl,
 			Al[j] = Anl[j];
 		}
 	}
+	if (err)
+		*err = shr(alp_h, alp_exp);
 	A[0] = 4096;
 	for (int i = 1; i <= M; i++) {
 		t0 = L_Comp(Ah[i], Al[i]);
-		s.old_A[i] = A[i] = round16(L_shl(t0, 1));
+		old_A[i] = A[i] = round16(L_shl(t0, 1));
 	}
-	s.old_rc[0] = rc[0];
-	s.old_rc[1] = rc[1];
+	old_rc[0] = rc[0];
+	old_rc[1] = rc[1];
 }
 
 /* the Chebyshev polynomial f at x; wide: f in Q11 (else Q10, after an
@@ -174,9 +187,8 @@ static i16 chebps(i16 x, const i16 *f, bool wide)
 	return extract_h(t);
 }
 
-/* the LP filter a to its LSPs: the roots of F1 and F2 on the grid; the
-   old LSPs if 10 are not found */
-static void az_lsp(const i16 *a, i16 *lsp, const i16 *old_lsp)
+/* (see g729a_int.h) */
+void az_lsp(const i16 *a, i16 *lsp, const i16 *old_lsp)
 {
 	i16 f1[NC + 1], f2[NC + 1];
 	bool ovf = false;
@@ -271,8 +283,8 @@ static void az_lsp(const i16 *a, i16 *lsp, const i16 *old_lsp)
 			lsp[i] = old_lsp[i];
 }
 
-/* the LSFs' weights for the quantiser's distance (3.2.4/G.729) */
-static void get_wegt(const i16 *flsp, i16 *wegt)
+/* (see g729a_int.h) */
+void get_wegt(const i16 *flsp, i16 *wegt)
 {
 	i16 buf[M];
 	buf[0] = sub(flsp[1], PI04 + 8192);
@@ -679,8 +691,8 @@ static bool test_err(const i32 *exc_err, i16 T0, i16 T0_frac)
 	return L_sub(maxloc, L_THRESH_ERR) > 0;
 }
 
-/* (see test_err) the error moved on with the subframe's pitch gain */
-static void update_exc_err(i32 *exc_err, i16 gain_pit, i16 T0)
+/* (see g729a_int.h) */
+void update_exc_err(i32 *exc_err, i16 gain_pit, i16 T0)
 {
 	i32 worst = -1;
 	/* one zone's error through the gain */
@@ -1427,7 +1439,7 @@ static i16 qua_gain(i16 *past_qua_en, const i16 *code, const i16 *g_coeff,
 }
 
 /* (see g729a.h) */
-Encoder::Encoder() : st_(new EncState)
+Encoder::Encoder() : st_(new EncState())
 {
 	reset();
 }
@@ -1441,6 +1453,7 @@ void Encoder::reset()
 	static const i16 lsp_init[M] = { 30000, 26000, 21000, 15000, 8000, 0,
 					 -8000, -15000, -21000, -26000 };
 	EncState &s = *st_;
+	const bool dtx = s.dtx_on;
 	s = EncState();
 	for (int i = 0; i < M; i++)
 		s.lsp_old[i] = s.lsp_old_q[i] = lsp_init[i];
@@ -1452,10 +1465,58 @@ void Encoder::reset()
 	for (i32 &e : s.exc_err)
 		e = 0x00004000;
 	s.hp.reset();
+	s.vad.reset();
+	s.dtx.reset();
+	s.pastVad = s.ppastVad = true;
+	s.seed = INIT_SEED;
+	s.frame = 0;
+	s.dtx_on = dtx;
 }
 
-/* (see g729a.h): clause 3 with Annex A's simplifications */
-void Encoder::encode(const int16_t pcm[FRAME], int16_t prm[PRMS])
+/* (see g729a.h) */
+void Encoder::set_dtx(bool on)
+{
+	st_->dtx_on = on;
+}
+
+/* an inactive frame (B.4/G.729): the comfort noise's excitation and
+   filter in place of the speech's, the weighted speech and the
+   filters' memories moved on as the decoder's will be; whether a SID
+   frame (its parameters in ana) is sent */
+static bool encode_inactive(EncState &s, i16 *ana)
+{
+	i16 *speech = s.old_speech + L_TOTAL - L_FRAME - L_NEXT;
+	i16 *wsp = s.old_wsp + PIT_MAX;
+	i16 *exc = s.old_exc + PIT_MAX + L_INTERPOL;
+	i16 Aq_t[MP1 * 2], Ap_t[MP1 * 2];
+	const bool sid = s.dtx.code(exc, s.pastVad, s.lsp_old_q, Aq_t, ana,
+				    s.lsp, s.seed, s.exc_err, s.old_A,
+				    s.old_rc);
+	s.ppastVad = s.pastVad;
+	s.pastVad = false;
+
+	const i16 *Aq = Aq_t;
+	for (int i_subfr = 0; i_subfr < L_FRAME; i_subfr += L_SUBFR) {
+		i16 xn[L_SUBFR];
+		residu(Aq, &speech[i_subfr], xn, L_SUBFR);
+		weight_az(Aq, GAMMA1, Ap_t);
+		i16 *Ap = Ap_t + MP1;
+		Ap[0] = 4096;
+		for (int i = 1; i <= M; i++)
+			Ap[i] = sub(Ap_t[i], mult(Ap_t[i - 1], 22938));
+		syn_filt(Ap, xn, &wsp[i_subfr], L_SUBFR, s.mem_w, true);
+		for (int i = 0; i < L_SUBFR; i++)
+			xn[i] = sub(xn[i], exc[i_subfr + i]);
+		syn_filt(Ap_t, xn, xn, L_SUBFR, s.mem_w0, true);
+		Aq += MP1;
+	}
+	s.sharp = SHARPMIN;
+	return sid;
+}
+
+/* (see g729a.h): clause 3 with Annex A's simplifications, Annex B's
+   VAD and DTX if on */
+int Encoder::encode(const int16_t pcm[FRAME], int16_t prm[PRMS])
 {
 	EncState &s = *st_;
 	i16 *new_speech = s.old_speech + L_TOTAL - L_FRAME;
@@ -1470,13 +1531,40 @@ void Encoder::encode(const int16_t pcm[FRAME], int16_t prm[PRMS])
 	i16 Aq_t[MP1 * 2], Ap_t[MP1 * 2];
 	i16 *ana = prm;
 
-	/* LP analysis, the LSPs quantised and interpolated */
+	s.frame = s.frame == 32767 ? 256 : static_cast<i16>(s.frame + 1);
+
+	/* LP analysis, the VAD (B.3/G.729), the LSPs quantised and
+	   interpolated */
 	{
-		i16 r_l[MP1], r_h[MP1], rc[M], lsp_new[M], lsp_new_q[M];
-		autocorr(p_window, r_h, r_l);
+		i16 r_l[NP + 1], r_h[NP + 1], rh_nbe[MP1], rc[M], lsp_new[M],
+			lsp_new_q[M], lsf_new[M], exp_R0;
+		autocorr(p_window, r_h, r_l, &exp_R0);
+		for (int i = 0; i < MP1; i++)
+			rh_nbe[i] = r_h[i];
 		lag_window(r_h, r_l);
-		levinson(s, r_h, r_l, Ap_t, rc);
+		levinson(r_h, r_l, Ap_t, rc, nullptr, s.old_A, s.old_rc);
 		az_lsp(Ap_t, lsp_new, s.lsp_old);
+		bool active = true;
+		if (s.dtx_on) {
+			lsp_lsf(lsp_new, lsf_new);
+			active = s.vad.decide(rc[1], lsf_new, r_h, r_l, exp_R0,
+					      p_window, s.frame, s.pastVad,
+					      s.ppastVad);
+			s.dtx.update(rh_nbe, exp_R0, active);
+		}
+		if (!active) {
+			const int type = encode_inactive(s, prm) ? SID : NONE;
+			for (int i = 0; i < L_TOTAL - L_FRAME; i++)
+				s.old_speech[i] = s.old_speech[i + L_FRAME];
+			for (int i = 0; i < PIT_MAX; i++)
+				s.old_wsp[i] = s.old_wsp[i + L_FRAME];
+			for (int i = 0; i < PIT_MAX + L_INTERPOL; i++)
+				s.old_exc[i] = s.old_exc[i + L_FRAME];
+			return type;
+		}
+		s.seed = INIT_SEED;
+		s.ppastVad = s.pastVad;
+		s.pastVad = true;
 		qua_lsp(s.lsp, lsp_new, lsp_new_q, ana);
 		ana += 2;
 		int_qlpc(s.lsp_old_q, lsp_new_q, Aq_t);
@@ -1593,14 +1681,23 @@ void Encoder::encode(const int16_t pcm[FRAME], int16_t prm[PRMS])
 		s.old_wsp[i] = s.old_wsp[i + L_FRAME];
 	for (int i = 0; i < PIT_MAX + L_INTERPOL; i++)
 		s.old_exc[i] = s.old_exc[i + L_FRAME];
+	return SPEECH;
 }
 
 /* (see g729a.h) */
-void Encoder::encode(const int16_t pcm[FRAME], uint8_t out[FRAME_OCTETS])
+int Encoder::encode(const int16_t pcm[FRAME], uint8_t out[FRAME_OCTETS])
 {
 	int16_t prm[PRMS];
-	encode(pcm, prm);
-	pack(prm, out);
+	switch (encode(pcm, prm)) {
+	case SPEECH:
+		pack(prm, out);
+		return FRAME_OCTETS;
+	case SID:
+		pack_sid(prm, out);
+		return SID_OCTETS;
+	default:
+		return 0;
+	}
 }
 
 } // namespace g729

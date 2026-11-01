@@ -11,7 +11,7 @@
 #   DMODEM_LINK_DIR
 
 set(DMODEM_LINK_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(_link g729a_common.cpp g729a_dec.cpp g729a_enc.cpp g729a_tab.cpp h245.cpp hdlc.cpp lapb.cpp lapm.cpp ppp_sync.cpp mnp.cpp mnp5.cpp v42bis.cpp v44.cpp v44_preset.cpp v76.cpp v80.cpp zstd_codec.cpp zstd_dict.cpp link.cpp)
+set(_link g729a_common.cpp g729a_dec.cpp g729a_enc.cpp g729a_tab.cpp g729b.cpp h245.cpp hdlc.cpp lapb.cpp lapm.cpp ppp_sync.cpp mnp.cpp mnp5.cpp v42bis.cpp v44.cpp v44_preset.cpp v76.cpp v80.cpp zstd_codec.cpp zstd_dict.cpp link.cpp)
 list(TRANSFORM _link PREPEND ${DMODEM_LINK_DIR}/)
 add_library(dmodem_link OBJECT ${_link})
 target_include_directories(dmodem_link PUBLIC ${DMODEM_LINK_DIR})

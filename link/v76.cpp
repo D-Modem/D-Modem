@@ -26,6 +26,8 @@ enum {
 	VOICE_TRIES = 4,        /* our voice SABME's tries */
 	VOICE_PORT = 1,         /* the voice channel's port (data: 0) */
 	VOICE_CREDIT = 4,       /* voice frames' bits saved up at most */
+	HDR_SILENCE = 0x01,     /* the audio header's bits (Table 7/V.75) */
+	HDR_SID = 0x02,
 };
 
 /* the line's bits in 10 ms (a voice frame's time), rate in bit/s */
@@ -99,8 +101,8 @@ void Mux::opening()
 }
 
 /* our voice channel's SABME on vdlci_ (again after no answer): G.729
-   Annex A, a frame a packet, UNERM both ways with a 16 bit FCS, no
-   audio header */
+   Annex A, a frame a packet, UNERM both ways with a 16 bit FCS and
+   V.75's audio header (for silence: SID frames, and none sent) */
 void Mux::open_voice()
 {
 	h245::Msg m;
@@ -110,7 +112,8 @@ void Mux::open_voice()
 	m.ch.kind = h245::Kind::Audio;
 	m.ch.frames = 1;
 	m.ch.fwd.erm = m.ch.rev.erm = false;
-	m.ch.fwd.n401 = m.ch.rev.n401 = g729::FRAME_OCTETS;
+	m.ch.fwd.n401 = m.ch.rev.n401 = g729::FRAME_OCTETS + 1;
+	m.ch.fwd.audio_header = m.ch.rev.audio_header = true;
 	log_msg("out", static_cast<u8>(vdlci_), m);
 	tx_unnum(static_cast<u8>(vdlci_), true, U_SABME | PF, h245::user_data(m));
 	vstate_ = VState::Opening;
@@ -127,6 +130,17 @@ void Mux::clock(s32 bits)
 		vcredit_ += bits;
 		if (vcredit_ > VOICE_CREDIT * per)
 			vcredit_ = VOICE_CREDIT * per;
+		/* silence at the far end: comfort noise every 10 ms that
+		   brings no frame */
+		if (vsil_) {
+			vrx_credit_ += bits;
+			while (vrx_credit_ >= per) {
+				vrx_credit_ -= per;
+				s16 pcm[g729::FRAME];
+				dec_.decode(nullptr, 0, pcm);
+				link_->voice_out(pcm, g729::FRAME);
+			}
+		}
 	}
 	if (vtimer_ <= 0 || (vtimer_ -= bits) > 0)
 		return;
@@ -222,35 +236,43 @@ Frame *Mux::next_tx_frame()
 }
 
 /* the voice channel's next UI frame, once its 10 ms are due and the
-   owner has given its 80 samples; else none */
+   owner has given its 80 samples; else none (and none while the
+   encoder finds silence that has not changed: nothing is sent) */
 Frame *Mux::next_voice()
 {
 	if (vstate_ != VState::Open || vbusy_)
 		return nullptr;
 	const s32 per = frame_bits(link_->tx_rate());
-	if (vcredit_ < per)
-		return nullptr;
-	if (mic_n_ < g729::FRAME)
-		mic_n_ = static_cast<s16>(mic_n_ +
-			link_->voice_in(mic_ + mic_n_,
-					static_cast<s16>(g729::FRAME - mic_n_)));
-	if (mic_n_ < g729::FRAME)
-		return nullptr;
-	vcredit_ -= per;
-	mic_n_ = 0;
-	s16 n = 0;
-	vbuf_[n++] = addr(static_cast<u8>(vdlci_), true);
-	vbuf_[n++] = U_UI;
-	if (vhdr_tx_) {
-		/* not silence, not a SID; the sequence number in bits 2 to
-		   6 (clause 9/V.75) */
-		vbuf_[n++] = static_cast<u8>((vseq_tx_ & 0x1f) << 2);
-		vseq_tx_ = static_cast<u8>((vseq_tx_ + 1) & 0x1f);
+	while (vcredit_ >= per) {
+		if (mic_n_ < g729::FRAME)
+			mic_n_ = static_cast<s16>(mic_n_ +
+				link_->voice_in(mic_ + mic_n_,
+						static_cast<s16>(g729::FRAME - mic_n_)));
+		if (mic_n_ < g729::FRAME)
+			return nullptr;
+		vcredit_ -= per;
+		mic_n_ = 0;
+		s16 n = 0;
+		vbuf_[n++] = addr(static_cast<u8>(vdlci_), true);
+		vbuf_[n++] = U_UI;
+		const s16 hdr = n;
+		if (vhdr_tx_)
+			n++;
+		const int len = enc_.encode(mic_, vbuf_ + n);
+		if (len == 0)
+			continue;
+		if (vhdr_tx_) {
+			/* a SID frame (with the silence bit) or speech; the
+			   sequence number in bits 2 to 6 (clause 9/V.75) */
+			vbuf_[hdr] = static_cast<u8>((vseq_tx_ & 0x1f) << 2 |
+				(len == g729::SID_OCTETS ? HDR_SILENCE | HDR_SID : 0));
+			vseq_tx_ = static_cast<u8>((vseq_tx_ + 1) & 0x1f);
+		}
+		vframe_.size = static_cast<s16>(n + len);
+		vbusy_ = true;
+		return &vframe_;
 	}
-	enc_.encode(mic_, vbuf_ + n);
-	vframe_.size = static_cast<s16>(n + g729::FRAME_OCTETS);
-	vbusy_ = true;
-	return &vframe_;
+	return nullptr;
 }
 
 /* a frame is out: the data channel's to it */
@@ -408,15 +430,26 @@ bool Mux::rx_voice(Frame *f, u8 dlci, const h245::Msg &m, u8 *cause)
 	log_msg("out", dlci, r);
 	tx_unnum(dlci, false, static_cast<u8>(U_UA | (f->buf[1] & PF)),
 		 h245::user_data(r));
+	voice_open();
+	return true;
+}
+
+/* the voice channel is open: the coder from its start, with Annex B's
+   DTX if the audio header can say so; the owner hears */
+void Mux::voice_open()
+{
 	vstate_ = VState::Open;
+	vtimer_ = 0;
 	vseq_tx_ = 0;
 	vseq_rx_ = -1;
 	vcredit_ = 0;
+	vrx_credit_ = 0;
+	vsil_ = false;
 	mic_n_ = 0;
+	enc_.set_dtx(vhdr_tx_);
 	enc_.reset();
 	dec_.reset();
 	link_->voice_state(true);
-	return true;
 }
 
 /* a frame on the voice channel's DLC: speech (a UI command) to the
@@ -438,9 +471,11 @@ void Mux::voice_frame(Frame *f, u8 ctrl, bool cmd)
 	if (u == U_UI && cmd) {
 		if (vstate_ != VState::Open)
 			return;
+		bool silence = false;
 		if (vhdr_rx_) {
 			if (n < 1)
 				return;
+			silence = (p[0] & (HDR_SILENCE | HDR_SID)) != 0;
 			const s16 seq = static_cast<s16>(p[0] >> 2 & 0x1f);
 			/* frames lost since the last: concealed (a few) */
 			if (vseq_rx_ >= 0) {
@@ -455,6 +490,17 @@ void Mux::voice_frame(Frame *f, u8 ctrl, bool cmd)
 			p++;
 			n--;
 		}
+		/* silence: a SID frame (or none), then comfort noise until
+		   speech comes again (clock()) */
+		vrx_credit_ = -frame_bits(link_->tx_rate()) / 2;
+		vsil_ = silence;
+		if (silence) {
+			s16 pcm[g729::FRAME];
+			dec_.decode(p, n >= g729::SID_OCTETS ? g729::SID_OCTETS : 0,
+				    pcm);
+			link_->voice_out(pcm, g729::FRAME);
+			return;
+		}
 		for (; n >= g729::FRAME_OCTETS; n -= g729::FRAME_OCTETS,
 		     p += g729::FRAME_OCTETS) {
 			s16 pcm[g729::FRAME];
@@ -464,15 +510,9 @@ void Mux::voice_frame(Frame *f, u8 ctrl, bool cmd)
 		return;
 	}
 	if (!cmd && u == U_UA && vstate_ == VState::Opening) {
-		vstate_ = VState::Open;
-		vtimer_ = 0;
-		vseq_tx_ = 0;
-		vseq_rx_ = -1;
-		vcredit_ = 0;
-		mic_n_ = 0;
-		enc_.reset();
-		dec_.reset();
-		link_->voice_state(true);
+		/* as asked: the audio header both ways */
+		vhdr_tx_ = vhdr_rx_ = true;
+		voice_open();
 		return;
 	}
 	if (!cmd && u == U_DM && vstate_ == VState::Opening) {

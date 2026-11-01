@@ -52,13 +52,13 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.70](https://www.itu.int/rec/T-REC-V.70) | Digital simultaneous voice and data (DSVD) | `dsp/dp_v8bis.cpp`, `link/v76.cpp` ([v70-details.md](../v70-details.md)) | [V.70.pdf](V.70.pdf) |
 | [V.75](https://www.itu.int/rec/T-REC-V.75) | DSVD's control: H.245's messages in V.76's frames | `link/v76.cpp`, `link/h245.cpp` | [V.75.pdf](V.75.pdf) |
 | [V.76](https://www.itu.int/rec/T-REC-V.76) | A multiplexer on V.42 LAPM's procedures | `link/v76.cpp`, `link/lapm.cpp` | [V.76.pdf](V.76.pdf) |
-| [G.729](https://www.itu.int/rec/T-REC-G.729) | CS-ACELP speech coding at 8 kbit/s; Annex A, its reduced complexity coder (DSVD's voice) | `link/g729a_*.cpp` ([v70-details.md](../v70-details.md#g729-annex-a)) | [G.729.pdf](G.729.pdf) |
+| [G.729](https://www.itu.int/rec/T-REC-G.729) | CS-ACELP speech coding at 8 kbit/s; Annex A, its reduced complexity coder (DSVD's voice); Annex B, silence compression and comfort noise | `link/g729a_*.cpp`, `link/g729b.cpp` ([v70-details.md](../v70-details.md#g729-annex-a)) | [G.729.pdf](G.729.pdf) |
 | [H.245](https://www.itu.int/rec/T-REC-H.245) | Multimedia control messages (OpenLogicalChannel and others, in aligned PER) | `link/h245.cpp` | [H.245.pdf](H.245.pdf) |
 | [V.251](https://www.itu.int/rec/T-REC-V.251) | AT commands for V.8 and V.8 bis (`+A8E`) | `core/at.cpp`, `core/modem.cpp` | [V.251.pdf](V.251.pdf) |
 | [V.253](https://www.itu.int/rec/T-REC-V.253) | Voice AT commands | `dsp/dsp_glue.cpp` (voice) | [V.253.pdf](V.253.pdf) |
 
 G.729's software (its test vectors among it) is a separate download:
-`docs/specs/fetch_g729.sh` puts Annex A's test vectors in `g729a/`,
+`docs/specs/fetch_g729.sh` puts Annex A's and Annex B's test vectors in `g729a/`,
 where `link/test/g729a_test.cpp` checks D-Modem's coder against them
 bit for bit (the test is skipped without them). Only the vectors are
 used, as data; the reference code is not built.

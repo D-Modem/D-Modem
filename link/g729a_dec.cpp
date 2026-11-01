@@ -24,7 +24,10 @@ struct DecState {
 	LspPast lsp;
 	i16 prev_ma, prev_lsp[M];       /* the last good frame's LSFs */
 	i16 past_qua_en[4];
-	i16 seed;                       /* lost frames' random codebook */
+	i16 seed_fer;                   /* lost frames' random codebook */
+	/* Annex B's comfort noise */
+	i16 seed, past_ftyp, sid_sav, sh_sid_sav, cur_gain, sid_gain;
+	i16 lspSid[M];
 	i16 synth_buf[L_FRAME + M];     /* the synthesis, M before it */
 	/* the postfilter's */
 	i16 res2_buf[PIT_MAX + L_SUBFR], scal_res2_buf[PIT_MAX + L_SUBFR];
@@ -32,13 +35,6 @@ struct DecState {
 	i16 mem_pre, past_gain;
 	HighPass hp;
 };
-
-/* the next pseudo-random number (4.4.4/G.729) */
-static i16 random16(i16 &seed)
-{
-	seed = extract_l(L_add(L_shr(L_mult(seed, 31821), 1), 13849));
-	return seed;
-}
 
 /* the LSFs decoded, or a lost frame's: the last ones again, the MA
    past moved on with what they would be coded as (4.4.1/G.729) */
@@ -146,15 +142,94 @@ static void dec_gain(DecState &s, i16 index, const i16 *code, bool bfi)
 	gain_update(s.past_qua_en, gbk12);
 }
 
+/* the synthesis of a frame's excitation exc through A_t's two
+   filters; on an overflow the excitation's past is scaled down and it
+   is done again */
+static void synthesis(DecState &s, i16 *exc, const i16 *Az, i16 *synth,
+		      int i_subfr)
+{
+	overflow() = false;
+	syn_filt(Az, &exc[i_subfr], &synth[i_subfr], L_SUBFR, s.mem_syn, false);
+	if (overflow()) {
+		for (int i = 0; i < PIT_MAX + L_INTERPOL + L_FRAME; i++)
+			s.old_exc[i] = shr(s.old_exc[i], 2);
+		syn_filt(Az, &exc[i_subfr], &synth[i_subfr], L_SUBFR, s.mem_syn,
+			 true);
+	} else {
+		for (int i = 0; i < M; i++)
+			s.mem_syn[i] = synth[i_subfr + L_SUBFR - M + i];
+	}
+}
+
+/* Annex B's comfort noise for a SID frame (parm its parameters) or a
+   frame not sent (B.4.4, B.5/G.729) */
+static void dec_cng(DecState &s, const i16 *parm, bool sid, i16 *exc,
+		    i16 *A_t)
+{
+	const bool first = s.past_ftyp == SPEECH;
+	if (sid) {
+		s.sid_gain = sid_gain_of(parm[3]);
+		sid_lsfq_decode(parm, s.lspSid, s.lsp);
+	} else if (first) {
+		/* the first SID frame lost: the last speech's energy */
+		i16 enerq;
+		s.sid_gain = sid_gain_of(qua_sidgain(&s.sid_sav, &s.sh_sid_sav,
+						     0, &enerq));
+	}
+	if (first) {
+		s.cur_gain = s.sid_gain;
+	} else {
+		s.cur_gain = mult_r(s.cur_gain, 28672);
+		s.cur_gain = add(s.cur_gain, mult_r(s.sid_gain, 4096));
+	}
+	calc_exc_rand(s.cur_gain, exc, s.seed, nullptr);
+	int_qlpc(s.lsp_old, s.lspSid, A_t);
+	for (int i = 0; i < M; i++)
+		s.lsp_old[i] = s.lspSid[i];
+}
+
+/* a frame's end: the energy a lost first SID frame would have (Annex
+   B), the excitation's past moved on */
+static int frame_end(DecState &s, const i16 *exc, bool bfi, int ftyp)
+{
+	if (!bfi) {
+		i32 t = 0;
+		for (int i = 0; i < L_FRAME; i++)
+			t = L_mac(t, exc[i], exc[i]);
+		s.sh_sid_sav = norm_l(t);
+		s.sid_sav = round16(L_shl(t, s.sh_sid_sav));
+		s.sh_sid_sav = sub(16, s.sh_sid_sav);
+	}
+	for (int i = 0; i < PIT_MAX + L_INTERPOL; i++)
+		s.old_exc[i] = s.old_exc[i + L_FRAME];
+	s.past_ftyp = static_cast<i16>(ftyp);
+	return ftyp;
+}
+
 /* one frame to its synthesis (4.1/G.729): the parameters after the bad
    frame indicator, as the Recommendation's prm[1..11] with the parity
-   bit replaced by its check (non-zero: bad); the filters and lags for
-   the postfilter */
-static void decod_ld8a(DecState &s, i16 *parm, bool bfi, i16 *synth,
-		       i16 *A_t, i16 *T2)
+   bit replaced by its check (non-zero: bad), or a SID frame's; the
+   filters and lags for the postfilter; the frame's type (a lost one's
+   as the last) */
+static int decod_ld8a(DecState &s, i16 *parm, bool bfi, int ftyp,
+		      i16 *synth, i16 *A_t, i16 *T2)
 {
 	i16 lsp_new[M], code[L_SUBFR];
 	i16 *exc = s.old_exc + PIT_MAX + L_INTERPOL;
+
+	if (bfi)
+		ftyp = s.past_ftyp == SPEECH ? SPEECH : NONE;
+	if (ftyp != SPEECH) {
+		dec_cng(s, parm, ftyp == SID, exc, A_t);
+		for (int i_subfr = 0; i_subfr < L_FRAME; i_subfr += L_SUBFR) {
+			synthesis(s, exc, A_t + (i_subfr / L_SUBFR) * MP1, synth,
+				  i_subfr);
+			*T2++ = s.old_T0;
+		}
+		s.sharp = SHARPMIN;
+		return frame_end(s, exc, bfi, ftyp);
+	}
+	s.seed = INIT_SEED;
 
 	d_lsp(s, parm, lsp_new, bfi);
 	parm += 2;
@@ -184,8 +259,8 @@ static void decod_ld8a(DecState &s, i16 *parm, bool bfi, i16 *synth,
 		pred_lt_3(&exc[i_subfr], T0, T0_frac, L_SUBFR);
 
 		if (bfi) {
-			parm[0] = static_cast<i16>(random16(s.seed) & 0x1fff);
-			parm[1] = static_cast<i16>(random16(s.seed) & 0x000f);
+			parm[0] = static_cast<i16>(random16(s.seed_fer) & 0x1fff);
+			parm[1] = static_cast<i16>(random16(s.seed_fer) & 0x000f);
 		}
 		decod_acelp(parm[1], parm[0], code);
 		parm += 2;
@@ -208,24 +283,10 @@ static void decod_ld8a(DecState &s, i16 *parm, bool bfi, i16 *synth,
 			exc[i + i_subfr] = round16(t);
 		}
 
-		/* the synthesis; on an overflow the excitation's past is
-		   scaled down and it is done again */
-		overflow() = false;
-		syn_filt(Az, &exc[i_subfr], &synth[i_subfr], L_SUBFR, s.mem_syn,
-			 false);
-		if (overflow()) {
-			for (int i = 0; i < PIT_MAX + L_INTERPOL + L_FRAME; i++)
-				s.old_exc[i] = shr(s.old_exc[i], 2);
-			syn_filt(Az, &exc[i_subfr], &synth[i_subfr], L_SUBFR,
-				 s.mem_syn, true);
-		} else {
-			for (int i = 0; i < M; i++)
-				s.mem_syn[i] = synth[i_subfr + L_SUBFR - M + i];
-		}
+		synthesis(s, exc, Az, synth, i_subfr);
 		Az += MP1;
 	}
-	for (int i = 0; i < PIT_MAX + L_INTERPOL; i++)
-		s.old_exc[i] = s.old_exc[i + L_FRAME];
+	return frame_end(s, exc, bfi, SPEECH);
 }
 
 /* the long-term postfilter (A.4.2.1/G.729): the residual's best integer
@@ -350,7 +411,7 @@ static void agc(i16 &past_gain, const i16 *sig_in, i16 *sig_out)
 /* Annex A's postfilter (A.4.2/G.729) on syn (syn[-M..-1] the last
    frame's): long-term, short-term, tilt, gain control */
 static void post_filter(DecState &s, i16 *syn, const i16 *Az_4,
-			const i16 *T)
+			const i16 *T, bool vad)
 {
 	i16 res2_pst[L_SUBFR], syn_pst[L_FRAME], Ap3[MP1], Ap4[MP1], h[L_H];
 	i16 *res2 = s.res2_buf + PIT_MAX;
@@ -368,7 +429,11 @@ static void post_filter(DecState &s, i16 *syn, const i16 *Az_4,
 		residu(Ap3, &syn[i_subfr], res2, L_SUBFR);
 		for (int j = 0; j < L_SUBFR; j++)
 			scal_res2[j] = shr(res2[j], 2);
-		pit_pst_filt(res2, scal_res2, t0_min, t0_max, res2_pst);
+		if (vad)
+			pit_pst_filt(res2, scal_res2, t0_min, t0_max, res2_pst);
+		else
+			for (int j = 0; j < L_SUBFR; j++)
+				res2_pst[j] = res2[j];
 
 		/* the tilt from the filter's impulse response */
 		for (int i = 0; i <= M; i++)
@@ -409,7 +474,7 @@ static void post_filter(DecState &s, i16 *syn, const i16 *Az_4,
 }
 
 /* (see g729a.h) */
-Decoder::Decoder() : st_(new DecState)
+Decoder::Decoder() : st_(new DecState())
 {
 	reset();
 }
@@ -434,24 +499,39 @@ void Decoder::reset()
 		s.prev_lsp[i] = s.lsp.freq_prev[0][i];
 	for (i16 &e : s.past_qua_en)
 		e = -14336;
-	s.seed = 21845;
+	s.seed_fer = 21845;
 	s.past_gain = 4096;
 	s.hp.reset();
+	static const i16 lsp_sid[M] = { 31441, 27566, 21458, 13612, 4663,
+					-4663, -13612, -21458, -27566, -31441 };
+	for (int i = 0; i < M; i++)
+		s.lspSid[i] = lsp_sid[i];
+	s.seed = INIT_SEED;
+	s.past_ftyp = SPEECH;
+	s.sid_sav = 0;
+	s.sh_sid_sav = 1;
+	s.sid_gain = sid_gain_of(0);
 }
 
-/* the frame (bfi: erased) through the decoder, the postfilter and the
-   high-pass filter */
-static void decode_frame(DecState &s, const int16_t prm[PRMS], bool bfi,
-			 int16_t pcm[FRAME])
+/* the frame (bfi: erased; type: its type, Annex B) through the
+   decoder, the postfilter and the high-pass filter */
+static void decode_frame(DecState &s, int type, const int16_t *prm,
+			 bool bfi, int16_t pcm[FRAME])
 {
-	i16 parm[PRMS], Az_dec[MP1 * 2], T2[2];
-	for (int i = 0; i < PRMS; i++)
-		parm[i] = prm[i];
-	/* the parity check (4.1.2/G.729): 1 when it fails */
-	parm[3] = static_cast<i16>(add(parity_pitch(parm[2]), parm[3]) & 1);
+	i16 parm[PRMS] = {}, Az_dec[MP1 * 2], T2[2];
+	if (type == SPEECH) {
+		for (int i = 0; i < PRMS; i++)
+			parm[i] = prm[i];
+		/* the parity check (4.1.2/G.729): 1 when it fails */
+		parm[3] = static_cast<i16>(add(parity_pitch(parm[2]), parm[3]) &
+					   1);
+	} else if (type == SID) {
+		for (int i = 0; i < SID_PRMS; i++)
+			parm[i] = prm[i];
+	}
 	i16 *synth = s.synth_buf + M;
-	decod_ld8a(s, parm, bfi, synth, Az_dec, T2);
-	post_filter(s, synth, Az_dec, T2);
+	const int ftyp = decod_ld8a(s, parm, bfi, type, synth, Az_dec, T2);
+	post_filter(s, synth, Az_dec, T2, ftyp == SPEECH);
 	s.hp.post(synth, L_FRAME);
 	for (int i = 0; i < L_FRAME; i++)
 		pcm[i] = synth[i];
@@ -461,7 +541,16 @@ static void decode_frame(DecState &s, const int16_t prm[PRMS], bool bfi,
 void Decoder::decode(const int16_t prm[PRMS], bool erased,
 		     int16_t pcm[FRAME])
 {
-	decode_frame(*st_, prm, erased, pcm);
+	decode_frame(*st_, SPEECH, prm, erased, pcm);
+}
+
+/* (see g729a.h) */
+void Decoder::decode(int type, const int16_t *prm, bool erased,
+		     int16_t pcm[FRAME])
+{
+	if (type != SPEECH && type != SID)
+		type = NONE;
+	decode_frame(*st_, type, prm, erased, pcm);
 }
 
 /* (see g729a.h) */
@@ -469,14 +558,29 @@ void Decoder::decode(const uint8_t in[FRAME_OCTETS], int16_t pcm[FRAME])
 {
 	int16_t prm[PRMS];
 	unpack(in, prm);
-	decode_frame(*st_, prm, false, pcm);
+	decode_frame(*st_, SPEECH, prm, false, pcm);
+}
+
+/* (see g729a.h) */
+void Decoder::decode(const uint8_t *in, int n, int16_t pcm[FRAME])
+{
+	int16_t prm[PRMS] = {};
+	if (n >= FRAME_OCTETS) {
+		unpack(in, prm);
+		decode_frame(*st_, SPEECH, prm, false, pcm);
+	} else if (n >= SID_OCTETS) {
+		unpack_sid(in, prm);
+		decode_frame(*st_, SID, prm, false, pcm);
+	} else {
+		decode_frame(*st_, NONE, prm, false, pcm);
+	}
 }
 
 /* (see g729a.h) */
 void Decoder::erase(int16_t pcm[FRAME])
 {
 	const int16_t prm[PRMS] = {};
-	decode_frame(*st_, prm, true, pcm);
+	decode_frame(*st_, SPEECH, prm, true, pcm);
 }
 
 } // namespace g729

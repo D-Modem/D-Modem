@@ -1665,7 +1665,9 @@ on its data channel, opened with \std{V.75}'s messages, with error correction
 and no compression.  The protocol is then \cmd{V.76} (\cmdl[I]{ATI11}, the
 \cmd{Protocol:} report).  Where the modem has a voice path (a SmartUSB56's
 handset, or dmodemd's \cmd{--dsvd-audio} command), a voice channel opens
-beside the data, the speech coded with \std{G.729} Annex A.  Without
+beside the data, the speech coded with \std{G.729} Annex A, and silence
+with Annex B (comfort noise, the line left to the data) when both ends
+send \std{V.75}'s audio header.  Without
 \std{DSVD} at the other end the call is an ordinary data call.  See
 \cmd{docs/v70.md}.
 \begin{syntax}
