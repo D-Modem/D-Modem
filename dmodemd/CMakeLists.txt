@@ -16,7 +16,7 @@ if(WIN32)
 	# POSIX; with --driver's frames (../winmodem/wire.cpp)
 	list(APPEND _front windows_dte.cpp ../winmodem/wire.cpp)
 else()
-	list(APPEND _front pty.cpp pipe_modem.cpp)
+	list(APPEND _front pty.cpp pipe_modem.cpp dsvd_audio.cpp)
 endif()
 list(TRANSFORM _front PREPEND ${CMAKE_CURRENT_SOURCE_DIR}/)
 set(DMODEM_FRONT_SRCS ${_front} PARENT_SCOPE)
@@ -507,6 +507,17 @@ if(NOT WIN32)
 	dmodem_flags(modem_test EXTRA)
 	target_link_libraries(modem_test PRIVATE dmodem_front dmodem_core dmodem_t30
 		dmodem_dsp dmodem_link ${DMODEM_LIBM} Threads::Threads)
+	# test/dsvd_audio_test.cpp: --dsvd-audio's command (dsvd_audio.h)
+	if(DMODEM_TESTS)
+		add_executable(dsvd_audio_test test/dsvd_audio_test.cpp
+			dsvd_audio.cpp)
+		target_include_directories(dsvd_audio_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR})
+		target_link_libraries(dsvd_audio_test PRIVATE dmodem_core dmodem_t30
+			dmodem_dsp dmodem_link ${DMODEM_LIBM} Threads::Threads)
+		dmodem_flags(dsvd_audio_test EXTRA NOOPT)
+		dmodem_gtest(dsvd_audio_test LABELS quick)
+	endif()
 endif()
 
 # libdmodem: the objects of dmodem_core, dmodem_dsp, dmodem_t30 and

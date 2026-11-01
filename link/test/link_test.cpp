@@ -11,6 +11,7 @@
  *
  */
 
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,7 @@
 
 #include <gtest/gtest.h>
 
+#include "g729a.h"
 #include "h245.h"
 #include "link.h"
 #include "mnp5.h"
@@ -2828,4 +2830,199 @@ TEST(Link, V76Refused)
 	      m.type == h245::Type::OlcReject &&
 	      m.cause == h245::TYPE_NOT_AVAILABLE,
 	      "a second data channel refused");
+}
+
+/* a DTE with a voice path: a tone of freq Hz for its speech, the far
+   end's kept, at a V.34 rate */
+struct VoiceDte : Dte {
+	double freq;
+	long sent = 0;
+	bool on = false;
+	int opened = 0, closed = 0;
+	std::vector<s16> heard;
+	/* the DTE called n, its tone */
+	VoiceDte(const char *n, double f) : Dte(n), freq(f) {}
+	/* a voice channel's rate */
+	int32_t tx_rate() override { return 28800; }
+	/* (it has a voice path) */
+	bool voice() override { return true; }
+	/* the channel open or closed */
+	void voice_state(bool o) override {
+		on = o;
+		(o ? opened : closed)++;
+	}
+	/* the tone, always there */
+	s16 voice_in(s16 *pcm, s16 n) override {
+		for (s16 i = 0; i < n; i++, sent++)
+			pcm[i] = static_cast<s16>(8000 * sin(2 * M_PI * freq *
+							     sent / 8000));
+		return n;
+	}
+	/* the far end's */
+	void voice_out(const s16 *pcm, s16 n) override {
+		heard.insert(heard.end(), pcm, pcm + n);
+	}
+	/* the share of what was heard (after the first 100 ms) at f Hz,
+	   by its energy */
+	double tone_share(double f) const {
+		double c = 0, s = 0, all = 0;
+		for (size_t i = 800; i < heard.size(); i++) {
+			c += heard[i] * cos(2 * M_PI * f * i / 8000);
+			s += heard[i] * sin(2 * M_PI * f * i / 8000);
+			all += double(heard[i]) * heard[i];
+		}
+		const double n = double(heard.size() - 800);
+		return all > 0 ? 2 * (c * c + s * s) / n / all : 0;
+	}
+};
+
+/* two Links back to back whose DTEs have a voice path */
+struct VoicePair {
+	VoiceDte dc{"caller", 440}, da{"answerer", 700};
+	Link lc, la;
+	/* a DSVD call, the answerer the initiator */
+	VoicePair() {
+		lc.init(&dc, true, lapm_config(0));
+		la.init(&da, false, lapm_config(0));
+		const char *v = getenv("LINK_DEBUG");
+		dc.verbose = da.verbose = v && *v;
+		lc.start_v76(false);
+		la.start_v76(true);
+	}
+	/* bits both ways */
+	void run(long bits, int chunk = 48) {
+		std::vector<uint8_t> b(chunk);
+		for (long k = 0; k < bits; k += chunk) {
+			lc.get_bits(1, b.data(), chunk);
+			la.put_bits(1, b.data(), chunk);
+			la.get_bits(1, b.data(), chunk);
+			lc.put_bits(1, b.data(), chunk);
+			if (dc.up)
+				lc.set_online(true);
+			if (da.up)
+				la.set_online(true);
+		}
+	}
+};
+
+/* the voice channel beside the data channel: opened by the initiator on
+   DLCI 1, G.729 Annex A both ways at 100 frames a second of the line's
+   bits, each side hearing the other's tone, the data still going; the
+   hang-up closes it */
+TEST(Link, V76Voice)
+{
+	VoicePair p;
+	p.run(28800);
+	CHECK(p.dc.up && p.da.up, "the data channel up");
+	CHECK(p.dc.on && p.da.on, "the voice channel open (%d, %d)", p.dc.on,
+	      p.da.on);
+	p.dc.heard.clear();
+	p.da.heard.clear();
+
+	/* two seconds of the line's bits: two seconds of speech each way
+	   (about 12 kbit/s of the 28.8 with the frames' overhead), and
+	   data meanwhile */
+	p.dc.to_send = text(2500);
+	p.da.to_send = text(2000);
+	p.run(28800 * 2);
+	printf("  voice: caller heard %zu samples, answerer %zu; data %zu + "
+	       "%zu octets\n", p.dc.heard.size(), p.da.heard.size(),
+	       p.da.got.size(), p.dc.got.size());
+	CHECK(p.dc.heard.size() >= 15000 && p.dc.heard.size() <= 16100,
+	      "the caller heard %zu samples in 2 s", p.dc.heard.size());
+	CHECK(p.da.heard.size() >= 15000 && p.da.heard.size() <= 16100,
+	      "the answerer heard %zu samples in 2 s", p.da.heard.size());
+	const double c = p.dc.tone_share(700), a = p.da.tone_share(440);
+	printf("  voice: the far end's tone %.0f %% (caller), %.0f %% "
+	       "(answerer)\n", 100 * c, 100 * a);
+	CHECK(c > 0.8, "the caller hears 700 Hz (%.2f)", c);
+	CHECK(a > 0.8, "the answerer hears 440 Hz (%.2f)", a);
+	CHECK(p.da.got == p.dc.to_send && p.dc.got == p.da.to_send,
+	      "the data beside it (%zu, %zu)", p.da.got.size(),
+	      p.dc.got.size());
+
+	p.la.disconnect();
+	p.run(28800);
+	CHECK(!p.dc.on && !p.da.on && p.dc.closed == 1 && p.da.closed == 1,
+	      "the voice channel closed on the hang-up");
+	CHECK(p.dc.released && p.da.released, "released");
+}
+
+/* the responder with a voice path takes an audio channel with V.75's
+   audio header (clause 9) both ways: its frames carry the header and
+   their sequence numbers; a second audio channel, or one in ERM, is
+   refused; the remote's DISC closes it */
+TEST(Link, V76VoiceHeader)
+{
+	VoiceDte d("responder", 500);
+	Link l;
+	l.init(&d, true, lapm_config(0));
+	l.start_v76(false);
+
+	h245::Msg m;
+	m.type = h245::Type::Olc;
+	m.lcn = m.ch.lcn = 3;
+	m.ch.port = 1;
+	m.ch.kind = h245::Kind::Audio;
+	m.ch.fwd.erm = m.ch.rev.erm = false;
+	m.ch.fwd.n401 = m.ch.rev.n401 = 11;
+	m.ch.fwd.audio_header = m.ch.rev.audio_header = true;
+	h245::Msg erm = m;
+	erm.ch.fwd.erm = true;
+	/* our speech: 3 frames of the encoder's, sequence numbers 0, 1 and
+	   then 4 (two lost) */
+	g729::Encoder enc;
+	std::vector<std::vector<u8>> speech;
+	for (u8 seq : { 0, 1, 4 }) {
+		s16 pcm[g729::FRAME];
+		for (int i = 0; i < g729::FRAME; i++)
+			pcm[i] = static_cast<s16>(6000 * sin(2 * M_PI * 500 *
+							     (seq * 80 + i) / 8000.0));
+		std::vector<u8> f = { 2 << 2 | 3, 0x03,
+				      static_cast<u8>(seq << 2) };
+		f.resize(3 + g729::FRAME_OCTETS);
+		enc.encode(pcm, f.data() + 3);
+		speech.push_back(f);
+	}
+	std::vector<std::vector<std::vector<u8>>> rounds = {
+		{ u_frame(4 << 2 | 3, 0x7f, &erm), u_frame(2 << 2 | 3, 0x7f, &m),
+		  u_frame(3 << 2 | 3, 0x7f, &m) },
+		speech,
+	};
+	std::vector<std::vector<u8>> out = exchange(l, rounds[0], 8);
+	h245::Msg r;
+	CHECK(find_u(out, 2 << 2 | 3, 0x73, &r) &&
+	      r.type == h245::Type::OlcAck && r.lcn == 3,
+	      "UA with OpenLogicalChannelAck for the audio channel");
+	CHECK(d.on && d.opened == 1, "the voice channel open");
+	CHECK(find_u(out, 3 << 2 | 3, 0x1f, &r) &&
+	      r.type == h245::Type::OlcReject &&
+	      r.cause == h245::TYPE_NOT_AVAILABLE, "a second one refused");
+	CHECK(find_u(out, 4 << 2 | 3, 0x1f, &r) &&
+	      r.type == h245::Type::OlcReject &&
+	      r.cause == h245::UNSUITABLE_REVERSE, "one in ERM refused");
+
+	out = exchange(l, rounds[1], 40);
+	CHECK(d.heard.size() == 5 * g729::FRAME,
+	      "3 frames and 2 lost ones heard (%zu samples)", d.heard.size());
+	/* our frames: the responder's commands have C/R 0; the header's
+	   sequence numbers count up */
+	int n = 0, last = -1;
+	for (const std::vector<u8> &f : out)
+		if (f.size() == 3 + g729::FRAME_OCTETS && f[0] == (2 << 2 | 1) &&
+		    f[1] == 0x03) {
+			CHECK(last < 0 || f[2] == ((last + 1) & 0x1f) << 2,
+			      "frame %d's header %02x after %d", n, f[2], last);
+			last = f[2] >> 2;
+			n++;
+		}
+	CHECK(n > 10, "speech sent with the header (%d frames)", n);
+
+	h245::Msg clc;
+	clc.type = h245::Type::Clc;
+	clc.lcn = 3;
+	out = exchange(l, { u_frame(2 << 2 | 3, 0x53, &clc) }, 4);
+	CHECK(find_u(out, 2 << 2 | 3, 0x73, &r) &&
+	      r.type == h245::Type::ClcAck, "UA with CloseLogicalChannelAck");
+	CHECK(!d.on && d.closed == 1, "the voice channel closed");
 }

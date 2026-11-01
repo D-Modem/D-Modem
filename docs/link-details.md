@@ -77,8 +77,11 @@ port or pty.) It is C++, in `namespace dlink`.
   DSVD (`Link::start_v76()`): the DLCs share the HDLC link by the DLCI
   in their address octet; the data channel is a `Lapm` with its DLCI
   (V.76's ERM), opened and closed with V.75's H.245 messages
-  (`h245.cpp`, aligned PER) in its SABME, UA, DM and DISC. No detection
-  phase, XID or compression. See [v70-details.md](v70-details.md).
+  (`h245.cpp`, aligned PER) in its SABME, UA, DM and DISC. With a voice
+  path (`Owner::voice()`), a voice channel beside it: G.729 Annex A
+  (`g729a.h`, D-Modem's own coder) in UNERM UI frames, one every 10 ms
+  of line bits, ahead of the data. No detection phase, XID or
+  compression. See [v70-details.md](v70-details.md).
 - **X.75** (`Lapb`, `lapb.cpp`) over HDLC, on a clear 64 kbit/s channel
   with `AT+B2=0`. This is LAPB in basic mode (modulo 8): a window of 7 I
   frames of up to 256 octets (up to 2048 taken), REJ recovery, and N2 =
@@ -148,7 +151,7 @@ modem. Most cases connect two `Link`s back to back, bit by bit.
 | Detection and async | `DetectHangup`, `AdpCellular`, `Async`, `V14`, `OdpUnanswered`, `LapmCallerAsyncRemote` | a hangup during T400; an originator against a cellular answerer's ADPs, "EM" then "EC" (LAPM) or "EM" alone (async after T400); async; an answerer or caller falling back to async after T400; a LAPM answerer with an async caller |
 | MNP | `MnpLr`, `MnpResponder`, `MnpResponderNoLr`, `Mnp`, `MnpAfterOdp`, `MnpOctets`, `MnpBitErrors`, `MnpSlowDte`, `MnpRequired`, `MnpN400` | our LR octet for octet as the Agere modem's, FCS and all, three of them unanswered, then async; our responder against the Agere modem's LR, then an LA, an LT, an LN (LNA) and an LD as HDLC frames; against SYN DLE STX with no LR after it (async after its wait, nothing sent); MNP first, and after ODPs a V.42 answerer did not answer; framing mode 2 and no optimizations; bit errors in both modes; a slow DTE (no credit); MNP required against a modem without it; N400 with the line cut |
 | MNP 5 | `Mnp5`, `MnpMnp5` | round trips (text, noise, runs, every value, flushes); the Agere modem's MNP 5 octets decoded and coded again; MNP with MNP 5 both ways |
-| V.76 and H.245 | `H245Messages`, `H245Extensions`, `V76`, `V76Refused` | H.245's messages against an ASN.1 compiler's octets, extension additions passed over, messages cut short; the data channel opened, the data both ways with and without bit errors, the DISC; the channels and frames a responder refuses ([v70-details.md](v70-details.md#tests)) |
+| V.76 and H.245 | `H245Messages`, `H245Extensions`, `V76`, `V76Refused`, `V76Voice`, `V76VoiceHeader` | H.245's messages against an ASN.1 compiler's octets, extension additions passed over, messages cut short; the data channel opened, the data both ways with and without bit errors, the DISC; the channels and frames a responder refuses; the voice channel beside the data, each side hearing the other's tone, the audio header's sequence numbers, lost frames concealed ([v70-details.md](v70-details.md#tests)) |
 | V.80 | `V80Transparent`, `V80Shielding`, `V80Framed`, `V80BadFcs`, `V80Abort`, `V80Underrun`, `V80Commands`, `V80SynHunt`, `V80ReceiveOverrun` | transparent octets both ways with the first underrun reported; all twenty shielding codes, and DC1/DC3 with and without flow control; frames with no FCS, FCS-16 and FCS-32, with flags or marks between them; a bad FCS; the DTE's abort; underruns in a frame (an abort, or a flag and `<EM><resume>`'s count); the commands for the core; `<EM><bnum>` reports; the SYN hunt; a receive overrun (`<EM><rover>`) |
 
 ## V.44

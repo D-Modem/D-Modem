@@ -3,7 +3,7 @@
  * Copyright (C) 2026 D-Modem Authors
  *
  *    v76.cpp - V.76's multiplexer and V.75's control of its DLCs, for
- *              DSVD's data channel (v76.h)
+ *              DSVD's data and voice channels (v76.h)
  *
  */
 
@@ -16,14 +16,23 @@ namespace dlink {
 
 /* the U frames' control octets without P/F (6.2.3/V.76, as LAPM's) */
 static const u8 U_SABME = 0x6f, U_DM = 0x0f, U_DISC = 0x43, U_UA = 0x63,
-	U_XID = 0xaf;
+	U_XID = 0xaf, U_UI = 0x03;
 static const u8 PF = 0x10;
 
 enum {
 	FLAG_BITS = 384,        /* the initiator's flags before its first
 				   frame (at least 16, clause 7/V.76) */
 	DLCI_FIRST = 0,         /* the initiator's first DLCI (Annex C) */
+	VOICE_TRIES = 4,        /* our voice SABME's tries */
+	VOICE_PORT = 1,         /* the voice channel's port (data: 0) */
+	VOICE_CREDIT = 4,       /* voice frames' bits saved up at most */
 };
+
+/* the line's bits in 10 ms (a voice frame's time), rate in bit/s */
+static s32 frame_bits(s32 rate)
+{
+	return rate > 0 ? rate / 100 : 288;
+}
 
 /* a call on link: no data channel, our ring empty */
 void Mux::init(Link *link, Lapm *lapm)
@@ -37,6 +46,11 @@ void Mux::init(Link *link, Lapm *lapm)
 		s.frame = Frame();
 		s.frame.buf = s.buf;
 	}
+	vframe_ = Frame();
+	vframe_.buf = vbuf_;
+	vbusy_ = false;
+	vstate_ = VState::Closed;
+	vdlci_ = -1;
 }
 
 /* (see v76.h) */
@@ -45,6 +59,10 @@ void Mux::start(bool initiator)
 	initiator_ = initiator;
 	dlci_ = -1;
 	head_ = tail_ = 0;
+	vstate_ = VState::Closed;
+	vdlci_ = -1;
+	vbusy_ = false;
+	vtimer_ = 0;
 	link_->logf("v76: %s.", initiator ? "initiator" : "responder");
 	link_->hdlc().set_framer(this, true);
 	if (initiator)
@@ -72,11 +90,81 @@ void Mux::opening()
 	lapm_->set_user_data(true, h245::user_data(m));
 	log_msg("out", static_cast<u8>(dlci_), m);
 	lapm_->open();
+	if (link_->voice()) {
+		vtries_ = 0;
+		vdlci_ = dlci_ == DLCI_FIRST + 1 ? DLCI_FIRST + 2 : DLCI_FIRST + 1;
+		vlcn_ = static_cast<u16>(lcn_ + 1);
+		open_voice();
+	}
+}
+
+/* our voice channel's SABME on vdlci_ (again after no answer): G.729
+   Annex A, a frame a packet, UNERM both ways with a 16 bit FCS, no
+   audio header */
+void Mux::open_voice()
+{
+	h245::Msg m;
+	m.type = h245::Type::Olc;
+	m.ch.lcn = vlcn_;
+	m.ch.port = VOICE_PORT;
+	m.ch.kind = h245::Kind::Audio;
+	m.ch.frames = 1;
+	m.ch.fwd.erm = m.ch.rev.erm = false;
+	m.ch.fwd.n401 = m.ch.rev.n401 = g729::FRAME_OCTETS;
+	log_msg("out", static_cast<u8>(vdlci_), m);
+	tx_unnum(static_cast<u8>(vdlci_), true, U_SABME | PF, h245::user_data(m));
+	vstate_ = VState::Opening;
+	vhdr_tx_ = vhdr_rx_ = false;
+	vtimer_ = link_->tx_rate() > 0 ? link_->tx_rate() : 28800;
+	vtries_++;
+}
+
+/* (see v76.h) */
+void Mux::clock(s32 bits)
+{
+	if (vstate_ == VState::Open) {
+		const s32 per = frame_bits(link_->tx_rate());
+		vcredit_ += bits;
+		if (vcredit_ > VOICE_CREDIT * per)
+			vcredit_ = VOICE_CREDIT * per;
+	}
+	if (vtimer_ <= 0 || (vtimer_ -= bits) > 0)
+		return;
+	vtimer_ = 0;
+	if (vstate_ != VState::Opening)
+		return;
+	if (vtries_ < VOICE_TRIES) {
+		open_voice();
+		return;
+	}
+	link_->logf("v76: DLCI %d: no answer: no voice channel.", vdlci_);
+	vstate_ = VState::Closed;
+	vdlci_ = -1;
+}
+
+/* the voice channel is closed (it was open: the owner hears) */
+void Mux::voice_closed()
+{
+	const bool was = vstate_ == VState::Open;
+	vstate_ = VState::Closed;
+	vdlci_ = -1;
+	vtimer_ = 0;
+	if (was)
+		link_->voice_state(false);
 }
 
 /* (see v76.h): nothing while no channel is open or opening */
 void Mux::disconnect()
 {
+	if (vstate_ != VState::Closed) {
+		h245::Msg m;
+		m.type = h245::Type::Clc;
+		m.lcn = vlcn_;
+		log_msg("out", static_cast<u8>(vdlci_), m);
+		tx_unnum(static_cast<u8>(vdlci_), true, U_DISC | PF,
+			 h245::user_data(m));
+		voice_closed();
+	}
 	if (dlci_ < 0)
 		return;
 	h245::Msg m;
@@ -119,7 +207,8 @@ void Mux::tx_unnum(u8 dlci, bool cmd, u8 ctrl, const std::vector<u8> &ud)
 	tail_ = next;
 }
 
-/* the framer's next frame: ours first, then the data channel's */
+/* the framer's next frame: ours first, then the voice channel's,
+   then the data channel's */
 Frame *Mux::next_tx_frame()
 {
 	if (head_ != tail_) {
@@ -127,12 +216,50 @@ Frame *Mux::next_tx_frame()
 		head_ = static_cast<s16>((head_ + 1) % CTRL_FRAMES);
 		return f;
 	}
+	if (Frame *f = next_voice())
+		return f;
 	return dlci_ >= 0 ? lapm_->next_tx_frame() : nullptr;
+}
+
+/* the voice channel's next UI frame, once its 10 ms are due and the
+   owner has given its 80 samples; else none */
+Frame *Mux::next_voice()
+{
+	if (vstate_ != VState::Open || vbusy_)
+		return nullptr;
+	const s32 per = frame_bits(link_->tx_rate());
+	if (vcredit_ < per)
+		return nullptr;
+	if (mic_n_ < g729::FRAME)
+		mic_n_ = static_cast<s16>(mic_n_ +
+			link_->voice_in(mic_ + mic_n_,
+					static_cast<s16>(g729::FRAME - mic_n_)));
+	if (mic_n_ < g729::FRAME)
+		return nullptr;
+	vcredit_ -= per;
+	mic_n_ = 0;
+	s16 n = 0;
+	vbuf_[n++] = addr(static_cast<u8>(vdlci_), true);
+	vbuf_[n++] = U_UI;
+	if (vhdr_tx_) {
+		/* not silence, not a SID; the sequence number in bits 2 to
+		   6 (clause 9/V.75) */
+		vbuf_[n++] = static_cast<u8>((vseq_tx_ & 0x1f) << 2);
+		vseq_tx_ = static_cast<u8>((vseq_tx_ + 1) & 0x1f);
+	}
+	enc_.encode(mic_, vbuf_ + n);
+	vframe_.size = static_cast<s16>(n + g729::FRAME_OCTETS);
+	vbusy_ = true;
+	return &vframe_;
 }
 
 /* a frame is out: the data channel's to it */
 void Mux::tx_complete(Frame *f)
 {
+	if (f == &vframe_) {
+		vbusy_ = false;
+		return;
+	}
 	for (const Slot &s : slot_)
 		if (f == &s.frame)
 			return;
@@ -185,6 +312,10 @@ void Mux::rx_complete(Frame *f)
 		lapm_->rx_complete(f);
 		return;
 	}
+	if (vdlci_ >= 0 && dlci == vdlci_) {
+		voice_frame(f, ctrl, cmd);
+		return;
+	}
 	if (!unnum || !cmd)
 		return;
 	if (u == U_SABME)
@@ -210,8 +341,11 @@ void Mux::rx_open(Frame *f, u8 dlci)
 	bool accept = false;
 	if (!ok || m.type != h245::Type::Olc)
 		cause = h245::UNKNOWN_TYPE;
+	else if (c.kind == h245::Kind::Audio && rx_voice(f, dlci, m, &cause))
+		return;
 	else if (c.kind != h245::Kind::Data)
-		cause = h245::TYPE_NOT_SUPPORTED;
+		cause = c.kind == h245::Kind::Audio ? cause :
+			h245::TYPE_NOT_SUPPORTED;
 	else if (dlci_ >= 0)
 		cause = h245::TYPE_NOT_AVAILABLE;
 	else if (!c.fwd.erm || c.fwd.crc != 16 ||
@@ -243,6 +377,127 @@ void Mux::rx_open(Frame *f, u8 dlci)
 	log_msg("out", dlci, r);
 	lapm_->set_user_data(false, h245::user_data(r));
 	lapm_->rx_complete(f);
+}
+
+/* the remote's SABME on dlci opening an audio channel m: the first one
+   (G.729 Annex A, UNERM both ways with a 16 bit FCS), with a voice
+   path, becomes the voice channel, the UA with OpenLogicalChannelAck
+   (true); else false and why */
+bool Mux::rx_voice(Frame *f, u8 dlci, const h245::Msg &m, u8 *cause)
+{
+	const h245::Channel &c = m.ch;
+	if (!link_->voice())
+		*cause = h245::TYPE_NOT_SUPPORTED;
+	else if (vstate_ != VState::Closed)
+		*cause = h245::TYPE_NOT_AVAILABLE;
+	else if (c.fwd.erm || c.fwd.crc != 16 ||
+		 (c.has_rev && (c.rev.erm || c.rev.crc != 16)))
+		*cause = h245::UNSUITABLE_REVERSE;
+	else
+		*cause = h245::UNSPECIFIED;
+	if (*cause != h245::UNSPECIFIED)
+		return false;
+	/* the opener's forward direction is what we receive */
+	vdlci_ = dlci;
+	vlcn_ = m.lcn;
+	vhdr_rx_ = c.fwd.audio_header;
+	vhdr_tx_ = c.has_rev && c.rev.audio_header;
+	h245::Msg r;
+	r.type = h245::Type::OlcAck;
+	r.lcn = vlcn_;
+	log_msg("out", dlci, r);
+	tx_unnum(dlci, false, static_cast<u8>(U_UA | (f->buf[1] & PF)),
+		 h245::user_data(r));
+	vstate_ = VState::Open;
+	vseq_tx_ = 0;
+	vseq_rx_ = -1;
+	vcredit_ = 0;
+	mic_n_ = 0;
+	enc_.reset();
+	dec_.reset();
+	link_->voice_state(true);
+	return true;
+}
+
+/* a frame on the voice channel's DLC: speech (a UI command) to the
+   owner; our SABME's UA (open) or DM (refused); the remote's DISC
+   (closed: UA with CloseLogicalChannelAck); its SABME again (our UA
+   lost: again) */
+void Mux::voice_frame(Frame *f, u8 ctrl, bool cmd)
+{
+	const u8 u = static_cast<u8>(ctrl & ~PF);
+	const u8 dlci = static_cast<u8>(vdlci_);
+	const u8 *p = f->buf + 2;
+	s16 n = static_cast<s16>(f->count - 2);
+	h245::Msg m;
+	const bool msg = (ctrl & 3) == 3 && u != U_UI && n > 0 &&
+		h245::from_user_data(p, static_cast<size_t>(n), &m);
+	if (msg)
+		log_msg("in", dlci, m);
+
+	if (u == U_UI && cmd) {
+		if (vstate_ != VState::Open)
+			return;
+		if (vhdr_rx_) {
+			if (n < 1)
+				return;
+			const s16 seq = static_cast<s16>(p[0] >> 2 & 0x1f);
+			/* frames lost since the last: concealed (a few) */
+			if (vseq_rx_ >= 0) {
+				const s16 gap = static_cast<s16>((seq - vseq_rx_) & 0x1f);
+				for (s16 i = 0; i < gap && i < 3; i++) {
+					s16 pcm[g729::FRAME];
+					dec_.erase(pcm);
+					link_->voice_out(pcm, g729::FRAME);
+				}
+			}
+			vseq_rx_ = static_cast<s16>((seq + 1) & 0x1f);
+			p++;
+			n--;
+		}
+		for (; n >= g729::FRAME_OCTETS; n -= g729::FRAME_OCTETS,
+		     p += g729::FRAME_OCTETS) {
+			s16 pcm[g729::FRAME];
+			dec_.decode(p, pcm);
+			link_->voice_out(pcm, g729::FRAME);
+		}
+		return;
+	}
+	if (!cmd && u == U_UA && vstate_ == VState::Opening) {
+		vstate_ = VState::Open;
+		vtimer_ = 0;
+		vseq_tx_ = 0;
+		vseq_rx_ = -1;
+		vcredit_ = 0;
+		mic_n_ = 0;
+		enc_.reset();
+		dec_.reset();
+		link_->voice_state(true);
+		return;
+	}
+	if (!cmd && u == U_DM && vstate_ == VState::Opening) {
+		link_->logf("v76: DLCI %u: voice channel refused.", dlci);
+		voice_closed();
+		return;
+	}
+	if (cmd && u == U_DISC) {
+		h245::Msg r;
+		r.type = h245::Type::ClcAck;
+		r.lcn = vlcn_;
+		log_msg("out", dlci, r);
+		tx_unnum(dlci, false, static_cast<u8>(U_UA | (ctrl & PF)),
+			 h245::user_data(r));
+		voice_closed();
+		return;
+	}
+	if (cmd && u == U_SABME && vstate_ == VState::Open && !initiator_ &&
+	    msg && m.type == h245::Type::Olc) {
+		h245::Msg r;
+		r.type = h245::Type::OlcAck;
+		r.lcn = vlcn_;
+		tx_unnum(dlci, false, static_cast<u8>(U_UA | (ctrl & PF)),
+			 h245::user_data(r));
+	}
 }
 
 /* the remote's XID command on dlci (L-SETPARM, 8.3/V.75): a

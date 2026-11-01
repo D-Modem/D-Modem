@@ -155,6 +155,9 @@ The details of the fax tests are in [Fax](dsp/fax-details.md).
 
 | Test | What it tests |
 |---|---|
+| `g729a_test` (label `quick`) | D-Modem's G.729 Annex A: the frame's packing, a round trip, and every Annex A test vector bit for bit, encoder and decoder (skipped without `docs/specs/fetch_g729.sh`'s vectors) ([v70-details.md](v70-details.md#g729-annex-a)) |
+| `g729a_bcg729_test` (label `quick`, built only where libbcg729 is installed) | The coder against bcg729 both ways: each decodes the other's frames as well as its own. bcg729 is GPL; it is linked into this test alone |
+| `dsvd_audio_test` (label `quick`, not on Windows) | dmodemd's `--dsvd-audio` command: `cat` gives back what it is sent, a command that ends at once |
 | `link_test`, `core_test`, `core_equiv` (label `quick`) | The data link layer; the core; and the core's transcripts against the scripts' `.expect` files (slmodemd's old core's, recorded from it; see [core.md](core.md)) |
 | `compress_bench_check` (`compress_bench --check`) | The compressors' round trips on text, binary, ANSI and noise at three flush intervals. `compress_bench <file>...` measures them ([link-details.md](link-details.md#compression-benchmark)) |
 | `zstd_ref_test` (label `quick`) | zstd against the reference libzstd, both ways; built where libzstd is found |
@@ -182,7 +185,7 @@ The details of the fax tests are in [Fax](dsp/fax-details.md).
 | `dmodemd_srtp` (`clearmode_test.py --srtp`, label `quick`) | The same calls in SRTP; skipped in a build without SRTP |
 | `dmodemd_v150` (`v150_test.py`, label `quick`) | dmodemd with `SIP_V150=yes` against the script's own SIP peer and V.150.1 gateway (SSE, SPRT), calling out and in: the SDP lines, ANSam as events, `SSE:M`, `INIT`, `JM_INFO`, `CONNECT 33600`, a line each way, `CLEARDOWN` ([v150-details.md](v150-details.md#tests)) |
 | `V8bis.*` (`v8bis_test.cpp`, label `quick`) | V.8 bis's messages against their octets, the parameter trees parsed past what is not read, the signals through their detector, the messages through V.21 and HDLC ([v8bis-details.md](dsp/v8bis-details.md#tests)) |
-| `Core.Dsvd*` (`core_test.cpp`, label `quick`) | Two modems with `AT+A8E=1,1,,1+DSVD=1`: V.8 bis chooses DSVD, V.76's data channel carries the DTEs' characters both ways and the hang-up closes it; DSVD at the caller alone: data and V.42 ([v70-details.md](v70-details.md#tests)) |
+| `Core.Dsvd*` (`core_test.cpp`, label `quick`) | Two modems with `AT+A8E=1,1,,1+DSVD=1`: V.8 bis chooses DSVD, V.76's data channel carries the DTEs' characters both ways and the hang-up closes it; DSVD at the caller alone: data and V.42; `Core.DsvdVoice`: with a voice path at both ends, each hears the other's tone through G.729 Annex A with the data alongside, the voice channel closed at hang-up ([v70-details.md](v70-details.md#tests)) |
 | `Core.V8bis*` (`core_test.cpp`, label `quick`) | Two modems with `AT+A8E=1,1,,1` at both, one or the other: the transaction (MRe, CRd, CL, MS, ACK(1)) then V.8, or V.8 without it ([v8bis-details.md](dsp/v8bis-details.md#tests)) |
 | `V150.*` (`v150_test.cpp`, label `quick`) | V.150.1's codings, SPRT over a lossy network (order, acknowledgements, windows, retransmission) and two modem relay sessions: the start, the modulation chosen, data both ways, the hang-up, compression refused ([v150-details.md](v150-details.md#tests)) |
 | `dmodemd_misdn` (`misdn_test.py`, label `quick`) | Two dmodemd on fake mISDN cards calling each other through the script's ISDN network: a clear channel call, an audio call at V.22bis, busy, no answer |
