@@ -12,6 +12,7 @@
 
 #include <string.h>
 
+#include <algorithm>
 #include <random>
 #include <vector>
 
@@ -204,6 +205,11 @@ TEST(Jbig, ArtificialImage)
 		EXPECT_EQ(scd, c.scd);
 		EXPECT_EQ(sde, c.sde);
 		EXPECT_EQ((long)bie.size(), c.bie);
+		if (c.opt.n_moves) {
+			/* the ATMOVE before stripe 9: yAT 0, its first line */
+			const unsigned char at[] = {0xff, 0x06, 0, 0, 0, 0, 8, 0};
+			EXPECT_NE(std::search(bie.begin(), bie.end(), at, at + 8), bie.end());
+		}
 
 		T4Page out;
 		out.fine = 1;

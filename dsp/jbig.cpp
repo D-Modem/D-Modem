@@ -342,7 +342,7 @@ void jbig_encode(const T4Page *page, const JbigOptions &opt, std::vector<unsigne
 				continue;
 			bie->push_back(J_ESC);
 			bie->push_back(J_ATMOVE);
-			put32(bie, m.y);
+			put32(bie, m.y - y0);   /* (from the stripe's top) */
 			bie->push_back((unsigned char)m.tx);
 			bie->push_back(0);
 		}
@@ -417,7 +417,9 @@ s16 jbig_decode(const unsigned char *data, size_t len, s32 max_rows, T4Page *pag
 				if (data[pos + 7] != 0 || data[pos + 6] > mx || data[pos + 6] > 127 ||
 				    (data[pos + 6] && data[pos + 6] < 3))
 					return -1;
-				moves.push_back({get32(data + pos + 2), data[pos + 6]});
+				/* yAT counts from the top of the stripe that
+				   follows */
+				moves.push_back({y + get32(data + pos + 2), data[pos + 6]});
 				pos += 8;
 				continue;
 			case J_NEWLEN: {

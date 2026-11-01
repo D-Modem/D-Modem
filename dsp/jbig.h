@@ -62,7 +62,8 @@ struct QmDec {
 
 /* a moved adaptive template pixel, for the encoder's tests */
 struct JbigAtMove {
-	u32 y;                          /* the first line it applies to */
+	u32 y;                          /* the first line it applies to (in
+					   the page) */
 	s16 tx;                         /* its lag to the left; 0 default */
 };
 

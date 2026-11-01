@@ -285,12 +285,14 @@ bit-plane, sequential stripes):
   (MX 0), typical prediction (TPBON), and the page's height in the
   header (no NEWLEN). The BIE's octets go into the ECM frames as they
   are: T.85 sends it least significant bit first, as ECM sends octets.
-- **Receiving:** the frames' octets are kept until the page ends (they
+- **Receiving:** a DCS with bit 78, or with bit 79 alone (as
+  spandsp sends T.85 with another L0), means T.85. The frames' octets
+  are kept until the page ends (they
   came with good FCSs, so there are no bad rows to look for block by
   block), then decoded and scaled or centred to 1728 pels. The decoder
   takes what T.85 lets a sender use: any L0, the two-line template
   (LRLTWO), typical prediction, AT moves (ATMOVE, a lag up to MX and
-  127), an unknown height (YD of all ones) ended by NEWLEN, COMMENT
+  127, its line counted from the top of the stripe that follows), an unknown height (YD of all ones) ended by NEWLEN, COMMENT
   segments, SDRST, and ABORT. A BIE that ends early or is cut by ABORT
   keeps the lines decoded; one that is not T.85 (more layers or planes,
   deterministic prediction) loses the page. A page is at most 32768
@@ -312,7 +314,10 @@ pages, and decodes a BIE with YD of all ones, a comment and NEWLEN, one
 cut short, one capped in lines, and random data.
 
 spandsp 0.0.6 is built without T.85 (`SPANDSP_SUPPORT_T85` is off in
-its configure), so the calls against it stay in MH or MR.
+its configure), so `spandsp_test`'s calls stay in MH or MR. FreeSWITCH's
+spandsp (3.x) has it: its fax test (`frontend/freeswitch/test/fax.sh`)
+sends and receives T.85 pages with AT moves (MX 127), VLENGTH and the
+L0 option.
 
 ### Without ECM
 

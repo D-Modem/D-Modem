@@ -433,6 +433,13 @@ static void t85_octets(unsigned char *fif)
 		set_bit(fif, bit);
 }
 
+/* a DCS's T.85: bit 78, or bit 79 (another L0) alone as spandsp sends
+   it */
+static s16 dcs_t85(const unsigned char *fif, s16 len)
+{
+	return get_bit(fif, len, 78) || get_bit(fif, len, 79);
+}
+
 /* the minimum scan line time a DIS asks for (bits 21-23), ms */
 static s16 dis_min_ms(const unsigned char *fif, s16 len)
 {
@@ -823,7 +830,7 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 		fine = get_bit(fif, len, 15);
 		mr = get_bit(fif, len, 16);
 		ecm_on = cfg.ecm && get_bit(fif, len, 27);
-		t85 = ecm_on && get_bit(fif, len, 78);
+		t85 = ecm_on && dcs_t85(fif, len);
 		ecm_size = get_bit(fif, len, 28) ? 64 : 256;
 		ecm_long_train = 0;
 		DSP_DBG("t30: DCS on V.34: %s, %s%s\n",
@@ -852,7 +859,7 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 	fine = get_bit(fif, len, 15);
 	mr = get_bit(fif, len, 16);
 	ecm_on = cfg.ecm && get_bit(fif, len, 27);
-	t85 = ecm_on && get_bit(fif, len, 78);
+	t85 = ecm_on && dcs_t85(fif, len);
 	ecm_size = get_bit(fif, len, 28) ? 64 : 256;
 	ecm_long_train = 0;
 	DSP_DBG("t30: DCS: %" PRId32 " bit/s, %s, %s%s\n", rates[k].bps,
