@@ -129,6 +129,9 @@ enum DP_ID {
 	DP_V21      = 21,
 	DP_V26      = 26,       /* V.26 on a 4-wire leased line, 2400 bit/s
 				   duplex (alternative A) */
+	DP_V26TER   = 126,      /* V.26 ter: 2400 and 1200 bit/s duplex on
+				   the switched network (dp_v26.cpp); not
+				   in V.250, the number is D-Modem's */
 	DP_V27TER   = 27,       /* V.27ter on a 4-wire leased line, 4800 and
 				   2400 bit/s duplex */
 	DP_V29      = 29,       /* V.29 on a 4-wire leased line, 9600 to

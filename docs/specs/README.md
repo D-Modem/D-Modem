@@ -27,6 +27,7 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.18](https://www.itu.int/rec/T-REC-V.18) | Text telephones: 5-bit, EDT, automoding | `dsp/dp_text.cpp` | [V.18.pdf](V.18.pdf) |
 | [V.23](https://www.itu.int/rec/T-REC-V.23) | 1200/75 bit/s FSK | `dsp/dp_fsk.cpp` | [V.23.pdf](V.23.pdf) |
 | [V.25](https://www.itu.int/rec/T-REC-V.25) | Answer and calling tones | `dsp/dp_callprog.cpp` | [V.25.pdf](V.25.pdf) |
+| [V.26 ter](https://www.itu.int/rec/T-REC-V.26ter) | 2400/1200 bit/s duplex on the switched network, echo cancelling | `dsp/dp_v26.cpp` ([v26-details.md](../dsp/v26-details.md)) | [V.26ter.pdf](V.26ter.pdf) |
 | [V.27ter](https://www.itu.int/rec/T-REC-V.27ter) | 4800/2400 bit/s modem (fax, 4-wire leased) | `dsp/fax_modems.cpp`, `dsp/dp_4wire.cpp` | [V.27ter.pdf](V.27ter.pdf) |
 | [V.29](https://www.itu.int/rec/T-REC-V.29) | 9600 bit/s modem (fax, 4-wire leased) | `dsp/fax_modems.cpp`, `dsp/dp_4wire.cpp` | [V.29.pdf](V.29.pdf) |
 | [V.32](https://www.itu.int/rec/T-REC-V.32) | 9600 bit/s duplex, trellis coded | `dsp/dp_v32.cpp` | [V.32.pdf](V.32.pdf) |

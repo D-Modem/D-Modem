@@ -72,6 +72,7 @@ The DTE selects one with `AT+MS=` and either the number or a name.
 | 22 | ITU V.22, 1200 bit/s DPSK | |
 | 212 | Bell 212A, 1200 bit/s DPSK | 2225 Hz answer tone, scrambled ones handshake |
 | 122 | ITU V.22bis, 2400 bit/s 16-QAM | The full S1 handshake; falls back to V.22 |
+| 126 | ITU V.26 ter, 2400 and 1200 bit/s DPSK, duplex on the switched network | `dp_v26.cpp`. 1200 baud on an 1800 Hz carrier both ways with an echo canceller; the rate patterns and the three start-up sequences of 6.3; no retrain (see [V.26 ter](v26-details.md)). D-Modem's number |
 | 32 | ITU V.32, 4800 and 9600 bit/s | Uncoded 4800, trellis coded 9600, with an echo canceller |
 | 132 | ITU V.32bis, 4800 to 14400 bit/s | The rate is chosen from the measured training quality. Retrains by itself when its equalization is lost. Falls back to V.22bis when the remote does not do V.32 |
 | 29 | ITU V.29, 4800 to 9600 bit/s, 4-wire leased line | `dp_4wire.cpp`. The fax modulators of `fax_modems.cpp` run as a duplex pump on a continuous carrier (`AT&L2`): each end's synchronizing signal, the far end's rate found by receivers running in parallel, resynchronizing and fallback (see [leased lines](../leased.md)) |
@@ -211,7 +212,8 @@ Everything here is in `namespace dsp`, except the C entry points of
 Every data pump derives from `Pump` (`pump.h`):
 
 - `CallProgPump` (call progress), `FskPump` (V.21, V.23, Bell 103),
-  `TextPump` (V.18, Baudot, EDT), `ContactIdPump`, `V22Pump`, `V32Pump`;
+  `TextPump` (V.18, Baudot, EDT), `ContactIdPump`, `V22Pump`, `V26Pump`,
+  `V32Pump`;
 - `V34Pump`, which is also V.8, V.90, V.91 and V.92;
 - `FourWirePump` (V.29, V.33, V.27ter), `ClearPump`, `VcvmPump`, and
   `VwbPump` (with `VwbModem`, `vwb.h`, under it);

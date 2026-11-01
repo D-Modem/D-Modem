@@ -387,6 +387,10 @@ INSTANTIATE_TEST_SUITE_P(Modulations, DmodemPair, testing::Values(
 	pair("v22", "+MS=22", 3, 30), pair("v22bis", "+MS=122", 3, 30),
 	pair("v32", "+MS=32", 3, 30), pair("v32bis", "+MS=132", 3, 30),
 	pair("v34", "+MS=34", 3, 30),
+	/* V.26 ter (D-Modem's +MS name) at 2400 bit/s, and its fallback
+	   rate alone */
+	pair("v26ter", "+MS=V26T", 2, 30),
+	pair("v26ter_1200", "+MS=V26T,0,1200,1200", 1, 30),
 	v8_to_122("v8_to_122_d0", 0), v8_to_122("v8_to_122_d5", 5)), name);
 
 /* retrains in the middle of the data (V.42 carries on): by both modems,

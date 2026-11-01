@@ -227,7 +227,7 @@ const V59Obj v59_objs[] = {
 	{ 0x23, 0x2347, "txPower" },
 	{ 0x23, 0x234E, "rxLevelEstimate" },
 	/* 6.8.18: the modulations V.59 has no object for (K56flex, V.32terbo,
-	   Bell's, V.cvm, ...) */
+	   V.26 ter, Bell's, V.cvm, ...) */
 	{ 0x26, 0x2601, "proprietaryMode" },
 	/* 6.9 */
 	{ 0x2C, 0x2C01, "txCarrier" },
@@ -318,6 +318,7 @@ const char *v59_rec(s16 dp)
 	case DP_V22BIS: return "V.22bis";
 	case DP_V23: return "V.23";
 	case DP_V26: return "V.26";
+	case DP_V26TER: return "V.26ter";
 	case DP_V27TER: return "V.27ter";
 	case DP_V29: return "V.29";
 	case DP_V32: return "V.32";
@@ -476,6 +477,7 @@ std::string Modem::v59_value(u16 tag) const
 	case 0x0101: {
 		static const struct { u32 dp; const char *name; } other[] = {
 			{ DP_K56, "K56flex" }, { DP_V32TERBO, "V.32terbo" },
+			{ DP_V26TER, "V.26ter" },
 			{ DP_B103, "Bell103" }, { DP_B212, "Bell212A" },
 			{ DP_VCVM, "V.cvm" }, { DP_VWB, "V.wb" },
 		};
