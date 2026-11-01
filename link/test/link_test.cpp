@@ -22,6 +22,7 @@
 
 #include <gtest/gtest.h>
 
+#include "h245.h"
 #include "link.h"
 #include "mnp5.h"
 #include "v44.h"
@@ -2593,4 +2594,238 @@ TEST(Link, V80ReceiveOverrun)
 	auto r = std::find(b.begin(), b.end(), ind(v80::ROVER));
 	CHECK(r - b.begin() > 2000 && r - b.begin() < 2100,
 	      "<rover> after the ring's octets (%ld)", (long)(r - b.begin()));
+}
+
+
+/*
+ *    V.70's DSVD: H.245's messages (V.75), V.76's multiplexer
+ *
+ */
+
+/* the encodings of an ASN.1 compiler's (Python's asn1tools, aligned PER,
+   H.245's module) */
+static const std::vector<u8> OLC_DATA = { 0x03, 0x40, 0x00, 0x00, 0x40,
+	0x00, 0x00, 0x40, 0xc5, 0x01, 0x50, 0x41, 0x00, 0x7f, 0x00, 0x1c,
+	0x05, 0x03, 0x14, 0x01, 0x50, 0x42, 0x00, 0x7f, 0x00, 0x1c, 0x00 };
+static const std::vector<u8> OLC_AUDIO = { 0x03, 0x40, 0x00, 0x01, 0x40,
+	0x00, 0x01, 0x35, 0x80, 0x00, 0x41, 0x00, 0x09, 0x02, 0x26, 0xb0,
+	0x00, 0x42, 0x00, 0x09, 0x02, 0x00 };
+/* a data channel on 7 with no port, forwardLogicalChannelDependency
+   (an extension addition), N401 256, k 7, a 32 bit FCS */
+static const std::vector<u8> OLC_EXT = { 0x03, 0x40, 0x00, 0x06, 0x90,
+	0x31, 0x40, 0x01, 0x50, 0x42, 0x00, 0xff, 0x00, 0x0c, 0x00, 0x30,
+	0x02, 0x00, 0x02, 0x50, 0x31, 0x40, 0x01, 0x50, 0x44, 0x00, 0xff,
+	0x00, 0x0c, 0x00 };
+static const std::vector<u8> TCS = { 0x02, 0x00, 0x05, 0x06, 0x00, 0x08,
+	0x81, 0x75, 0x00, 0x01 };
+
+/* a message of type t on channel lcn */
+static h245::Msg h245_msg(h245::Type t, u16 lcn)
+{
+	h245::Msg m;
+	m.type = t;
+	m.lcn = lcn;
+	return m;
+}
+
+/* the messages against the compiler's encodings, and back */
+TEST(Link, H245Messages)
+{
+	h245::Msg m = h245_msg(h245::Type::Olc, 1);
+	m.ch.lcn = 1;
+	m.ch.port = 0;
+	m.ch.max_rate = 336;
+	CHECK(h245::encode(m) == OLC_DATA, "OpenLogicalChannel (data)");
+	h245::Msg back;
+	CHECK(h245::decode(OLC_DATA.data(), OLC_DATA.size(), &back) &&
+	      back.type == h245::Type::Olc && back.lcn == 1 &&
+	      back.ch.port == 0 && back.ch.kind == h245::Kind::Data &&
+	      back.ch.proto == h245::Proto::V14Buffered &&
+	      back.ch.max_rate == 336 && back.ch.fwd.erm &&
+	      back.ch.fwd.window == 15 && back.ch.fwd.n401 == 128 &&
+	      back.ch.fwd.crc == 16 && back.ch.has_rev && back.ch.rev.erm,
+	      "OpenLogicalChannel (data) read");
+
+	m.ch.lcn = 2;
+	m.ch.port = 1;
+	m.ch.kind = h245::Kind::Audio;
+	m.ch.frames = 1;
+	m.ch.fwd.erm = m.ch.rev.erm = false;
+	m.ch.fwd.n401 = m.ch.rev.n401 = 10;
+	CHECK(h245::encode(m) == OLC_AUDIO, "OpenLogicalChannel (audio)");
+	CHECK(h245::decode(OLC_AUDIO.data(), OLC_AUDIO.size(), &back) &&
+	      back.ch.kind == h245::Kind::Audio && back.ch.frames == 1 &&
+	      !back.ch.fwd.erm && back.ch.fwd.n401 == 10 &&
+	      !back.ch.rev.erm, "OpenLogicalChannel (audio) read");
+
+	struct {
+		h245::Msg m;
+		std::vector<u8> want;
+	} cases[] = {
+		{ h245_msg(h245::Type::OlcAck, 1), { 0x22, 0x80, 0x00, 0x00 } },
+		{ h245_msg(h245::Type::OlcReject, 2),
+		  { 0x23, 0x00, 0x00, 0x01, 0x20 } },
+		{ h245_msg(h245::Type::Clc, 1),
+		  { 0x04, 0x00, 0x00, 0x00, 0x80 } },
+		{ h245_msg(h245::Type::ClcAck, 1), { 0x23, 0x80, 0x00, 0x00 } },
+		{ h245_msg(h245::Type::TcsAck, 1), { 0x21, 0x80, 0x00 } },
+		{ h245_msg(h245::Type::TcsReject, 1), { 0x22, 0x00, 0x05, 0x00 } },
+	};
+	cases[1].m.cause = h245::TYPE_NOT_SUPPORTED;
+	cases[2].m.lcse = true;
+	cases[5].m.seq = 5;
+	for (auto &c : cases) {
+		CHECK(h245::encode(c.m) == c.want, "%s",
+		      h245::type_name(c.m.type));
+		CHECK(h245::decode(c.want.data(), c.want.size(), &back) &&
+		      back.type == c.m.type && back.lcn == c.m.lcn &&
+		      back.cause == c.m.cause && back.seq == c.m.seq &&
+		      back.lcse == c.m.lcse, "%s read",
+		      h245::type_name(c.m.type));
+	}
+	CHECK(h245::decode(TCS.data(), TCS.size(), &back) &&
+	      back.type == h245::Type::Tcs && back.seq == 5,
+	      "TerminalCapabilitySet's number");
+
+	/* V.75's user data: FI 133 first */
+	std::vector<u8> u = h245::user_data(cases[0].m);
+	CHECK(u.size() == 5 && u[0] == 133, "FI 133");
+	CHECK(h245::from_user_data(u.data(), u.size(), &back) &&
+	      back.type == h245::Type::OlcAck, "user data read");
+	u[0] = 130;
+	CHECK(!h245::from_user_data(u.data(), u.size(), &back),
+	      "user data without FI 133");
+}
+
+/* a later encoder's extension additions passed over; a message cut
+   short anywhere is not one */
+TEST(Link, H245Extensions)
+{
+	h245::Msg m;
+	CHECK(h245::decode(OLC_EXT.data(), OLC_EXT.size(), &m) &&
+	      m.type == h245::Type::Olc && m.ch.lcn == 7 &&
+	      m.ch.port == -1 && m.ch.kind == h245::Kind::Data &&
+	      m.ch.fwd.n401 == 256 && m.ch.fwd.window == 7 &&
+	      m.ch.fwd.crc == 32 && m.ch.rev.crc == 32,
+	      "OpenLogicalChannel with an extension addition");
+	for (size_t n = 0; n < OLC_DATA.size(); n++)
+		CHECK(!h245::decode(OLC_DATA.data(), n, &m),
+		      "OpenLogicalChannel cut to %zu octets", n);
+	for (size_t n = 0; n < OLC_EXT.size(); n++)
+		CHECK(!h245::decode(OLC_EXT.data(), n, &m),
+		      "OpenLogicalChannel (extended) cut to %zu octets", n);
+}
+
+/* the data pumps have connected after V.8 bis chose DSVD: V.76 both
+   ends, the answerer the initiator */
+static void start_v76(Pair &p)
+{
+	p.lc.start_v76(false);
+	p.la.start_v76(true);
+}
+
+/* the data channel opened by the initiator, the data both ways (with
+   bit errors too), the responder's DISC */
+TEST(Link, V76)
+{
+	rnd_state = 12345;
+	Pair p(lapm_config(3), lapm_config(3));
+	start_v76(p);
+	p.run(9600);
+	CHECK(p.dc.detected && p.da.detected, "detected");
+	CHECK(p.lc.protocol() == Protocol::V76 &&
+	      p.la.protocol() == Protocol::V76, "V.76");
+	CHECK(p.dc.up && p.da.up, "the data channel up");
+	CHECK(p.lc.config().comp == 0 && p.la.config().comp == 0,
+	      "no compression");
+	transfer("v76", p, 20000, 15000, 9600 * 40);
+	p.ber = 1e-4;
+	transfer("v76, bit errors", p, 10000, 10000, 9600 * 60);
+	p.ber = 0;
+	p.lc.disconnect();
+	p.run(9600 * 2);
+	CHECK(p.da.released, "initiator released after the DISC");
+	CHECK(p.dc.released, "responder released after the UA");
+}
+
+/* a U frame (its address, control and user data) */
+static std::vector<u8> u_frame(u8 addr, u8 ctrl, const h245::Msg *m)
+{
+	std::vector<u8> f = { addr, ctrl };
+	if (m) {
+		std::vector<u8> u = h245::user_data(*m);
+		f.insert(f.end(), u.begin(), u.end());
+	}
+	return f;
+}
+
+/* the frame among out with address addr and control ctrl, its message
+   read into m; false if there is none */
+static bool find_u(const std::vector<std::vector<u8>> &out, u8 addr,
+		   u8 ctrl, h245::Msg *m)
+{
+	for (const std::vector<u8> &f : out) {
+		if (f.size() < 2 || f[0] != addr || f[1] != ctrl)
+			continue;
+		*m = h245::Msg();
+		if (f.size() > 2)
+			h245::from_user_data(f.data() + 2, f.size() - 2, m);
+		return true;
+	}
+	return false;
+}
+
+/* the responder and the initiator's frames: an audio channel, a DISC
+   on a DLC not open, a capability set, a data channel with SREJ's
+   parameters it cannot take; then the data channel (on 63) taken, and a
+   second one refused (the initiator's commands and the responder's
+   responses have C/R 1) */
+TEST(Link, V76Refused)
+{
+	Dte d("responder");
+	Link l;
+	l.init(&d, true, lapm_config(0));
+	l.start_v76(false);
+
+	h245::Msg audio;
+	CHECK(h245::decode(OLC_AUDIO.data(), OLC_AUDIO.size(), &audio),
+	      "audio");
+	h245::Msg data;
+	CHECK(h245::decode(OLC_DATA.data(), OLC_DATA.size(), &data), "data");
+	h245::Msg crc32;
+	CHECK(h245::decode(OLC_EXT.data(), OLC_EXT.size(), &crc32), "crc32");
+	std::vector<u8> xid = { 0x0b, 0xbf, 133 };
+	xid.insert(xid.end(), TCS.begin(), TCS.end());
+	std::vector<std::vector<u8>> out = exchange(l, {
+		u_frame(5 << 2 | 3, 0x7f, &audio),      /* SABME, P 1 */
+		u_frame(9 << 2 | 3, 0x53, nullptr),     /* DISC, P 1 */
+		xid,                                    /* XID on DLCI 2 */
+		u_frame(4 << 2 | 3, 0x7f, &crc32),
+	}, 8);
+	h245::Msg m;
+	CHECK(find_u(out, 5 << 2 | 3, 0x1f, &m) &&
+	      m.type == h245::Type::OlcReject && m.lcn == 2 &&
+	      m.cause == h245::TYPE_NOT_SUPPORTED,
+	      "DM with OpenLogicalChannelReject for audio");
+	CHECK(find_u(out, 9 << 2 | 3, 0x1f, &m), "DM for the DISC");
+	CHECK(find_u(out, 0x0b, 0xbf, &m) &&
+	      m.type == h245::Type::TcsReject && m.seq == 5,
+	      "XID with TerminalCapabilitySetReject");
+	CHECK(find_u(out, 4 << 2 | 3, 0x1f, &m) &&
+	      m.type == h245::Type::OlcReject && m.lcn == 7,
+	      "DM for a 32 bit FCS");
+	CHECK(!d.up, "up without a data channel");
+
+	out = exchange(l, {
+		u_frame(63 << 2 | 3, 0x7f, &data),
+		u_frame(62 << 2 | 3, 0x7f, &data),
+	}, 8);
+	CHECK(find_u(out, 63 << 2 | 3, 0x73, &m) &&
+	      m.type == h245::Type::OlcAck && m.lcn == 1,
+	      "UA with OpenLogicalChannelAck");
+	CHECK(d.up && l.protocol() == Protocol::V76, "the data channel up");
+	CHECK(find_u(out, 62 << 2 | 3, 0x1f, &m) &&
+	      m.type == h245::Type::OlcReject &&
+	      m.cause == h245::TYPE_NOT_AVAILABLE,
+	      "a second data channel refused");
 }

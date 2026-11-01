@@ -48,6 +48,7 @@
 #include "zstd_codec.h"
 #include "zstd_dict.h"
 #include "v80.h"
+#include "v76.h"
 #include "ppp_sync.h"
 
 namespace dlink {
@@ -114,7 +115,7 @@ struct Config {
 };
 
 /* the error correction a call has */
-enum class Protocol { None, Lapm, Mnp, X75, Ppp, V120 };
+enum class Protocol { None, Lapm, Mnp, X75, Ppp, V120, V76 };
 
 /* a call's counts (ATI11): the DTE's characters each way; the frames
    of the error correction (LAPM's, MNP's) sent, the information frames
@@ -183,6 +184,10 @@ public:
 	   (Config), the detection phase (detect) and LAPM or MNP, else
 	   async */
 	void start(bool on, bool detect);
+	/* the data pump has connected after V.8 bis chose DSVD (V.70):
+	   V.76's multiplexer, its data channel the DTE's (v76.h), no
+	   detection phase, XID or compression; the initiator opens it */
+	void start_v76(bool initiator);
 	/* V.cvm (before XID): both DCEs have V.44's preset dictionary */
 	void set_v44_preset(bool on)
 	{
@@ -263,6 +268,7 @@ public:
 		T401,           /* LAPM's T401 (Lapm::t401_timeout) */
 		Negotiate,      /* the caller's XID (Lapm::negotiate) */
 		T1,             /* X.75's T1 (Lapb::t1_timeout) */
+		Mux,            /* V.76's initiator opens (Mux::opening) */
 	};
 	/* the bit timer: what once bits more bits went out (0: none) */
 	void set_timer(s32 bits, Timer what) {
@@ -330,6 +336,7 @@ private:
 	Hdlc hdlc_;
 	Async async_;
 	Lapm lapm_;
+	Mux mux_;
 	Lapb lapb_;
 	PppSync ppp_;
 	MnpAsync mnp_async_;

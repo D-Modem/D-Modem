@@ -417,7 +417,7 @@ public:
 	static const char *const author, *const product, *const version;
 	/* the extended parameters of other modems' setup strings it keeps
 	   (at most), their values (at most) */
-	enum { KEPT_PARAMS = 25, KEPT_VALUES = 9 };
+	enum { KEPT_PARAMS = 28, KEPT_VALUES = 9 };
 
 private:
 	enum State {
@@ -509,6 +509,8 @@ private:
 	/* the call starts with V.8 bis (+A8E's <v8b> 1): a data call that
 	   starts with V.8, not on a leased line */
 	bool v8bis_call() const;
+	/* and offers V.70's DSVD in it (+DSVD=1) */
+	bool dsvd_offered() const;
 	/* struct dp_relay's calls, to the Host's */
 	static int relay_state_cb(void *ctx, s32 *tx, s32 *rx);
 	static int relay_read_cb(void *ctx, unsigned char *buf, int max);
@@ -784,6 +786,8 @@ private:
 	bool voice_held_ = false;
 	bool v110_ = false;             /* the call runs V.110 (clear
 					   channel) */
+	bool svd_ = false;              /* V.8 bis chose DSVD (V.70): the
+					   link is V.76's multiplexer */
 	u32 voice_cng_seen_ = 0, voice_ct_seen_ = 0;
 	void *fax_ = nullptr;
 	/* adaptive answer, while the call we answer is not yet known to

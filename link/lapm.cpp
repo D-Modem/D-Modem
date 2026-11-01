@@ -193,6 +193,9 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	link_ = link;
 	state_ = IDLE;
 	config_ = was_up_ = reject_ = busy_ = peer_busy_ = false;
+	v76_ = false;
+	cmd_ud_.clear();
+	rsp_ud_.clear();
 	rtx_count_ = 0;
 	rx_count_ = rx_head_ = 0;
 	cmd_addr_ = link->caller() ? ADDR_ORIG : ADDR_ANS;
@@ -220,6 +223,41 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	sent_info_ = tx_info_frame_ = info_list_ = &info_buf_[0].frame;
 	tx_ctrl_ = ctrl_list_ = &ctrl_buf_[0].frame;
 	vs_ = va_ = vr_ = vs_hi_ = 0;
+}
+
+/* V.76: a DLC (dlci) of the multiplexer, which is the HDLC framer and
+   hands us its frames: the address octet (6.1/V.76: the DLCI, C/R, EA
+   1) of our commands has C/R 1 at the initiator, 0 at the responder;
+   the windows and information fields as for init() */
+void Lapm::set_dlc(u8 dlci, bool initiator, s16 tx_win, s16 rx_win,
+		   s16 tx_info, s16 rx_info)
+{
+	v76_ = true;
+	const u8 a = static_cast<u8>((dlci & 0x3f) << 2 | 1);
+	cmd_addr_ = static_cast<u8>(a | (initiator ? 2 : 0));
+	rsp_addr_ = static_cast<u8>(a | (initiator ? 0 : 2));
+	tx_win_ = static_cast<u16>(std::clamp<s16>(tx_win, 1, LAPM_MAX_WIN));
+	rx_win_ = static_cast<u16>(std::clamp<s16>(rx_win, 1, LAPM_MAX_WIN));
+	tx_info_ = static_cast<u16>(
+		std::clamp<s16>(tx_info, 1, LAPM_MAX_INFO));
+	rx_info_ = static_cast<u16>(
+		std::clamp<s16>(rx_info, 1, LAPM_MAX_INFO));
+}
+
+/* V.76's L-ESTABLISH (7.1/V.76): SABME with its user data after a
+   sequence reset, T401 for the UA or DM */
+void Lapm::open()
+{
+	reset();
+	state_ = ESTAB;
+	tx_unnum(cmd_addr_, static_cast<u8>(U_SABME | PF));
+	timer_start();
+}
+
+/* (see lapm.h) */
+void Lapm::set_user_data(bool cmd, const std::vector<u8> &u)
+{
+	(cmd ? cmd_ud_ : rsp_ud_) = u;
 }
 
 /* the end of the call: no rings (tx_pending() is false), nothing kept
@@ -387,7 +425,7 @@ void Lapm::t401_timeout()
 		return;
 	}
 	rtx_count_ = 0;
-	if (!was_up_ && (config_ || state_ == ESTAB)) {
+	if (!was_up_ && !v76_ && (config_ || state_ == ESTAB)) {
 		link_->logf("no LAPM from the remote: async");
 		config_ = false;
 		state_ = IDLE;
@@ -435,6 +473,8 @@ Frame *Lapm::ctrl_frame()
 }
 
 /* a U frame queued: address addr, control octet ctrl (P/F included);
+   on a V.76 DLC our SABME and DISC with the user data set for them,
+   our UA and DM with the user data set for answers (set_user_data());
    -1 if the queue is full */
 s16 Lapm::tx_unnum(u8 addr, u8 ctrl)
 {
@@ -444,6 +484,18 @@ s16 Lapm::tx_unnum(u8 addr, u8 ctrl)
 	f->buf[0] = addr;
 	f->buf[1] = ctrl;
 	f->size = 2;
+	if (!v76_)
+		return 0;
+	const u8 u = static_cast<u8>(ctrl & ~PF);
+	const std::vector<u8> *ud = nullptr;
+	if (addr == cmd_addr_ && (u == U_SABME || u == U_DISC))
+		ud = &cmd_ud_;
+	else if (addr == rsp_addr_ && (u == U_UA || u == U_DM))
+		ud = &rsp_ud_;
+	if (ud && ud->size() <= LAPM_MAX_INFO) {
+		std::copy(ud->begin(), ud->end(), f->buf + 2);
+		f->size = static_cast<s16>(2 + ud->size());
+	}
 	return 0;
 }
 

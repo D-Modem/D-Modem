@@ -56,6 +56,10 @@ call progress does, then on to the pump (S7 is the limit, as for any
 handshake). After its MS the caller takes 100 ms of 2100 Hz as the
 answerer's ANSam, so an ACK(1) lost on the way does not hold it up.
 
+With `+DSVD=1` the CL offers the SVD mode too, and the caller's MS
+chooses it when both have what V.70 needs; the details are in
+[v70-details.md](../v70-details.md).
+
 ## `+A8E`
 
 `+A8E=<v8o>,<v8a>,<v8cf>,<v8b>` (V.251 5.1), kept with the other
@@ -83,8 +87,9 @@ subparameters are `ERROR`.
 
 ## Not done
 
-- The SVD mode and the other modes (H.324, V.18, T.30, telephony) are
-  coded and read, but only data is selected; V.70 (SVD) comes next.
+- The other modes (H.324, V.18, T.30, telephony) are coded and read,
+  but only data and SVD (V.70, with `+DSVD`; see
+  [v70-details.md](../v70-details.md)) are chosen.
 - Transactions where the caller receives MS (2, 3, 7 to 9, 11 to 13
   from the answerer's side, 4 and 6 after ESi): D-Modem's caller would
   have to be V.8's answering modem.
