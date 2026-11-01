@@ -1131,7 +1131,7 @@ void V61Pump::rx_sample(float x)
 /* the voice path on or off (once each) */
 void V61Pump::voice_state(bool on)
 {
-	if (!voice || voice_open == on)
+	if (!voice || (voice_open != 0) == on)
 		return;
 	voice_open = on;
 	voice->state(voice->ctx, on);
