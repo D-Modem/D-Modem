@@ -25,13 +25,19 @@
  *    With a voice path (Owner::voice()) there is a voice channel too:
  *    G.729 Annex A in UNERM, a 10 ms frame (10 octets) in each UI
  *    frame (V.70's audio blocking factor 1), V.75's audio header
- *    (clause 9) where the remote asks for it.  The initiator opens it on
- *    DLCI 1 with the data channel (again if its SABME is not
- *    answered); the responder takes the first one opened.  A frame goes
- *    out every 10 ms of the line's bits once the owner has its 80
- *    samples (Owner::voice_in()), before the data channel's; what
- *    comes in is decoded to the owner (voice_out()), a lost frame
- *    (the audio header's sequence number) concealed.
+ *    (clause 9) both ways (the initiator asks for it; the responder
+ *    takes what the remote asks).  The initiator opens it on DLCI 1
+ *    with the data channel (again if its SABME is not answered); the
+ *    responder takes the first one opened.  A frame goes out every
+ *    10 ms of the line's bits once the owner has its 80 samples
+ *    (Owner::voice_in()), before the data channel's; what comes in is
+ *    decoded to the owner (voice_out()), a lost frame (the audio
+ *    header's sequence number) concealed.  With the audio header we
+ *    send, silence is G.729 Annex B's: a SID frame (2 octets, the
+ *    header's silence and SID bits set) when the noise changes, and
+ *    nothing between, so the data channel has the line; after a
+ *    silence frame the far end's comfort noise is made every 10 ms
+ *    until speech comes.
  *
  */
 
@@ -97,6 +103,7 @@ private:
 	void rx_xid(Frame *f, u8 dlci);
 	void open_voice();
 	void voice_frame(Frame *f, u8 ctrl, bool cmd);
+	void voice_open();
 	void voice_closed();
 	Frame *next_voice();
 	void log_msg(const char *dir, u8 dlci, const h245::Msg &m);
@@ -118,6 +125,8 @@ private:
 	u8 vseq_tx_ = 0;
 	s16 vseq_rx_ = -1;              /* the next expected, -1 unknown */
 	s32 vcredit_ = 0;               /* bits towards the next frame */
+	s32 vrx_credit_ = 0;            /* and the far end's, in silence */
+	bool vsil_ = false;             /* the far end is silent */
 	s32 vtimer_ = 0;                /* our SABME's answer, in bits */
 	s16 vtries_ = 0;
 	g729::Encoder enc_;

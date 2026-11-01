@@ -105,6 +105,17 @@ inline i16 shr(i16 a, i16 n)
 	return static_cast<i16>(a >> n);
 }
 
+/* a >> n, rounded (n < 0: shl) */
+inline i16 shr_r(i16 a, i16 n)
+{
+	if (n > 15)
+		return 0;
+	i16 r = shr(a, n);
+	if (n > 0 && (a & (1 << (n - 1))))
+		r = static_cast<i16>(r + 1);
+	return r;
+}
+
 /* a * b in Q15, truncated, saturated */
 inline i16 mult(i16 a, i16 b)
 {

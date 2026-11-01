@@ -155,7 +155,7 @@ The details of the fax tests are in [Fax](dsp/fax-details.md).
 
 | Test | What it tests |
 |---|---|
-| `g729a_test` (label `quick`) | D-Modem's G.729 Annex A: the frame's packing, a round trip, and every Annex A test vector bit for bit, encoder and decoder (skipped without `docs/specs/fetch_g729.sh`'s vectors) ([v70-details.md](v70-details.md#g729-annex-a)) |
+| `g729a_test` (label `quick`) | D-Modem's G.729 Annex A and B: the frames' packing (speech and SID), a round trip, DTX on noise and speech bursts, and every Annex A and Annex B test vector bit for bit, encoder and decoder (skipped without `docs/specs/fetch_g729.sh`'s vectors) ([v70-details.md](v70-details.md#g729-annex-a)) |
 | `g729a_bcg729_test` (label `quick`, built only where libbcg729 is installed) | The coder against bcg729 both ways: each decodes the other's frames as well as its own. bcg729 is GPL; it is linked into this test alone |
 | `dsvd_audio_test` (label `quick`, not on Windows) | dmodemd's `--dsvd-audio` command: `cat` gives back what it is sent, a command that ends at once |
 | `link_test`, `core_test`, `core_equiv` (label `quick`) | The data link layer; the core; and the core's transcripts against the scripts' `.expect` files (slmodemd's old core's, recorded from it; see [core.md](core.md)) |

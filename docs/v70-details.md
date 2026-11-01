@@ -59,10 +59,10 @@ channel's SABME:
 
 | Step | Initiator | Responder |
 |---|---|---|
-| 1 | SABME on the next DLCI (1; 2 if the data channel has 1), P 1: OpenLogicalChannel, channel the data channel's + 1, port 1, audio (g729AnnexA, 1 frame), UNERM both ways, CRC 16, N401 10, the audio header (`v75Parameters.audioHeaderPresent`) | |
+| 1 | SABME on the next DLCI (1; 2 if the data channel has 1), P 1: OpenLogicalChannel, channel the data channel's + 1, port 1, audio (g729AnnexA, 1 frame), UNERM both ways, CRC 16, N401 11 (the header and a frame), the audio header (`v75Parameters.audioHeaderPresent`) | |
 | 2 | | With a voice path: UA with OpenLogicalChannelAck, the channel open (`voice_state(true)`). Without: DM with OpenLogicalChannelReject, dataTypeNotSupported |
 | 3 | UA: open (`voice_state(true)`); DM: none, the call goes on with data alone | |
-| 4 | UI commands on the DLC: the audio header, then 10 octets of G.729 Annex A | the same |
+| 4 | UI commands on the DLC: the audio header, then 10 octets of G.729 Annex A, or in silence a 2 octet SID frame now and then (below) | the same |
 | 5 | Hanging up: DISC with CloseLogicalChannel before the data channel's | the same |
 | 6 | The remote's DISC: UA with CloseLogicalChannelAck, closed (`voice_state(false)`) | the same |
 
@@ -70,11 +70,32 @@ An unanswered SABME is sent again after about a second of line bits,
 four times in all. A SABME repeated after the channel is open is
 answered with the UA again.
 
-The audio header (clause 9/V.75) is one octet: bit 1 silence, bit 2 a
-SID frame (neither is sent), bits 3 to 7 a sequence number counting
-frames modulo 32. A gap in the received numbers of up to 3 is concealed
+The audio header (clause 9/V.75, Table 7) is one octet: bit 1 silence,
+bit 2 a SID frame, bits 3 to 7 a sequence number counting the frames
+sent modulo 32. A gap in the received numbers of up to 3 is concealed
 with the decoder's erasure (G.729's frame erasure concealment) before
 the frame is decoded.
+
+### Silence
+
+V.70 leaves silence compression for further study, and its OLC has no
+Annex B coder to ask for, but V.75 has the audio header carry silence
+for a coder without it (clause 9/V.75). So when we send the header
+(always to another D-Modem: both ask for it) our encoder runs G.729
+Annex B's VAD and DTX (`Encoder::set_dtx(true)`):
+
+| Encoder's frame | On the DLC |
+|---|---|
+| Speech | The header (silence 0, SID 0), 10 octets |
+| SID (the noise has changed, Annex B's DTX) | The header (silence 1, SID 1), 2 octets: Annex B's 15 bits (MA predictor 1, LSF stages 5 and 4, gain 5) and a 0 bit |
+| None (silence, no change) | Nothing; the sequence number does not count it |
+
+The receiver of a frame with the silence bit decodes the SID (or, with
+the silence bit alone, an untransmitted frame) and then, while no frame
+comes, makes 10 ms of comfort noise every 10 ms of the line's bits
+(`Mux::clock()`, half a frame's time behind so a late frame is not
+doubled) until a speech frame comes. The OLC still says g729AnnexA, not
+H.245's `g729AnnexAwSilenceSuppression`, which V.75 does not list.
 
 The multiplexer (`Mux::clock()`) is told how many bits the pump took:
 each 10 ms of them at the transmit rate (288 bits if it is not known)
@@ -98,15 +119,27 @@ that the bits come out the same. `g729a_tab.cpp` holds Annex A's tables.
 A frame is 80 samples (10 ms) in and 11 parameters out, packed MSB first
 into 10 octets as RFC 3551's G729 payload has them.
 
+`g729b.cpp` is Annex B with Annex A (the ITU reference's "BA" coder):
+the VAD (12 autocorrelations, the lag window extended to them), DTX
+(when to send a SID: Itakura distance and energy change), the SID's
+LSF and energy quantisers, and the comfort noise excitation (Gaussian
+plus random pulses at the SID's level), at both ends. The encoder
+returns the frame's type (`encode()`: 10, 2 or 0 octets); the decoder
+takes a SID's 2 octets or none for an untransmitted frame. Off
+(`set_dtx(false)`, the default) the encoder is Annex A's alone.
+
 | Test | Result |
 |---|---|
 | Encoder: ALGTHM, FIXED, LSP, PITCH, SPEECH, TAME, TEST `.IN` against `.BIT` | Every frame the same bits |
 | Decoder: all ten `.BIT` (ERASURE, OVERFLOW and PARITY among them) against `.PST` | Every sample the same |
+| Annex B encoder, DTX on: `tstseq1` to `tstseq4` `.bin` against `tstseqNa.bit` | Every frame the same type and bits |
+| Annex B decoder: `tstseq1a` to `tstseq4a.bit`, `tstseq5.bit`, `tstseq6.bit` (erasures in silence) against `.out` | Every sample the same |
 | bcg729 (1.1), both ways, on SPEECH.IN | bcg729 is not bit exact with the vectors itself (0 of 3750 SPEECH frames match ITU's bits), so the bits differ; each decoder's output from the other's frames is as close to the speech as from its own (about 7 dB SDR, the coder's usual on this file), and the two decoders agree to about 34 dB on the same frames |
 
 The vectors come from ITU-T's G.729 software package
-(`docs/specs/fetch_g729.sh`); only its test vector files are taken, and
-CI fetches them for its Linux build.
+(`docs/specs/fetch_g729.sh`), Annex A's and Annex B's `tstseq*`; only
+its test vector files are taken, and CI fetches them for its Linux
+build.
 
 ## H.245 in aligned PER
 
@@ -133,14 +166,14 @@ H.245's module) gives for each message.
 | `Core.DsvdBoth`, `Core.DsvdCallerAlone` (`core/test/core_test.cpp`, label `quick`) | Two modems with `AT+A8E=1,1,,1+DSVD=1`: V.8 bis chooses DSVD, V.76 with the data channel, the DTEs' characters both ways, the answerer's hang-up closing the channel; `+DSVD` at the caller alone: data and V.42 as usual |
 | `Core.DsvdVoice` | Both modems with a voice path: the voice channel opened after the data channel, each side's tone heard at the other (over 80% of the received signal's energy at the tone), the data alongside, the channel closed at hang-up |
 | `Link.V76Voice`, `Link.V76VoiceHeader` (`link/test/link_test.cpp`) | Two Links at 28800 bit/s: two seconds of voice both ways with data alongside; the audio header's sequence numbers, an ERM audio channel and a second one refused, three lost frames concealed, the DISC |
+| `Link.V76VoiceSilence` | One side quiet (low noise) for two seconds: the far end still hears 10 ms every 10 ms, comfort noise within 10 dB of the room's level and no tone, and that side's data gets over half as much again as while talking |
 | `G729a.*`, `G729aBcg729.BothWays`, `DsvdAudio.*` | The coder ([testing-details.md](testing-details.md)) |
 | `Core.A8e` | `+DSVD`'s value and range |
 
 ## Not done
 
-- Silence suppression and comfort noise (G.729 Annex B); the audio
-  header's silence and SID bits are never set, and a SID frame received
-  is not decoded.
+- Silence without the audio header (a remote that does not ask for
+  it gets every frame), and H.245's g729AnnexAwSilenceSuppression.
 - The voice on real SmartUSB56 hardware: tested only between simulated
   modems.
 - A voice channel the responder opens, or one opened after the call

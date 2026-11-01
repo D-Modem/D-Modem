@@ -199,6 +199,25 @@ void lsp_lsf2(const i16 *lsp, i16 *lsf)
 }
 
 /* (see g729a_int.h) */
+void lsp_lsf(const i16 *lsp, i16 *lsf)
+{
+	i16 ind = 63;
+	for (int i = M - 1; i >= 0; i--) {
+		while (sub(table[ind], lsp[i]) < 0)
+			ind = sub(ind, 1);
+		const i32 t = L_mult(sub(lsp[i], table[ind]), slope[ind]);
+		lsf[i] = add(round16(L_shl(t, 3)), shl(ind, 8));
+	}
+}
+
+/* (see g729a_int.h) */
+i16 random16(i16 &seed)
+{
+	seed = extract_l(L_add(L_shr(L_mult(seed, 31821), 1), 13849));
+	return seed;
+}
+
+/* (see g729a_int.h) */
 void int_qlpc(const i16 *lsp_old, const i16 *lsp_new, i16 *az)
 {
 	i16 lsp[M];
@@ -311,16 +330,35 @@ void lsp_expand(i16 *buf, i16 gap, int lo, int hi)
 }
 
 /* (see g729a_int.h) */
-void lsp_prev_extract(const i16 *lsp, i16 *lsp_ele, i16 mode,
-		      const LspPast &past)
+void lsp_prev_extract(const i16 *lsp, i16 *lsp_ele, const i16 (*fgm)[M],
+		      const i16 *fg_sum_inv_m, const LspPast &past)
 {
 	for (int j = 0; j < M; j++) {
 		i32 t = L_deposit_h(lsp[j]);
 		for (int k = 0; k < MA_NP; k++)
-			t = L_msu(t, past.freq_prev[k][j], fg[mode][k][j]);
+			t = L_msu(t, past.freq_prev[k][j], fgm[k][j]);
 		const i16 tmp = extract_h(t);
-		t = L_mult(tmp, fg_sum_inv[mode][j]);
+		t = L_mult(tmp, fg_sum_inv_m[j]);
 		lsp_ele[j] = extract_h(L_shl(t, 3));
+	}
+}
+
+/* (see g729a_int.h) */
+void lsp_prev_extract(const i16 *lsp, i16 *lsp_ele, i16 mode,
+		      const LspPast &past)
+{
+	lsp_prev_extract(lsp, lsp_ele, fg[mode], fg_sum_inv[mode], past);
+}
+
+/* (see g729a_int.h) */
+void lsp_prev_compose(const i16 *lsp_ele, i16 *lsp, const i16 (*fgm)[M],
+		      const i16 *fg_sum_m, const LspPast &past)
+{
+	for (int j = 0; j < M; j++) {
+		i32 t = L_mult(lsp_ele[j], fg_sum_m[j]);
+		for (int k = 0; k < MA_NP; k++)
+			t = L_mac(t, past.freq_prev[k][j], fgm[k][j]);
+		lsp[j] = extract_h(t);
 	}
 }
 
@@ -334,8 +372,8 @@ void lsp_prev_update(const i16 *lsp_ele, LspPast &past)
 		past.freq_prev[0][j] = lsp_ele[j];
 }
 
-/* the LSFs in order and apart (3.2.4/G.729) */
-static void lsp_stability(i16 *buf)
+/* (see g729a_int.h) */
+void lsp_stability(i16 *buf)
 {
 	for (int j = 0; j < M - 1; j++)
 		if (L_sub(buf[j + 1], buf[j]) < 0) {
@@ -363,12 +401,7 @@ void lsp_get_quant(i16 code0, i16 code1, i16 code2, i16 mode,
 		buf[j] = add(lspcb1[code0][j], lspcb2[code2][j]);
 	lsp_expand(buf, GAP1, 1, M);
 	lsp_expand(buf, GAP2, 1, M);
-	for (int j = 0; j < M; j++) {
-		i32 t = L_mult(buf[j], fg_sum[mode][j]);
-		for (int k = 0; k < MA_NP; k++)
-			t = L_mac(t, past.freq_prev[k][j], fg[mode][k][j]);
-		lspq[j] = extract_h(t);
-	}
+	lsp_prev_compose(buf, lspq, fg[mode], fg_sum[mode], past);
 	lsp_prev_update(buf, past);
 	lsp_stability(lspq);
 }
@@ -446,6 +479,31 @@ void unpack(const uint8_t in[FRAME_OCTETS], int16_t prm[PRMS])
 		for (int b = 0; b < BITS[i]; b++, pos++)
 			v = v << 1 | (in[pos >> 3] >> (7 - (pos & 7)) & 1);
 		prm[i] = static_cast<int16_t>(v);
+	}
+}
+
+/* each SID parameter's bits (Table B.2/G.729) */
+static const int SID_BITS[SID_PRMS] = { 1, 5, 4, 5 };
+
+/* (see g729a.h) */
+void pack_sid(const int16_t prm[SID_PRMS], uint8_t out[SID_OCTETS])
+{
+	unsigned v = 0;
+	for (int i = 0; i < SID_PRMS; i++)
+		v = v << SID_BITS[i] |
+			(static_cast<unsigned>(prm[i]) & ((1u << SID_BITS[i]) - 1));
+	v <<= 1;
+	out[0] = static_cast<uint8_t>(v >> 8);
+	out[1] = static_cast<uint8_t>(v);
+}
+
+/* (see g729a.h) */
+void unpack_sid(const uint8_t in[SID_OCTETS], int16_t prm[SID_PRMS])
+{
+	unsigned v = (static_cast<unsigned>(in[0]) << 8 | in[1]) >> 1;
+	for (int i = SID_PRMS - 1; i >= 0; i--) {
+		prm[i] = static_cast<int16_t>(v & ((1u << SID_BITS[i]) - 1));
+		v >>= SID_BITS[i];
 	}
 }
 

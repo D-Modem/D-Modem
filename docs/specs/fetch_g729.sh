@@ -2,15 +2,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 D-Modem Authors
 # Downloads G.729's software package from ITU-T and takes its Annex A
-# test vectors (only those: data, not code) into g729a/, where
-# link/test/g729a_test.cpp checks D-Modem's G.729 Annex A against them.
+# test vectors and Annex B's for Annex A (only those: data, not code)
+# into g729a/, where link/test/g729a_test.cpp checks D-Modem's G.729
+# Annex A and B against them.
 # ITU publishes the package free of charge but does not allow it to be
 # redistributed, so the vectors are not part of the repository
 # (.gitignore).
 #
 #   docs/specs/fetch_g729.sh
 cd "$(dirname "$0")"
-if [ -s g729a/SPEECH.BIT ]; then
+if [ -s g729a/SPEECH.BIT ] && [ -s g729a/tstseq1a.bit ]; then
 	echo "g729a: already there"
 	exit 0
 fi
@@ -28,6 +29,6 @@ if [ ! -s "$zip" ]; then
 fi
 mkdir -p g729a
 unzip -j -o -q "$zip" 'Software/G729_Release3/g729AnnexA/test_vectors/*' \
-	-d g729a
+	'Software/G729_Release3/g729AnnexB/test_vectors/tstseq*' -d g729a
 rm -f "$zip"
 echo "g729a: $(ls g729a | wc -l) files from $id"

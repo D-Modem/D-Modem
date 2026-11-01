@@ -2,9 +2,9 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 D-Modem Authors
  *
- *    g729a_test.cpp - G.729 Annex A (link/g729a.h): the packing, the
- *                     coder on its own, and bit exactness against the
- *                     Recommendation's test vectors where they are
+ *    g729a_test.cpp - G.729 Annex A and B (link/g729a.h): the packing,
+ *                     the coder on its own, and bit exactness against
+ *                     the Recommendation's test vectors where they are
  *                     (docs/specs/fetch_g729.sh puts them in
  *                     docs/specs/g729a; $DMODEM_G729_VECTORS another
  *                     directory); skipped without them
@@ -205,6 +205,192 @@ TEST(G729a, Vectors)
 				first = f;
 		}
 		EXPECT_EQ(bad, 0u) << n[0] << ".BIT: " << bad << " of " << frames
+				   << " frames differ, the first " << first;
+	}
+}
+
+/* a SID frame's octets are its 15 bits and a 0, and back */
+TEST(G729a, PackSid)
+{
+	const int16_t prm[g729::SID_PRMS] = { 1, 0x15, 0x9, 0x1e };
+	uint8_t oct[g729::SID_OCTETS];
+	g729::pack_sid(prm, oct);
+	/* 1 10101 1001 11110 0 */
+	EXPECT_EQ(oct[0], 0xd6);
+	EXPECT_EQ(oct[1], 0x7c);
+	int16_t back[g729::SID_PRMS];
+	g729::unpack_sid(oct, back);
+	for (int i = 0; i < g729::SID_PRMS; i++)
+		EXPECT_EQ(prm[i], back[i]) << "parameter " << i;
+}
+
+/* Annex B: silence in, SID frames and nothing out, comfort noise back;
+   speech after it is speech again */
+TEST(G729a, Dtx)
+{
+	g729::Encoder enc;
+	g729::Decoder dec;
+	enc.set_dtx(true);
+	unsigned seed = 1;
+	int counts[3] = {}, after = 0;
+	double noise_in = 0, noise_out = 0;
+	for (int f = 0; f < 600; f++) {
+		int16_t pcm[g729::FRAME], out[g729::FRAME];
+		for (int i = 0; i < g729::FRAME; i++) {
+			seed = seed * 1103515245 + 12345;
+			const double n = ((seed >> 16 & 0x7fff) / 32768.0 - 0.5) * 200;
+			const double t = (f * g729::FRAME + i) / 8000.0;
+			/* speech-like bursts in the first and last seconds */
+			const double v = f < 100 || f >= 500 ?
+				4000 * sin(2 * M_PI * 220 * t) *
+				(0.6 + 0.4 * sin(2 * M_PI * 3 * t)) : 0;
+			pcm[i] = static_cast<int16_t>(v + n);
+		}
+		uint8_t oct[g729::FRAME_OCTETS];
+		const int n = enc.encode(pcm, oct);
+		ASSERT_TRUE(n == 10 || n == 2 || n == 0) << n;
+		counts[n == 10 ? g729::SPEECH : n == 2 ? g729::SID : g729::NONE]++;
+		if (f >= 500 && n == 10)
+			after++;
+		dec.decode(oct, n, out);
+		if (f >= 300 && f < 480)
+			for (int i = 0; i < g729::FRAME; i++) {
+				noise_in += double(pcm[i]) * pcm[i];
+				noise_out += double(out[i]) * out[i];
+			}
+	}
+	/* most of the silence is not sent, some SID frames describe it */
+	EXPECT_GT(counts[g729::NONE], 250);
+	EXPECT_GT(counts[g729::SID], 1);
+	EXPECT_GT(after, 80);
+	/* the comfort noise is about as loud as the noise (within 10 dB) */
+	const double db = 10 * log10(noise_out / noise_in);
+	EXPECT_LT(fabs(db), 10.0) << db << " dB";
+
+	/* without DTX every frame is speech */
+	enc.set_dtx(false);
+	enc.reset();
+	int16_t zero[g729::FRAME] = {};
+	uint8_t oct[g729::FRAME_OCTETS];
+	for (int f = 0; f < 50; f++)
+		EXPECT_EQ(enc.encode(zero, oct), g729::FRAME_OCTETS);
+}
+
+/* Annex B's frames in the Recommendation's serial format: SYNC, the
+   bit count (80 speech, 16 a SID frame in octet mode, 0 none), the
+   bits */
+static int to_serial_b(int type, const int16_t *prm, int16_t *serial)
+{
+	static const int SID_BITS[g729::SID_PRMS] = { 1, 5, 4, 5 };
+	serial[0] = SYNC;
+	if (type == g729::SPEECH) {
+		to_serial(prm, serial);
+		return SERIAL;
+	}
+	if (type == g729::NONE) {
+		serial[1] = 0;
+		return 2;
+	}
+	serial[1] = 16;
+	int16_t *p = serial + 2;
+	for (int i = 0; i < g729::SID_PRMS; i++)
+		for (int b = SID_BITS[i] - 1; b >= 0; b--)
+			*p++ = prm[i] >> b & 1 ? BIT_1 : BIT_0;
+	*p++ = BIT_0;
+	return 18;
+}
+
+/* the Recommendation's Annex B vectors for Annex A (its test_ab.bat):
+   each tstseqN.bin through our encoder with DTX gives tstseqNa.bit,
+   frame for frame, and each .bit through our decoder its .out */
+TEST(G729a, VectorsAnnexB)
+{
+	const std::string dir = vector_dir();
+	if (words(dir + "/tstseq1a.bit").empty())
+		GTEST_SKIP() << "no G.729 Annex B test vectors in " << dir
+			     << " (docs/specs/fetch_g729.sh)";
+
+	for (int n = 1; n <= 4; n++) {
+		const std::string name = "tstseq" + std::to_string(n);
+		const auto in = words(dir + "/" + name + ".bin");
+		const auto bit = words(dir + "/" + name + "a.bit");
+		ASSERT_FALSE(in.empty()) << name;
+		g729::Encoder enc;
+		enc.set_dtx(true);
+		const size_t frames = in.size() / g729::FRAME;
+		size_t pos = 0, bad = 0, first = 0, types[3] = {};
+		for (size_t f = 0; f < frames; f++) {
+			int16_t prm[g729::PRMS], serial[SERIAL];
+			const int type = enc.encode(&in[f * g729::FRAME], prm);
+			types[type]++;
+			const int len = to_serial_b(type, prm, serial);
+			bool same = pos + len <= bit.size();
+			for (int i = 0; same && i < len; i++)
+				same = serial[i] == bit[pos + i];
+			if (!same && bad++ == 0)
+				first = f;
+			/* the reference's frame's length, to stay in step */
+			pos += pos + 1 < bit.size() ? 2 + bit[pos + 1] : len;
+		}
+		EXPECT_EQ(bad, 0u) << name << ".bin: " << bad << " of " << frames
+				   << " frames differ, the first " << first
+				   << " (" << types[1] << " speech, " << types[2]
+				   << " SID, " << types[0] << " none)";
+		EXPECT_EQ(pos, bit.size()) << name;
+	}
+
+	static const char *const dec_names[][2] = {
+		{ "tstseq1a.bit", "tstseq1a.out" },
+		{ "tstseq2a.bit", "tstseq2a.out" },
+		{ "tstseq3a.bit", "tstseq3a.out" },
+		{ "tstseq4a.bit", "tstseq4a.out" },
+		{ "tstseq5.bit", "tstseq5a.out" },
+		{ "tstseq6.bit", "tstseq6a.out" },
+	};
+	static const int SID_BITS[g729::SID_PRMS] = { 1, 5, 4, 5 };
+	for (const auto &n : dec_names) {
+		const auto bit = words(dir + "/" + n[0]);
+		const auto out = words(dir + "/" + n[1]);
+		ASSERT_FALSE(bit.empty()) << n[0];
+		g729::Decoder dec;
+		size_t pos = 0, f = 0, bad = 0, first = 0;
+		while (pos + 2 <= bit.size()) {
+			const int16_t *serial = &bit[pos];
+			const int nb = serial[1];
+			ASSERT_LE(pos + 2 + nb, bit.size()) << n[0];
+			bool erased = false;
+			if (nb != 0) {
+				for (int i = 0; i < nb; i++)
+					erased = erased || serial[2 + i] == 0;
+			} else {
+				erased = serial[0] != SYNC;
+			}
+			int16_t prm[g729::PRMS] = {}, pcm[g729::FRAME];
+			int type = g729::NONE;
+			if (nb == 80) {
+				type = g729::SPEECH;
+				from_serial(serial, prm);
+			} else if (nb == 16 || nb == 15) {
+				type = g729::SID;
+				const int16_t *p = serial + 2;
+				for (int i = 0; i < g729::SID_PRMS; i++) {
+					int v = 0;
+					for (int b = 0; b < SID_BITS[i]; b++)
+						v = v << 1 | (*p++ == BIT_1);
+					prm[i] = static_cast<int16_t>(v);
+				}
+			}
+			dec.decode(type, prm, erased, pcm);
+			bool same = (f + 1) * g729::FRAME <= out.size();
+			for (int i = 0; same && i < g729::FRAME; i++)
+				same = pcm[i] == out[f * g729::FRAME + i];
+			if (!same && bad++ == 0)
+				first = f;
+			pos += 2 + nb;
+			f++;
+		}
+		EXPECT_EQ(f * g729::FRAME, out.size()) << n[0];
+		EXPECT_EQ(bad, 0u) << n[0] << ": " << bad << " of " << f
 				   << " frames differ, the first " << first;
 	}
 }

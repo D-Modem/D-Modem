@@ -24,6 +24,7 @@ enum {
 	L_FRAME = 80,
 	L_SUBFR = 40,
 	M = 10,                 /* LP order */
+	NP = 12,                /* Annex B's autocorrelations' order */
 	MP1 = M + 1,
 	PIT_MIN = 20,
 	PIT_MAX = 143,
@@ -53,8 +54,8 @@ constexpr i16 GAMMA1 = 24576, SHARPMAX = 13017, SHARPMIN = 3277,
 constexpr i32 L_THRESH_ERR = 983040000;
 
 extern const i16 hamwindow[240];
-extern const i16 lag_h[10];
-extern const i16 lag_l[10];
+extern const i16 lag_h[12];
+extern const i16 lag_l[12];
 extern const i16 table[65];
 extern const i16 slope[64];
 extern const i16 table2[64];
@@ -128,6 +129,27 @@ void pred_lt_3(i16 *exc, i16 t0, i16 frac, int n);
 /* the parity of the first subframe's pitch index's 6 high bits */
 i16 parity_pitch(i16 index);
 
+/* the LSFs (in [0, 0.5) of the frequency, Q15) of lsp: the table's
+   (Annex B's VAD) */
+void lsp_lsf(const i16 *lsp, i16 *lsf);
+/* the next pseudo-random number (4.4.4/G.729) */
+i16 random16(i16 &seed);
+
+/* the encoder's parts Annex B's DTX also uses (g729a_enc.cpp) */
+/* Levinson-Durbin: r to the LP filter A (Q12), the reflection
+   coefficients and (if err) the residual energy; an unstable filter
+   gives old_A and old_rc again (err untouched), a stable one becomes
+   them */
+void levinson(const i16 *Rh, const i16 *Rl, i16 *A, i16 *rc, i16 *err,
+	      i16 *old_A, i16 *old_rc);
+/* the LP filter a to its LSPs; old_lsp if 10 roots are not found */
+void az_lsp(const i16 *a, i16 *lsp, const i16 *old_lsp);
+/* the LSFs' weights for the quantiser's distance (3.2.4/G.729) */
+void get_wegt(const i16 *flsp, i16 *wegt);
+/* taming (3.10/G.729): the excitation's error moved on with a
+   subframe's pitch gain and lag */
+void update_exc_err(i32 *exc_err, i16 gain_pit, i16 T0);
+
 /* the LSP quantiser's stages to the quantised LSFs, the MA past moved
    on (3.2.4/G.729) */
 void lsp_get_quant(i16 code0, i16 code1, i16 code2, i16 mode,
@@ -137,6 +159,14 @@ void lsp_expand(i16 *buf, i16 gap, int lo, int hi);
 /* the MA predictor's error: what lsp would be coded as */
 void lsp_prev_extract(const i16 *lsp, i16 *lsp_ele, i16 mode,
 		      const LspPast &past);
+/* (see lsp_prev_extract) with these predictor coefficients */
+void lsp_prev_extract(const i16 *lsp, i16 *lsp_ele, const i16 (*fgm)[M],
+		      const i16 *fg_sum_inv_m, const LspPast &past);
+/* the error lsp_ele and the MA past to the LSFs */
+void lsp_prev_compose(const i16 *lsp_ele, i16 *lsp, const i16 (*fgm)[M],
+		      const i16 *fg_sum_m, const LspPast &past);
+/* the LSFs in order and apart (3.2.4/G.729) */
+void lsp_stability(i16 *buf);
 /* lsp_ele into the MA past */
 void lsp_prev_update(const i16 *lsp_ele, LspPast &past);
 
@@ -147,6 +177,68 @@ void gain_predict(const i16 *past_qua_en, const i16 *code, i16 *gcode0,
 void gain_update(i16 *past_qua_en, i32 L_gbk12);
 /* (see gain_update) for a lost frame */
 void gain_update_erasure(i16 *past_qua_en);
+
+/* Annex B: the VAD, DTX and comfort noise (g729b.cpp) */
+enum {
+	NB_SUMACF = 3, NB_CURACF = 2, NB_GAIN = 2,
+	SIZ_SUMACF = NB_SUMACF * MP1, SIZ_ACF = NB_CURACF * MP1,
+};
+constexpr i16 INIT_SEED = 11111;
+
+/* the voice activity detector (B.3/G.729) */
+struct Vad {
+	i16 MeanLSF[M], Min_buffer[16];
+	i16 Prev_Min, Next_Min, Min, MeanE, MeanSE, MeanSLE, MeanSZC;
+	i16 prev_energy, count_sil, count_update, count_ext, flag, v_flag,
+		less_count;
+	/* as at the start */
+	void reset();
+	/* this frame's decision (true: speech) from its second reflection
+	   coefficient, unquantised LSFs, autocorrelations (r[0]'s exponent
+	   exp_R0), preprocessed speech, count (1 the first) and the last two
+	   frames' decisions */
+	bool decide(i16 rc, const i16 *lsf, const i16 *r_h, const i16 *r_l,
+		    i16 exp_R0, const i16 *sigpp, i16 frm_count, bool prev,
+		    bool pprev);
+};
+
+/* the encoder's DTX (B.4/G.729) */
+struct Dtx {
+	i16 lspSid_q[M], pastCoeff[MP1], RCoeff[MP1], sh_RCoeff;
+	i16 Acf[SIZ_ACF], sh_Acf[NB_CURACF];
+	i16 sumAcf[SIZ_SUMACF], sh_sumAcf[NB_SUMACF];
+	i16 ener[NB_GAIN], sh_ener[NB_GAIN];
+	i16 fr_cur, cur_gain, nb_ener, sid_gain, flag_chang, prev_energy,
+		count_fr0;
+	/* as at the start */
+	void reset();
+	/* every frame: its autocorrelations r_h[0..M] (exponent exp_r) and
+	   its VAD decision */
+	void update(const i16 *r_h, i16 exp_r, bool vad);
+	/* an inactive frame: whether to send a SID frame (its 4 parameters
+	   in ana), the comfort noise excitation into exc, the frame's LP
+	   filters into Aq; lsp_old_q, the LSF past, the seed, taming's
+	   error and Levinson's last filter moved on */
+	bool code(i16 *exc, bool pastVad, i16 *lsp_old_q, i16 *Aq, i16 *ana,
+		  LspPast &past, i16 &seed, i32 *exc_err, i16 *old_A,
+		  i16 *old_rc);
+};
+
+/* the comfort noise excitation for a frame (B.4.4/G.729), at gain
+   cur_gain; exc_err: the encoder's taming error, moved on (null at the
+   decoder) */
+void calc_exc_rand(i16 cur_gain, i16 *exc, i16 &seed, i32 *exc_err);
+/* nb_ener energies (0: the decoder's one saved) to the SID gain's index
+   and its level in dB */
+i16 qua_sidgain(const i16 *ener, const i16 *sh_ener, i16 nb_ener,
+		i16 *enerq);
+/* the SID frame's quantised gain for an index */
+i16 sid_gain_of(i16 index);
+/* the SID frame's LSF quantiser: lsp to its three indices, its
+   quantised LSPs, the MA past moved on */
+void lsfq_noise(const i16 *lsp, i16 *lspq, LspPast &past, i16 *ana);
+/* (see lsfq_noise) the indices back to LSPs */
+void sid_lsfq_decode(const i16 *index, i16 *lspq, LspPast &past);
 
 } // namespace g729
 } // namespace dlink

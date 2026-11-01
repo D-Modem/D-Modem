@@ -2837,6 +2837,8 @@ TEST(Link, V76Refused)
 struct VoiceDte : Dte {
 	double freq;
 	long sent = 0;
+	long talk = -1;         /* samples of tone, then quiet (-1: always) */
+	u32 rnd = 1;
 	bool on = false;
 	int opened = 0, closed = 0;
 	std::vector<s16> heard;
@@ -2851,12 +2853,26 @@ struct VoiceDte : Dte {
 		on = o;
 		(o ? opened : closed)++;
 	}
-	/* the tone, always there */
+	/* the tone (for talk samples), then a quiet room's noise */
 	s16 voice_in(s16 *pcm, s16 n) override {
-		for (s16 i = 0; i < n; i++, sent++)
-			pcm[i] = static_cast<s16>(8000 * sin(2 * M_PI * freq *
-							     sent / 8000));
+		for (s16 i = 0; i < n; i++, sent++) {
+			if (talk < 0 || sent < talk) {
+				pcm[i] = static_cast<s16>(8000 * sin(2 * M_PI *
+						freq * sent / 8000));
+				continue;
+			}
+			rnd = rnd * 1103515245u + 12345u;
+			pcm[i] = static_cast<s16>(static_cast<int>(rnd >> 16 &
+								   0x7f) - 64);
+		}
 		return n;
+	}
+	/* the energy of what was heard from sample a to b, a mean square */
+	double power(size_t a, size_t b) const {
+		double e = 0;
+		for (size_t i = a; i < b && i < heard.size(); i++)
+			e += double(heard[i]) * heard[i];
+		return b > a ? e / double(b - a) : 0;
 	}
 	/* the far end's */
 	void voice_out(const s16 *pcm, s16 n) override {
@@ -2946,6 +2962,43 @@ TEST(Link, V76Voice)
 	CHECK(!p.dc.on && !p.da.on && p.dc.closed == 1 && p.da.closed == 1,
 	      "the voice channel closed on the hang-up");
 	CHECK(p.dc.released && p.da.released, "released");
+}
+
+/* silence on the voice channel (G.729 Annex B, the audio header both
+   ways between us): a side that stops talking sends a SID frame and
+   then little else, so its data has more of the line; the far end
+   still hears 10 ms every 10 ms, comfort noise near the quiet room's
+   level rather than the tone */
+TEST(Link, V76VoiceSilence)
+{
+	VoicePair talk, quiet;
+	quiet.dc.talk = 0;
+	for (VoicePair *p : { &talk, &quiet }) {
+		p->run(28800);
+		CHECK(p->dc.on && p->da.on, "the voice channel open");
+		p->dc.heard.clear();
+		p->da.heard.clear();
+		p->dc.to_send = text(20000);
+		p->run(28800 * 2);
+	}
+	const VoiceDte &a = quiet.da;
+	printf("  silence: the answerer heard %zu samples; data %zu octets "
+	       "(%zu while talking)\n", a.heard.size(), a.got.size(),
+	       talk.da.got.size());
+	CHECK(a.heard.size() >= 15000 && a.heard.size() <= 16100,
+	      "comfort noise all along (%zu samples in 2 s)", a.heard.size());
+	/* the room's noise: uniform in -64..63, a mean square of ~1365 */
+	const double e = a.power(800, a.heard.size());
+	printf("  silence: comfort noise's mean square %.0f (the room's "
+	       "1365)\n", e);
+	CHECK(e > 1365 / 10.0 && e < 1365 * 10.0,
+	      "comfort noise within 10 dB of the room (%.0f)", e);
+	CHECK(a.tone_share(440) < 0.05, "no tone (%.2f)", a.tone_share(440));
+	CHECK(a.got.size() > talk.da.got.size() * 3 / 2,
+	      "the data has the line in silence (%zu octets against %zu)",
+	      a.got.size(), talk.da.got.size());
+	/* the other way, speech as before */
+	CHECK(quiet.dc.tone_share(700) > 0.8, "the caller hears 700 Hz");
 }
 
 /* the responder with a voice path takes an audio channel with V.75's
