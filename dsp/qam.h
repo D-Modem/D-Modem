@@ -216,6 +216,23 @@ extern const V32tPoints<256> v32_points_16800;
 extern const V32tPoints<512> v32_points_19200;
 extern const cplx v32_abcd[4];
 
+/* narrow band tone tracker for a tone and its phase reversals (V.32's
+   AA / AC, V.61's tones) */
+struct ToneTrk {
+	Osc lo;
+	cplx lp1, lp2;
+	float a;
+	cplx hist[256];
+	u32 pos;
+	s16 lag;
+	s16 on;
+	s32 on_count;
+	s16 hold;
+
+	void init(float freq, s32 srate);
+	s16 run(float x, float in_power, s32 srate);
+};
+
 } // namespace dsp
 
 #endif /* __QAM_H__ */

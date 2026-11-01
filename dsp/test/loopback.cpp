@@ -110,6 +110,13 @@ struct Side {
 				   latest */
 	std::vector<u8> sent;   /* the first RECORD_BITS bits sent */
 	std::vector<u8> received;       /* and received, one a byte */
+	/* the voice path (LoopbackConfig::voice_hz): its tone, the
+	   microphone's samples given, the earpiece's kept */
+	struct dp_voice voice;
+	int voice_hz;
+	bool voice_on;
+	long mic_sent;
+	std::vector<s16> ear;
 };
 
 static const char *const side_name[2] = { "caller", "answerer" };
@@ -193,11 +200,36 @@ int modem_put_bits(struct modem *m, int, u8 *buf, int n)
 	return n;
 }
 
+/* the voice path's (Side::voice): on or off */
+static void voice_state(void *ctx, int on)
+{
+	static_cast<Side *>(ctx)->voice_on = on != 0;
+}
+
+/* n samples of the side's tone (or silence) */
+static int voice_mic(void *ctx, s16 *pcm, int n)
+{
+	Side &s = *static_cast<Side *>(ctx);
+	for (int i = 0; i < n; i++, s.mic_sent++)
+		pcm[i] = s.voice_hz > 0 ? (s16)lrint(8000 * sin(
+			2 * M_PI * s.voice_hz * s.mic_sent / 8000.0)) : 0;
+	return n;
+}
+
+/* the far end's speech kept */
+static void voice_ear(void *ctx, const s16 *pcm, int n)
+{
+	Side &s = *static_cast<Side *>(ctx);
+	s.ear.insert(s.ear.end(), pcm, pcm + n);
+}
+
 /* the side's runtime, an empty dial string, the voice settings, the
-   calling tone wanted; -1 for anything else */
+   calling tone wanted, its voice path; -1 for anything else */
 intptr_t modem_get_param(struct modem *m, unsigned name)
 {
 	switch (name) {
+	case MDMPRM_VOICE:
+		return side_of(m).voice_hz ? (intptr_t)&side_of(m).voice : 0;
 	case MDMPRM_DPRUNTIME:
 		return (intptr_t)side_of(m).runtime;
 	case MDMPRM_DIALSTR:
@@ -702,6 +734,21 @@ static void side_result(int k, const LoopbackConfig &cfg, LoopbackSide &r)
 	       r.expected ? 100.0 * r.carried / r.expected : 0.0);
 	ErrorCount(s.received, sides[1 - k].sent, side_name[k])
 		.count(s.rx_at_connect, r);
+	/* the far end's tone in the last second of the speech */
+	r.voice_on = s.voice_on;
+	r.ear = s.ear.size();
+	int f = sides[1 - k].voice_hz;
+	size_t len = std::min<size_t>(s.ear.size(), 8000);
+	if (f > 0 && len > 0) {
+		const s16 *x = s.ear.data() + s.ear.size() - len;
+		double c = 0, sn = 0, all = 0;
+		for (size_t i = 0; i < len; i++) {
+			c += x[i] * cos(2 * M_PI * f * i / 8000);
+			sn += x[i] * sin(2 * M_PI * f * i / 8000);
+			all += (double)x[i] * x[i];
+		}
+		r.tone_share = all > 0 ? 2 * (c * c + sn * sn) / len / all : 0;
+	}
 }
 
 /* see loopback.h */
@@ -737,6 +784,11 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 		s.sent.reserve(RECORD_BITS);
 		s.received.clear();
 		s.received.reserve(RECORD_BITS);
+		s.voice = { &s, voice_state, voice_mic, voice_ear };
+		s.voice_hz = cfg.voice_hz[k];
+		s.voice_on = false;
+		s.mic_sent = 0;
+		s.ear.clear();
 	}
 	if (!registered) {
 		prop_dp_init();
@@ -781,6 +833,7 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 		s.runtime = nullptr;
 		std::vector<u8>().swap(s.sent);
 		std::vector<u8>().swap(s.received);
+		std::vector<s16>().swap(s.ear);
 	}
 	return res;
 }
@@ -806,5 +859,11 @@ std::string LoopbackSide::text(const char *name) const
 	std::string s = std::string(name) + buf;
 	if (resyncs > 0)
 		s += ", realigned " + std::to_string(resyncs) + " times";
+	if (voice_on || ear > 0) {
+		snprintf(buf, sizeof(buf), "; voice %s, %ld samples heard, "
+			 "%.0f%% the far tone", voice_on ? "on" : "off", ear,
+			 100 * tone_share);
+		s += buf;
+	}
 	return s;
 }

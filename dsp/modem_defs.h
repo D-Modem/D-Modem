@@ -138,6 +138,9 @@ enum DP_ID {
 	DP_V22      = 22,
 	DP_V23      = 23,
 	DP_V32      = 32,
+	DP_V61      = 61,       /* V.61: analogue simultaneous voice plus
+				   data (dp_v61.cpp); not in V.250, the
+				   number is D-Modem's */
 	DP_V34      = 34,
 	DP_K56      = 56,       /* K56flex: the core runs V.90 for it */
 	DP_CLEAR    = 64,       /* a clear 64 kbit/s digital channel (an
@@ -280,6 +283,22 @@ struct dp_relay {
 	int (*read)(void *ctx, unsigned char *buf, int max);
 	/* n octets to the far end: how many it took (0: no room now) */
 	int (*write)(void *ctx, const unsigned char *buf, int n);
+};
+
+/*
+ *    A voice path for the speech a data pump carries itself (V.61's): what
+ *    MDMPRM_VOICE gives, the same one DSVD's voice channel uses
+ */
+struct dp_voice {
+	void *ctx;
+	/* the speech starts (on 1: from now on through mic() and ear()) or
+	   stops */
+	void (*state)(void *ctx, int on);
+	/* up to n samples (16 bit, 8000 a second) of the near end's speech,
+	   how many there were */
+	int (*mic)(void *ctx, s16 *pcm, int n);
+	/* n samples of the far end's */
+	void (*ear)(void *ctx, const s16 *pcm, int n);
 };
 
 /*
