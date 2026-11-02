@@ -1599,7 +1599,7 @@ static bool page_t43_image(const T4Page &page, s16 mode, T43Image *img)
 	t42_rgb_to_lab(rgb.data(), lab.data(), cols.size());
 	img->type = T43_PALETTE;
 	img->bits[0] = 1;
-	while ((1u << img->bits[0]) < cols.size())
+	while ((static_cast<size_t>(1) << img->bits[0]) < cols.size())
 		img->bits[0]++;
 	img->width = static_cast<u32>(page.width);
 	img->height = static_cast<u32>(page.rows);
