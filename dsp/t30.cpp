@@ -35,12 +35,14 @@
  *
  */
 
+#include <algorithm>
 #include <cinttypes>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
 #include <new>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -52,6 +54,7 @@
 #include "fax_hdlc.h"
 #include "jbig.h"
 #include "jpeg.h"
+#include "t43.h"
 #include "t30.h"
 
 namespace dsp {
@@ -96,6 +99,9 @@ enum {
 /* error correction mode */
 #define ECM_FRAMES      256     /* in a block at most */
 #define T85_MAX_ROWS    32768   /* in a T.85 page at most */
+#define T43_MAX_ROWS    4800    /* ... T.43 (A3 is 3307 at 200 dpi) */
+#define T43_MAX_COLOURS 4096    /* in a T.43 palette (12 bits) */
+#define T43_MAX_GREYS   16      /* ... grey levels for T.43 grey */
 #define ECM_SIZE        256     /* octets in our frames */
 #define ECM_RX_MAX      (ECM_SIZE + 8)  /* a received frame and its FCS */
 #define ECM_PPRS        4       /* PPRs for a block before CTC */
@@ -267,6 +273,8 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 					   2 colour (with ECM only) */
 	s16 t85;                        /* the pages in T.85 (JBIG), not MH
 					   or MR (with ECM only) */
+	s16 t43;                        /* in T.43 (lossless JBIG): 1 grey,
+					   2 colour (with ECM only) */
 	/* sending */
 	std::vector<unsigned char> ecm_doc;     /* the page's coded data */
 	size_t ecm_doc_pos;             /* where the block starts */
@@ -385,7 +393,9 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	bool ecm_block_decodes(bool last, unsigned char *map);
 	void jbig_page();
 	void jpeg_page();
+	void t43_page();
 	s16 page_jpeg(const T4Page &p) const;
+	s16 page_t43(const T4Page &p) const;
 	void got_pps(const unsigned char *fif, s16 len);
 	void ecm_respond(s16 fcf, const unsigned char *fif, s16 len,
 			 enum state next_);
@@ -726,6 +736,10 @@ void T30::send_dis_dtc(s16 dtc)
 			set_bit(fif, 68);       /* JPEG (T.42) */
 			set_bit(fif, 69);       /* in full colour */
 			set_bit(fif, 73);       /* without subsampling */
+			if (!cfg.no_t43) {
+				set_bit(fif, 36);       /* T.43 */
+				set_bit(fif, 37);       /* plane interleave too */
+			}
 		}
 		if (!cfg.no_t85) {
 			set_bit(fif, 78);       /* T.85 */
@@ -846,11 +860,14 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 		t85 = ecm_on && dcs_t85(fif, len);
 		jpeg = ecm_on && get_bit(fif, len, 68) ?
 			1 + get_bit(fif, len, 69) : 0;
+		t43 = ecm_on && !jpeg && get_bit(fif, len, 36) ?
+			1 + get_bit(fif, len, 69) : 0;
 		ecm_size = get_bit(fif, len, 28) ? 64 : 256;
 		ecm_long_train = 0;
 		DSP_DBG("t30: DCS on V.34: %s, %s%s\n",
 			fine ? "fine" : "standard",
-			jpeg ? "JPEG" : t85 ? "T.85" : mr ? "MR" : "MH",
+			jpeg ? "JPEG" : t43 ? "T.43" : t85 ? "T.85" :
+			mr ? "MR" : "MH",
 			ecm_on ? ", ECM" : "");
 		if (!ecm_on) {
 			send_dcn(T30_ERR_INCOMPATIBLE);
@@ -876,11 +893,13 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 	ecm_on = cfg.ecm && get_bit(fif, len, 27);
 	t85 = ecm_on && dcs_t85(fif, len);
 	jpeg = ecm_on && get_bit(fif, len, 68) ? 1 + get_bit(fif, len, 69) : 0;
+	t43 = ecm_on && !jpeg && get_bit(fif, len, 36) ? 1 + get_bit(fif, len, 69) : 0;
 	ecm_size = get_bit(fif, len, 28) ? 64 : 256;
 	ecm_long_train = 0;
 	DSP_DBG("t30: DCS: %" PRId32 " bit/s, %s, %s%s\n", rates[k].bps,
 		fine ? "fine" : "standard",
 		jpeg == 2 ? "JPEG colour" : jpeg ? "JPEG grey" :
+		t43 == 2 ? "T.43 colour" : t43 ? "T.43 grey" :
 		t85 ? "T.85" : mr ? "MR" : "MH", ecm_on ? ", ECM" : "");
 	/* the training check follows on the fast modulation */
 	zero_run = max_zero_run = tcf_trained = 0;
@@ -1121,6 +1140,13 @@ void T30::send_dcs()
 				set_bit(fif, 69);       /* colour (4:1:1) */
 			set_bit(fif, 70);       /* T.81's K.3 to K.6 */
 			len = 10;
+		} else if (t43) {
+			set_bit(fif, 36);       /* T.43 (bit 68 0; bit 37 0:
+						   stripes interleaved) */
+			if (t43 == 2)
+				set_bit(fif, 69);       /* colour */
+			t85_octets(fif);
+			len = 10;
 		} else if (t85) {
 			t85_octets(fif);
 			set_bit(fif, 78);       /* L0 128 (bit 79 0) */
@@ -1131,6 +1157,7 @@ void T30::send_dcs()
 		rates[rate].bps, fine ? "fine" : "standard",
 		ecm_on ? 0 : min_ms, ecm_on ? ", ECM" : "",
 		jpeg == 2 ? ", JPEG colour" : jpeg ? ", JPEG grey" :
+		t43 == 2 ? ", T.43 colour" : t43 ? ", T.43 grey" :
 		t85 ? ", T.85" : "");
 	new_frames();
 	add_frame(FCF_TSI, id, put_ident(id, cfg.ident));
@@ -1178,7 +1205,8 @@ s16 T30::post_command()
 	s16 more = load_next();
 	return !more ? FCF_EOP :
 		(next.fine != 0) != (fine != 0) ||
-		page_jpeg(next) != jpeg ? FCF_EOM : FCF_MPS;
+		page_jpeg(next) != jpeg || page_t43(next) != t43 ? FCF_EOM :
+		FCF_MPS;
 }
 
 /* the command after a page (EOP, MPS or EOM), MCF and the rest wanted */
@@ -1234,7 +1262,8 @@ void T30::page_settings()
 	if (cfg.host)
 		return;         /* (host_dcs()) */
 	jpeg = page_jpeg(page);
-	if (jpeg) {
+	t43 = page_t43(page);
+	if (jpeg || t43) {
 		fine = 1;       /* 200 by 200 pels an inch */
 		return;
 	}
@@ -1497,6 +1526,92 @@ s16 T30::host_page(void (T30::*f)())
  *    error correction mode: sending
  */
 
+/* the page's grey levels (sRGB): its colours' luma, its black and white
+   0 and 255 */
+static void page_grey(const T4Page &page, std::vector<unsigned char> *grey)
+{
+	size_t n = static_cast<size_t>(page.width) * page.rows;
+	s16 stride = T4_STRIDE(page.width);
+	grey->resize(n);
+	for (size_t i = 0; i < n; i++) {
+		size_t y = i / page.width, x = i % page.width;
+		const unsigned char *s = page.pix.data() + i * page.comps;
+		(*grey)[i] = page.comps == 3 ?
+			static_cast<unsigned char>((299 * s[0] + 587 * s[1] + 114 * s[2]) / 1000) :
+			page.comps ? s[0] :
+			(page.bits[y * stride + x / 8] >> (7 - x % 8)) & 1 ? 0 : 255;
+	}
+}
+
+/* the page for T.43: in colour (mode 2) its colours as a palette, the
+   most frequent first, in CIELAB; in grey its grey levels as L*; false
+   when it has more than T.43 is worth (img may be null: only that) */
+static bool page_t43_image(const T4Page &page, s16 mode, T43Image *img)
+{
+	size_t n = static_cast<size_t>(page.width) * page.rows;
+	if (mode == 1) {
+		std::vector<unsigned char> grey;
+		page_grey(page, &grey);
+		bool seen[256] = {};
+		s16 levels = 0;
+		for (unsigned char g : grey)
+			if (!seen[g]) {
+				seen[g] = true;
+				if (++levels > T43_MAX_GREYS)
+					return false;
+			}
+		if (!img)
+			return true;
+		img->type = T43_GREY;
+		img->bits[0] = 8;
+		img->width = static_cast<u32>(page.width);
+		img->height = static_cast<u32>(page.rows);
+		std::vector<unsigned char> l(n);
+		t42_grey_to_l(grey.data(), l.data(), n);
+		img->pix.assign(l.begin(), l.end());
+		return true;
+	}
+	if (page.comps != 3)
+		return false;
+	std::unordered_map<u32, u32> count;
+	for (size_t i = 0; i < n; i++) {
+		const unsigned char *s = page.pix.data() + i * 3;
+		if (++count[static_cast<u32>(s[0]) << 16 | s[1] << 8 | s[2]] == 1 &&
+		    count.size() > T43_MAX_COLOURS)
+			return false;
+	}
+	if (!img)
+		return true;
+	std::vector<std::pair<u32, u32>> cols(count.begin(), count.end());
+	std::sort(cols.begin(), cols.end(), [](const std::pair<u32, u32> &a,
+					       const std::pair<u32, u32> &b) {
+		return a.second != b.second ? a.second > b.second : a.first < b.first;
+	});
+	if (cols.size() < 2)
+		cols.push_back({0xffffff, 0});  /* (T.43: more than 2^(N-1)) */
+	std::unordered_map<u32, u16> index;
+	std::vector<unsigned char> rgb, lab(cols.size() * 3);
+	for (size_t k = 0; k < cols.size(); k++) {
+		index[cols[k].first] = static_cast<u16>(k);
+		for (s16 c = 0; c < 3; c++)
+			rgb.push_back(static_cast<unsigned char>(cols[k].first >> (16 - 8 * c)));
+	}
+	t42_rgb_to_lab(rgb.data(), lab.data(), cols.size());
+	img->type = T43_PALETTE;
+	img->bits[0] = 1;
+	while ((static_cast<size_t>(1) << img->bits[0]) < cols.size())
+		img->bits[0]++;
+	img->width = static_cast<u32>(page.width);
+	img->height = static_cast<u32>(page.rows);
+	img->palette.assign(lab.begin(), lab.end());
+	img->pix.resize(n);
+	for (size_t i = 0; i < n; i++) {
+		const unsigned char *s = page.pix.data() + i * 3;
+		img->pix[i] = index[static_cast<u32>(s[0]) << 16 | s[1] << 8 | s[2]];
+	}
+	return true;
+}
+
 /* the page coded (MH, no fill: ECM has no minimum row time), its bits
    packed into octets in the order they go out, the first in the lowest
    bit (T.4 A.3.6.2), then the first block */
@@ -1518,19 +1633,16 @@ void T30::start_ecm_page()
 		if (jpeg == 2) {
 			t42_rgb_to_lab(page.pix.data(), img.pix.data(), n);
 		} else {
-			std::vector<unsigned char> grey(n);
-			s16 stride = T4_STRIDE(page.width);
-			for (size_t i = 0; i < n; i++) {
-				size_t y = i / page.width, x = i % page.width;
-				const unsigned char *s = page.pix.data() + i * page.comps;
-				grey[i] = page.comps == 3 ?
-					static_cast<unsigned char>((299 * s[0] + 587 * s[1] + 114 * s[2]) / 1000) :
-					page.comps ? s[0] :
-					(page.bits[y * stride + x / 8] >> (7 - x % 8)) & 1 ? 0 : 255;
-			}
+			std::vector<unsigned char> grey;
+			page_grey(page, &grey);
 			t42_grey_to_l(grey.data(), img.pix.data(), n);
 		}
 		jpeg_encode(img, JpegOptions(), &ecm_doc);
+	} else if (t43) {
+		/* T.43: the page lossless, its octets as they are */
+		T43Image img;
+		page_t43_image(page, t43, &img);
+		t43_encode(img, T43Options(), &ecm_doc);
 	} else if (t85) {
 		/* T.85: the BIE's octets as they are (its bit order the
 		   frames') */
@@ -1768,6 +1880,8 @@ enum state T30::ecm_page_end(s16 fcf2)
 	if (rx_page_on) {
 		if (jpeg)
 			jpeg_page();
+		else if (t43)
+			t43_page();
 		else if (t85)
 			jbig_page();
 		else
@@ -1848,15 +1962,52 @@ void T30::jpeg_page()
 	doc_rx.clear();
 }
 
+/* T.43: the page's BCIE into rx_page (as jpeg_page()) */
+void T30::t43_page()
+{
+	T43Image img;
+	s16 r = t43_decode(doc_rx.data(), doc_rx.size(), T43_MAX_ROWS, &img);
+	DSP_DBG("t30: T.43 page of %zu octets: %u by %u, type %d %s\n",
+		doc_rx.size(), img.width, img.height, img.type,
+		r == 0 ? "" : r > 0 ? "(cut short)" : "(no T.43)");
+	rx_page.release();
+	rx_page.init(T4_WIDTH, 1);
+	if (r >= 0 && img.width && img.height) {
+		std::vector<unsigned char> s;
+		s16 comps;
+		t43_to_srgb(img, &s, &comps);
+		rx_page.set_pix(s.data(), comps, img.width, img.height);
+	}
+	if (r)
+		rx_page.bad_rows = rx_page.rows ? 1 : 0;
+	doc_rx.clear();
+}
+
 /* how a page would go: 2 in colour JPEG, 1 in grey JPEG (the remote
    without colour), 0 not in JPEG (it has no colour, or the remote no
    JPEG) */
 s16 T30::page_jpeg(const T4Page &p) const
 {
 	if (!p.comps || !ecm_on || cfg.no_colour || cfg.host ||
-	    !get_bit(dis, dis_len, 68) || !get_bit(dis, dis_len, 15))
+	    !get_bit(dis, dis_len, 68) || !get_bit(dis, dis_len, 15) ||
+	    page_t43(p))
 		return 0;
 	return p.comps == 3 && get_bit(dis, dis_len, 69) ? 2 : 1;
+}
+
+/* how a page would go in T.43 instead (lossless, and smaller for few
+   colours): 2 in colour, a palette of at most T43_MAX_COLOURS; 1 in
+   grey, at most T43_MAX_GREYS levels (a grey page, or the remote
+   without colour); 0 not (JPEG, if any) */
+s16 T30::page_t43(const T4Page &p) const
+{
+	if (!p.comps || !ecm_on || cfg.no_colour || cfg.no_t43 || cfg.host ||
+	    !get_bit(dis, dis_len, 68) || !get_bit(dis, dis_len, 36) ||
+	    !get_bit(dis, dis_len, 15))
+		return 0;
+	if (p.comps == 3 && get_bit(dis, dis_len, 69))
+		return page_t43_image(p, 2, nullptr) ? 2 : 0;
+	return page_t43_image(p, 1, nullptr) ? 1 : 0;
 }
 
 /* the block's frames into the page (last: it ends the page); true if
@@ -1870,8 +2021,8 @@ s16 T30::page_jpeg(const T4Page &p) const
 bool T30::ecm_block_decodes(bool last, unsigned char *map)
 {
 	s16 k, bad = -1;
-	if (t85 || jpeg) {
-		/* the BIE or JPEG is decoded at the end of the page; its
+	if (t85 || jpeg || t43) {
+		/* the BIE, JPEG or BCIE is decoded at the end of the page; its
 		   frames came with good FCSs */
 		for (k = 0; k < ecm_rx_frames; k++)
 			doc_rx.insert(doc_rx.end(),
@@ -2955,6 +3106,7 @@ void t30_get_status(T30 *t, struct t30_status *s)
 	s->ecm = t->ecm_on;
 	s->t85 = t->t85;
 	s->jpeg = t->jpeg;
+	s->t43 = t->t43;
 	copy_array(s->remote_ident, t->remote_ident);
 	s->phase = state_name[t->state];
 	s->waiting = t->state == S_HOST ? t->waiting : T30_WAIT_NONE;
