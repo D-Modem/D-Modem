@@ -138,7 +138,10 @@ So dmodemd keeps every slot filled, as Windows' driver does (AGRSM.sys
   transfers before the modem has made their samples from the IN ones
   that came with them. A transfer the playback hasn't the samples for
   is held until those have been made (the end of that round of libusb's
-  events), not sent with silence.
+  events), not sent with silence: all but 4 of the transfers at most, so
+  that the device always has OUT packets queued (past that, a burst
+  longer than the spare and the held transfers cover, they go as they
+  are). Together, a stall of about 100 ms leaves no gap.
 - **The drift correction.** The USB's clock and the codec's are not quite
   the same. dmodemd tracks how far the ring's lead has strayed: the OUT
   samples less the IN samples of the transfers paired in order (the k-th

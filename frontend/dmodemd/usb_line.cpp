@@ -1067,10 +1067,19 @@ void LIBUSB_CALL UsbLine::out_done(libusb_transfer *t)
 		if (t->status == LIBUSB_TRANSFER_COMPLETED)
 			l->agere_sent(t);
 		/* (short of a transfer's samples: held until pump() has
-		   made the modem's from the line's come with it) */
-		if (!l->agere_out_ready()) {
+		   made the modem's from the line's come with it, all but 4
+		   of them at most, so that the device always has OUT packets
+		   queued: past that, sent as they are, the held ones first) */
+		if (!l->agere_out_ready() &&
+		    s->idle_out.size() < static_cast<size_t>(
+			    std::max<s16>(1, l->agere_transfers_ - 4))) {
 			s->idle_out.push_back(t);
 			return;
+		}
+		while (!s->idle_out.empty()) {
+			libusb_transfer *h = s->idle_out.front();
+			s->idle_out.pop_front();
+			l->agere_send(h);
 		}
 		l->agere_send(t);
 		return;

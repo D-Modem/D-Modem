@@ -348,7 +348,8 @@ private:
 	   out_done() holds it for pump(): after a stall the device's packets
 	   come in a burst, its OUT transfers done before the modem has made
 	   their samples from the IN ones done with them, and filled at once
-	   they would be silence, a gap in what goes to the line) */
+	   they would be silence, a gap in what goes to the line; all but 4
+	   of the transfers at most, the device kept in OUT packets) */
 	void agere_send(libusb_transfer *t);
 	bool agere_out_ready() const;
 	/* an OUT transfer done: its samples counted (agere_lead_) */
