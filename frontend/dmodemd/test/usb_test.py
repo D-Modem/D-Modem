@@ -135,8 +135,9 @@ class Modem:
                 break
         if where is None:
             raise RuntimeError("dmodemd %s gave no pty" % n)
-        threading.Thread(target=lambda: [self.log.write(l) or self.log.flush()
-                                         for l in self.p.stdout], daemon=True).start()
+        self.reader = threading.Thread(target=lambda: [self.log.write(l) or self.log.flush()
+                                                       for l in self.p.stdout], daemon=True)
+        self.reader.start()
         self.dte = usb_dte.Dte(*where)
         self.buf = b""
         self.n = n
@@ -391,7 +392,7 @@ try:
     a.dte.write(b"+++")
     check("1001 +++ OK", a.expect(rb"OK\r\n", 5))
     check("1001 ATH", a.cmd(b"ATH"))
-    check("1001 its LEDs off on hook", gpio(a)[-1] & 0x20c8 == 0)
+    check("1001 its LEDs off on hook", soon(lambda: gpio(a)[-1] & 0x20c8 == 0))
     check("1002 no LEDs (no --usb-leds)", not any(v & 0x2040 for v in gpio(b)))
     check("1001 NO CARRIER", a.expect(rb"NO CARRIER\r\n", 5))
     check("1002 NO CARRIER", b.expect(rb"NO CARRIER\r\n", 30))
@@ -474,9 +475,10 @@ try:
             r = m.p.wait(10)
         except subprocess.TimeoutExpired:
             r = None
-        m.log.flush()
+        # (its last lines: the reader thread's, once it has them all)
+        m.reader.join(5)
         check("%s exits once unplugged" % m.n, r is not None and r != 0 and
-              b"SmartUSB56: unplugged" in open(m.log.name, "rb").read())
+              b"SmartUSB56: unplugged" in log_of(m))
 finally:
     cleanup()
 print("PASS" if ok else "FAIL")

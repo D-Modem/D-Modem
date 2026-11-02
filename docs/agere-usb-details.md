@@ -133,6 +133,15 @@ So dmodemd keeps every slot filled, as Windows' driver does (AGRSM.sys
 - **An OUT transfer is sent again as soon as it completes.** Each one
   holds 48 samples, 2 a packet: the codec's own pace. That way the
   codec's transmit ring keeps the lead of 24 that command 0x0c gave it.
+  The exception is a burst: when dmodemd has been late (a busy machine),
+  the device's packets of that time all complete in one go, the OUT
+  transfers before the modem has made their samples from the IN ones
+  that came with them. A transfer the playback hasn't the samples for
+  is held until those have been made (the end of that round of libusb's
+  events), not sent with silence: all but 4 of the transfers at most, so
+  that the device always has OUT packets queued (past that, a burst
+  longer than the spare and the held transfers cover, they go as they
+  are). Together, a stall of about 100 ms leaves no gap.
 - **The drift correction.** The USB's clock and the codec's are not quite
   the same. dmodemd tracks how far the ring's lead has strayed: the OUT
   samples less the IN samples of the transfers paired in order (the k-th
@@ -151,7 +160,7 @@ menu went out chopped, and the remote never answered it.
 **The playback buffer.** The playback starts with the transfers' silence
 plus three frames (60 ms) to spare, so that a frame of the modem's that
 comes late leaves no gap in what goes to the line. If the modem has no
-samples ready, silence is sent (counted in the log). If the playback gets
+samples ready even then, silence is sent (counted in the log). If the playback gets
 more than seven frames ahead (after a stall has been caught up), the
 excess is dropped.
 
