@@ -793,6 +793,23 @@ void UsbLine::agere_fill(libusb_transfer *t)
 }
 
 /* see usb_line.h */
+void UsbLine::agere_send(libusb_transfer *t)
+{
+	agere_fill(t);
+	int err = libusb_submit_transfer(t);
+	if (err == 0)
+		in_flight_++;
+	else
+		park(t, err);
+}
+
+/* see usb_line.h: (the longest a transfer takes, agere_fill()'s 49) */
+bool UsbLine::agere_out_ready() const
+{
+	return iso_.out_buf.size() > static_cast<size_t>(AGERE_PACKETS * 2);
+}
+
+/* see usb_line.h */
 void UsbLine::agere_sent(libusb_transfer *t)
 {
 	s64 n = 0;

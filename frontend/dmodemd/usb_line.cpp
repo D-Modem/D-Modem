@@ -1066,12 +1066,13 @@ void LIBUSB_CALL UsbLine::out_done(libusb_transfer *t)
 	if (l->kind_ == Kind::Agere) {
 		if (t->status == LIBUSB_TRANSFER_COMPLETED)
 			l->agere_sent(t);
-		l->agere_fill(t);
-		int err = libusb_submit_transfer(t);
-		if (err == 0)
-			l->in_flight_++;
-		else
-			l->park(t, err);
+		/* (short of a transfer's samples: held until pump() has
+		   made the modem's from the line's come with it) */
+		if (!l->agere_out_ready()) {
+			s->idle_out.push_back(t);
+			return;
+		}
+		l->agere_send(t);
 		return;
 	}
 	/* sent again with the lengths an IN transfer has given, or once
@@ -1669,6 +1670,13 @@ s16 UsbLine::pump(dcore::Modem &m)
 	iso_.in_buf.erase(iso_.in_buf.begin(), iso_.in_buf.begin() + used);
 	if (kind_ == Kind::Agere && used)
 		agere_rate_check();
+	/* (the Agere modem's OUT transfers held by out_done(): their samples
+	   now, silence past them) */
+	while (kind_ == Kind::Agere && !iso_.idle_out.empty() && !dead_) {
+		libusb_transfer *t = iso_.idle_out.front();
+		iso_.idle_out.pop_front();
+		agere_send(t);
+	}
 	if (kind_ == Kind::Agere && hook_ != MODEM_HOOK_OFF)
 		agere_ring_poll();
 	update_leds(m);
@@ -2058,9 +2066,11 @@ void UsbLine::close()
 	for (s16 i = 0; i < n; i++)
 		if (all[i])
 			libusb_free_transfer(all[i]);
-	for (Iso *st : { &iso_, &viso_ })
+	for (Iso *st : { &iso_, &viso_ }) {
 		for (s16 i = 0; i < MAX_TRANSFERS; i++)
 			st->in[i] = st->out[i] = nullptr;
+		st->idle_out.clear();
+	}
 	intr_ = nullptr;
 	if (h_ && kind_ == Kind::Agere && claimed_)
 		/* (no stream to the next open) */

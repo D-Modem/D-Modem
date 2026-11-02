@@ -343,6 +343,14 @@ private:
 	void agere_dump();
 	void agere_in(libusb_transfer *t);
 	void agere_fill(libusb_transfer *t);
+	/* an OUT transfer filled (agere_fill()) and submitted (parked if
+	   that fails); whether the playback has a transfer's samples (else
+	   out_done() holds it for pump(): after a stall the device's packets
+	   come in a burst, its OUT transfers done before the modem has made
+	   their samples from the IN ones done with them, and filled at once
+	   they would be silence, a gap in what goes to the line) */
+	void agere_send(libusb_transfer *t);
+	bool agere_out_ready() const;
 	/* an OUT transfer done: its samples counted (agere_lead_) */
 	void agere_sent(libusb_transfer *t);
 	void agere_rate_check();
