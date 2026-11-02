@@ -376,6 +376,66 @@ spandsp (3.x) has it: its fax test (`frontend/freeswitch/test/fax.sh`)
 sends and receives T.85 pages with AT moves (MX 127), VLENGTH and the
 L0 option.
 
+### T.43 (lossless JBIG) colour and grey-scale pages
+
+With colour on, the DIS also offers T.43 (bit 36, which T.30 allows
+only with 68) and takes plane-interleaved data (37); `t30_config`'s
+`no_t43` leaves T.43 out (JPEG only), and `t30_status`'s `t43` says
+what a call sends (1 grey, 2 colour).
+
+- **Sending:** a page with colour goes in T.43 when the remote offers
+  bits 68, 36 and 15 and the page has few colours: in colour (the
+  remote offers 69, the page is RGB) when it has at most 4096, as a
+  palette (image type 16: the colours in T.42's 8-bit CIELAB, the most
+  frequent first, indices of as few bits as hold them); in grey
+  otherwise when its grey levels (or its colours' luma) are at most 16,
+  as 8-bit L* (type 32). Other pages go in JPEG as before. The DCS sets
+  36 (69 for colour; 68 0, 37 0: stripes interleaved) and 15; a change
+  between T.43, JPEG and black and white sends EOM. On the test's bar
+  chart (five colours, 1728 by 400) T.43 takes 199 octets, JPEG 25809;
+  on its four-level grey chart 300 against 11882.
+- **Receiving:** a DCS with 36 (and not 68) means T.43; the frames are
+  kept to the page's end, decoded (at most 4800 lines), turned to sRGB
+  and handed on as a JPEG page is. Every image type is taken: one bit a
+  colour (RGB, CMY, CMYK: the primaries, black over anything), palettes
+  of 8 or 12-bit tables, grey and colour of 1 to 12 bits a component
+  (12 bits rounded to 8, fewer stretched), and either interleave. The
+  gamut and illuminant entries (G3FAX1, G3FAX2) are skipped: the
+  defaults are assumed, as for JPEG.
+
+`t43.cpp` is the format (T.43 clause 7): the magic number ff a8, the
+G3FAX0 entry (version 1997, resolution, JBIG, image type, bits a
+component), G3FAX3 for a palette (ff e3, a 4-octet length), the ECIH,
+one BIE of all the bit-planes, then ff a9. Grey and colour samples are
+Gray coded (7.3.1), so a small change of a sample changes one plane.
+The planes go L*'s first (from its most significant bit), then a*'s and
+b*'s; a palette index from its most significant; red, green, blue (or
+cyan, magenta, yellow, black) for one bit a colour.
+
+`jbig.cpp` codes the planes: one BIE of P planes (at most 36), each
+with its own probabilities, typical prediction and AT pixel, in the
+order T.82 Table 11 gives for one layer. T.43 sends ILEAVE and SMID
+(stripe interleave, the basic one: a stripe of each plane in turn, L0
+128) and accepts ILEAVE alone (plane interleave: each plane whole). An
+ATMOVE moves the AT pixel of the next stripe's plane. T.85's single
+plane is the same code with P 1.
+
+`t43_test` checks the header against T.43's examples (G3FAX0 and
+G3FAX3's lengths, the palette's table ID and count), Gray code against
+Table 6 (the planes of 0 to 15), round trips of every image type and
+number of bits in both interleaves and with short stripes, the colours
+each type gives, cut-short and damaged data, and JBIG's six stripe
+orders (and the two T.82 forbids). `fax_test`'s
+`T30Colour.SendsChartsLossless` sends a colour chart, a black and white
+page and a grey chart between two machines: in T.43 the colour chart
+comes back within 1 level of each sample (T.42's CIELAB rounding) and
+the grey one the same; to a receiver with `no_t43` they go in JPEG
+(worst errors 83 and 36 levels, at the edges).
+
+spandsp's T.43 (FreeSWITCH's 3.x) has its encoder compiled out and
+mod_spandsp does not offer it, so there is no T.43 machine to call
+outside these tests.
+
 ### Without ECM
 
 The receiver answers each post-page command (MPS, EOM, EOP) with MCF or
