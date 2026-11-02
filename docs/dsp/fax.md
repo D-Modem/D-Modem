@@ -59,6 +59,13 @@ black-and-white dithered page otherwise. A colour page that comes in is
 saved in colour in the received TIFF file; programs that take only
 black and white (class 2 fax software) get a dithered copy.
 
+Pages with **few colours**, such as charts, diagrams and coloured text,
+go **without any loss** (T.43, JBIG coding of the colours) when the
+other machine takes that: the colours come out as they went in, and
+the page is far smaller than in JPEG (a bar chart of five colours: 199
+octets instead of 25809). Photographs and other pages of many colours
+still go in JPEG. Pages that come in T.43 are saved like JPEG ones.
+
 ## Fax over the internet (T.38)
 
 Fax tones do not survive many internet phone calls well. **T.38** sends

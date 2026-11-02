@@ -580,6 +580,137 @@ TEST(T30Colour, SendsColourPages)
 }
 
 /*
+ *    lossless colour and grey-scale pages (T.43)
+ *
+ */
+
+/* a chart of few colours (comps 3: bars of five, on white) or grey
+   levels (1: four), not saturated (T.42's CIELAB holds them) */
+static void chart_page(T4Page *p, s16 comps, s32 rows)
+{
+	static const unsigned char cols[6][3] = {
+		{255, 255, 255}, {200, 90, 80}, {80, 150, 90}, {90, 110, 190}, {220, 200, 90}, {40, 40, 40},
+	};
+	std::vector<unsigned char> pix((size_t)T4_WIDTH * rows * comps);
+	for (s32 y = 0; y < rows; y++)
+		for (int x = 0; x < T4_WIDTH; x++) {
+			int k = 0;
+			if (y > 20 && y < rows - 20 && x % 300 > 40 && x % 300 < 260 && y > rows - 1 - (x / 300 + 1) * rows / 7)
+				k = 1 + (x / 300) % 4;
+			if (y == rows / 2 || x == 30)
+				k = 5;
+			for (int c = 0; c < comps; c++)
+				pix[((size_t)y * T4_WIDTH + x) * comps + c] =
+					comps == 3 ? cols[k][c] : (unsigned char)(255 - 60 * (k % 5));
+		}
+	p->init(T4_WIDTH, 1);
+	p->set_pix(pix.data(), comps, T4_WIDTH, (u32)rows);
+}
+
+/* the file in to out, a machine to the other with ECM; *seen: the
+   status of the sender while sending each page (bit 0 JPEG, bit 1 T.43) */
+static void send_file(const std::string &in, const std::string &out, s16 no_colour, s16 no_t43,
+		      struct t30_status *sa, struct t30_status *sb, int *seen, int n_seen)
+{
+	Doc tx, rx;
+	struct t30_config c = {};
+	short ab[160] = { 0 }, ba[160] = { 0 }, oa[160], ob[160];
+	ASSERT_EQ(tx.in.open(in.c_str()), 0);
+	ASSERT_EQ(rx.out.open(out.c_str()), 0);
+	c.srate = 8000;
+	c.max_bps = 14400;
+	c.ecm = 1;
+	c.sending = 1;
+	c.ident = "+1 555 0100";
+	c.next_page = next_page;
+	c.ctx = &tx;
+	T30 *a = t30_create(&c);
+	c.sending = 0;
+	c.no_colour = no_colour;
+	c.no_t43 = no_t43;
+	c.next_page = NULL;
+	c.page_received = page_received;
+	c.ctx = &rx;
+	T30 *b = t30_create(&c);
+	for (long n = 0; n < 8000L * 900; n += 160) {
+		t30_process(a, ba, oa, 160);
+		t30_process(b, ab, ob, 160);
+		for (int i = 0; i < 160; i++) {
+			ab[i] = g711_ulaw(oa[i]);
+			ba[i] = g711_ulaw(ob[i]);
+		}
+		t30_get_status(a, sa);
+		t30_get_status(b, sb);
+		if (sa->pages < n_seen)
+			seen[sa->pages] |= (sa->jpeg ? 1 : 0) | (sa->t43 ? 2 : 0);
+		if (sa->result != T30_RUNNING && sb->result != T30_RUNNING)
+			break;
+	}
+	rx.out.close();
+	tx.in.close();
+	t30_free(a);
+	t30_free(b);
+}
+
+/* a chart in few colours, a black and white page, a grey chart: in
+   T.43 the charts (a palette, grey levels) come back within T.42's
+   rounding, the black and white one the same; to a receiver without
+   T.43 the charts go in JPEG, close but not as close */
+TEST(T30Colour, SendsChartsLossless)
+{
+	std::string in = fax_file("t43_in.tif"), out = fax_file("t43_out.tif");
+	T4Page pg[3];
+	chart_page(&pg[0], 3, 400);
+	test_page(&pg[1], 1, 5, 300);
+	chart_page(&pg[2], 1, 250);
+	{
+		TiffOut t;
+		ASSERT_EQ(t.open(in.c_str()), 0);
+		for (auto &p : pg)
+			t.write_page(&p);
+		t.close();
+	}
+	debug_level();
+	for (int no_t43 = 0; no_t43 <= 1; no_t43++) {
+		struct t30_status sa = {}, sb = {};
+		int seen[3] = {0, 0, 0};
+		send_file(in, out, 0, (s16)no_t43, &sa, &sb, seen, 3);
+		EXPECT_EQ(sa.result, T30_OK) << t30_result_text(sa.result);
+		EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+		ASSERT_EQ(sb.pages, 3);
+		EXPECT_EQ(seen[0], no_t43 ? 1 : 2);
+		EXPECT_EQ(seen[2] & 2, no_t43 ? 0 : 2);
+
+		TiffIn ti, to;
+		ASSERT_EQ(ti.open(in.c_str()), 0);
+		ASSERT_EQ(to.open(out.c_str()), 0);
+		for (int k = 0; k < 3; k++) {
+			T4Page pi, po;
+			ASSERT_EQ(ti.read_page(&pi), 1);
+			ASSERT_EQ(to.read_page(&po), 1);
+			ASSERT_EQ(pi.rows, po.rows) << "page " << k;
+			if (k == 1) {
+				EXPECT_EQ(po.comps, 0);
+				EXPECT_EQ(pi.bits, po.bits);
+				continue;
+			}
+			ASSERT_EQ(po.comps, pi.comps) << "page " << k;
+			int worst = 0;
+			for (size_t i = 0; i < pi.pix.size(); i++)
+				worst = std::max(worst, abs((int)pi.pix[i] - po.pix[i]));
+			double q = page_psnr(pi, po);
+			printf("T.43 %s: page %d: %.1f dB, worst %d\n", no_t43 ? "off" : "on", k + 1, q, worst);
+			if (!no_t43)
+				EXPECT_LE(worst, 4) << "page " << k;
+			else
+				EXPECT_GT(worst, 4) << "page " << k;
+		}
+		ti.close();
+		to.close();
+	}
+}
+
+/*
  *    a response lost on the line (DSP_T30_LOSE)
  *
  */

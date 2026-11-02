@@ -16,6 +16,10 @@
  * AT pixel (ATMOVE), shorten the page (NEWLEN), carry comments, or end
  * it (ABORT).
  *
+ * T.43 codes an image of more bit-planes in one BIE: each plane is
+ * coded as above, with its own probabilities, and their stripes come a
+ * plane after another, or a stripe of each plane in turn.
+ *
  */
 
 #include <string.h>
@@ -144,19 +148,18 @@ inline u32 tmpl(const Lines &l, u32 x, s16 two, s16 tx)
 	       (u32)r0[-2] << 1 | r0[-1];
 }
 
-/* a page's row y unpacked into a line */
-void unpack(const T4Page *p, s32 y, unsigned char *line)
+/* a packed row unpacked into a line */
+void unpack(const unsigned char *src, u32 width, unsigned char *line)
 {
-	const unsigned char *src = p->bits.data() + (size_t)y * T4_STRIDE(p->width);
-	for (s16 x = 0; x < p->width; x++)
+	for (u32 x = 0; x < width; x++)
 		line[x] = (src[x >> 3] >> (7 - (x & 7))) & 1;
 }
 
 /* a line packed into a row */
-void pack(const unsigned char *line, s16 width, unsigned char *row)
+void pack(const unsigned char *line, u32 width, unsigned char *row)
 {
-	memset(row, 0, T4_STRIDE(width));
-	for (s16 x = 0; x < width; x++)
+	memset(row, 0, (width + 7) / 8);
+	for (u32 x = 0; x < width; x++)
 		if (line[x])
 			row[x >> 3] |= (unsigned char)(0x80 >> (x & 7));
 }
@@ -309,60 +312,91 @@ s16 QmDec::decode(QmState *st)
 	return pix;
 }
 
-/* the page in stripes of opt.l0 lines, each its own SCD */
-void jbig_encode(const T4Page *page, const JbigOptions &opt, std::vector<unsigned char> *bie)
+/* the order of the SDEs, T.82 Table 11 for one layer: true when the
+   stripe is the outer loop (each stripe in every plane, then the next),
+   false when the plane is; -1 for the two combinations not allowed */
+static s16 stripe_outer(s16 order)
 {
-	u32 width = (u32)std::max<s16>(page->width, 0), rows = (u32)std::max<s32>(page->rows, 0);
+	s16 seq = (order & JBG_SEQ) != 0, il = (order & JBG_ILEAVE) != 0,
+	    smid = (order & JBG_SMID) != 0;
+	if (smid && seq == il)
+		return -1;
+	return seq ? !smid : il && smid;
+}
+
+/* the image's planes in stripes of opt.l0 lines, each stripe of each
+   plane its own SCD */
+void jbig_encode_image(const JbigImage &img, const JbigOptions &opt, std::vector<unsigned char> *bie)
+{
+	u32 width = img.width, rows = img.height;
 	u32 l0 = opt.l0 ? opt.l0 : 128;
+	s16 planes = std::max<s16>(img.planes, 1);
 	s16 two = (opt.options & JBG_LRLTWO) != 0, tp = (opt.options & JBG_TPBON) != 0;
+	s16 order = opt.order & (JBG_SEQ | JBG_ILEAVE | JBG_SMID);
+	if (stripe_outer(order) < 0)
+		order = 0;
+	size_t stride = img.stride();
 	bie->clear();
 	bie->push_back(0);                      /* DL */
 	bie->push_back(0);                      /* D */
-	bie->push_back(1);                      /* P */
+	bie->push_back((unsigned char)planes);  /* P */
 	bie->push_back(0);
 	put32(bie, width);
 	put32(bie, rows);
 	put32(bie, l0);
 	bie->push_back((unsigned char)opt.mx);
 	bie->push_back(0);                      /* MY */
-	bie->push_back(0);                      /* HITOLO, SEQ, ILEAVE, SMID */
-	bie->push_back((unsigned char)(opt.options & (JBG_LRLTWO | JBG_TPBON)));
+	bie->push_back((unsigned char)order);   /* HITOLO 0 */
+	bie->push_back((unsigned char)(opt.options & (JBG_LRLTWO | JBG_TPBON | JBG_VLENGTH)));
 
-	std::vector<QmState> st(J_CONTEXTS, 0);
+	struct Plane {
+		std::vector<QmState> st;
+		Lines l;
+		s16 lntp_prev = 1, tx = 0;
+	};
+	std::vector<Plane> pl(planes);
+	for (Plane &p : pl) {
+		p.st.assign(J_CONTEXTS, 0);
+		p.l.init(width);
+	}
 	std::vector<unsigned char> scd;
-	Lines l;
-	l.init(width);
 	QmEnc enc;
-	s16 lntp_prev = 1, tx = 0;
-	for (u32 y0 = 0; y0 < rows; y0 += l0) {
-		u32 y1 = std::min(rows, y0 + l0);
-		for (size_t i = 0; i < opt.n_moves; i++) {
-			const JbigAtMove &m = opt.moves[i];
-			if (m.y < y0 || m.y >= y1)
+	u32 stripes = (rows + l0 - 1) / l0;
+	s16 outer = stripe_outer(order);
+	for (u32 k = 0; k < stripes * (u32)planes; k++) {
+		u32 s = outer ? k / planes : k % stripes;
+		s16 i = (s16)(outer ? k % planes : k / stripes);
+		Plane &p = pl[i];
+		const unsigned char *bits = i < (s16)img.bits.size() ? img.bits[i].data() : nullptr;
+		u32 y0 = s * l0, y1 = std::min(rows, y0 + l0);
+		for (size_t m = 0; m < opt.n_moves; m++) {
+			const JbigAtMove &mv = opt.moves[m];
+			if (mv.y < y0 || mv.y >= y1)
 				continue;
 			bie->push_back(J_ESC);
 			bie->push_back(J_ATMOVE);
-			put32(bie, m.y - y0);   /* (from the stripe's top) */
-			bie->push_back((unsigned char)m.tx);
+			put32(bie, mv.y - y0);  /* (from the stripe's top) */
+			bie->push_back((unsigned char)mv.tx);
 			bie->push_back(0);
 		}
 		scd.clear();
 		enc.init(&scd);
 		for (u32 y = y0; y < y1; y++) {
-			for (size_t i = 0; i < opt.n_moves; i++)
-				if (opt.moves[i].y == y)
-					tx = opt.moves[i].tx;
-			l.next(width);
-			unpack(page, (s32)y, l.r[0]);
+			for (size_t m = 0; m < opt.n_moves; m++)
+				if (opt.moves[m].y == y)
+					p.tx = opt.moves[m].tx;
+			p.l.next(width);
+			if (bits)
+				unpack(bits + y * stride, width, p.l.r[0]);
 			if (tp) {
-				s16 lntp = memcmp(l.r[0], l.r[1], width) != 0;
-				enc.code(&st[two ? J_TP2 : J_TP3], !(lntp ^ lntp_prev));
-				lntp_prev = lntp;
+				s16 lntp = memcmp(p.l.r[0], p.l.r[1], width) != 0;
+				enc.code(&p.st[two ? J_TP2 : J_TP3], !(lntp ^ p.lntp_prev));
+				p.lntp_prev = lntp;
 				if (!lntp)
 					continue;
 			}
 			for (u32 x = 0; x < width; x++)
-				enc.code(&st[tmpl(l, x, two, tx)], l.r[0][x]);
+				enc.code(&p.st[tmpl(p.l, x, two, p.tx)], p.l.r[0][x]);
 		}
 		enc.flush();
 		while (!scd.empty() && scd.back() == 0x00)
@@ -377,39 +411,64 @@ void jbig_encode(const T4Page *page, const JbigOptions &opt, std::vector<unsigne
 	}
 }
 
-/* the header checked, then marker segments and stripes in turn */
-s16 jbig_decode(const unsigned char *data, size_t len, s32 max_rows, T4Page *page)
+/* the header checked, then marker segments and stripes in the order
+   the header gives */
+s16 jbig_decode_image(const unsigned char *data, size_t len, u32 max_rows, s16 max_planes,
+		      JbigImage *img, size_t *used)
 {
-	if (len < J_BIH || data[0] != 0 || data[1] != 0 || data[2] != 1)
+	img->width = img->height = 0;
+	img->planes = 0;
+	img->bits.clear();
+	if (used)
+		*used = 0;
+	if (len < J_BIH || data[0] != 0 || data[1] != 0 || data[2] == 0 || data[2] > max_planes)
 		return -1;
+	s16 planes = data[2];
 	u32 xd = get32(data + 4), yd = get32(data + 8), l0 = get32(data + 12);
-	s16 mx = data[16], options = data[19];
-	if (xd == 0 || xd > 8192 || l0 == 0 || data[17] != 0 || (options & JBG_DPON))
+	s16 mx = data[16], options = data[19], outer = stripe_outer(data[18] & 7);
+	if (xd == 0 || xd > 8192 || l0 == 0 || data[17] != 0 || (options & JBG_DPON) || outer < 0)
 		return -1;
 	s16 two = (options & JBG_LRLTWO) != 0, tp = (options & JBG_TPBON) != 0;
-	s16 fine = page->fine;
-	page->release();
-	page->init((s16)xd, fine);
-	u32 cap = max_rows > 0 ? (u32)max_rows : 0;
+	u32 cap = max_rows;
+	size_t stride = (xd + 7) / 8;
+	img->width = xd;
+	img->planes = planes;
+	img->bits.resize(planes);
 
 	struct Move {
 		u32 y;
 		s16 tx;
 	};
-	std::vector<Move> moves;
-	std::vector<QmState> st(J_CONTEXTS, 0);
+	struct Plane {
+		std::vector<QmState> st;
+		Lines l;
+		std::vector<Move> moves;
+		s16 lntp_prev = 1, tx = 0;
+		u32 rows = 0;
+	};
+	std::vector<Plane> pl(planes);
+	for (Plane &p : pl) {
+		p.st.assign(J_CONTEXTS, 0);
+		p.l.init(xd);
+	}
+	std::vector<Move> pending;              /* ATMOVEs for the next SDE */
 	std::vector<unsigned char> scd;
-	Lines l;
-	l.init(xd);
 	QmDec dec;
-	s16 lntp_prev = 1, tx = 0;
-	u32 y = 0;
 	size_t pos = J_BIH;
-	while (y < yd && y < cap) {
-		if (pos >= len)
-			return 1;
-		if (data[pos] == J_ESC && pos + 1 < len && data[pos + 1] != J_STUFF &&
-		    data[pos + 1] != J_SDNORM && data[pos + 1] != J_SDRST) {
+
+	/* marker segments up to an SDE; 0 at an SDE, 2 when none may follow
+	   (the page's lines all there: from NEWLEN, or done), 1 at the data's
+	   end or ABORT, -1 when bad; trail: after the last stripe, up to
+	   anything else (0) */
+	auto markers = [&](u32 y0, bool trail) -> s16 {
+		for (;;) {
+			if (!trail && y0 >= yd)
+				return 2;
+			if (pos >= len)
+				return 1;
+			if (data[pos] != J_ESC || pos + 1 >= len || data[pos + 1] == J_STUFF ||
+			    data[pos + 1] == J_SDNORM || data[pos + 1] == J_SDRST)
+				return 0;
 			switch (data[pos + 1]) {
 			case J_ATMOVE:
 				if (pos + 8 > len)
@@ -419,20 +478,17 @@ s16 jbig_decode(const unsigned char *data, size_t len, s32 max_rows, T4Page *pag
 					return -1;
 				/* yAT counts from the top of the stripe that
 				   follows */
-				moves.push_back({y + get32(data + pos + 2), data[pos + 6]});
+				pending.push_back({get32(data + pos + 2), data[pos + 6]});
 				pos += 8;
-				continue;
+				break;
 			case J_NEWLEN: {
 				if (pos + 6 > len)
 					return 1;
 				u32 n = get32(data + pos + 2);
-				if (n < yd) {
+				if (n < yd)
 					yd = n;
-					if ((u32)page->rows > yd)
-						page->rows = (s32)yd;
-				}
 				pos += 6;
-				continue;
+				break;
 			}
 			case J_COMMENT: {
 				if (pos + 6 > len)
@@ -441,16 +497,28 @@ s16 jbig_decode(const unsigned char *data, size_t len, s32 max_rows, T4Page *pag
 				if (n > len - pos - 6)
 					return 1;
 				pos += 6 + n;
-				continue;
+				break;
 			}
 			case J_ABORT:
 				return 1;
 			default:
-				return -1;
+				return trail ? 0 : -1;
 			}
 		}
+	};
 
-		/* a stripe data entity: unescape up to its end */
+	/* plane i's stripe s; as markers() */
+	auto stripe = [&](s16 i, u32 s) -> s16 {
+		u32 y0 = s * l0;
+		s16 r = markers(y0, false);
+		if (r)
+			return r;
+		Plane &p = pl[i];
+		for (const Move &m : pending)
+			p.moves.push_back({y0 + m.y, m.tx});
+		pending.clear();
+
+		/* an SDE: unescape up to its end */
 		scd.clear();
 		s16 end = 0;
 		while (pos < len) {
@@ -473,37 +541,96 @@ s16 jbig_decode(const unsigned char *data, size_t len, s32 max_rows, T4Page *pag
 		}
 
 		dec.init(scd.data(), scd.size());
-		u32 n = std::min(l0, std::min(yd, cap) - y);
-		std::vector<unsigned char> row(T4_STRIDE(xd));
-		for (u32 i = 0; i < n; i++, y++) {
-			for (const Move &m : moves)
-				if (m.y == y)
-					tx = m.tx;
-			l.next(xd);
-			s16 copy = 0;
-			if (tp) {
-				s16 lntp = !(dec.decode(&st[two ? J_TP2 : J_TP3]) ^ lntp_prev);
-				lntp_prev = lntp;
-				copy = !lntp;
+		u32 y1 = std::min(std::min(yd, cap), y0 + l0);
+		if (y1 > y0 && y0 == p.rows) {
+			img->bits[i].resize((size_t)y1 * stride);
+			for (u32 y = y0; y < y1; y++) {
+				for (const Move &m : p.moves)
+					if (m.y == y)
+						p.tx = m.tx;
+				p.l.next(xd);
+				s16 copy = 0;
+				if (tp) {
+					s16 lntp = !(dec.decode(&p.st[two ? J_TP2 : J_TP3]) ^ p.lntp_prev);
+					p.lntp_prev = lntp;
+					copy = !lntp;
+				}
+				if (copy)
+					memcpy(p.l.r[0], p.l.r[1], xd);
+				else
+					for (u32 x = 0; x < xd; x++)
+						p.l.r[0][x] = (unsigned char)dec.decode(&p.st[tmpl(p.l, x, two, p.tx)]);
+				pack(p.l.r[0], xd, img->bits[i].data() + (size_t)y * stride);
+				p.rows = y + 1;
 			}
-			if (copy)
-				memcpy(l.r[0], l.r[1], xd);
-			else
-				for (u32 x = 0; x < xd; x++)
-					l.r[0][x] = (unsigned char)dec.decode(&st[tmpl(l, x, two, tx)]);
-			pack(l.r[0], (s16)xd, row.data());
-			if (!page->add_row(row.data()))
-				return 1;
 		}
 		if (!end)
 			return 1;
 		if (end == J_SDRST) {
-			std::fill(st.begin(), st.end(), 0);
-			tx = 0;
-			lntp_prev = 1;
+			std::fill(p.st.begin(), p.st.end(), 0);
+			p.tx = 0;
+			p.lntp_prev = 1;
+		}
+		return 0;
+	};
+
+	s16 r = 0;
+	if (outer) {
+		for (u32 s = 0; !r && s * l0 < std::min(yd, cap); s++)
+			for (s16 i = 0; !r && i < planes; i++)
+				r = stripe(i, s);
+	} else {
+		/* (the last plane's stripes past the cap not read) */
+		for (s16 i = 0; !r && i < planes; i++) {
+			for (u32 s = 0; !r && s * l0 < (i == planes - 1 ? std::min(yd, cap) : yd); s++)
+				r = stripe(i, s);
+			if (r == 2)
+				r = 0;
 		}
 	}
-	return 0;
+	if (r == 2)
+		r = 0;
+	if (!r && markers(0, true) == 1 && pos < len)
+		r = 1;          /* (ABORT after the last stripe) */
+	u32 h = std::min(yd, cap);
+	for (const Plane &p : pl)
+		h = std::min(h, p.rows);
+	img->height = h;
+	for (auto &b : img->bits)
+		b.resize((size_t)h * stride);
+	if (used)
+		*used = pos;
+	return r;
+}
+
+/* the page as one plane */
+void jbig_encode(const T4Page *page, const JbigOptions &opt, std::vector<unsigned char> *bie)
+{
+	JbigImage img;
+	img.width = (u32)std::max<s16>(page->width, 0);
+	img.height = (u32)std::max<s32>(page->rows, 0);
+	img.planes = 1;
+	img.bits.emplace_back(page->bits.begin(),
+			      page->bits.begin() + (long)img.height * T4_STRIDE(page->width));
+	JbigOptions o = opt;
+	o.order = 0;
+	jbig_encode_image(img, o, bie);
+}
+
+/* one plane's image into the page's rows */
+s16 jbig_decode(const unsigned char *data, size_t len, s32 max_rows, T4Page *page)
+{
+	JbigImage img;
+	s16 r = jbig_decode_image(data, len, max_rows > 0 ? (u32)max_rows : 0, 1, &img, nullptr);
+	if (r < 0)
+		return r;
+	s16 fine = page->fine;
+	page->release();
+	page->init((s16)img.width, fine);
+	for (u32 y = 0; y < img.height; y++)
+		if (!page->add_row(img.bits[0].data() + (size_t)y * img.stride()))
+			return 1;
+	return r;
 }
 
 } // namespace dsp
