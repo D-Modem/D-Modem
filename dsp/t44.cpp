@@ -61,23 +61,27 @@ namespace {
 const unsigned char lab_white[3] = {0xff, 0x80, 0x60};
 const unsigned char lab_black[3] = {0x00, 0x80, 0x60};
 
+/* a big-endian 16 bit number appended */
 void put16(std::vector<unsigned char> *out, u32 v)
 {
 	out->push_back((unsigned char)(v >> 8));
 	out->push_back((unsigned char)v);
 }
 
+/* ... 32 */
 void put32(std::vector<unsigned char> *out, u32 v)
 {
 	put16(out, v >> 16);
 	put16(out, v);
 }
 
+/* a big-endian 16 bit number */
 u32 get16(const unsigned char *p)
 {
 	return (u32)p[0] << 8 | p[1];
 }
 
+/* ... 32 */
 u32 get32(const unsigned char *p)
 {
 	return get16(p) << 16 | get16(p + 2);
@@ -288,6 +292,8 @@ struct Layer {
 	bool early = false;
 };
 
+/* a JPEG (ff d8) or T.43 BCIE (ff a8) layer at d into l, *used its
+   octets; false when it is neither */
 bool image_in(const unsigned char *d, size_t len, u32 max_rows, Layer *l, size_t *used)
 {
 	if (len >= 2 && d[0] == 0xff && d[1] == M_SOI) {
@@ -363,6 +369,7 @@ bool coders(const unsigned char *d, size_t len, size_t *pos, u32 *bits)
 
 } // namespace
 
+/* (t44.h) a mask of at least 0.1 % of the page */
 bool t44_worth(const T44Image &img)
 {
 	if (!img.width || !img.height || (img.comps != 1 && img.comps != 3))
@@ -375,6 +382,7 @@ bool t44_worth(const T44Image &img)
 	return n * 1000 >= mask.size();         /* 0.1 % */
 }
 
+/* (t44.h) SOP, TN, a stripe each opt.stripe lines, EOP */
 void t44_encode(const T44Image &img, const T44Options &opt, std::vector<unsigned char> *out)
 {
 	const u32 w = img.width, h = img.height;
@@ -452,6 +460,8 @@ void t44_encode(const T44Image &img, const T44Options &opt, std::vector<unsigned
 	out->push_back(M_EOI);
 }
 
+/* (t44.h) the SOP, then the segments: stripes drawn into CIELAB,
+   the rest skipped, until EOP */
 s16 t44_decode(const unsigned char *data, size_t len, u32 max_rows, T44Image *img)
 {
 	*img = T44Image();

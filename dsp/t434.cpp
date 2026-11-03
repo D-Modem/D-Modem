@@ -152,6 +152,7 @@ bool string_of(const Tlv &t, const unsigned char *c, s16 depth, std::vector<unsi
 	});
 }
 
+/* ... as text */
 bool text_of(const Tlv &t, const unsigned char *c, s16 depth, std::string *out)
 {
 	std::vector<unsigned char> v;
@@ -287,11 +288,13 @@ void put(std::vector<unsigned char> *out, s16 cls, bool cons, u32 tag, const uns
 		out->insert(out->end(), c, c + len);
 }
 
+/* ... of a vector's octets */
 void put(std::vector<unsigned char> *out, s16 cls, bool cons, u32 tag, const std::vector<unsigned char> &c)
 {
 	put(out, cls, cons, tag, c.data(), c.size());
 }
 
+/* ... of a string's */
 void put(std::vector<unsigned char> *out, s16 cls, bool cons, u32 tag, const std::string &s)
 {
 	put(out, cls, cons, tag, (const unsigned char *)s.data(), s.size());
@@ -343,6 +346,7 @@ void put_file(std::vector<unsigned char> *out, const BftFile &f)
 
 } // namespace
 
+/* (t434.h) [APPLICATION 23] of a SEQUENCE for each file */
 void t434_encode(const std::vector<BftFile> &files, std::vector<unsigned char> *out)
 {
 	std::vector<unsigned char> seq;
@@ -351,11 +355,13 @@ void t434_encode(const std::vector<BftFile> &files, std::vector<unsigned char> *
 	put(out, CLS_APPLICATION, true, BFT_APPLICATION, seq);
 }
 
+/* (t434.h) one file's */
 void t434_encode(const BftFile &file, std::vector<unsigned char> *out)
 {
 	t434_encode(std::vector<BftFile>{file}, out);
 }
 
+/* (t434.h) the outer element's size, if it is [APPLICATION 23] */
 long t434_length(const unsigned char *data, size_t len)
 {
 	Tlv t;
@@ -367,6 +373,7 @@ long t434_length(const unsigned char *data, size_t len)
 	return s;
 }
 
+/* (t434.h) each SEQUENCE in it a file */
 s16 t434_decode(const unsigned char *data, size_t len, std::vector<BftFile> *files)
 {
 	Tlv t;

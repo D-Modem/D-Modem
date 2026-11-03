@@ -73,6 +73,7 @@ T44Image page(s16 comps, u32 w, u32 h, bool pic, std::vector<unsigned char> *tex
 	return img;
 }
 
+/* the PSNR of two runs of samples, dB */
 double psnr(const Bytes &a, const Bytes &b)
 {
 	double e = 0;
@@ -98,12 +99,14 @@ size_t jpeg_size(const T44Image &img)
 	return out.size();
 }
 
+/* a big-endian 16 bit number appended */
 void put16(Bytes *o, u32 v)
 {
 	o->push_back((unsigned char)(v >> 8));
 	o->push_back((unsigned char)v);
 }
 
+/* ... 32 */
 void put32(Bytes *o, u32 v)
 {
 	put16(o, v >> 16);
