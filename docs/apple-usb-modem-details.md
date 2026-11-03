@@ -64,7 +64,10 @@ each way.
 
 - **Hook:** `SET_HOOK_STATE` (`bmRequestType` 0x21, `bRequest` 0x11,
   `wValue` 1 off hook, 0 on hook), as `si3056_HW_UpdateHookCtl` sends it.
-  Pulse dialling and the hook flash break and make it.
+  Pulse dialling and the hook flash break and make it. If the device
+  stalls it, dmodemd hooks with the Si3056's own bit instead, register
+  5's OH (0x01), from then on: Apple's `testInterface` hooks both ways,
+  `setHookState` and then `write_DAA_Register(5, 1)` and `(5, 0)`.
 - **Notifications** on the interrupt endpoint, CDC's 8-octet header
   (`wValue` little-endian at octets 2 and 3):
   - 0x02, `wValue` bit 0: a DAA command's response is ready.
@@ -128,6 +131,12 @@ interrupt endpoint a whole packet at a time, as Apple's driver does
 (`intReadComplete` takes the pipe's maximum packet size), and fetches a
 read's response even when its notification was lost, since a response
 left unread may hold up the device's other requests.
+
+With that, the register reads all worked (its interrupt endpoint's
+packets are 11 octets), and SET_HOOK_STATE (on hook, at start) still
+stalled. So dmodemd hooks with register 5's OH when it does
+(`FAKE_APPLE_HOOK_STALL` has the fake stall it too). Whether the
+device takes the request off hook, or never, is not known yet.
 
 ## Not yet known
 
