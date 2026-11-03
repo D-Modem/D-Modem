@@ -21,6 +21,7 @@ For every chip, option and setting, see
 | **pico-serial Line**, a USB-C phone-line stick made for D-Modem | `dmodemd --usb=auto` | see the [hardware project](https://github.com/D-Modem/hardware) |
 | **pico-serial WB**, a stick for a bare pair of wires (not a phone line) | `dmodemd --usb=auto` | tested on a simulated pair |
 | **Agere USB 2.0 soft modem** | `dmodemd --usb=auto` | being brought up: see [its own page](agere-usb.md) |
+| **Apple USB Modem** (A1101, for Macs) | `dmodemd --usb=auto` | tested on simulated hardware: see [its own page](apple-usb-modem.md) |
 
 The PC modems (`-a`) use Linux's own sound drivers (ALSA), so they work
 on Linux only. The USB modems need no kernel driver at all: `dmodemd`

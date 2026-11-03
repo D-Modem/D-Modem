@@ -72,6 +72,7 @@ measurements, and test lists.
 - [Softmodem hardware](hardware.md): PC modem chips and USB modems on a
   real phone line
 - [The Agere USB 2.0 soft modem](agere-usb.md)
+- [The Apple USB Modem](apple-usb-modem.md)
 - [The SmartUSB56 under Windows](smartusb56-windows.md): what Smart
   Link's Windows driver taught us
 - [Windows](windows.md)
