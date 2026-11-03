@@ -311,11 +311,12 @@ void V34Tx::segment(enum v34_txseg seg_)
 
 /* the data mode parameters, before the end of E: the symbols after E
    come from the data encoder, link gives the bits of each mapping
-   frame */
-void V34Tx::start_data(const V34Params *p, CoreBits link)
+   frame, aux the auxiliary channel's bits (with p->aux) */
+void V34Tx::start_data(const V34Params *p, CoreBits link, V34Aux aux)
 {
 	dtx.init(p);
 	dtx.link = link;
+	dtx.aux = aux;
 	data_on = 1;
 }
 
@@ -1401,11 +1402,13 @@ float V34Rx::precoder(s16 h[6]) const
 }
 
 /* the data mode parameters, before the end of E (precode_eq() applies
-   at its end): link takes the bits of each mapping frame */
-void V34Rx::start_data(const V34Params *p, CoreBits link)
+   at its end): link takes the bits of each mapping frame, aux the
+   auxiliary channel's (with p->aux) */
+void V34Rx::start_data(const V34Params *p, CoreBits link, V34Aux aux)
 {
 	drx.init(p);
 	drx.link = link;
+	drx.aux = aux;
 	mse = 0;
 	data_on = 1;
 	/* (the precoder starts from zeros, as B1 does) */

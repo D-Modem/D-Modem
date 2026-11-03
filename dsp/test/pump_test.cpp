@@ -580,6 +580,74 @@ TEST(V34NonLinear, InverseUndoesIt)
 		}
 }
 
+/* the auxiliary channel (8.3/V.34): Table 9's multiplexing patterns
+   from W and P, Table 8's b for each rate with its 200 bit/s */
+TEST(V34Aux, PatternsAndFrames)
+{
+	static const u16 amp[dsp::V34_NBAUDS] = { 0x6DB, 0x56B, 0x15AB,
+						  0x2AAB, 0x5555, 0x1555 };
+	for (s16 baud = 0; baud < dsp::V34_NBAUDS; baud++) {
+		dsp::V34Params p{};
+		ASSERT_EQ(p.init(baud, 4, 1, 1), 0) << baud;
+		EXPECT_EQ(p.aux, 1);
+		u16 pat = 0;
+		s16 c = 0;
+		for (s16 i = 0; i < p.P; i++) {
+			c += p.W;
+			pat = static_cast<u16>(pat << 1 | (c >= p.P));
+			if (c >= p.P)
+				c -= p.P;
+		}
+		EXPECT_EQ(pat, amp[baud]) << baud;
+		float S = dsp::v34_symbol_rate(baud);
+		for (s16 n = 1; n <= 14; n++) {
+			bool ok = dsp::v34_rates[baud][n - 1].b != 0;
+			EXPECT_EQ(dsp::v34_aux_rates[baud][n - 1].b != 0,
+				  ok || (baud == 0 && n == 1)) << baud << " " << n;
+			if (!dsp::v34_aux_rates[baud][n - 1].b)
+				continue;
+			s16 b = static_cast<s16>(
+				std::ceil((2400 * n + 200) * 8 / S - 1e-3));
+			EXPECT_EQ(dsp::v34_aux_rates[baud][n - 1].b, b)
+				<< baud << " " << n;
+			dsp::V34Params q{};
+			EXPECT_EQ(q.init(baud, n, 1, 1), 0) << baud << " " << n;
+		}
+	}
+}
+
+/* the auxiliary channel both ways (DSP_V34_AUX=2: in both MPs, a PRBS
+   in it): its bits arrive without errors, the primary channel's data
+   with them */
+TEST(V34Aux, DataBothWays)
+{
+	setenv("DSP_V34_AUX", "2", 1);
+	setenv("DSP_DEBUG", "2", 1);
+	testing::internal::CaptureStderr();
+	LoopbackResult r = loopback_run(line(8, 40, 25));
+	std::string log = testing::internal::GetCapturedStderr();
+	unsetenv("DSP_V34_AUX");
+	unsetenv("DSP_DEBUG");
+	dsplibs_debug_level = 0;
+
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+	s16 sides = 0;
+	for (size_t at = 0;
+	     (at = log.find("aux channel: ", at)) != std::string::npos;
+	     at++) {
+		int bits = 0, errs = -1;
+		ASSERT_EQ(sscanf(log.c_str() + at,
+				 "aux channel: %d bits in, %d errors", &bits,
+				 &errs), 2);
+		EXPECT_GE(bits, 500);
+		EXPECT_EQ(errs, 0);
+		sides++;
+	}
+	EXPECT_EQ(sides, 2) << "the aux channel not on both ways";
+}
+
 /* V.34's J (it repeats) and J': TRN's random bits match J's 16 now and
    then, which once took a call's TRN for J; two in a row are J */
 TEST(V34J, RandomBitsAreNoJ)

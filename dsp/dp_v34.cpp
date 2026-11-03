@@ -943,6 +943,16 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	   default) as nonlinear_rx() decides */
 	s16 nl_req;
 	s16 nonlinear_rx() const;
+	/* the auxiliary channel (8.3/V.34): DSP_V34_AUX=1 asks for it in
+	   MP (on only when both do; ones sent), 2 also sends a PRBS
+	   (x^15 + x^14 + 1) and counts the errors of the remote's */
+	s16 aux_req;
+	s16 aux_on;
+	u16 aux_lfsr;
+	u16 aux_hist;
+	s32 aux_bits, aux_errs;
+	static s16 aux_get(void *ctx);
+	static void aux_put(void *ctx, s16 bit);
 	s16 hangup() override;
 	void cleardown();
 	bool remote_clears() const;
@@ -1972,7 +1982,7 @@ s16 CcRx::sample(float x)
 
 /* the remote's L1/L2, once per sample: returns -1, or at the end of a
    block of one period whether two of the probe tones are clearly there
-   (each carries 1/21 of the power; the one at 3000 Hz down to 9 dB
+   (each carries 1/21 of the power; the one at 3000 Hz down to 7 dB
    less on a line whose loss rises with the frequency, the lines
    pre-emphasis is for) */
 template <class P>
@@ -1987,7 +1997,7 @@ s16 V34Probe<P>::probe_rx_sample(float x)
 	e = pblock_e / PROBE_PERIOD;
 	pblock_e = 0;
 	on = e > tone_power(300) && probe_g[0].power > e / 60 &&
-		probe_g[1].power > e / 480;
+		probe_g[1].power > e / 120;
 	return on;
 }
 
@@ -4062,6 +4072,10 @@ s16 V34Pump::data_setup()
 	s16 ca = l->rate_ca < r->rate_ca ? l->rate_ca : r->rate_ca;
 	s16 ac = l->rate_ac < r->rate_ac ? l->rate_ac : r->rate_ac;
 	V34Params p;
+	/* bit 28 of both MPs: the auxiliary channel's 200 bit/s each way */
+	s16 aux = l->aux && r->aux ? 1 : 0;
+	V34Aux ax{ this, aux_req > 1 ? aux_get : nullptr,
+		   aux_req > 1 ? aux_put : nullptr };
 
 	/* bit 50 of MP: one modem without asymmetric rates, one rate */
 	if (!l->asym || !r->asym) {
@@ -4075,7 +4089,7 @@ s16 V34Pump::data_setup()
 	ntx = v34_pick_rate(ptx.baud, caller ? ca : ac, mask);
 	nrx = v34_pick_rate(prx.baud, caller ? ac : ca, mask);
 	if (!ntx || !nrx || r->trellis > 2 || l->trellis > 2 ||
-	    p.init(ptx.baud, ntx, r->expanded))
+	    p.init(ptx.baud, ntx, r->expanded, aux))
 		return -1;
 	/* the remote's receiver asks for the non-linear encoder */
 	if (r->nonlinear)
@@ -4083,25 +4097,47 @@ s16 V34Pump::data_setup()
 	/* each MP asks for the trellis code of the other's transmitter */
 	p.states = 16 << r->trellis;
 	p.set_precoder(r->h);
-	ptx.start_data(&p, CoreBits{ modem });
+	ptx.start_data(&p, CoreBits{ modem }, ax);
 	rate_tx = p.rate;
 	stat_coding(false, p.states, r->nonlinear, p.precode, r->expanded);
-	if (p.init(prx.baud, nrx, l->expanded))
+	if (p.init(prx.baud, nrx, l->expanded, aux))
 		return -1;
 	/* our MP asked for the remote's non-linear encoder: undone */
 	if (l->nonlinear)
 		p.set_nonlinear(0.3125);
 	p.states = 16 << l->trellis;
 	p.set_precoder(l->h);
-	prx.start_data(&p, CoreBits{ modem });
+	prx.start_data(&p, CoreBits{ modem }, ax);
 	rate_rx = p.rate;
 	stat_coding(true, p.states, l->nonlinear, p.precode, l->expanded);
 	DSP_DBG("v34: data rates tx %" PRId32 " rx %" PRId32
-		", trellis tx %d rx %d states%s%s\n",
+		", trellis tx %d rx %d states%s%s%s\n",
 		rate_tx, rate_rx, 16 << r->trellis, 16 << l->trellis,
 		r->nonlinear ? ", non-linear tx" : "",
-		l->nonlinear ? ", non-linear rx" : "");
+		l->nonlinear ? ", non-linear rx" : "",
+		aux ? ", aux channel" : "");
+	aux_on = aux;
 	return 0;
+}
+
+/* the auxiliary channel's next bit to send (DSP_V34_AUX=2): the PRBS */
+s16 V34Pump::aux_get(void *ctx)
+{
+	V34Pump *v = static_cast<V34Pump *>(ctx);
+	u16 b = ((v->aux_lfsr >> 14) ^ (v->aux_lfsr >> 13)) & 1;
+	v->aux_lfsr = static_cast<u16>((v->aux_lfsr << 1 | b) & 0x7FFF);
+	return static_cast<s16>(b);
+}
+
+/* one bit of the remote's auxiliary channel (DSP_V34_AUX=2): checked
+   against the PRBS of the 15 before it */
+void V34Pump::aux_put(void *ctx, s16 bit)
+{
+	V34Pump *v = static_cast<V34Pump *>(ctx);
+	u16 h = v->aux_hist;
+	if (++v->aux_bits > 15 && (((h >> 14) ^ (h >> 13)) & 1) != (bit & 1))
+		v->aux_errs++;
+	v->aux_hist = static_cast<u16>((h << 1 | (bit & 1)) & 0x7FFF);
 }
 
 /* phase 4 or a renegotiation: our MP (10.1.3.9/V.34), type 1 with the
@@ -4131,6 +4167,7 @@ void V34Pump::mp_start()
 	mp->expanded = env_int("DSP_V34_MP_EXPANDED", 1) ? 1 : 0;
 	mp->trellis = V34_TRELLIS;
 	mp->nonlinear = nonlinear_rx();
+	mp->aux = aux_req && !pcm ? 1 : 0;
 	mp->rate_mask = 0x3FFF;
 	mp->asym = 1;
 	/* a cleardown: no rates either way (11.7/V.34) */
@@ -7705,6 +7742,11 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	   cleardown */
 	clear_ok = env_int("DSP_V34_CLEARDOWN", 1) ? 1 : 0;
 	nl_req = static_cast<s16>(env_int("DSP_V34_NONLINEAR", -1));
+	aux_req = static_cast<s16>(env_int("DSP_V34_AUX", 0));
+	aux_on = 0;
+	aux_lfsr = 1;
+	aux_hist = 0;
+	aux_bits = aux_errs = 0;
 	/* test: DSP_V34_PREEMPH=<index>: ask for that pre-emphasis (0:
 	   none) wherever the rate allows it */
 	preemph_force = static_cast<s16>(env_int("DSP_V34_PREEMPH", -1));
@@ -7754,6 +7796,9 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 /* frees what the receiver holds; PCM off for the next pump */
 void V34Pump::cleanup()
 {
+	if (aux_on)
+		DSP_DBG("v34: aux channel: %" PRId32 " bits in, %" PRId32
+			" errors\n", aux_bits, aux_errs);
 	if (rt)
 		rt->pcm = 0;
 	if (prx_on || hdx_on)

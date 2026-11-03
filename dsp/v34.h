@@ -54,6 +54,22 @@ struct v34_rate {
 	s16 b, m_min, m_exp;
 };
 extern const struct v34_rate v34_rates[V34_NBAUDS][14];
+/* and with the auxiliary channel: N * 2400 + 200 bit/s in all */
+extern const struct v34_rate v34_aux_rates[V34_NBAUDS][14];
+/* the auxiliary channel's bits per data frame W (8.3/V.34) */
+static inline s16 v34_aux_w(s16 baud)
+{
+	return baud == V34_BAUD_2743 || baud == V34_BAUD_3429 ? 7 : 8;
+}
+
+/* the auxiliary channel's 200 bit/s (8.3/V.34; unscrambled): get() the
+   next bit to send, put() one received; with no get(), ones (an idle
+   clear secondary channel, Annex A.3.1.1), with no put() nothing */
+struct V34Aux {
+	void *ctx = nullptr;
+	s16 (*get)(void *ctx) = nullptr;
+	void (*put)(void *ctx, s16 bit) = nullptr;
+};
 extern const signed char v34_quarter[416][2];
 extern const cplx v34_trn4[4];
 cplx v34_pp(s32 i);
@@ -129,6 +145,8 @@ struct V34Params {
 	s16 K, q, M;            /* shell mapping bits, uncoded bits, rings */
 	s16 J, P, r;            /* data frames per superframe, mapping frames
 				   per data frame, high frames among them */
+	s16 aux, W;             /* the auxiliary channel is on: its bits per
+				   data frame */
 	float g;                /* half the point spacing, in units of the
 				   training points */
 	s16 states;             /* of the trellis code: 16, 32 or 64 */
@@ -147,8 +165,10 @@ struct V34Params {
 	u64 g4p(s16 i) const;
 	double frame_power(s16 k, double theta = 0, double e0 = 1) const;
 	void set_nonlinear(double theta_);
-	/* n: the rate in units of 2400 bit/s; returns -1 when not allowed */
-	s16 init(s16 baud, s16 n, s16 expanded);
+	/* n: the primary channel's rate in units of 2400 bit/s, aux: the
+	   auxiliary channel's 200 bit/s on top; returns -1 when not
+	   allowed */
+	s16 init(s16 baud, s16 n, s16 expanded, s16 aux = 0);
 	/* precoding with the coefficients of an MP sequence */
 	void set_precoder(const s16 h_[6]);
 	void precoder_push(V34Precoder *pc, s16 yr, s16 yi) const;
@@ -171,7 +191,9 @@ struct V34Precoder {
 struct V34DataTx {
 	V34Params p;
 	CoreBits link;          /* the data */
+	V34Aux aux;             /* the auxiliary channel's (p.aux) */
 	s16 sbc;                /* high/low frame switching */
+	s16 abc;                /* auxiliary channel multiplexing */
 	s16 z, state, v0;       /* differential, trellis and sync state */
 	s16 half, pat;          /* 4D symbols in the half data frame, sync
 				   pattern position */
@@ -319,7 +341,9 @@ struct Viterbi4d {
 struct V34DataRx {
 	V34Params p;
 	CoreBits link;          /* the data */
+	V34Aux aux;             /* the auxiliary channel's (p.aux) */
 	s16 sbc, z;
+	s16 abc;                /* auxiliary channel multiplexing */
 	s16 e[8];               /* rotation << 9 | point index */
 	s16 pos;
 	Viterbi4d<V34_TB> vit;
@@ -412,7 +436,7 @@ struct V34Tx {
 	/* pre-emphasis filter index (5.4/V.34) from the next sample on */
 	void set_preemph(s16 index);
 	void segment(enum v34_txseg seg_);
-	void start_data(const V34Params *p, CoreBits link);
+	void start_data(const V34Params *p, CoreBits link, V34Aux aux = {});
 	float sample();
 };
 
@@ -561,7 +585,7 @@ struct V34Rx {
 		zero(err_h);
 		err_n = 0;
 	}
-	void start_data(const V34Params *p, CoreBits link);
+	void start_data(const V34Params *p, CoreBits link, V34Aux aux = {});
 	void sample(float x);
 };
 

@@ -198,11 +198,12 @@ double V34Params::frame_power(s16 k, double theta, double e0) const
 }
 
 /* the data mode parameters at symbol rate baud (V34_BAUD_*) and n *
-   2400 bit/s, minimum or expanded shaping (Table 10/V.34): frame
+   2400 bit/s (and the auxiliary channel's 200 when aux_), minimum or
+   expanded shaping (Table 10/V.34): frame
    sizes, the switching pattern, the point spacing at the training
    power; 16 states, no precoding, no non-linear encoding.  Returns -1
    when the rate is not allowed at that symbol rate. */
-s16 V34Params::init(s16 baud, s16 n, s16 expanded)
+s16 V34Params::init(s16 baud, s16 n, s16 expanded, s16 aux_)
 {
 	const struct v34_rate *rt;
 	double pw;
@@ -210,10 +211,12 @@ s16 V34Params::init(s16 baud, s16 n, s16 expanded)
 	reinit(*this);
 	if (baud < 0 || baud >= V34_NBAUDS || n < 1 || n > 14)
 		return -1;
-	rt = &v34_rates[baud][n - 1];
+	rt = aux_ ? &v34_aux_rates[baud][n - 1] : &v34_rates[baud][n - 1];
 	if (!rt->b)
 		return -1;
 	rate = 2400 * n;
+	aux = aux_ ? 1 : 0;
+	W = v34_aux_w(baud);
 	states = 16;
 	theta = 0;
 	nl_gain = 1;
@@ -228,8 +231,9 @@ s16 V34Params::init(s16 baud, s16 n, s16 expanded)
 			q++;
 		}
 	}
-	/* high mapping frames per data frame (8.2/V.34) */
-	r = rate * 28 / (J * 100) - (b - 1) * P;
+	/* high mapping frames per data frame (8.2/V.34), of the bits of
+	   both channels */
+	r = (rate + (aux ? 200 : 0)) * 28 / (J * 100) - (b - 1) * P;
 	if (shell_tables() || (M << q) > 416)
 		return -1;
 	pw = frame_power(K);
@@ -450,11 +454,6 @@ cplx v34_nonlinear_inv(cplx w, float theta)
 	return cplx_scale(w, static_cast<float>(r / m));
 }
 
-static cplx nonlinear(cplx s, float theta)
-{
-	return v34_nonlinear(s, theta);
-}
-
 /* the 8 symbols of the next mapping frame into sym[]: high or low by
    the switching pattern, its bits from link scrambled (scr, tap:
    the primary channel's scrambler), shell mapped, coded differentially
@@ -474,10 +473,23 @@ void V34DataTx::encode_frame(u32 *scr, s16 tap)
 		bb--;
 		kk--;
 	}
-	link.get(bits, bb);
-	for (i = 0; i < bb; i++)
-		bits[i] =
-			static_cast<unsigned char>(scramble(scr, tap, bits[i]));
+	/* an auxiliary channel bit in I1(i,0) of this frame (8.3/V.34):
+	   one primary channel bit less, the aux bit unscrambled */
+	if (p_->aux && (abc += p_->W) >= p_->P) {
+		abc -= p_->P;
+		link.get(bits, bb - 1);
+		for (i = 0; i < bb - 1; i++)
+			bits[i] = static_cast<unsigned char>(
+				scramble(scr, tap, bits[i]));
+		memmove(bits + kk + 1, bits + kk, bb - 1 - kk);
+		bits[kk] = static_cast<unsigned char>(
+			aux.get ? aux.get(aux.ctx) & 1 : 1);
+	} else {
+		link.get(bits, bb);
+		for (i = 0; i < bb; i++)
+			bits[i] = static_cast<unsigned char>(
+				scramble(scr, tap, bits[i]));
+	}
 	if (p_->K) {
 		for (i = 0; i < kk; i++)
 			r0 |= static_cast<u32>(bits[n++]) << i;
@@ -535,7 +547,7 @@ void V34DataTx::encode_frame(u32 *scr, s16 tap)
 							      p_->g * y[k]);
 			if (p_->theta > 0)
 				sym[2 * i + k] = cplx_scale(
-					nonlinear(sym[2 * i + k], p_->theta),
+					v34_nonlinear(sym[2 * i + k], p_->theta),
 					p_->nl_gain);
 			lab[k] = subset_label(x[k], y[k]);
 		}
@@ -680,6 +692,15 @@ void V34DataRx::decode_frame(u32 *scr, s16 tap)
 			for (k = 0; k < p_->q; k++)
 				bits[n++] = (v >> k) & 1;
 		}
+	}
+	/* the auxiliary channel's bit in I1(i,0) (8.3/V.34): out of the
+	   primary channel's, not scrambled */
+	if (p_->aux && (abc += p_->W) >= p_->P) {
+		abc -= p_->P;
+		if (aux.put)
+			aux.put(aux.ctx, bits[kk]);
+		memmove(bits + kk, bits + kk + 1, n - kk - 1);
+		n--;
 	}
 	for (i = 0; i < n; i++)
 		bits[i] = static_cast<unsigned char>(
