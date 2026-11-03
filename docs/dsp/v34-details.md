@@ -102,7 +102,7 @@ Before this recovery was added, we sent INFO0d again only after V.92's quick con
 
 ## Data mode
 
-- **What is implemented.** Shell mapping, the superconstellation with expanded shaping, differential encoding, the 16, 32 and 64 state 4D trellis codes, high and low mapping frames, and the superframe sync inversions. This covers every rate and symbol rate of Table 10/V.34 except the auxiliary channel ones.
+- **What is implemented.** Shell mapping, the superconstellation with expanded shaping, differential encoding, the 16, 32 and 64 state 4D trellis codes, high and low mapping frames, and the superframe sync inversions. This covers every rate and symbol rate of Table 10/V.34, with and without the auxiliary channel.
 - **Trellis code choice.** We ask for the 64 state code (`V34_TRELLIS`). The original library sends what it is asked for, and asks for the 16 state code itself.
 - **Matching the original library.** The trellis output of a 4D symbol is the low bit of the encoder state before that symbol, and the inversion pattern starts at its bit 2J - 2. The 32 and 64 state encoders take the same inputs as the original's `Convolve32` and `Convolve64` tables.
 - **Viterbi decoder.** The receiver runs a Viterbi decoder over the code's states, with a decision delay of 32 4D symbols (`V34_TB`). For the equalizer and the timing it still takes the nearest point.
@@ -121,13 +121,26 @@ Before this recovery was added, we sent INFO0d again only after V.92's quick con
 - When the remote's MP asks for it (Θ = 0.3125), the transmitter warps the precoded points. The Agere modem asks for it; the original library does not.
 - The transmitter then scales the warped points back to the power they had without it, as the note in 10.1.3/V.34 asks. The scale is the square root of the constellation's mean power over that of its warped points, computed the way `frame_power` computes the mean power.
 - The Agere receiver undoes that scale from a table of the same values (to 1/512) before its non-linear decoder. Without the scaling it decodes nothing above 24000 bit/s.
-- Our receiver does not ask for non-linear encoding.
+- Our receiver can undo it: it takes the inverse of the warp (Newton's method on the magnitude) before its decisions, and with precoding it adds back the precoder's p(n) from the soft history of x(n). Its equalizer adapts against the warped decision.
+- Our receiver does not ask for it by default: over a G.711 line it measured no gain. `DSP_V34_NONLINEAR=1` asks for it in every MP and `0` never does (tests: pump_test's `V34NonLinear` over µ-law, with and without precoding).
+
+### Pre-emphasis (5.4/V.34)
+
+- The transmitter filters its phase 3, phase 4 and data signals with the filter that the remote's INFO1a, INFO1c or INFOh asks for. Each filter is a 47 tap linear phase FIR designed on the template of Figures 1 and 2 (indices 1 to 5 tilt the band linearly in dB, indices 6 to 10 lift its top), at the power the signal has without it.
+- The receiver's probing works out, at each symbol rate, the SNR after equalization that each filter would give (the harmonic mean over the probe tones in the band). It asks for the best one when it gains 0.5 dB or more over none.
+- On a line whose loss rises with the frequency, L1's 3000 Hz tone can arrive 7 dB below its share, and it is still taken for L1.
+- `DSP_V34_PREEMPH=<index>` asks for that filter wherever the rate allows it, and `0` for none (tests: pump_test's `V34PreEmphasis` on a sloped line, and `V34PreEmphasisIndex`).
+
+### Auxiliary channel (8.3/V.34)
+
+- When both MPs set bit 28, each direction carries 200 bit/s more: the rates of Table 10/V.34 for N × 2400 + 200 bit/s (`v34_aux_rates`). W bits per data frame (8, or 7 at 2743 and 3429 baud) go in I1 of the first 4D symbol of the mapping frames that the pattern of Table 9/V.34 picks, unscrambled.
+- No user of it exists yet: with it on, we send ones, as an idle clear secondary channel would (Annex A).
+- `DSP_V34_AUX=1` sets bit 28; `2` also sends a PRBS (x^15 + x^14 + 1) in it and logs the bits received and their errors at the end of the call (tests: pump_test's `V34Aux`). Without either it stays off.
 
 ### Other options
 
 - **16 point training.** A J of 0x89B0 from the remote asks for TRN, MP and E in the 16 point constellation in phase 4 (MP then takes 4 bits per symbol, and E is 5 symbols). The receiver accepts both kinds of J, and the transmitter follows the remote's. We send the 4 point J.
 - **Asymmetric rates.** Both rates are kept only when both MPs set bit 50. Otherwise both directions take the lower one.
-- **Pre-emphasis.** We neither ask for it nor apply it when the remote asks for it.
 
 ## Echo canceller
 
@@ -224,7 +237,7 @@ The rate goes down by as many steps as the mse asks for (about 3 dB per bit per 
 - the renegotiation does not end with E within 3 s plus three round trips; or
 - the remote sends its tone.
 
-**Cleardown.** An MP with no rates is a cleardown (11.7/V.34), and the call ends.
+**Cleardown.** An MP with no rates is a cleardown (11.7/V.34), and the call ends. We start one when the core hangs up in data mode: S for 128 T, S-bar for 16 T, then MP with no rates until the remote's MP and MP' are in. The remote's own cleardown is answered the same way. The core waits for it (up to 2.5 s plus three round trips) before it drops the line, and ATI11 says "Remote cleardown" when the remote started it. With V.42 both modems hang up when the DISC arrives, and their two cleardowns meet. `DSP_V34_CLEARDOWN=0` drops the line without one (tests: core_test's `V34Cleardown`).
 
 **Other modems.** The original library and the Agere modem answer our renegotiations (the original library with a type 0 MP). The Agere modem starts its own on errors.
 
@@ -232,10 +245,8 @@ The rate goes down by as many steps as the mse asks for (about 3 dB per bit per 
 
 ## Not implemented
 
-- pre-emphasis;
-- non-linear decoding (we never ask for it);
-- the auxiliary channel;
-- starting a cleardown.
+- a user of the auxiliary channel (Annex A's secondary channel);
+- choosing non-linear encoding from the line (we ask for it only when told to).
 
 ## Half-duplex (clause 12, for fax)
 
