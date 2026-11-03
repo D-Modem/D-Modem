@@ -394,7 +394,8 @@ private:
 	   octets: SEND_ENCAPSULATED_COMMAND), a register written, a
 	   register read (only before the streams: the notification waited
 	   for on the interrupt endpoint, then GET_ENCAPSULATED_RESPONSE);
-	   its hook (SET_HOOK_STATE) and line monitor; a notification from
+	   its hook (SET_HOOK_STATE, or register 5's OH once the device has
+	   stalled it) and line monitor; a notification from
 	   its interrupt endpoint; the country's settings into its DAA (the
 	   registers as read at the start, changed); its interfaces released
 	   at close() */
@@ -421,6 +422,8 @@ private:
 	Si3056Regs apple_regs_ = {};
 	bool apple_regs_read_ = false;
 	bool apple_ringing_ = false;
+	/* SET_HOOK_STATE stalled: the hook is register 5's OH from then on */
+	bool apple_hook_reg_ = false;
 	/* on hook, each pump: a ring pulse every RING_PULSE_MS of the
 	   device's clock while it rings (the notifications say when a ring
 	   starts and stops, not its cycles), none past a ring longer than

@@ -32,7 +32,8 @@
  *    device is gone (LIBUSB_TRANSFER_NO_DEVICE) when the exchange is.
  *
  *    FAKE_APPLE_NOLINK=1: the line side does not answer (register 12's
- *    FDT clear).
+ *    FDT clear).  FAKE_APPLE_HOOK_STALL=1: SET_HOOK_STATE stalls, as the
+ *    first real device's did; the hook is then register 5's OH (bit 0).
  *    FAKE_APPLE_LOG=1: the requests on stderr.
  *
  */
@@ -107,6 +108,7 @@ struct Fake {
 	std::deque<std::array<uint8_t, 8>> notes;
 	bool gone = false;
 	bool nolink = false;
+	bool hook_stall = false;        /* SET_HOOK_STATE stalls: register 5's OH the hook */
 	std::deque<int16_t> in;         /* the line's samples, not yet taken */
 	int half = -1;
 	unsigned long long ms = 0;      /* IN packets given */
@@ -355,6 +357,17 @@ void make_config()
 	config.interface = ifaces;
 }
 
+/* off hook or on: a ring stopped by going off hook, the exchange told */
+void set_hook(bool off)
+{
+	fake.hook = off;
+	if (fake.hook && fake.ringing) {
+		fake.ringing = false;
+		notify(N_RING_DETECT, 0);
+	}
+	line_hook(fake.hook);
+}
+
 /* the DAA's 3-octet command: 0 or LIBUSB_ERROR_PIPE */
 int daa_command(const unsigned char *b)
 {
@@ -377,8 +390,11 @@ int daa_command(const unsigned char *b)
 	default:
 		return LIBUSB_ERROR_PIPE;
 	}
-	if (reg == 5)
+	if (reg == 5) {
 		monitor_from_regs();
+		if (fake.hook_stall)
+			set_hook(fake.regs[5] & 0x01);
+	}
 	return 0;
 }
 
@@ -508,6 +524,7 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 		return LIBUSB_ERROR_IO;
 	}
 	fake.nolink = getenv("FAKE_APPLE_NOLINK") != nullptr;
+	fake.hook_stall = getenv("FAKE_APPLE_HOOK_STALL") != nullptr;
 	/* the Si3056 rev E, a Si3018 line side; DAA1's ONHM clear */
 	memset(fake.regs, 0, sizeof(fake.regs));
 	fake.regs[11] = 0x15;
@@ -658,13 +675,8 @@ int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *,
 			r = length >= 2 ? 2 : 1;
 		}
 	} else if (recipient == LIBUSB_RECIPIENT_INTERFACE && index == IF_DLC &&
-		   !in && request == SET_HOOK_STATE && value <= 1) {
-		fake.hook = value;
-		if (fake.hook && fake.ringing) {
-			fake.ringing = false;
-			notify(N_RING_DETECT, 0);
-		}
-		line_hook(fake.hook);
+		   !in && request == SET_HOOK_STATE && value <= 1 && !fake.hook_stall) {
+		set_hook(value);
 		r = 0;
 	}
 	if (fake.log)

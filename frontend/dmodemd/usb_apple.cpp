@@ -21,7 +21,10 @@
  *      mono, is all that is taken here.
  *    - Its line is a CDC Direct Line Control interface (class 2, subclass
  *      3: interface 0): the hook is SET_HOOK_STATE (1 off hook, 0 on), as
- *      MotorolaSM56KUSB's si3056_HW_UpdateHookCtl has it; its interrupt
+ *      MotorolaSM56KUSB's si3056_HW_UpdateHookCtl has it, or, if the
+ *      device stalls that (the first real one did), the Si3056's own
+ *      (register 5's OH, as AppleSM56KUSBModemFamily::testInterface
+ *      writes it); its interrupt
  *      endpoint's notifications (8 octets, CDC's header) say the ring
  *      detector's changes (RING_DETECT, 0x03: wValue's bit 15 set while
  *      it rings), a command's response (0x02, wValue's bit 0) and the
@@ -42,8 +45,9 @@
  *    packets' lengths (usb_line.cpp).  On hook the line monitor is on, so
  *    caller ID comes in the samples.
  *
- *    Not yet tried on a real device: on a simulated one only
- *    (test/fake_apple.cpp).
+ *    Tried on a real device up to the hook (its start-up's register
+ *    reads; docs/apple-usb-modem-details.md's "A real one"), and on a
+ *    simulated one (test/fake_apple.cpp).
  *
  */
 
@@ -100,7 +104,7 @@ const u16 SAMPLING_FREQ_CONTROL = 0x0100;
 
 /* the Si3056's registers and bits (si3056.h's datasheet) */
 const u8 SI_DAA1 = 5, SI_DAA2 = 6, SI_REV = 11, SI_STATUS = 12;
-const u8 SI_DAA1_ONHM = 0x08;
+const u8 SI_DAA1_OH = 0x01, SI_DAA1_ONHM = 0x08;
 const u8 SI_STATUS_FDT = 0x40;
 
 /* a ring pulse's spacing while it rings (the core wants 4 a burst in
@@ -366,6 +370,7 @@ bool UsbLine::open_apple(u32 rate)
 	if (!(st & SI_STATUS_FDT))
 		ERR("Apple USB Modem: its line side does not answer (the "
 		    "isolation link is down); going on\n");
+	apple_hook_reg_ = false;
 	if (!apple_hook(false) || !apple_monitor(true))
 		return false;
 	/* the country's registers, as they are now */
@@ -464,20 +469,31 @@ bool UsbLine::apple_read(u8 reg, u8 *value)
 	return true;
 }
 
-/* see usb_line.h: SET_HOOK_STATE to the line's interface; false
-   (logged) */
+/* see usb_line.h: SET_HOOK_STATE to the line's interface; if the device
+   stalls it, register 5's OH from then on (AppleSM56KUSBModemFamily's
+   testInterface hooks with both); false (logged) */
 bool UsbLine::apple_hook(bool off)
 {
-	int err = libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_CLASS |
-					  LIBUSB_RECIPIENT_INTERFACE |
-					  LIBUSB_ENDPOINT_OUT, SET_HOOK_STATE,
-					  off ? 1 : 0,
-					  static_cast<u16>(apple_dlc_), nullptr,
-					  0, TIMEOUT_MS);
-	if (err < 0)
-		ERR("Apple USB Modem: %s: %s\n", off ? "off hook" : "on hook",
-		    libusb_strerror(err));
-	return err >= 0;
+	if (!apple_hook_reg_) {
+		int err = libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_CLASS |
+						  LIBUSB_RECIPIENT_INTERFACE |
+						  LIBUSB_ENDPOINT_OUT, SET_HOOK_STATE,
+						  off ? 1 : 0,
+						  static_cast<u16>(apple_dlc_), nullptr,
+						  0, TIMEOUT_MS);
+		if (err >= 0)
+			return true;
+		if (err != LIBUSB_ERROR_PIPE) {
+			ERR("Apple USB Modem: %s: %s\n", off ? "off hook" : "on hook",
+			    libusb_strerror(err));
+			return false;
+		}
+		DBG("Apple USB Modem: SET_HOOK_STATE stalled: the hook is the "
+		    "DAA's own (register 5's OH) from now on\n");
+		apple_hook_reg_ = true;
+	}
+	return off ? apple_cmd(DAA_OR, SI_DAA1, SI_DAA1_OH) :
+		apple_cmd(DAA_AND, SI_DAA1, static_cast<u8>(~SI_DAA1_OH));
 }
 
 /* see usb_line.h: register 5's ONHM set or cleared (its other bits the

@@ -14,6 +14,8 @@
 #   descriptors;
 # - the country's line settings written to the modem's DAA (its 3-octet
 #   commands): -c UK's at start-up, AT+GCI=09's (Australia) after it;
+# - 1002's modem stalls SET_HOOK_STATE (FAKE_APPLE_HOOK_STALL), as the
+#   first real one did: its dmodemd hooks with the DAA's register 5;
 # - 1001 dials 1002 (ATX4: after the dial tone, in DTMF); 1002 rings
 #   (its ring detector's notifications), shows the caller ID between
 #   the first two rings (AT#CID=1: the Si3056's line monitor on, on
@@ -189,7 +191,9 @@ try:
     uk.p.wait(5)
 
     a = Modem("1001", "dmodem41")
-    b = Modem("1002", "dmodem42")
+    b = Modem("1002", "dmodem42", FAKE_APPLE_HOOK_STALL="1")
+    check("1002: SET_HOOK_STATE stalled, the hook register 5's",
+          b.expect_log(b"SET_HOOK_STATE stalled", 5))
     for m in (a, b):
         check("%s ATE0" % m.n, m.cmd(b"ATE0"))
         check("%s ATI3: Apple USB Modem" % m.n,
