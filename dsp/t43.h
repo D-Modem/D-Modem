@@ -58,8 +58,10 @@ struct T43Options {
 void t43_encode(const T43Image &img, const T43Options &opt, std::vector<unsigned char> *out);
 
 /* a BCIE to an image of at most max_rows lines; 0 when whole, 1 when
-   it ended early (the lines so far), -1 when it is none */
-s16 t43_decode(const unsigned char *data, size_t len, u32 max_rows, T43Image *img);
+   it ended early (the lines so far), -1 when it is none.  *used (if
+   given): its octets, up to its ending marker */
+s16 t43_decode(const unsigned char *data, size_t len, u32 max_rows, T43Image *img,
+	       size_t *used = nullptr);
 
 /* an image in sRGB (3 octets a pel) or, grey, 1; *comps: which */
 void t43_to_srgb(const T43Image &img, std::vector<unsigned char> *out, s16 *comps);

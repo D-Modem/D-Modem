@@ -5,7 +5,8 @@
  *    fax_test.cpp - the fax without a modem core: each class 1
  *    modulation from its transmitter into its receiver, the page coding
  *    (T.4/T.6, TIFF) also against libtiff, and two T.30 machines back to
- *    back sending a document
+ *    back sending a document: in black and white, colour (T.42, T.43,
+ *    T.44) and with binary files (T.434)
  *
  *    fax_test --gtest_list_tests    the cases
  *    DSP_DEBUG=<level>              the DSP's log
@@ -17,6 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <deque>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -24,6 +27,7 @@
 #include "fax_util.h"
 #include "t30.h"
 #include "t4.h"
+#include "t434.h"
 
 using namespace dsp;
 
@@ -529,6 +533,7 @@ TEST(T30Colour, SendsColourPages)
 		T30 *a = t30_create(&c);
 		c.sending = 0;
 		c.no_colour = (s16)no_colour;
+		c.no_mrc = 1;   /* (T.44: T30Colour.SendsMrcPages) */
 		c.next_page = NULL;
 		c.page_received = page_received;
 		c.ctx = &rx;
@@ -628,6 +633,7 @@ static void send_file(const std::string &in, const std::string &out, s16 no_colo
 	c.sending = 0;
 	c.no_colour = no_colour;
 	c.no_t43 = no_t43;
+	c.no_mrc = 1;           /* (T.44: T30Colour.SendsMrcPages) */
 	c.next_page = NULL;
 	c.page_received = page_received;
 	c.ctx = &rx;
@@ -708,6 +714,332 @@ TEST(T30Colour, SendsChartsLossless)
 		ti.close();
 		to.close();
 	}
+}
+
+/*
+ *    mixed raster content (T.44)
+ *
+ */
+
+/* text over a picture: a smooth light picture in colour (comps 3) or
+   grey (1), lines of letters (2 pels thick strokes) in black and, in
+   colour, dark red; *text: where the letters are */
+static void text_page(T4Page *p, s16 comps, s32 rows, std::vector<unsigned char> *text)
+{
+	std::vector<unsigned char> pix((size_t)T4_WIDTH * rows * comps);
+	text->assign((size_t)T4_WIDTH * rows, 0);
+	std::mt19937 rng(7);
+	for (s32 y = 0; y < rows; y++)
+		for (int x = 0; x < T4_WIDTH; x++)
+			for (int c = 0; c < comps; c++) {
+				double v = 205 + 35 * sin((x + 50 * c) / 90.0) * cos((y + 30 * c) / 60.0);
+				pix[((size_t)y * T4_WIDTH + x) * comps + c] = (unsigned char)v;
+			}
+	for (s32 line = 0; (line + 1) * 40 < rows; line++) {
+		bool red = comps == 3 && line % 3 == 2;
+		for (int ch = 0; ch < T4_WIDTH / 14 - 4; ch++) {
+			unsigned shape = rng();
+			int x0 = 30 + ch * 14, y0 = 12 + line * 40;
+			for (int k = 0; k < 6; k++) {
+				if (!(shape >> k & 1))
+					continue;
+				/* strokes: 3 across (top, middle, bottom), 3 down
+				   (left, middle, right) */
+				int xa = k < 3 ? x0 : x0 + (k - 3) * 4, ya = k < 3 ? y0 + k * 7 : y0;
+				int xb = k < 3 ? x0 + 10 : xa + 2, yb = k < 3 ? ya + 2 : y0 + 16;
+				for (int y = ya; y < yb; y++)
+					for (int x = xa; x < xb; x++) {
+						(*text)[(size_t)y * T4_WIDTH + x] = 1;
+						for (int c = 0; c < comps; c++)
+							pix[((size_t)y * T4_WIDTH + x) * comps + c] =
+								red && c == 0 ? 150 : 0;
+					}
+			}
+		}
+	}
+	p->init(T4_WIDTH, 1);
+	p->set_pix(pix.data(), comps, T4_WIDTH, (u32)rows);
+}
+
+/* a colour and a grey page of text over a picture: in T.44 (the text
+   in the mask, sharp, the picture in JPEG), with the mask in T.85 or,
+   to a receiver without it, MH; to one without T.44 in JPEG */
+TEST(T30Colour, SendsMrcPages)
+{
+	std::string in = fax_file("mrc_in.tif"), out = fax_file("mrc_out.tif");
+	T4Page pg[2];
+	std::vector<unsigned char> text[2];
+	text_page(&pg[0], 3, 600, &text[0]);
+	text_page(&pg[1], 1, 400, &text[1]);
+	{
+		TiffOut t;
+		ASSERT_EQ(t.open(in.c_str()), 0);
+		for (auto &p : pg)
+			t.write_page(&p);
+		t.close();
+	}
+	debug_level();
+	for (int variant = 0; variant < 3; variant++) {
+		/* 0: T.44, the mask in T.85; 1: ... in MH; 2: no T.44 */
+		Doc tx, rx;
+		struct t30_config c = {};
+		struct t30_status sa = {}, sb = {};
+		short ab[160] = { 0 }, ba[160] = { 0 }, oa[160], ob[160];
+		int mrc_seen[2] = {0, 0}, jpeg_seen[2] = {0, 0};
+		long n;
+		ASSERT_EQ(tx.in.open(in.c_str()), 0);
+		ASSERT_EQ(rx.out.open(out.c_str()), 0);
+		c.srate = 8000;
+		c.max_bps = 14400;
+		c.ecm = 1;
+		c.sending = 1;
+		c.ident = "+1 555 0100";
+		c.next_page = next_page;
+		c.ctx = &tx;
+		T30 *a = t30_create(&c);
+		c.sending = 0;
+		c.no_t85 = (s16)(variant == 1);
+		c.no_mrc = (s16)(variant == 2);
+		c.next_page = NULL;
+		c.page_received = page_received;
+		c.ctx = &rx;
+		T30 *b = t30_create(&c);
+		for (n = 0; n < 8000L * 900; n += 160) {
+			t30_process(a, ba, oa, 160);
+			t30_process(b, ab, ob, 160);
+			for (int i = 0; i < 160; i++) {
+				ab[i] = g711_ulaw(oa[i]);
+				ba[i] = g711_ulaw(ob[i]);
+			}
+			t30_get_status(a, &sa);
+			t30_get_status(b, &sb);
+			if (sa.pages < 2 && sa.phase && !strcmp(sa.phase, "send ECM block")) {
+				mrc_seen[sa.pages] = sa.mrc;
+				jpeg_seen[sa.pages] = sa.jpeg;
+			}
+			if (sa.result != T30_RUNNING && sb.result != T30_RUNNING)
+				break;
+		}
+		rx.out.close();
+		tx.in.close();
+		t30_free(a);
+		t30_free(b);
+		printf("the call: %.1f s\n", (double)n / 8000);
+		EXPECT_EQ(sa.result, T30_OK) << t30_result_text(sa.result);
+		EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+		ASSERT_EQ(sb.pages, 2);
+		EXPECT_EQ(mrc_seen[0], variant == 2 ? 0 : 2);
+		EXPECT_EQ(mrc_seen[1], variant == 2 ? 0 : 1);
+		EXPECT_EQ(jpeg_seen[0], variant == 2 ? 2 : 0);
+
+		TiffIn ti, to;
+		ASSERT_EQ(ti.open(in.c_str()), 0);
+		ASSERT_EQ(to.open(out.c_str()), 0);
+		for (int k = 0; k < 2; k++) {
+			T4Page pi, po;
+			ASSERT_EQ(ti.read_page(&pi), 1);
+			ASSERT_EQ(to.read_page(&po), 1);
+			ASSERT_EQ(pi.rows, po.rows) << "page " << k;
+			ASSERT_EQ(po.comps, pi.comps) << "page " << k;
+			/* the text: dark where it was, its edges sharp (the
+			   pels at a stroke's side as they were) */
+			size_t dark = 0, letters = 0, edge = 0;
+			double edge_err = 0;
+			const int nc = pi.comps;
+			for (size_t i = 0; i + 1 < text[k].size(); i++) {
+				const unsigned char *o = &po.pix[i * nc];
+				int l = nc == 3 ? (299 * o[0] + 587 * o[1] + 114 * o[2]) / 1000 : o[0];
+				if (text[k][i]) {
+					letters++;
+					dark += l < 110;
+				}
+				if (text[k][i] != text[k][i + 1])
+					for (size_t j = i; j <= i + 1; j++, edge++)
+						for (int ch = 0; ch < nc; ch++)
+							edge_err += abs((int)pi.pix[j * nc + ch] - po.pix[j * nc + ch]);
+			}
+			edge_err /= (double)edge * nc;
+			double q = page_psnr(pi, po);
+			printf("%s: page %d: %.1f dB, %zu of %zu text pels dark, %.1f off at its edges\n",
+			       variant == 0 ? "T.44 (T.85 mask)" : variant == 1 ? "T.44 (MH mask)" : "JPEG",
+			       k + 1, q, dark, letters, edge_err);
+			EXPECT_GE(dark * 1000, letters * 995) << "page " << k;
+			EXPECT_GT(q, variant < 2 ? 38 : 25) << "page " << k;
+			if (variant < 2)
+				EXPECT_LT(edge_err, 5) << "page " << k;
+		}
+		ti.close();
+		to.close();
+	}
+}
+
+/*
+ *    binary files (T.434)
+ *
+ */
+
+/* a document of pages and files: what the sender has left, and what
+   the receiver got (a file's page with its message) */
+struct Mixed {
+	std::deque<T4Page> left;
+	std::vector<T4Page> got;
+};
+
+/* the sender's next page or file (t30_config next_page) */
+static s16 mixed_next(void *ctx, T4Page *p)
+{
+	Mixed *m = static_cast<Mixed *>(ctx);
+	if (m->left.empty())
+		return 0;
+	*p = std::move(m->left.front());
+	m->left.pop_front();
+	return 1;
+}
+
+/* a page or file received, kept */
+static void mixed_received(void *ctx, T4Page *p)
+{
+	static_cast<Mixed *>(ctx)->got.push_back(*p);
+}
+
+/* a file of n random octets, named */
+static BftFile random_file(const char *name, size_t n, unsigned seed)
+{
+	std::mt19937 rng(seed);
+	BftFile f;
+	f.name = name;
+	f.mime = "application/octet-stream";
+	f.modified = "20261103120000Z";
+	f.data.resize(n);
+	for (auto &b : f.data)
+		b = (unsigned char)rng();
+	return f;
+}
+
+/* a page, a small file, one of 100000 octets (two ECM blocks, its last
+   frame short), a page: with ECM to a receiver that takes files they
+   come whole, between the pages (EOM around them: their own DCS); to
+   one that takes none they are left out and the pages go */
+TEST(T30Bft, SendsFiles)
+{
+	BftFile files[2] = { random_file("notes.txt", 37, 1),
+			     random_file("data.bin", 100000, 2) };
+	debug_level();
+	for (int takes = 1; takes >= 0; takes--) {
+		Mixed tx, rx;
+		T4Page p;
+		test_page(&p, 0, 5, 40);
+		tx.left.push_back(p);
+		for (const BftFile &f : files) {
+			T4Page fp;
+			t434_encode(f, &fp.file);
+			tx.left.push_back(std::move(fp));
+		}
+		test_page(&p, 0, 6, 40);
+		tx.left.push_back(std::move(p));
+
+		struct t30_config c = {};
+		struct t30_status sa = {}, sb = {};
+		short ab[160] = { 0 }, ba[160] = { 0 }, oa[160], ob[160];
+		bool bft_seen = false;
+		c.srate = 8000;
+		c.max_bps = 14400;
+		c.ecm = 1;
+		c.bft = 1;
+		c.sending = 1;
+		c.ident = "+1 555 0100";
+		c.next_page = mixed_next;
+		c.ctx = &tx;
+		T30 *a = t30_create(&c);
+		c.sending = 0;
+		c.bft = (s16)takes;
+		c.next_page = NULL;
+		c.page_received = mixed_received;
+		c.ctx = &rx;
+		T30 *b = t30_create(&c);
+		for (long n = 0; n < 8000L * 900; n += 160) {
+			t30_process(a, ba, oa, 160);
+			t30_process(b, ab, ob, 160);
+			for (int i = 0; i < 160; i++) {
+				ab[i] = g711_ulaw(oa[i]);
+				ba[i] = g711_ulaw(ob[i]);
+			}
+			t30_get_status(a, &sa);
+			t30_get_status(b, &sb);
+			bft_seen |= sa.bft != 0;
+			if (sa.result != T30_RUNNING && sb.result != T30_RUNNING)
+				break;
+		}
+		t30_free(a);
+		t30_free(b);
+		EXPECT_EQ(sa.result, T30_OK) << t30_result_text(sa.result);
+		EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+		EXPECT_EQ(sa.pages, 2);
+		EXPECT_EQ(sb.pages, 2);
+		EXPECT_EQ(bft_seen, takes != 0);
+		EXPECT_EQ(sa.files, takes ? 2 : 0);
+		EXPECT_EQ(sb.files, takes ? 2 : 0);
+		EXPECT_EQ(sa.files_left_out, takes ? 0 : 2);
+		/* in the order sent: a page, the files, a page */
+		ASSERT_EQ(rx.got.size(), takes ? 4u : 2u);
+		EXPECT_TRUE(rx.got.front().file.empty());
+		EXPECT_TRUE(rx.got.back().file.empty());
+		for (int k = 0; takes && k < 2; k++) {
+			std::vector<BftFile> fs;
+			const T4Page &g = rx.got[1 + k];
+			ASSERT_EQ(t434_decode(g.file.data(), g.file.size(), &fs), 0);
+			ASSERT_EQ(fs.size(), 1u);
+			EXPECT_EQ(fs[0].name, files[k].name);
+			EXPECT_EQ(fs[0].mime, files[k].mime);
+			EXPECT_EQ(fs[0].modified, files[k].modified);
+			EXPECT_EQ(fs[0].size, (s64)files[k].data.size());
+			EXPECT_TRUE(fs[0].data == files[k].data) << "file " << k;
+		}
+	}
+}
+
+/* a file and no ECM: nothing to send it with (no pages either) */
+TEST(T30Bft, NeedsEcm)
+{
+	Mixed tx, rx;
+	T4Page fp;
+	t434_encode(random_file("a", 10, 3), &fp.file);
+	tx.left.push_back(std::move(fp));
+	struct t30_config c = {};
+	struct t30_status sa = {}, sb = {};
+	short ab[160] = { 0 }, ba[160] = { 0 }, oa[160], ob[160];
+	debug_level();
+	c.srate = 8000;
+	c.max_bps = 14400;
+	c.ecm = 0;
+	c.bft = 1;
+	c.sending = 1;
+	c.ident = "+1 555 0100";
+	c.next_page = mixed_next;
+	c.ctx = &tx;
+	T30 *a = t30_create(&c);
+	c.sending = 0;
+	c.next_page = NULL;
+	c.page_received = mixed_received;
+	c.ctx = &rx;
+	T30 *b = t30_create(&c);
+	for (long n = 0; n < 8000L * 120; n += 160) {
+		t30_process(a, ba, oa, 160);
+		t30_process(b, ab, ob, 160);
+		for (int i = 0; i < 160; i++) {
+			ab[i] = g711_ulaw(oa[i]);
+			ba[i] = g711_ulaw(ob[i]);
+		}
+		t30_get_status(a, &sa);
+		t30_get_status(b, &sb);
+		if (sa.done)
+			break;
+	}
+	t30_free(a);
+	t30_free(b);
+	EXPECT_EQ(sa.result, T30_ERR_INCOMPATIBLE) << t30_result_text(sa.result);
+	EXPECT_EQ(sa.files_left_out, 1);
+	EXPECT_TRUE(rx.got.empty());
 }
 
 /*

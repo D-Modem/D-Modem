@@ -22,6 +22,7 @@
 #include "fax_util.h"
 #include "t30.h"
 #include "t38.h"
+#include "t434.h"
 
 using namespace dsp;
 
@@ -220,19 +221,35 @@ struct Side {
 	UdptlTx tx;
 	UdptlRx rx;
 	std::deque<Bytes> *line;        /* to the other side */
+	/* instead of the TIFF files (if not null): the pages and files to
+	   send, those received */
+	std::deque<T4Page> *list = nullptr;
+	std::vector<T4Page> *got = nullptr;
 };
 
 /* the side's next page, from its document: 1, 0 when there are no
    more, -1 on an error */
 static s16 side_next_page(void *ctx, T4Page *p)
 {
-	return static_cast<Side *>(ctx)->in.read_page(p);
+	Side *s = static_cast<Side *>(ctx);
+	if (s->list) {
+		if (s->list->empty())
+			return 0;
+		*p = std::move(s->list->front());
+		s->list->pop_front();
+		return 1;
+	}
+	return s->in.read_page(p);
 }
 
 /* a page the side received, written to its TIFF */
 static void side_page_received(void *ctx, T4Page *p)
 {
-	static_cast<Side *>(ctx)->out.write_page(p);
+	Side *s = static_cast<Side *>(ctx);
+	if (s->got)
+		s->got->push_back(*p);
+	else
+		s->out.write_page(p);
 }
 
 /* an IFP packet of the machine's: in UDPTL onto the line, unless it is
@@ -380,3 +397,97 @@ INSTANTIATE_TEST_SUITE_P(Nets, T38Pair, testing::Values(
 			 std::string()) +
 			(i.param.relay ? "_relay" : "");
 	});
+
+/* binary files over T.38 with ECM, packets lost in bursts the
+   redundancy can't make up: a file of 100000 random octets (its last
+   frame short) and one of 3 come whole, a page between them */
+TEST(T38Pair, SendsFiles)
+{
+	std::deque<Bytes> ab, ba;
+	std::deque<T4Page> list;
+	std::vector<T4Page> got;
+	Side a, b;
+	struct t30_config c = {};
+	struct t30_status sa = {}, sb = {};
+	BftFile f[2];
+	f[0].name = "big.bin";
+	f[0].data.resize(100000);
+	for (size_t i = 0; i < f[0].data.size(); i++)
+		f[0].data[i] = (unsigned char)(i * 2654435761u >> 13);
+	f[1].name = "small";
+	f[1].data = {1, 2, 3};
+	T4Page fp, page;
+	t434_encode(f[0], &fp.file);
+	list.push_back(std::move(fp));
+	test_page(&page, 0, 4, 20);
+	list.push_back(std::move(page));
+	t434_encode(f[1], &fp.file);
+	list.push_back(std::move(fp));
+
+	if (getenv("DSP_DEBUG"))
+		dsplibs_debug_level = atoi(getenv("DSP_DEBUG"));
+	for (Side *s : { &a, &b }) {
+		s->version = 2;
+		s->lose = 0;
+		s->sent = 0;
+		s->depth = 3;
+		s->burst = 40;
+		s->fast = s->losing = 0;
+		s->relay = false;
+		s->tx.init(T38_EC_REDUNDANCY, 3);
+		s->rx.init();
+	}
+	a.line = &ab;
+	b.line = &ba;
+	a.list = &list;
+	b.got = &got;
+	c.srate = 8000;
+	c.max_bps = 14400;
+	c.ecm = 1;
+	c.bft = 1;
+	c.t38 = 1;
+	c.t38_tx = side_tx;
+	c.sending = 1;
+	c.ident = "+1 555 0100";
+	c.next_page = side_next_page;
+	c.ctx = &a;
+	a.t30 = t30_create(&c);
+	c.sending = 0;
+	c.ident = "+1 555 0199";
+	c.next_page = NULL;
+	c.page_received = side_page_received;
+	c.ctx = &b;
+	b.t30 = t30_create(&c);
+	for (long n = 0; n < 8000L * 600; n += 160) {
+		std::deque<Bytes> to_b, to_a;
+		to_b.swap(ab);
+		to_a.swap(ba);
+		for (const Bytes &p : to_b)
+			b.rx.packet(p.data(), (int)p.size(), side_rx, &b);
+		for (const Bytes &p : to_a)
+			a.rx.packet(p.data(), (int)p.size(), side_rx, &a);
+		t30_t38_time(a.t30, 160);
+		t30_t38_time(b.t30, 160);
+		t30_get_status(a.t30, &sa);
+		t30_get_status(b.t30, &sb);
+		if (sa.done && sb.done)
+			break;
+	}
+	t30_free(a.t30);
+	t30_free(b.t30);
+	EXPECT_EQ(sa.result, T30_OK) << "sender: " << t30_result_text(sa.result);
+	EXPECT_EQ(sb.result, T30_OK) << "receiver: " << t30_result_text(sb.result);
+	EXPECT_EQ(sb.files, 2);
+	EXPECT_EQ(sb.pages, 1);
+	ASSERT_EQ(got.size(), 3u);
+	for (int k = 0; k < 2; k++) {
+		const T4Page &g = got[k * 2];
+		std::vector<BftFile> fs;
+		ASSERT_EQ(t434_decode(g.file.data(), g.file.size(), &fs), 0);
+		ASSERT_EQ(fs.size(), 1u);
+		EXPECT_EQ(fs[0].name, f[k].name);
+		EXPECT_TRUE(fs[0].data == f[k].data) << "file " << k;
+	}
+	EXPECT_TRUE(got[1].file.empty());
+	EXPECT_GT(got[1].rows, 0);
+}

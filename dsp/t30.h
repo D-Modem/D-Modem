@@ -9,6 +9,8 @@
  *    The calling machine sends the document, the answering one receives
  *    it (no polling), with error correction mode (T.30 Annex A) when both
  *    have it; on V.34 half-duplex (T.30 Annex F) when both have that.
+ *    With ECM a document may carry binary files too (T.434, T.30
+ *    Appendix V), and colour pages go in T.42, T.43 or T.44.
  *
  */
 
@@ -116,9 +118,12 @@ struct t30_config {
 	s32 max_bps;            /* 14400 (V.17), 9600 (V.29), 4800 (V.27) */
 	s16 ecm;                /* offer and take error correction mode */
 	s32 srate;              /* sample rate of the audio (8000) */
-	/* sending: the next page, 1; no more, 0 */
+	/* sending: the next page, 1; no more, 0.  A page with file is a
+	   binary file (with ECM and the remote's BFT; t434_encode()) */
 	s16  (*next_page)(void *ctx, T4Page *page);
-	/* receiving: a page that came; it stays the caller's to free */
+	/* receiving: a page that came; it stays the caller's to free.  One
+	   with file is a binary file, a whole BINARY-DATA message
+	   (t434_decode()) */
 	void (*page_received)(void *ctx, T4Page *page);
 	void *ctx;
 	/* T.38 instead of audio: what would go out on the line as IFP
@@ -158,6 +163,12 @@ struct t30_config {
 				   grey-scale pages in T.42 (JPEG) */
 	s16 no_t43;             /* ... nor in T.43 (lossless JBIG), only
 				   in T.42 */
+	s16 no_mrc;             /* ... nor in T.44 (mixed raster content:
+				   text sharp over a JPEG) */
+	s16 bft;                /* with ECM, offer and send binary files
+				   (T.434: a T4Page with file, which
+				   page_received() then takes too); one
+				   the remote can't take is left out */
 };
 
 struct t30_status {
@@ -174,6 +185,12 @@ struct t30_status {
 	s16 t85;                /* its pages in T.85 (JBIG) */
 	s16 jpeg;               /* in T.42 (JPEG): 1 grey, 2 colour */
 	s16 t43;                /* in T.43 (JBIG): 1 grey, 2 colour */
+	s16 mrc;                /* in T.44 (MRC): 1 grey, 2 colour */
+	s16 bft;                /* the page is a binary file (T.434) */
+	s16 files;              /* binary files sent or received (not in
+				   pages) */
+	s16 files_left_out;     /* sending: files the remote could not
+				   take (no BFT, or no ECM) */
 	char remote_ident[21];
 	const char *phase;      /* what it is doing, for the log */
 	s16 waiting;            /* enum t30_wait */

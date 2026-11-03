@@ -436,6 +436,100 @@ spandsp's T.43 (FreeSWITCH's 3.x) has its encoder compiled out and
 mod_spandsp does not offer it, so there is no T.43 machine to call
 outside these tests.
 
+### T.44 (mixed raster content) pages
+
+With colour on, the DIS also offers T.44's mode 1 (bits 92 to 94 as 1,
+0, 0, which T.30 allows only with 68) and stripes as long as the page
+(95); `no_mrc` leaves it out, and `t30_status`'s `mrc` says what a call
+sends (1 grey, 2 colour). An MRC page is a mask (bi-level, at the
+page's 200 pels an inch) that picks, pel by pel, between a background
+and a foreground: each a JPEG or a T.43 image at its own resolution
+and place, or one colour. Text over a picture keeps its edges sharp in
+the mask while the picture goes in JPEG at half the resolution.
+
+- **Sending:** a colour or grey page goes in T.44 when the remote
+  offers mode 1 (and 68 and 15) and the page has text or lines on it:
+  dark pels with a light one within 3 pels make the mask, and at least
+  0.1 % of the page must be mask (a page of few colours still goes in
+  T.43, one without text in JPEG). Each stripe of 256 lines is one of:
+  the mask alone (the foreground and background each one colour: black
+  text on white), the mask with a background JPEG at 100 pels an inch
+  (the pels under the mask filled from their neighbours), with a
+  foreground JPEG at 100 too when the text has more than one colour, or
+  a background JPEG alone at 200 when the stripe has no text. The mask
+  goes in T.85 if the remote offers 78, else in MH. The DCS sets 92, 68
+  (69 for colour), 70, 78 if the mask is T.85, and the extension bits
+  up to 92. On the test's page of text over a picture (1728 by 600 in
+  colour) the call takes 63 s against 275 s in JPEG, and the page
+  comes back at 42.6 dB against 29.6 dB, its text's edges within 1.7
+  levels against 7.5; with the mask in MH it takes 96 s.
+- **Receiving:** a DCS with any of 92 to 94 means T.44; the page is
+  decoded at its end (at most 4800 lines) and handed on as a JPEG page
+  is, in grey when every layer and colour is grey. Mode 1 is taken
+  whole: masks in MH, MR, MMR or T.85, layers in JPEG or T.43 at any
+  resolution that divides the mask's, their offsets, stripes of one,
+  two or three layers, the 4-octet lengths, and the optional segments
+  (skipped: the gamut and illuminant are the defaults). Modes 2 and up
+  (whose start of stripe differs) and JBIG2 are not.
+
+`t44.cpp` is the format (T.44 clause 9): ff d8 and the start of page
+(ff ed, "MRC" 0, version 2, mode 1, the coders, the mask's resolution,
+the width), ff d9, then each stripe's start (ff ed, "MRC" 1, the layers
+in it, the two colours in T.42's CIELAB octets, the offsets, the
+height, the mask's length) and its layers in the order mask,
+background, foreground; ff d9 ff d9 ends the page. The background and
+foreground end themselves (a JPEG at its EOI, a T.43 BCIE at ff a9),
+so `jpeg_decode()` and `t43_decode()` say how many octets they took.
+
+`t44_test` checks the start of page's octets, round trips of text over
+a picture in colour and grey with either mask (the colour page 63 KB
+against 302 KB in JPEG, the grey 16 KB against 281 KB), each kind of
+stripe (black text on white comes back exact), a page written by hand
+(an optional segment; a background JPEG at 100 pels an inch at an
+offset over its colour; an MMR mask over a T.43 foreground; a stripe of
+only a foreground) and cut-short and damaged pages. `fax_test`'s
+`T30Colour.SendsMrcPages` sends a colour and a grey page of text over
+a picture between two machines, with the mask in T.85 and in MH, and
+to a receiver without T.44 (JPEG).
+
+### Binary files (T.434)
+
+A document may carry binary files between its pages: a `T4Page` whose
+`file` holds a T.434 BINARY-DATA message (`t434_encode()` makes one of
+a `BftFile`: its name, MIME type, modification time and octets). With
+`t30_config`'s `bft` and ECM, the DIS offers BFT (bit 53), and the DCS
+of a file sets 53 (and 27); a change between files and pages sends EOM.
+The message goes as one ECM page (T.30 V.4 case a), in blocks as a
+page's coded data does, its last frame short (T.4 B.6: no pad octets),
+then PPS-MPS, -EOM or -EOP. The receiver keeps a file's octets across
+pages (case b, another sender's) and hands each whole message to
+`page_received()` as a page with `file` (several in a page: case c);
+`t434_decode()` has the files back. `t30_status`'s `bft` says a file is
+going, `files` counts them (they are not in `pages`) and
+`files_left_out` counts those the sender left out because the remote
+has no BFT or no ECM (a document of only those ends with
+`T30_ERR_INCOMPATIBLE`). An FDM from the receiver (it won't take the
+file as it is) ends the call: we have no other form of the file to
+send. A received name is the remote's: take only its last component
+before using it as a path.
+
+`t434.cpp` is the message in BER (X.690): [APPLICATION 23] holding a
+SEQUENCE of attributes for each file; we send protocol-version [28]
+(version 3), filename [0], date-and-time-of-last-modification [5],
+filesize [13], mime-media-type [32] (a high tag number) and
+data-file-content [30] as an OCTET STRING, and take those in any order
+with definite or indefinite lengths, strings in pieces, content as
+EXTERNAL, and skip every other attribute.
+
+`t434_test` checks a small file's octets, a round trip with every
+attribute (lengths of three octets), a message as other coders write
+it, the length as the octets come, and cut-short and damaged messages.
+`fax_test`'s `T30Bft.SendsFiles` sends a page, a file of 37 octets, one
+of 100000 (two blocks) and a page, to a receiver that takes files and
+to one that doesn't (both pages still go); `T30Bft.NeedsEcm` a file
+without ECM; `t38_test`'s `T38Pair.SendsFiles` files over T.38 with
+bursts of lost packets (the frames asked for again).
+
 ### Without ECM
 
 The receiver answers each post-page command (MPS, EOM, EOP) with MCF or

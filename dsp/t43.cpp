@@ -208,7 +208,7 @@ void t43_encode(const T43Image &img, const T43Options &opt, std::vector<unsigned
 }
 
 /* the BCIH's entries, then the BIE */
-s16 t43_decode(const unsigned char *data, size_t len, u32 max_rows, T43Image *img)
+s16 t43_decode(const unsigned char *data, size_t len, u32 max_rows, T43Image *img, size_t *used)
 {
 	*img = T43Image();
 	if (len < 2 || data[0] != 0xff || data[1] != T43_MAGIC)
@@ -269,9 +269,17 @@ s16 t43_decode(const unsigned char *data, size_t len, u32 max_rows, T43Image *im
 	for (s16 c = 0; c < comps; c++)
 		planes += comp_bits(*img, c);
 	JbigImage j;
-	s16 r = jbig_decode_image(data + pos, len - pos, max_rows, planes, &j, nullptr);
+	size_t bie = 0;
+	s16 r = jbig_decode_image(data + pos, len - pos, max_rows, planes, &j, &bie);
 	if (r < 0)
 		return -1;
+	if (used) {
+		/* the BIE, then (as it should be) ff a9 */
+		size_t e = pos + bie;
+		if (e + 2 <= len && data[e] == 0xff && data[e + 1] == T43_END)
+			e += 2;
+		*used = e < len ? e : len;
+	}
 	if (j.planes != planes)
 		return -1;
 	img->width = j.width;

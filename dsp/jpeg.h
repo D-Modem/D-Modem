@@ -45,8 +45,10 @@ void jpeg_encode(const JpegImage &img, const JpegOptions &opt, std::vector<unsig
 /* a baseline (or extended 8-bit Huffman, SOF1) JPEG's first frame,
    its components brought to the full size; 0 when whole, 1 when the
    data ended early (the lines so far, the rest grey), -1 when it is
-   none; at most max_rows lines */
-s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *img);
+   none; at most max_rows lines.  *used (if given): its octets, up to
+   its EOI */
+s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *img,
+		size_t *used = nullptr);
 
 /* T.42's default CIELAB (D50, L* 0 to 100, a* -85 to 85, b* -75 to 125
    in 8 bits, T.4 E.6.4) from sRGB, and back; n pels, 3 octets each */
