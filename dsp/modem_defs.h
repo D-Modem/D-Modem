@@ -166,13 +166,23 @@ enum DP_ID {
 				   caller sends (dp_sms.cpp) */
 	DP_V18      = 18,       /* V.18 text telephone automoding: the
 				   remote's mode found (or probed for),
-				   then 5-bit (Baudot) or EDT here, or
-				   V.21, V.23 or Bell 103 by their pumps */
+				   then that mode (any of the text ones
+				   below, or V.18's own) in dp_text.cpp */
 	DP_BAUDOT   = 45,       /* 5-bit (Baudot) text telephone: TTY,
 				   telex, RTTY (dp_text.cpp, its tones
 				   and rate from struct dp_text) */
 	DP_EDT      = 110,      /* EDT: V.21's channel 1 at 110 bit/s,
 				   half duplex, 7 bits even parity */
+	DP_DTMFTXT  = 118,      /* DTMF text telephone (Annex B/V.18) */
+	DP_V21TXT   = 121,      /* V.21 text telephone (Annex F/V.18: the
+				   Nordic countries', the UK's), 7 bits
+				   even parity, duplex */
+	DP_V23TXT   = 123,      /* V.23 Videotex text telephone (Annex
+				   E/V.18: Minitel, Prestel), 7 bits even
+				   parity, 1200/75 bit/s */
+	DP_B103TXT  = 203,      /* Bell 103 ASCII text telephone (Annex
+				   D/V.18), 7 bits even parity; these four
+				   not in V.250, the numbers D-Modem's */
 	DP_V8BIS    = 108,
 	DP_V22BIS   = 122,
 	DP_SINUS    = 127,      /* a test pump */
@@ -310,7 +320,8 @@ struct dp_voice {
 
 /*
  *    Text telephones (+MV18S, +MV18AM, +MBAUDOT): what the pumps of
- *    DP_V18, DP_BAUDOT and DP_EDT read through MDMPRM_TEXT
+ *    DP_V18, DP_BAUDOT, DP_EDT, DP_DTMFTXT, DP_V21TXT, DP_V23TXT and
+ *    DP_B103TXT read through MDMPRM_TEXT
  */
 struct dp_text {
 	int baud100;            /* the 5-bit mode's rate, 1/100 bit/s

@@ -2017,6 +2017,11 @@ class CoreText : public testing::TestWithParam<TextCall> {};
 TEST_P(CoreText, LineEachWay)
 {
 	const TextCall &c = GetParam();
+	if (getenv("TEXT_DEBUG")) {
+		dcore::log_set_hook([](const char *s) { fputs(s, stderr); });
+		dcore::log_level = 2;
+		dsplibs_debug_level = 2;
+	}
 	Pair p("");
 	for (int k = 0; k < 2; k++) {
 		Modem *m = k ? p.b : p.a;
@@ -2077,10 +2082,15 @@ TEST_P(CoreText, LineEachWay)
 }
 
 /* the US TTY's 5-bit mode; telex (50 bit/s, ITA2, RTTY's 170 Hz
-   shift); EDT; V.18 automoding answering a TTY, an EDT terminal, and
-   another automoding modem (which hears the caller's 5-bit probe and
-   answers in 5-bit); V.18 automoding calling a V.21, a Bell 103 and a
-   V.23 modem (their answer signals tell) */
+   shift); EDT; DTMF (a new line LF alone on the line, CR LF to the
+   DTE); the V.21 text telephones; V.18 automoding answering a TTY, an
+   EDT terminal, a DTMF one, a V.21, a Bell 103 and a V.23 (Minitel)
+   text telephone, and another automoding modem (CI, the answer tone
+   and TXP: V.18's own mode); V.18 automoding calling a V.21, a Bell
+   103 and a V.23 text telephone (their carriers tell) and a V.21, a
+   Bell 103 and a V.23 data modem (after the answer tone and our TXP
+   for V.21 and V.23; their 8N1 receivers see the parity bit, so the
+   line has only characters of even parity) */
 static const TextCall text_calls[] = {
 	{ "+MS=BAUDOT", "+MS=BAUDOT", 45, 0, "Hello 123-?\r\n",
 	  "HELLO 123-?\r\n", nullptr },
@@ -2089,26 +2099,47 @@ static const TextCall text_calls[] = {
 	  "RYRY 1/2=3+4\r\n", nullptr },
 	{ "+MS=EDT", "+MS=EDT", 110, 0, "Hello, edt!\r\n", "Hello, edt!\r\n",
 	  nullptr },
+	{ "+MS=DTMF", "+MV18S=3", 10, 0, "Hi, DTMF 42?\r\n",
+	  "Hi, DTMF 42?\r\n", nullptr },
+	{ "+MV18S=5", "+MS=V21TXT", 300, 0, "Hej, V.21 {*}\r\n",
+	  "Hej, V.21 {*}\r\n", nullptr },
 	{ "+MS=BAUDOT", "+MV18S=1;+MV18R=1", 45, 0, "GA\r\n", "GA\r\n",
 	  "+MV18R: 2" },
 	{ "+MS=EDT", "+MV18S=1;+MV18R=1", 110, 0, "Hi edt\r\n",
 	  "Hi edt\r\n", "+MV18R: 4" },
-	{ "+MS=V18", "+MS=V18;+MV18R=1", 45, 0, "HELLO\r\n", "HELLO\r\n",
-	  "+MV18R: 2" },
-	{ "+MS=V18;+MV18R=1", "+MS=21,0", 300, 0, "Hello\r\n", "Hello\r\n",
+	{ "+MS=DTMF", "+MV18S=1;+MV18R=1", 10, 0, "Hi dtmf\r\n",
+	  "Hi dtmf\r\n", "+MV18R: 3" },
+	{ "+MV18S=5", "+MV18S=1;+MV18R=1", 300, 0, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 5" },
+	{ "+MV18S=7", "+MV18S=1;+MV18R=1", 300, 0, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 7" },
+	{ "+MV18S=6", "+MV18S=1;+MV18R=1", 1200, 75, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 6" },
+	{ "+MS=V18", "+MS=V18;+MV18R=1", 300, 0, "Hello, V.18\r\n",
+	  "Hello, V.18\r\n", "+MV18R: 1" },
+	{ "+MS=V18;+MV18R=1", "+MV18S=5", 300, 0, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 5" },
+	{ "+MS=V18;+MV18R=1", "+MV18S=7", 300, 0, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 7" },
+	{ "+MS=V18;+MV18R=1", "+MV18S=6", 1200, 75, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 6" },
+	{ "+MS=V18;+MV18R=1", "+MS=21,0", 300, 0, "Hello\n", "Hello\n",
 	  "+MV18R: 5" },
-	{ "+MS=V18;+MV18R=1", "+MS=103,0", 300, 0, "Hello\r\n",
-	  "Hello\r\n", "+MV18R: 7" },
-	{ "+MS=V18;+MV18R=1", "+MS=V23C,0", 1200, 75, "Hello\r\n",
-	  "Hello\r\n", "+MV18R: 6" },
+	{ "+MS=V18;+MV18R=1", "+MS=103,0", 300, 0, "Hello\n", "Hello\n",
+	  "+MV18R: 7" },
+	{ "+MS=V18;+MV18R=1", "+MS=V23C,0", 1200, 75, "Hello\n",
+	  "Hello\n", "+MV18R: 6" },
 };
 
 /* each case's name */
 static std::string text_name(const testing::TestParamInfo<TextCall> &i)
 {
 	static const char *names[] = {
-		"Tty", "Telex", "Edt", "V18Tty", "V18Edt", "V18V18",
-		"V18CallsV21", "V18CallsBell103", "V18CallsV23",
+		"Tty", "Telex", "Edt", "Dtmf", "V21Text", "V18Tty", "V18Edt",
+		"V18Dtmf", "V18AnswersV21", "V18AnswersBell103",
+		"V18AnswersMinitel", "V18V18", "V18CallsV21",
+		"V18CallsBell103", "V18CallsMinitel", "V18CallsV21Modem",
+		"V18CallsBell103Modem", "V18CallsV23Modem",
 	};
 	return names[i.index];
 }
