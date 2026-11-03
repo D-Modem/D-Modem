@@ -262,6 +262,12 @@ dmodem_test_exe(dmodem_test dmodem_test.cpp
 target_include_directories(dmodem_test PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 target_link_libraries(dmodem_test PRIVATE dmodem)
 dmodem_gtest(dmodem_test LABELS quick)
+# a point of sale transaction (SDLC frames through V.80) over V.29
+# FastPOS and V.22 fast connect
+dmodem_test_exe(pos_test pos_test.cpp)
+target_include_directories(pos_test PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
+target_link_libraries(pos_test PRIVATE dmodem)
+dmodem_gtest(pos_test LABELS quick)
 dmodem_test_exe(dmodem_fax_test dmodem_fax_test.cpp fax_docs.cpp)
 target_link_libraries(dmodem_fax_test PRIVATE dmodem)
 dmodem_gtest(dmodem_fax_test LABELS quick)

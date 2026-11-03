@@ -57,6 +57,7 @@ static DpDriver pump_table[] = {
 	{ DP_V26BIS, "V26bis", "226", nullptr },
 	{ DP_V27TER, "V27ter", "27", nullptr },
 	{ DP_V29, "V29", "29", nullptr },
+	{ DP_V29FP, "V29FastPOS", "229", nullptr },
 	{ DP_V22BIS, "V22bis", "122", nullptr },
 	{ DP_V32, "V32", "32", nullptr },
 	{ DP_V32BIS, "V32bis", "132", nullptr },

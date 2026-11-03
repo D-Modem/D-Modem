@@ -43,6 +43,8 @@ measurements, and test lists.
     modems start, the first part of voice and data together (V.70)
   - [V.61](dsp/v61.md): voice and data together on one analogue
     carrier (ASVD)
+  - [Point of sale](dsp/fastpos.md): fast connect and V.29 FastPOS, the
+    short start-ups of card terminals calling their host
   - [Fax](dsp/fax.md): fax modem classes 1, 2 and 2.0, a built-in fax
     machine, and fax over the internet (T.38)
 - [The data link layer](link.md): error correction and compression

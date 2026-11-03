@@ -111,6 +111,17 @@ enum S_REGISTER {
 						    CARRIER) */
 	SREG_SIM_CARRIER                  = 48,  /* 1: V.13's simulated
 						    carrier control */
+	SREG_FAST_CONNECT                 = 49,  /* point of sale fast
+						    connect: bit 0 the short
+						    handshake of V.22,
+						    V.22bis and Bell 212A,
+						    bit 1 HDLC flags in it
+						    for the scrambled ones
+						    (dp_v22.cpp) */
+	SREG_FAST_ANS_TONE                = 50,  /* the answer tone of a
+						    fast connect or V.29
+						    FastPOS answerer, 10 ms
+						    (0: 400 ms) */
 	SREG_DEFAULT_SETTING              = 161, /* ATY */
 };
 
@@ -140,6 +151,10 @@ enum DP_ID {
 				   2400 bit/s duplex */
 	DP_V29      = 29,       /* V.29 on a 4-wire leased line, 9600 to
 				   4800 bit/s duplex */
+	DP_V29FP    = 229,      /* V.29 FastPOS: V.29 half duplex on the
+				   switched network, for point of sale
+				   terminals (dp_v29fp.cpp); not in V.250,
+				   the number is D-Modem's */
 	DP_V33      = 33,       /* V.33 on a 4-wire leased line, 14400 and
 				   12000 bit/s duplex */
 	DP_V22      = 22,

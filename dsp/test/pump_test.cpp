@@ -188,6 +188,71 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	   more than its resampler kept at first */
 	Pumps{ "v21_3000ppm_long", line(21, 20, 60, 9600, 0.5f, 3000) }), name);
 
+/* c with point of sale fast connect: S49=s49 (bit 0 the short
+   handshake, bit 1 HDLC flags in it) and S50=ans10 (the answer tone, 10
+   ms) on both sides */
+static LoopbackConfig fast(LoopbackConfig c, int s49, int ans10 = 0)
+{
+	c.sregs = { { SREG_FAST_CONNECT, s49 }, { SREG_FAST_ANS_TONE, ans10 } };
+	return c;
+}
+
+struct FastCase {
+	const char *name;
+	LoopbackConfig cfg;
+	double within;          /* s from the answerer's start, at most */
+};
+
+class FastConnect : public testing::TestWithParam<FastCase> {};
+
+/* both sides connected within the case's time, with a bit error rate
+   of 1e-3 at most */
+TEST_P(FastConnect, Connects)
+{
+	const FastCase &fc = GetParam();
+	LoopbackResult r = loopback_run(fc.cfg);
+
+	EXPECT_FALSE(r.dp_failed) << "a pump ended with an error";
+	for (int k = 0; k < 2; k++) {
+		const char *who = k ? "answerer" : "caller";
+		EXPECT_TRUE(r.side[k].ok()) << r.side[k].text(who);
+		EXPECT_LE(r.side[k].connect_s, fc.within) << who;
+	}
+	printf("caller connected at %.2f s, answerer at %.2f s\n",
+	       r.side[0].connect_s, r.side[1].connect_s);
+}
+
+/* (see name()) */
+static std::string fast_name(const testing::TestParamInfo<FastCase> &i)
+{
+	return i.param.name;
+}
+
+/* V.22 (22), V.22bis (122) and Bell 212A (212) with S49: their normal
+   handshakes take 2.5 to 4 s from the answer, the short one under 1 s
+   (V.22bis 1.6 s); with HDLC flags for the scrambled ones; on noisy and
+   slow lines, at 8000 Hz, with a 300 ppm clock offset; and a longer
+   answer tone (S50=70) */
+INSTANTIATE_TEST_SUITE_P(Pos, FastConnect, testing::Values(
+	FastCase{ "v22", fast(line(22, 30, 10), 1), 1.0 },
+	FastCase{ "v22_flags", fast(line(22, 30, 10), 3), 1.0 },
+	FastCase{ "v22_snr10", fast(line(22, 10, 10), 1), 1.0 },
+	FastCase{ "v22_flags_snr10", fast(line(22, 10, 10), 3), 1.0 },
+	FastCase{ "v22_8000", fast(line(22, 20, 10, 8000), 3), 1.0 },
+	FastCase{ "v22_gain005_300ppm",
+		  fast(line(22, 20, 10, 9600, 0.05f, 300), 1), 1.0 },
+	FastCase{ "v22_echo6",
+		  fast(line(22, 20, 10, 9600, 0.5f, 0, -6), 3), 1.0 },
+	FastCase{ "v22_ans700", fast(line(22, 30, 10), 1, 70), 1.3 },
+	FastCase{ "bell212", fast(line(212, 30, 10), 1), 1.0 },
+	FastCase{ "bell212_flags", fast(line(212, 15, 10), 3), 1.0 },
+	FastCase{ "v22bis", fast(line(122, 30, 15), 1), 1.8 },
+	FastCase{ "v22bis_snr20", fast(line(122, 20, 15), 1), 1.8 },
+	FastCase{ "v22bis_8000", fast(line(122, 25, 15, 8000), 1), 1.8 },
+	FastCase{ "v22bis_gain2_m300ppm",
+		  fast(line(122, 25, 15, 9600, 2, -300), 1), 1.8 }),
+	fast_name);
+
 /* V.32terbo's rate follows the line: 19200 bit/s at 40 dB of SNR,
    16800 at 29 dB, V.32bis's 14400 at 25 dB; each without errors */
 TEST(V32Terbo, Rates)

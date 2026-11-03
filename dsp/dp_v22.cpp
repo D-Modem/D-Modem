@@ -12,6 +12,17 @@
  *    01 point of each quadrant; dibit 00 -> +90, 01 -> 0, 10 -> +180,
  *    11 -> +270 degrees.
  *
+ *    Fast connect (S49 bit 0, docs/dsp/fastpos.md): the point of sale
+ *    terminals' short handshake, which no Recommendation describes (V.22
+ *    FastConnect is Hypercom's, a de facto one).  The answerer sends a
+ *    short answer tone (S50); the caller, whose call progress heard
+ *    300 ms of it, sends scrambled ones at once (V.22, Bell 212A) or S1
+ *    once it hears the unscrambled ones (V.22bis); either side goes on
+ *    after 50 ms of the other's scrambled ones, and data begins 150 ms
+ *    later.  With S49 bit 1 each side sends HDLC flags, scrambled, for
+ *    its scrambled ones at 1200 bit/s (what some point of sale hosts
+ *    send and expect); the receivers take either.
+ *
  *    Transmitter: QamTx (root raised cosine pulses on our carrier).
  *    Receiver: band pass, down conversion, root raised cosine matched
  *    filter, AGC, cubic interpolator driven by a Gardner timing loop,
@@ -45,6 +56,17 @@ namespace dsp {
 
 #define MS2SYM(ms) (static_cast<s32>(ms) * V22_BAUD / 1000)
 
+/* fast connect (S49): the remote's scrambled ones (or flags) heard this
+   long, then this much more of ours before the data; the caller's
+   unscrambled ones before its S1 (V.22bis), and the scrambled ones at
+   1200 bit/s that each V.22bis side sends before 2400; the answer tone
+   by default (S50 0) */
+#define FAST_SB1_MS     50
+#define FAST_DATA_MS    150
+#define FAST_USB1_MS    50
+#define FAST_BIS_SB1_MS 250
+#define FAST_ANS_MS     400
+
 enum v22_tx {
 	TX_SILENCE,
 	TX_ANSTONE,
@@ -52,6 +74,8 @@ enum v22_tx {
 	TX_S1,          /* unscrambled 00/11 dibits: V.22bis capability */
 	TX_SB1_1200,    /* scrambled binary ones at 1200 bit/s */
 	TX_SB1_2400,    /* scrambled binary ones at 2400 bit/s */
+	TX_FLAGS,       /* scrambled HDLC flags at 1200 bit/s (fast
+			   connect, S49 bit 1) */
 	TX_DATA,
 };
 
@@ -89,12 +113,17 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	   sends one) */
 	Bell103Detect bell;
 	float sps;              /* samples per symbol */
+	s16 fast;               /* the short handshake (S49 bit 0) */
+	s16 flags_hs;           /* HDLC flags for its scrambled ones at
+				   1200 bit/s (S49 bit 1) */
+	s32 ans_ms;             /* the answer tone's length, ms */
 
 	/* transmitter */
 	enum v22_tx tx_mode;
 	s32 tx_rate;
 	s16 tx_quad;
 	s16 tx_s1_phase;
+	s16 tx_flag_bit;        /* the next bit of the flag (TX_FLAGS) */
 	V22Scrambler tx_scr;
 	QamTx tx;               /* on our carrier (1200 Hz calling, 2400 Hz
 				   answering) */
@@ -130,6 +159,9 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 
 	/* pattern detectors */
 	s32 run_usb1, run_s1, run_sb1_12, run_sb1_24;
+	u8 rx_byte12;           /* the last 8 bits of the 1200 bit/s path */
+	s32 run_flags12;        /* HDLC flags in a row on it */
+	s16 since_flag12;       /* its bits since the last flag */
 	s16 last_dibit;
 	s16 dq1, dq2;
 	s32 run_periodic;       /* tone like (period 1 or 2) input */
@@ -156,6 +188,12 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	void rx_sample(float x);
 	void set_rx_rate(s32 rate);
 	void set_tx(enum v22_tx mode);
+	/* the 1200 bit/s scrambled ones (or flags) to send */
+	enum v22_tx sb1_mode() const
+	{
+		return flags_hs ? TX_FLAGS : TX_SB1_1200;
+	}
+	bool remote_sb1(s32 sym) const;
 	s16 connect();
 	s16 handshake();
 	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
@@ -233,6 +271,14 @@ cplx V22Pump::tx_symbol()
 	case TX_SB1_1200:
 		n = 2;
 		break;
+	case TX_FLAGS:
+		/* 01111110, the first bit first */
+		n = 2;
+		for (i = 0; i < n; i++) {
+			bits[i] = tx_flag_bit == 0 || tx_flag_bit == 7 ? 0 : 1;
+			tx_flag_bit = (tx_flag_bit + 1) & 7;
+		}
+		break;
 	case TX_SB1_2400:
 		n = 4;
 		break;
@@ -303,7 +349,7 @@ void V22Pump::rx_bits(s16 dquad, s16 q34_16, s16 dq_raw)
 {
 	s16 dibit = quad2dibit[dquad], raw = quad2dibit[dq_raw];
 	s16 b0 = dibit >> 1, b1 = dibit & 1;
-	s16 ones12, ones24;
+	s16 ones12, ones24, i;
 	u8 bits[4];
 
 	/* raw (unscrambled) patterns, from the phase changes themselves: S1
@@ -324,6 +370,15 @@ void V22Pump::rx_bits(s16 dquad, s16 q34_16, s16 dq_raw)
 	bits[1] = rx_scr12.descramble(b1);
 	ones12 = bits[0] & bits[1];
 	run_sb1_12 = ones12 ? run_sb1_12 + 1 : 0;
+	/* HDLC flags (fast connect's handshake) on it, a flag every 8 bits */
+	for (i = 0; i < 2; i++) {
+		rx_byte12 = static_cast<u8>(rx_byte12 >> 1 | bits[i] << 7);
+		if (rx_byte12 == 0x7E) {
+			run_flags12 = since_flag12 == 7 ? run_flags12 + 1 : 1;
+			since_flag12 = 0;
+		} else if (++since_flag12 > 8)
+			run_flags12 = 0;
+	}
 
 	/* 2400 bit/s path */
 	{
@@ -571,6 +626,16 @@ void V22Pump::set_tx(enum v22_tx mode)
 		tx_rate = 1200;
 }
 
+/* the remote's scrambled ones at 1200 bit/s, or its HDLC flags, for sym
+   symbols in a row */
+bool V22Pump::remote_sb1(s32 sym) const
+{
+	/* (unscrambled ones descramble as ones too: they are not, their
+	   phase steps alike) */
+	return (run_sb1_12 >= sym || run_flags12 * 4 >= sym) &&
+		run_usb1 < sym;
+}
+
 /* to data: rates to the core, DPSTAT_CONNECT */
 s16 V22Pump::connect()
 {
@@ -597,17 +662,24 @@ s16 V22Pump::handshake()
 		break;
 	case A_ANSTONE:
 		/* a Bell 212A caller answers the tone with scrambled ones
-		   right away and expects the same back */
-		if (run_sb1_12 >= MS2SYM(100)) {
+		   right away and expects the same back (fast connect: a
+		   V.22 caller too, flags or ones, after 50 ms of them) */
+		if (fast && !bis && remote_sb1(MS2SYM(FAST_SB1_MS))) {
+			set_state(A_V22_SB1);
+			set_tx(sb1_mode());
+		} else if (run_sb1_12 >= MS2SYM(100)) {
 			set_state(A_V22_SB1);
 			set_tx(TX_SB1_1200);
-		} else if (ms >= ANS_TONE_MS) {
+		} else if (ms >= ans_ms) {
 			set_state(A_GAP);
 			set_tx(TX_SILENCE);
 		}
 		break;
 	case A_GAP:
-		if (ms >= ANS_GAP_MS) {
+		if (fast && !bis && remote_sb1(MS2SYM(FAST_SB1_MS))) {
+			set_state(A_V22_SB1);
+			set_tx(sb1_mode());
+		} else if (ms >= ANS_GAP_MS) {
 			set_state(A_USB1);
 			set_tx(TX_USB1);
 		}
@@ -619,9 +691,10 @@ s16 V22Pump::handshake()
 			s1_seen = total;
 			set_state(A_S1);
 			set_tx(TX_S1);
-		} else if (run_sb1_12 >= MS2SYM(270)) {
+		} else if (remote_sb1(MS2SYM(fast && !bis ? FAST_SB1_MS :
+					      270))) {
 			set_state(A_V22_SB1);
-			set_tx(TX_SB1_1200);
+			set_tx(fast ? sb1_mode() : TX_SB1_1200);
 		} else if (automode && bell.found()) {
 			DSP_DBG("%s: Bell 103 caller, falling back to it\n",
 				mode_name());
@@ -641,7 +714,7 @@ s16 V22Pump::handshake()
 		}
 		break;
 	case A_SB1_1200:
-		if (ms >= 500) {
+		if (ms >= (fast ? FAST_BIS_SB1_MS : 500)) {
 			set_state(A_SB1_2400);
 			set_tx(TX_SB1_2400);
 		}
@@ -651,13 +724,13 @@ s16 V22Pump::handshake()
 			set_state(V22_WAIT_RX);
 		break;
 	case A_V22_SB1:
-		if (ms >= 765)
+		if (ms >= (fast ? FAST_DATA_MS : 765))
 			return connect();
 		break;
 
 	/* calling modem */
 	case C_WAIT_USB1:
-		if (run_usb1 >= MS2SYM(155) &&
+		if (run_usb1 >= MS2SYM(fast ? FAST_USB1_MS : 155) &&
 		    fabsf(rot_avg + static_cast<float>(M_PI) / 2) < 0.1f) {
 			DSP_DBG("%s: unscrambled ones received\n", mode_name());
 			set_state(C_GAP);
@@ -670,7 +743,7 @@ s16 V22Pump::handshake()
 		}
 		break;
 	case C_GAP:
-		if (ms >= 456) {
+		if (fast || ms >= 456) {
 			if (bis) {
 				set_state(C_S1);
 				set_tx(TX_S1);
@@ -693,12 +766,16 @@ s16 V22Pump::handshake()
 			s1_seen = total;
 		}
 		if (remote_bis) {
-			if (total - s1_seen >= ms2samples(600, srate)) {
+			if (total - s1_seen >=
+			    ms2samples(fast ? FAST_BIS_SB1_MS + 100 : 600,
+				       srate)) {
 				set_state(C_SB1_2400);
 				set_tx(TX_SB1_2400);
 			}
 		} else if (run_sb1_12 >= MS2SYM(270)) {
-			/* V.22 answerer: stay at 1200 bit/s */
+			/* V.22 answerer: stay at 1200 bit/s (fast connect too:
+			   the answerer's unscrambled ones, which turn into its
+			   S1, descramble as ones as well) */
 			sb1_seen = 1;
 			sb1_at = total;
 			set_state(C_V22_SB1);
@@ -712,11 +789,13 @@ s16 V22Pump::handshake()
 		/* 6.3.1.2/V.22: data 765 ms after 270 ms of the answerer's
 		   scrambled ones (an answerer that waits for ours to time its
 		   own drops the call when data come sooner) */
-		if (!sb1_seen && run_sb1_12 >= MS2SYM(270)) {
+		if (!sb1_seen &&
+		    remote_sb1(MS2SYM(fast ? FAST_SB1_MS : 270))) {
 			sb1_seen = 1;
 			sb1_at = total;
 		}
-		if (sb1_seen && total - sb1_at >= ms2samples(765, srate))
+		if (sb1_seen && total - sb1_at >=
+		    ms2samples(fast ? FAST_DATA_MS : 765, srate))
 			return connect();
 		/* a Bell 103 answerer only keeps its 2225 Hz mark */
 		if (dp.id == DP_B212 && !sb1_seen && ms >= 1500) {
@@ -746,7 +825,7 @@ s16 V22Pump::handshake()
 	}
 
 	/* scrambled ones seen: safe to train the equalizer and PLL */
-	if (run_sb1_12 >= 10 || run_sb1_24 >= 10)
+	if (run_sb1_12 >= 10 || run_sb1_24 >= 10 || run_flags12 >= 3)
 		eq_train = 1;
 
 	/* switch the receiver to 16 points once scrambled ones at 2400
@@ -787,6 +866,11 @@ s16 V22Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	pump_setup(m, srate_, caller_);
 	bis = !(id == DP_V22 || id == DP_B212);
 	sps = static_cast<float>(srate_) / V22_BAUD;
+	i = static_cast<s16>(modem_get_sreg(m, SREG_FAST_CONNECT));
+	fast = i & 1;
+	flags_hs = fast && (i & 2);
+	i = static_cast<s16>(modem_get_sreg(m, SREG_FAST_ANS_TONE));
+	ans_ms = !fast ? ANS_TONE_MS : i > 0 ? 10 * i : FAST_ANS_MS;
 
 	/* a pass band rms of DSP_TX_AMPLITUDE / sqrt(2) */
 	tx.init(srate_, caller_ ? 1200 : 2400, V22_BAUD, V22_ALPHA, V22_SPAN,
@@ -823,16 +907,20 @@ s16 V22Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 		state = A_GAP;
 	} else if (!caller_)
 		state = A_SILENCE;
-	else if (id == DP_B212 && !(rt && rt->answer_tone == ANSTONE_2100)) {
+	else if ((id == DP_B212 &&
+		  !(rt && rt->answer_tone == ANSTONE_2100)) || (fast && !bis)) {
 		/* Bell 212A: answer the 2225 Hz tone with scrambled ones (an
-		   ITU answer tone: the V.22 handshake, the same modulation) */
+		   ITU answer tone: the V.22 handshake, the same modulation);
+		   fast connect's V.22 the answer tone too, at once */
 		state = C_WAIT_USB1;
 		set_state(C_V22_SB1);
-		set_tx(TX_SB1_1200);
+		set_tx(fast ? sb1_mode() : TX_SB1_1200);
 	} else
 		state = C_WAIT_USB1;
-	DSP_DBG("%s: create %s (dp %d), srate %" PRId32 "\n", mode_name(),
-		caller_ ? "caller" : "answerer", id, srate_);
+	DSP_DBG("%s: create %s (dp %d), srate %" PRId32 "%s\n", mode_name(),
+		caller_ ? "caller" : "answerer", id, srate_,
+		!fast ? "" : flags_hs ? ", fast connect with flags" :
+		", fast connect");
 	return 0;
 }
 

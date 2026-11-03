@@ -263,11 +263,18 @@ long modem_set_param(struct modem *m, unsigned name, int val)
 	return 0;
 }
 
-/* the S-registers the pumps read: 50 s for the handshake, 1.4 s of
-   carrier loss, 95 ms DTMF and the dial timings; 0 for all others
-   (blind dialling among them) */
+/* the run's settings (loopback_run()'s, while it runs) */
+static const LoopbackConfig *run_cfg;
+
+/* the S-registers the pumps read: the run's own (LoopbackConfig::sregs),
+   else 50 s for the handshake, 1.4 s of carrier loss, 95 ms DTMF and the
+   dial timings; 0 for all others (blind dialling among them) */
 int modem_get_sreg(struct modem *, unsigned int num)
 {
+	if (run_cfg)
+		for (const auto &r : run_cfg->sregs)
+			if ((unsigned)r.first == num)
+				return r.second;
 	switch (num) {
 	case SREG_DIAL_TONE_WAIT_TIME:
 		return 5;
@@ -811,6 +818,7 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 		registered = true;
 	}
 	block_at = 0;
+	run_cfg = &cfg;
 	cut_at = cfg.cut_s > 0 ? (long)(cfg.cut_s * cfg.srate) : -1;
 	line.init(cfg, n);
 	memset(in, 0, sizeof(in));
@@ -851,6 +859,7 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 		std::vector<u8>().swap(s.received);
 		std::vector<s16>().swap(s.ear);
 	}
+	run_cfg = nullptr;
 	return res;
 }
 
