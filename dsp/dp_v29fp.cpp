@@ -139,11 +139,13 @@ struct V29fpPump : PumpBase<V29fpPump, fp_state> {
 	const char *tag() const { return "V29FP"; }
 	/* in data mode (no handshake timeout) */
 	bool in_data() const { return state == FP_DATA; }
+	/* frees the receiver */
 	~V29fpPump() override
 	{
 		if (rx_ready)
 			rx.release();
 	}
+	/* cnt samples in and out, through sample() */
 	s16 process(void *in, void *out, s32 cnt) override
 	{
 		return pump_loop(in, out, cnt);
