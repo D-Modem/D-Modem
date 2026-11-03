@@ -160,8 +160,9 @@ try:
     nl = Modem("1001", "dmodem40", "-nolink", FAKE_APPLE_NOLINK="1")
     check("a line side that doesn't answer: said", nl.expect_log(b"line side does not answer", 5))
     check("its streams found",
-          nl.expect_log(b"interfaces: line 0 (interrupt 81), DAA 1, audio control 2, "
-                        b"OUT 3.1 (02, 40), IN 4.1 (83, 40)", 5))
+          nl.expect_log(b"interfaces: line 0 (interrupt 81, 64), DAA 1, audio control 2, "
+                        b"OUT 4.1 (03, 24), IN 3.1 (82, 24)", 5))
+    check("no notification overflowed", not nl.expect_log(b"Overflow", 0.2))
     check("its phone cord plugged in", nl.expect_log(b"phone cord is plugged in", 5))
     nl.p.terminate()
     nl.p.wait(5)

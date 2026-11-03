@@ -13,7 +13,7 @@
  *    10.4.11, whose symbols name their functions); the code is ours.
  *
  *    - Its samples are USB audio (class 1): an audio streaming interface
- *      each way (Apple's driver takes interfaces 3, OUT, and 4, IN), an
+ *      each way (interfaces 3, IN, and 4, OUT, on a real one), an
  *      isochronous endpoint in alternate setting 1, a format type I
  *      descriptor with its rates; the rate set on each endpoint with the
  *      audio class's SET_CUR (SAMPLING_FREQ_CONTROL), as
@@ -270,8 +270,10 @@ bool UsbLine::apple_find_streams(u32 rate)
 		ep_intr_ = any_intr;
 		intr_max = any_intr_max;
 	}
+	/* (a whole packet asked for, as Apple's driver does: less, and a
+	   notification longer than that is an overflow) */
 	intr_len_ = static_cast<s16>(std::min<s16>(
-		intr_max > 0 ? intr_max : 16, static_cast<s16>(sizeof(intr_buf_))));
+		intr_max > 0 ? intr_max : 64, static_cast<s16>(sizeof(intr_buf_))));
 	for (bool in : { false, true }) {
 		if (in ? in_found : out_found)
 			continue;
@@ -293,8 +295,8 @@ bool UsbLine::apple_find_streams(u32 rate)
 		ERR("%s: no interrupt endpoint (its line's notifications)\n", name_);
 		return false;
 	}
-	DBG("interfaces: line %d (interrupt %02x), DAA %d, audio control %d, "
-	    "OUT %d.%d (%02x, %d), IN %d.%d (%02x, %d)\n", apple_dlc_, ep_intr_,
+	DBG("interfaces: line %d (interrupt %02x, %d), DAA %d, audio control %d, "
+	    "OUT %d.%d (%02x, %d), IN %d.%d (%02x, %d)\n", apple_dlc_, ep_intr_, intr_len_,
 	    apple_mgmt_, apple_ac_, apple_out_if_, apple_out_alt_, iso_.ep_out,
 	    iso_.max_out, apple_in_if_, apple_in_alt_, iso_.ep_in, iso_.max_in);
 	return true;
@@ -422,17 +424,24 @@ bool UsbLine::apple_read(u8 reg, u8 *value)
 	if (!apple_cmd(DAA_READ, reg, 0))
 		return false;
 	for (int i = 0; i < RESPONSE_TRIES; i++) {
-		u8 n[16];
+		u8 n[sizeof(intr_buf_)];
 		int got = 0;
-		int err = libusb_interrupt_transfer(h_, ep_intr_, n,
-						    static_cast<int>(sizeof(n)),
+		int err = libusb_interrupt_transfer(h_, ep_intr_, n, intr_len_,
 						    &got, RESPONSE_MS);
 		if (err == LIBUSB_ERROR_TIMEOUT)
 			break;
-		if (err < 0) {
+		if (err == LIBUSB_ERROR_NO_DEVICE) {
 			ERR("Apple USB Modem: its notifications: %s\n",
 			    libusb_strerror(err));
 			return false;
+		}
+		if (err < 0) {
+			/* (the response asked for all the same: one left
+			   unread holds up the device's other requests) */
+			DBG("Apple USB Modem: its notifications: %s (%d of %d "
+			    "octets); the response asked for anyway\n",
+			    libusb_strerror(err), got, intr_len_);
+			break;
 		}
 		if (got >= 4 && n[1] == N_RESPONSE && (n[2] & 1))
 			break;

@@ -11,8 +11,8 @@
  *    The modem is as usb_apple.cpp has it (docs/apple-usb-modem-details.md): USB
  *    05AC:1401; interface 0 CDC's Direct Line Control with an interrupt
  *    IN endpoint (0x81) of 8-octet notifications, 1 the vendor interface
- *    of the DAA's commands, 2 audio control, 3 and 4 audio streaming OUT
- *    (0x02) and IN (0x83) in alternate setting 1 (16-bit mono, the rates
+ *    of the DAA's commands, 2 audio control, 3 and 4 audio streaming IN
+ *    (0x82) and OUT (0x03) in alternate setting 1 (16-bit mono, the rates
  *    of a format type I descriptor), 5 DFU.
  *
  *    FAKE_APPLE_SOCKET is the exchange's socket of the line.  Opening the
@@ -63,14 +63,17 @@ struct libusb_device_handle {
 
 namespace {
 
-const uint8_t EP_NOTIFY = 0x81, EP_OUT = 0x02, EP_IN = 0x83;
-const uint16_t MAX_PACKET = 40;
+/* (as a real one has them: its interrupt endpoint's packet a guess,
+   its notifications sent whole, so a read of less overflows) */
+const uint8_t EP_NOTIFY = 0x81, EP_IN = 0x82, EP_OUT = 0x03;
+const uint16_t NOTIFY_PACKET = 64;
+const uint16_t MAX_PACKET = 24;
 const int RING_LEVEL = 8000;
 /* the ring's end: no ring signal for this many of the line's samples */
 const unsigned RING_QUIET = 1500;
 
 /* (2 audio control, 5 DFU: nothing of theirs is asked) */
-const uint8_t IF_DLC = 0, IF_MGMT = 1, IF_OUT = 3, IF_IN = 4, N_IF = 6;
+const uint8_t IF_DLC = 0, IF_MGMT = 1, IF_IN = 3, IF_OUT = 4, N_IF = 6;
 
 /* CDC's requests and notifications */
 enum {
@@ -81,7 +84,7 @@ const uint8_t N_RESPONSE = 0x02, N_RING_DETECT = 0x03, N_LINE = 0x29;
 /* the audio class's SET_CUR */
 const uint8_t SET_CUR = 0x01;
 
-const unsigned RATES[] = { 7200, 8000, 8229, 8400, 9000, 9600, 16000 };
+const unsigned RATES[] = { 7200, 8000, 8229, 8400, 9000, 9600, 10286 };
 
 libusb_device the_device;
 
@@ -248,10 +251,13 @@ void run()
 			fake.intr_q.pop_front();
 			auto b = fake.notes.front();
 			fake.notes.pop_front();
-			int n = t->length < 8 ? t->length : 8;
-			memcpy(t->buffer, b.data(), (size_t)n);
+			/* (a whole packet: less asked for overflows) */
+			int n = t->length < NOTIFY_PACKET ? t->length : NOTIFY_PACKET;
+			memset(t->buffer, 0, (size_t)n);
+			memcpy(t->buffer, b.data(), (size_t)(n < 8 ? n : 8));
 			t->actual_length = n;
-			done(t, LIBUSB_TRANSFER_COMPLETED);
+			done(t, t->length < NOTIFY_PACKET ? LIBUSB_TRANSFER_OVERFLOW :
+			     LIBUSB_TRANSFER_COMPLETED);
 			more = true;
 		}
 		if (!fake.in_q.empty() && streaming()) {
@@ -309,7 +315,7 @@ void make_config()
 						  (uint8_t)(r >> 16) });
 	ep_notify.bEndpointAddress = EP_NOTIFY;
 	ep_notify.bmAttributes = LIBUSB_TRANSFER_TYPE_INTERRUPT;
-	ep_notify.wMaxPacketSize = 16;
+	ep_notify.wMaxPacketSize = NOTIFY_PACKET;
 	ep_notify.bInterval = 8;
 	ep_out.bEndpointAddress = EP_OUT;
 	ep_out.bmAttributes = LIBUSB_TRANSFER_TYPE_ISOCHRONOUS | 0x04;   /* asynchronous */
@@ -671,7 +677,8 @@ int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *,
 }
 
 /* a notification (the oldest queued), at once: LIBUSB_ERROR_TIMEOUT if
-   none (the time not waited) */
+   none (the time not waited), LIBUSB_ERROR_OVERFLOW if less than a
+   packet is asked for */
 int LIBUSB_CALL libusb_interrupt_transfer(libusb_device_handle *,
 					  unsigned char endpoint,
 					  unsigned char *data, int length,
@@ -686,11 +693,14 @@ int LIBUSB_CALL libusb_interrupt_transfer(libusb_device_handle *,
 		return LIBUSB_ERROR_TIMEOUT;
 	auto b = fake.notes.front();
 	fake.notes.pop_front();
-	int n = length < 8 ? length : 8;
-	memcpy(data, b.data(), (size_t)n);
+	/* (a whole packet: less asked for overflows, the notification
+	   lost, as a real device's would be) */
+	int n = length < NOTIFY_PACKET ? length : NOTIFY_PACKET;
+	memset(data, 0, (size_t)n);
+	memcpy(data, b.data(), (size_t)(n < 8 ? n : 8));
 	if (transferred)
 		*transferred = n;
-	return 0;
+	return length < NOTIFY_PACKET ? LIBUSB_ERROR_OVERFLOW : 0;
 }
 
 /* a transfer of iso_packets packets, zeroed */
