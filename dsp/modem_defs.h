@@ -273,6 +273,8 @@ struct dp_stats {
 	int pcm_alaw;
 	float digital_loss;
 	int robbed_bits;
+	int cleardown;                  /* the remote ended the call with
+					   V.34's cleardown (11.7/V.34) */
 };
 
 /*

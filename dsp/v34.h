@@ -54,6 +54,22 @@ struct v34_rate {
 	s16 b, m_min, m_exp;
 };
 extern const struct v34_rate v34_rates[V34_NBAUDS][14];
+/* and with the auxiliary channel: N * 2400 + 200 bit/s in all */
+extern const struct v34_rate v34_aux_rates[V34_NBAUDS][14];
+/* the auxiliary channel's bits per data frame W (8.3/V.34) */
+static inline s16 v34_aux_w(s16 baud)
+{
+	return baud == V34_BAUD_2743 || baud == V34_BAUD_3429 ? 7 : 8;
+}
+
+/* the auxiliary channel's 200 bit/s (8.3/V.34; unscrambled): get() the
+   next bit to send, put() one received; with no get(), ones (an idle
+   clear secondary channel, Annex A.3.1.1), with no put() nothing */
+struct V34Aux {
+	void *ctx = nullptr;
+	s16 (*get)(void *ctx) = nullptr;
+	void (*put)(void *ctx, s16 bit) = nullptr;
+};
 extern const signed char v34_quarter[416][2];
 extern const cplx v34_trn4[4];
 cplx v34_pp(s32 i);
@@ -129,6 +145,8 @@ struct V34Params {
 	s16 K, q, M;            /* shell mapping bits, uncoded bits, rings */
 	s16 J, P, r;            /* data frames per superframe, mapping frames
 				   per data frame, high frames among them */
+	s16 aux, W;             /* the auxiliary channel is on: its bits per
+				   data frame */
 	float g;                /* half the point spacing, in units of the
 				   training points */
 	s16 states;             /* of the trellis code: 16, 32 or 64 */
@@ -137,7 +155,7 @@ struct V34Params {
 	s16 precode, w;         /* h is not zero; c(n) in multiples of
 				   2^w */
 	float theta;            /* non-linear encoder (9.7/V.34): 0 or
-				   0.3125, transmitter only */
+				   0.3125 (the receiver undoes it) */
 	float nl_gain;          /* after it: the power without it */
 	double pw_;             /* mean power of the points (integers) */
 	u64 g2[V34_G2_LEN], g4[V34_G4_LEN], z8[V34_Z8_LEN];
@@ -147,8 +165,10 @@ struct V34Params {
 	u64 g4p(s16 i) const;
 	double frame_power(s16 k, double theta = 0, double e0 = 1) const;
 	void set_nonlinear(double theta_);
-	/* n: the rate in units of 2400 bit/s; returns -1 when not allowed */
-	s16 init(s16 baud, s16 n, s16 expanded);
+	/* n: the primary channel's rate in units of 2400 bit/s, aux: the
+	   auxiliary channel's 200 bit/s on top; returns -1 when not
+	   allowed */
+	s16 init(s16 baud, s16 n, s16 expanded, s16 aux = 0);
 	/* precoding with the coefficients of an MP sequence */
 	void set_precoder(const s16 h_[6]);
 	void precoder_push(V34Precoder *pc, s16 yr, s16 yi) const;
@@ -171,7 +191,9 @@ struct V34Precoder {
 struct V34DataTx {
 	V34Params p;
 	CoreBits link;          /* the data */
+	V34Aux aux;             /* the auxiliary channel's (p.aux) */
 	s16 sbc;                /* high/low frame switching */
+	s16 abc;                /* auxiliary channel multiplexing */
 	s16 z, state, v0;       /* differential, trellis and sync state */
 	s16 half, pat;          /* 4D symbols in the half data frame, sync
 				   pattern position */
@@ -194,6 +216,10 @@ struct V34DataTx {
    states; its low bit is Y0) */
 s16 v34_subset_label(s16 x, s16 y);
 s16 v34_conv_in(s16 s0, s16 s1);
+/* the non-linear encoder (9.7/V.34) on a point s in units of the
+   training points (their mean energy 2), and its inverse */
+cplx v34_nonlinear(cplx s, float theta);
+cplx v34_nonlinear_inv(cplx w, float theta);
 s16 v34_trellis_next(s16 states, s16 st, s16 y);
 
 /* the Viterbi decoder of the 4D trellis code (9.6.3/V.34; V.92's PCM
@@ -315,7 +341,9 @@ struct Viterbi4d {
 struct V34DataRx {
 	V34Params p;
 	CoreBits link;          /* the data */
+	V34Aux aux;             /* the auxiliary channel's (p.aux) */
 	s16 sbc, z;
+	s16 abc;                /* auxiliary channel multiplexing */
 	s16 e[8];               /* rotation << 9 | point index */
 	s16 pos;
 	Viterbi4d<V34_TB> vit;
@@ -353,9 +381,29 @@ enum v34_txseg {
 	V34_TX_DATA,
 };
 
+/* pre-emphasis (5.4/V.34): the filters of indices 1 to 10, linear phase
+   FIRs on the line samples at 9600 Hz */
+#define V34_PE_TAPS     47
+#define V34_PE_MAX      10
+/* the template's magnitude (dB) of filter index (0 to 10) at the
+   normalized frequency v = f / S (Figures 1 and 2, Tables 3 and 4/V.34);
+   0 at v = 0 */
+double v34_preemph_db(s16 index, double v);
+/* the taps of filter index at symbol rate baud on its low or high
+   carrier, at the signal's power of no pre-emphasis; 0, or -1 when there
+   is no filter (index 0, or out of range) */
+s16 v34_preemph_design(s16 index, s16 baud, s16 high,
+		       float h[V34_PE_TAPS]);
+
 struct V34Tx {
 	QamTx qam;
 	s16 baud;
+	s16 high;
+	/* pre-emphasis: the remote's index (0: none), the filter's taps
+	   and its last inputs */
+	s16 preemph;
+	float pe_h[V34_PE_TAPS], pe_x[V34_PE_TAPS];
+	s16 pe_pos;
 	u32 scr;
 	s16 tap;
 	enum v34_txseg seg;
@@ -385,8 +433,10 @@ struct V34Tx {
 
 	s16 dibit(s16 b0, s16 b1);
 	void init(s16 baud_, s16 high, s16 caller);
+	/* pre-emphasis filter index (5.4/V.34) from the next sample on */
+	void set_preemph(s16 index);
 	void segment(enum v34_txseg seg_);
-	void start_data(const V34Params *p, CoreBits link);
+	void start_data(const V34Params *p, CoreBits link, V34Aux aux = {});
 	float sample();
 };
 
@@ -493,6 +543,11 @@ struct V34Rx {
 	cplx err_h[3];
 	s32 err_n;
 	s16 data_on;
+	/* non-linear decoding (9.7/V.34, drx.p.theta): the decoder's last
+	   outputs x(n - 1) .. x(n - 3) and the precoder's p(n) from them */
+	cplx nl_x[3], nl_p;
+	cplx nl_decode(cplx z);
+	cplx nl_target(cplx d) const;
 	/* rate renegotiation (11.6/V.34): the remote's S in data mode */
 	s16 ev_reneg;
 	float mse_mid, mse_old; /* data mode mse 64 and 128 symbols ago */
@@ -530,7 +585,7 @@ struct V34Rx {
 		zero(err_h);
 		err_n = 0;
 	}
-	void start_data(const V34Params *p, CoreBits link);
+	void start_data(const V34Params *p, CoreBits link, V34Aux aux = {});
 	void sample(float x);
 };
 

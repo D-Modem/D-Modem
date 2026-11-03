@@ -2434,6 +2434,68 @@ static bool logged(const std::vector<std::string> &lines, const char *s)
 	return false;
 }
 
+/* V.34's cleardown (11.7/V.34): the caller hangs up in data mode, its
+   pump clears the call down, with LAPM (its DISC first, then both
+   pumps) and without error correction; the answerer's NO CARRIER comes
+   from the cleardown (ATI11: Remote cleardown), both go idle well
+   before the carrier's loss would have ended the call */
+class V34Cleardown : public testing::TestWithParam<const char *> {};
+
+/* (see V34Cleardown) the call's end, with +MS=34 and the case's link */
+TEST_P(V34Cleardown, EndsTheCall)
+{
+	std::vector<std::string> lines;
+	std::string ms = std::string("+MS=34") + GetParam();
+	Pair p(ms.c_str());
+	log_kept = &lines;
+	dcore::log_set_hook([](const char *s) {
+		if (log_kept)
+			log_kept->push_back(s);
+	});
+	dcore::log_level = 2;
+	dsplibs_debug_level = 2;
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	p.a->dte_input("hello", 5);
+	p.run_until([](Pair &q) {
+		return q.got_b.find("hello") != std::string::npos; }, 3000);
+	p.got_b.clear();
+	p.a->hangup();
+	bool idle = p.run_until([](Pair &q) {
+		return !q.a->started() && !q.b->started(); }, 3000);
+	if (getenv("SHOW"))
+		for (const std::string &l : lines)
+			printf("%s", l.c_str());
+	dcore::log_level = 0;
+	dsplibs_debug_level = 0;
+	dcore::log_set_hook(nullptr);
+	log_kept = nullptr;
+	EXPECT_TRUE(idle) << "still in the call 3 s after the hangup";
+	/* both ends through it: their MP' sequences (with LAPM both
+	   start one, the answerer on the caller's DISC) */
+	int done = 0;
+	for (const std::string &l : lines)
+		done += l.find("v34: cleardown done") != std::string::npos;
+	EXPECT_TRUE(logged(lines, "v34: cleardown (ours)"));
+	EXPECT_EQ(done, 2);
+	EXPECT_TRUE(p.got_b.find("NO CARRIER") != std::string::npos)
+		<< p.got_b;
+	std::string i11 = cmd(p.b, p.lb, "ATI11\r");
+	EXPECT_TRUE(i11.find("Remote cleardown") != std::string::npos)
+		<< i11;
+	EXPECT_TRUE(std::regex_search(i11,
+		std::regex("Rate Renegotiation by Remote Modem\\s+0\\b")))
+		<< i11;
+}
+
+INSTANTIATE_TEST_SUITE_P(Link, V34Cleardown, testing::Values("", "\\N0"),
+	[](const testing::TestParamInfo<const char *> &i) {
+		return std::string(*i.param ? "plain" : "lapm");
+	});
+
 /* +A8E and +DSVD: their values, their ranges, the values they refuse */
 TEST(Core, A8e)
 {
