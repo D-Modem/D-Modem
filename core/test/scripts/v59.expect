@@ -167,7 +167,7 @@
   21880 A: OK\r\n
   22380 A< AT+TMO 0C\r
   22380 A: 0C00{1}\r\n
-  22380 A: 0C47{-15.1dBm0}\r\n
+  22380 A: 0C47{-15.0dBm0}\r\n
   22380 A: 0C48{1}\r\n
   22380 A: 0C49{1}\r\n
   22380 A: 0C4A{9}\r\n
@@ -176,8 +176,8 @@
   22380 A: 0C4D{24000}\r\n
   22380 A: 0C4E{-14.8dBm0}\r\n
   22380 A: 0C4F{-43.8dBm0}\r\n
-  22380 A: 0C51{-57.8dBm0}\r\n
-  22380 A: 0C52{-27.2dBm0}\r\n
+  22380 A: 0C51{-57.5dBm0}\r\n
+  22380 A: 0C52{-27.0dBm0}\r\n
   22380 A: 0C53{37ms}\r\n
   22380 A: OK\r\n
   22380 A< AT+TMO ModeSelected\r
@@ -193,7 +193,7 @@
   22460 until B 'NO CARRIER': yes
   22960 A< AT+TMO V34 All\r
   22960 A: modeV34{1}\r\n
-  22960 A: txPower{-15.1dBm0}\r\n
+  22960 A: txPower{-15.0dBm0}\r\n
   22960 A: txSymbolRate{1}\r\n
   22960 A: rxSymbolRate{1}\r\n
   22960 A: txCarrierFreq{9}\r\n
@@ -202,8 +202,8 @@
   22960 A: rxDataHistory{24000}\r\n
   22960 A: rxLevelEstimate{-14.8dBm0}\r\n
   22960 A: noiseEstimate{-43.8dBm0}\r\n
-  22960 A: nearEchoEstimate{-57.8dBm0}\r\n
-  22960 A: farEchoEstimate{-27.2dBm0}\r\n
+  22960 A: nearEchoEstimate{-57.5dBm0}\r\n
+  22960 A: farEchoEstimate{-27.0dBm0}\r\n
   22960 A: roundTripDelay{37ms}\r\n
   22960 A: OK\r\n
   22960 A< AT+TMO txDataHistory\r
@@ -279,9 +279,9 @@
   22960 A: framesSentAck{9}\r\n
   22960 A: framesRetransmitted{0}\r\n
   22960 A: framesReceivedAck{7}\r\n
-  22960 A: framesReceivedDiscard{14}\r\n
+  22960 A: framesReceivedDiscard{20}\r\n
   22960 A: txErrors{0}\r\n
-  22960 A: rxErrors{14}\r\n
+  22960 A: rxErrors{20}\r\n
   22960 A: txThroughput{3422}\r\n
   22960 A: rxThroughput{3419}\r\n
   22960 A: OK\r\n

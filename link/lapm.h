@@ -6,8 +6,8 @@
  *
  *    Modulo 128 sequence numbers, windows of up to 15 frames of up to
  *    128 octets, REJ recovery (no SREJ), parameter negotiation in XID
- *    (with V.42bis's private parameters), T401 counted in transmitted
- *    bits (2 s at the data pump's rate).
+ *    (with V.42bis's private parameters and the 32-bit FCS), T401
+ *    counted in transmitted bits (2 s at the data pump's rate).
  *
  */
 
@@ -91,6 +91,7 @@ private:
 	s16 tx_super(u8 addr, u8 ctrl, s16 pf);
 	s16 tx_xid(u8 addr);
 	void rx_xid(Frame *f, bool response);
+	void fcs_seen(const Frame *f, bool sabme);
 	s16 tx_info();
 	s16 reject_info();
 	bool nr_ok(u8 nr);
@@ -111,6 +112,9 @@ private:
 	bool busy_ = false;     /* we cannot take more */
 	bool peer_busy_ = false;
 	bool v76_ = false;      /* a DLC of V.76's multiplexer */
+	/* the 32-bit FCS: asked for by the remote's XID command, agreed by
+	   the XID exchange */
+	bool fcs32_asked_ = false, fcs32_ = false;
 	std::vector<u8> cmd_ud_, rsp_ud_;
 	u8 cmd_addr_ = 0, rsp_addr_ = 0;
 	u8 vs_ = 0, va_ = 0, vr_ = 0;

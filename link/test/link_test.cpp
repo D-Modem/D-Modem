@@ -572,9 +572,12 @@ struct FrameSource : Framer {
 	}
 	/* nothing to free */
 	void tx_complete(Frame *) override {}
+	/* with each, whether it had an FCS-32 */
+	std::vector<bool> rx32;
 	/* a copy into rx */
 	void rx_complete(Frame *fr) override {
 		rx.emplace_back(fr->buf, fr->buf + fr->count);
+		rx32.push_back(fr->fcs32);
 	}
 };
 
@@ -952,6 +955,7 @@ TEST(Link, LapmBadFrames)
 	FrameSource src;
 	inj.start(&l);
 	inj.set_framer(&src, true);
+	inj.set_tx_fcs32(true);         /* what the link has agreed */
 	src.tx.push_back({ 0x03, 0x00 });
 	std::vector<uint8_t> big(3 + 300, 0x55);
 	big[0] = 0x03;
@@ -996,6 +1000,7 @@ TEST(Link, LapmNrPastVs)
 	FrameSource src;
 	inj.start(&l);
 	inj.set_framer(&src, true);
+	inj.set_tx_fcs32(true);         /* what the link has agreed */
 	src.tx.push_back({ 0x03, 0x01, 100 << 1 });    /* RR, N(R) 100 */
 	uint8_t bits[600];
 	for (int k = 0; k < 2; k++) {
@@ -1063,6 +1068,192 @@ TEST(Link, LapmUnsolicitedDm)
 	CHECK(!p.da.up, "up again on a DM after the release");
 	CHECK(std::find(out.begin(), out.end(), sabme) == out.end(),
 	      "an SABME after the release");
+}
+
+/* the FCS-32 (8.1.1.6.2/V.42): CRC-32's check value over "123456789",
+   the register after a whole good frame; Hdlc's frames with it, past
+   zero insertion (octets of 1s), to receivers that take FCS-32, FCS-16
+   or both; a bit error in one */
+TEST(Link, HdlcFcs32)
+{
+	u32 r = FCS32_INIT;
+	for (const char *c = "123456789"; *c; c++)
+		r = fcs32_add(r, static_cast<u8>(*c));
+	CHECK(~r == 0xcbf43926u, "check value %08x", ~r);
+	const u32 fcs = ~r;
+	for (int i = 0; i < 4; i++)
+		r = fcs32_add(r, static_cast<u8>(fcs >> 8 * i));
+	CHECK(r == FCS32_GOOD, "good frame's register %08x", r);
+
+	const std::vector<std::vector<uint8_t>> frames = {
+		{ 0x03, 0x7f },
+		std::vector<uint8_t>(130, 0xff),
+		{ 0x01, 0x00, 0x7e, 0x7e, 0x55 },
+	};
+	for (int tx32 = 0; tx32 < 2; tx32++) {
+		for (u8 acc = 1; acc <= 3; acc++) {
+			NullOwner o;
+			Link side;
+			side.init(&o, true, Config());
+			Hdlc tx, rx;
+			FrameSource src, dst;
+			tx.start(&side);
+			rx.start(&side);
+			tx.set_framer(&src, true);
+			rx.set_framer(&dst, false);
+			tx.set_tx_fcs32(tx32);
+			rx.set_rx_fcs(acc);
+			src.tx = frames;
+			uint8_t bits[600];
+			for (int k = 0; k < 8; k++) {
+				tx.get_bits(1, bits, sizeof(bits));
+				rx.put_bits(1, bits, sizeof(bits));
+			}
+			const bool taken = acc & (tx32 ? RX_FCS32 : RX_FCS16);
+			CHECK(dst.rx == (taken ? frames :
+			      std::vector<std::vector<uint8_t>>()),
+			      "FCS-%d to a receiver of %d: %zu frames",
+			      tx32 ? 32 : 16, acc, dst.rx.size());
+			for (bool b : dst.rx32)
+				CHECK(b == (tx32 == 1), "Frame::fcs32 %d", b);
+		}
+	}
+
+	/* one bit of the FCS-32's frame flipped: dropped, counted */
+	NullOwner o;
+	Link side;
+	side.init(&o, true, Config());
+	Hdlc tx, rx;
+	FrameSource src, dst;
+	tx.start(&side);
+	rx.start(&side);
+	tx.set_framer(&src, true);
+	rx.set_framer(&dst, false);
+	tx.set_tx_fcs32(true);
+	rx.set_rx_fcs(RX_FCS16 | RX_FCS32);
+	src.tx = { { 0x03, 0x01, 0x10, 0x20, 0x30, 0x40 } };
+	uint8_t bits[600];
+	tx.get_bits(1, bits, sizeof(bits));
+	bits[8 + 20] ^= 1;
+	rx.put_bits(1, bits, sizeof(bits));
+	CHECK(dst.rx.empty(), "a frame with a bit error taken");
+	CHECK(side.stats().rx_errors == 1, "%u FCS errors",
+	      side.stats().rx_errors);
+}
+
+/* the HDLC optional functions of an XID frame (its first parameter,
+   PL 3), or none */
+static std::vector<uint8_t> xid_opt(const std::vector<uint8_t> &f)
+{
+	if (f.size() < 11 || (f[1] & 0xef) != 0xaf || f[6] != 3 || f[7] != 3)
+		return {};
+	return { f[8], f[9], f[10] };
+}
+
+/* the 32-bit FCS (10 c, 8.10.2/V.42): asked for in the caller's XID
+   (bit position 17) unless it has Config::fcs32 off; an answerer that
+   agrees clears position 16 in its response, and goes on in the FCS of
+   the SABME; between two Links: FCS-32 both ways when both have it, an
+   FCS-16 when either has not, and the data through each way */
+TEST(Link, LapmFcs32)
+{
+	const std::vector<uint8_t> ask = { 0x8a, 0x89, 0x01 },
+		agree = { 0x8a, 0x09, 0x01 }, none = { 0x8a, 0x89, 0x00 };
+	for (int on = 0; on < 2; on++) {
+		Dte d("caller");
+		Link l;
+		Config c = lapm_config(0);
+		c.fcs32 = on;
+		l.init(&d, true, c);
+		l.start(true, false);
+		std::vector<std::vector<uint8_t>> out = exchange(l, {}, 4);
+		CHECK(!out.empty() && xid_opt(out[0]) == (on ? ask : none),
+		      "the caller's XID (fcs32 %d)", on);
+	}
+
+	/* an answerer: XID command asking for it, then the SABME with an
+	   FCS-16 or an FCS-32 */
+	const std::vector<uint8_t> xid = { 0x03, 0xaf, 0x82, 0x80, 0x00, 0x05,
+		0x03, 0x03, 0x8a, 0x89, 0x01 };
+	const std::vector<uint8_t> sabme = { 0x03, 0x7f }, ua = { 0x03, 0x73 };
+	for (int s32 = 0; s32 < 2; s32++) {
+		Dte d("answerer");
+		Link l;
+		l.init(&d, false, lapm_config(0));
+		l.start(true, false);
+		NullOwner o;
+		Link side;
+		side.init(&o, true, Config());
+		Hdlc tx, rx;
+		FrameSource src, dst;
+		tx.start(&side);
+		rx.start(&side);
+		tx.set_framer(&src, true);
+		rx.set_framer(&dst, false);
+		rx.set_rx_fcs(RX_FCS16 | RX_FCS32);
+		uint8_t bits[600];
+		auto rounds = [&](int n) {
+			for (int k = 0; k < n; k++) {
+				tx.get_bits(1, bits, sizeof(bits));
+				l.put_bits(1, bits, sizeof(bits));
+				l.get_bits(1, bits, sizeof(bits));
+				rx.put_bits(1, bits, sizeof(bits));
+			}
+		};
+		src.tx = { xid };
+		rounds(4);
+		CHECK(dst.rx.size() == 1 && xid_opt(dst.rx[0]) == agree &&
+		      !dst.rx32[0], "the answerer's XID response, FCS-16 "
+		      "(%zu frames)", dst.rx.size());
+		CHECK(l.hdlc().rx_fcs() == (RX_FCS16 | RX_FCS32) &&
+		      !l.hdlc().tx_fcs32(), "after its response: either in, "
+		      "FCS-16 out");
+		tx.set_tx_fcs32(s32);
+		src.tx.push_back(sabme);
+		rounds(4);
+		CHECK(dst.rx.size() == 2 && dst.rx[1] == ua &&
+		      dst.rx32[1] == (s32 == 1), "UA with an FCS-%d",
+		      s32 ? 32 : 16);
+		CHECK(d.up && l.hdlc().tx_fcs32() == (s32 == 1) &&
+		      l.hdlc().rx_fcs() == (s32 ? RX_FCS32 : RX_FCS16),
+		      "the SABME's FCS both ways");
+	}
+
+	/* an answerer without it: no position 17 in its response */
+	{
+		Dte d("answerer");
+		Link l;
+		Config c = lapm_config(0);
+		c.fcs32 = false;
+		l.init(&d, false, c);
+		l.start(true, false);
+		std::vector<std::vector<uint8_t>> out = exchange(l, { xid }, 4);
+		CHECK(out.size() == 1 && xid_opt(out[0]) == none,
+		      "the answerer's XID response without it");
+		CHECK(l.hdlc().rx_fcs() == RX_FCS16, "FCS-16 only in");
+	}
+
+	for (int k = 0; k < 3; k++) {
+		rnd_state = 12345;
+		Config cc = lapm_config(3), ca = lapm_config(3);
+		cc.fcs32 = k != 1;
+		ca.fcs32 = k != 2;
+		Pair p(cc, ca);
+		p.start(true, true);
+		p.run(9600 * 3);
+		CHECK(p.dc.up && p.da.up, "LAPM up (%d)", k);
+		const bool both = k == 0;
+		const u8 rx = both ? RX_FCS32 : RX_FCS16;
+		CHECK(p.lc.hdlc().tx_fcs32() == both &&
+		      p.la.hdlc().tx_fcs32() == both &&
+		      p.lc.hdlc().rx_fcs() == rx && p.la.hdlc().rx_fcs() == rx,
+		      "FCS-%d both ways (%d)", both ? 32 : 16, k);
+		transfer(both ? "lapm, fcs-32" : "lapm, fcs-16", p, 20000,
+			 20000, 9600 * 40);
+		p.ber = 1e-4;
+		transfer(both ? "lapm, fcs-32, bit errors" :
+			 "lapm, fcs-16, bit errors", p, 5000, 5000, 9600 * 60);
+	}
 }
 
 /* V.42bis when one of them has no V.44 (as the caller, as the
@@ -1393,6 +1584,7 @@ TEST(Link, LapmN400)
 	FrameSource dst;
 	rx.start(&side);
 	rx.set_framer(&dst, false);
+	rx.set_rx_fcs(RX_FCS32);        /* what the link has agreed */
 	std::vector<uint8_t> b(600), idle(600, 1);
 	for (int k = 0; k < 400; k++) {
 		p.lc.get_bits(1, b.data(), (int)b.size());
