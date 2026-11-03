@@ -188,6 +188,7 @@ void T4Page::release()
 {
 	free_buffer(bits);
 	free_buffer(pix);
+	free_buffer(file);
 	rows = cap = 0;
 	comps = 0;
 }

@@ -55,6 +55,8 @@
 #include "jbig.h"
 #include "jpeg.h"
 #include "t43.h"
+#include "t44.h"
+#include "t434.h"
 #include "t30.h"
 
 namespace dsp {
@@ -74,6 +76,7 @@ enum {
 	FCF_DCN = 0xfa, FCF_CRP = 0x1a,
 	/* error correction mode */
 	FCF_PPS = 0xbe, FCF_PPR = 0xbc, FCF_RR = 0x6e, FCF_RNR = 0xec,
+	FCF_FDM = 0xfc,         /* a file's diagnostic (T.30 Annex B) */
 	FCF_CTC = 0x12, FCF_CTR = 0xc4, FCF_EOR = 0xce, FCF_ERR = 0x1c,
 	FCF_NULL = 0x00,
 	/* on the fast modulation (T.4 Annex A) */
@@ -275,6 +278,18 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 					   or MR (with ECM only) */
 	s16 t43;                        /* in T.43 (lossless JBIG): 1 grey,
 					   2 colour (with ECM only) */
+	s16 mrc;                        /* in T.44 (MRC): 1 grey, 2 colour */
+	s16 bft;                        /* the page is a binary file
+					   (T.434), with ECM only */
+	s16 files, files_left_out;      /* (t30_status') */
+	std::vector<unsigned char> bft_rx;      /* files' octets so far */
+	/* page_mrc()'s look for text on the page, the last one's (the
+	   page's samples where they are, the mode) */
+	mutable const unsigned char *worth_pix;
+	mutable size_t worth_len;
+	mutable u32 worth_sum;          /* (samples of it: another page in
+					   the same place) */
+	mutable s16 worth_mode, worth;
 	/* sending */
 	std::vector<unsigned char> ecm_doc;     /* the page's coded data */
 	size_t ecm_doc_pos;             /* where the block starts */
@@ -356,6 +371,8 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void page_done();
 	void tcf_done();
 	void got_dcs(const unsigned char *fif, s16 len);
+	void dcs_coding(const unsigned char *fif, s16 len);
+	const char *coding_name() const;
 	void rx_message();
 	void encode_page();
 	void send_tcf();
@@ -394,8 +411,13 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void jbig_page();
 	void jpeg_page();
 	void t43_page();
+	void mrc_page();
+	bool bft_page();
 	s16 page_jpeg(const T4Page &p) const;
 	s16 page_t43(const T4Page &p) const;
+	s16 page_mrc(const T4Page &p) const;
+	s16 page_bft(const T4Page &p) const;
+	bool left_out(const T4Page &p);
 	void got_pps(const unsigned char *fif, s16 len);
 	void ecm_respond(s16 fcf, const unsigned char *fif, s16 len,
 			 enum state next_);
@@ -704,7 +726,7 @@ void T30::send_dtc()
 /* the DIS (dtc 0) or DTC */
 void T30::send_dis_dtc(s16 dtc)
 {
-	unsigned char fif[10] = { 0 }, id[20];
+	unsigned char fif[16] = { 0 }, id[20];
 	s16 len = 3;
 
 	if (!dtc && cfg.polled)
@@ -728,10 +750,12 @@ void T30::send_dis_dtc(s16 dtc)
 		set_bit(fif, 24);               /* a fourth octet */
 		set_bit(fif, 27);               /* error correction mode */
 		len = 4;
-		if (!cfg.no_t85 || !cfg.no_colour) {
+		if (!cfg.no_t85 || !cfg.no_colour || cfg.bft) {
 			t85_octets(fif);
 			len = 10;
 		}
+		if (cfg.bft)
+			set_bit(fif, 53);       /* binary files (T.434) */
 		if (!cfg.no_colour) {
 			set_bit(fif, 68);       /* JPEG (T.42) */
 			set_bit(fif, 69);       /* in full colour */
@@ -739,6 +763,15 @@ void T30::send_dis_dtc(s16 dtc)
 			if (!cfg.no_t43) {
 				set_bit(fif, 36);       /* T.43 */
 				set_bit(fif, 37);       /* plane interleave too */
+			}
+			if (!cfg.no_mrc) {
+				/* T.44 mode 1 (bits 92-94: 1, 0, 0), stripes
+				   as long as the page */
+				set_bit(fif, 80);
+				set_bit(fif, 88);
+				set_bit(fif, 92);
+				set_bit(fif, 95);
+				len = 12;
 			}
 		}
 		if (!cfg.no_t85) {
@@ -844,6 +877,31 @@ void T30::tcf_done()
 	}
 }
 
+/* the coding of the DCS's pages (with ECM): a binary file (bit 53),
+   T.44 (bits 92-94, its layers' coders as the other bits say), T.42
+   (bit 68), T.43 (bit 36), T.85 (bit 78), else MH or MR */
+void T30::dcs_coding(const unsigned char *fif, s16 len)
+{
+	s16 mode = get_bit(fif, len, 92) | get_bit(fif, len, 93) << 1 |
+		get_bit(fif, len, 94) << 2;
+	bft = ecm_on && cfg.bft && get_bit(fif, len, 53);
+	mrc = ecm_on && !bft && mode ? 1 + get_bit(fif, len, 69) : 0;
+	jpeg = ecm_on && !bft && !mrc && get_bit(fif, len, 68) ?
+		1 + get_bit(fif, len, 69) : 0;
+	t43 = ecm_on && !bft && !mrc && !jpeg && get_bit(fif, len, 36) ?
+		1 + get_bit(fif, len, 69) : 0;
+	t85 = ecm_on && !bft && !mrc && dcs_t85(fif, len);
+}
+
+/* the coding, for the log */
+const char *T30::coding_name() const
+{
+	return bft ? "binary file" : mrc == 2 ? "T.44 colour" : mrc ? "T.44 grey" :
+		jpeg == 2 ? "JPEG colour" : jpeg ? "JPEG grey" :
+		t43 == 2 ? "T.43 colour" : t43 ? "T.43 grey" :
+		t85 ? "T.85" : mr ? "MR" : "MH";
+}
+
 /* a DCS: the rate and page settings the sender chose; the TCF follows
    (a DCS with a rate we don't know is ignored) */
 void T30::got_dcs(const unsigned char *fif, s16 len)
@@ -857,17 +915,12 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 		fine = get_bit(fif, len, 15);
 		mr = get_bit(fif, len, 16);
 		ecm_on = cfg.ecm && get_bit(fif, len, 27);
-		t85 = ecm_on && dcs_t85(fif, len);
-		jpeg = ecm_on && get_bit(fif, len, 68) ?
-			1 + get_bit(fif, len, 69) : 0;
-		t43 = ecm_on && !jpeg && get_bit(fif, len, 36) ?
-			1 + get_bit(fif, len, 69) : 0;
+		dcs_coding(fif, len);
 		ecm_size = get_bit(fif, len, 28) ? 64 : 256;
 		ecm_long_train = 0;
 		DSP_DBG("t30: DCS on V.34: %s, %s%s\n",
 			fine ? "fine" : "standard",
-			jpeg ? "JPEG" : t43 ? "T.43" : t85 ? "T.85" :
-			mr ? "MR" : "MH",
+			coding_name(),
 			ecm_on ? ", ECM" : "");
 		if (!ecm_on) {
 			send_dcn(T30_ERR_INCOMPATIBLE);
@@ -891,16 +944,12 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 	fine = get_bit(fif, len, 15);
 	mr = get_bit(fif, len, 16);
 	ecm_on = cfg.ecm && get_bit(fif, len, 27);
-	t85 = ecm_on && dcs_t85(fif, len);
-	jpeg = ecm_on && get_bit(fif, len, 68) ? 1 + get_bit(fif, len, 69) : 0;
-	t43 = ecm_on && !jpeg && get_bit(fif, len, 36) ? 1 + get_bit(fif, len, 69) : 0;
+	dcs_coding(fif, len);
 	ecm_size = get_bit(fif, len, 28) ? 64 : 256;
 	ecm_long_train = 0;
 	DSP_DBG("t30: DCS: %" PRId32 " bit/s, %s, %s%s\n", rates[k].bps,
 		fine ? "fine" : "standard",
-		jpeg == 2 ? "JPEG colour" : jpeg ? "JPEG grey" :
-		t43 == 2 ? "T.43 colour" : t43 ? "T.43 grey" :
-		t85 ? "T.85" : mr ? "MR" : "MH", ecm_on ? ", ECM" : "");
+		coding_name(), ecm_on ? ", ECM" : "");
 	/* the training check follows on the fast modulation */
 	zero_run = max_zero_run = tcf_trained = 0;
 	zero(mem);
@@ -1114,7 +1163,7 @@ void T30::send_tcf()
    ECM; the TCF follows */
 void T30::send_dcs()
 {
-	unsigned char fif[10] = { 0 }, id[20];
+	unsigned char fif[16] = { 0 }, id[20];
 	u16 v = v34_on ? 0 : rates[rate].bits;  /* (V.34: not used) */
 	s16 len = 3;
 
@@ -1133,7 +1182,25 @@ void T30::send_dcs()
 		set_bit(fif, 24);
 		set_bit(fif, 27);               /* bit 28 0: 256 octets */
 		len = 4;
-		if (jpeg) {
+		if (bft) {
+			t85_octets(fif);
+			set_bit(fif, 53);       /* a binary file (T.434) */
+			len = 10;
+		} else if (mrc) {
+			/* T.44 mode 1: the mask in T.85 or MH, the images in
+			   JPEG (T.30 J.6: the coders used, all of them) */
+			t85_octets(fif);
+			set_bit(fif, 68);
+			if (mrc == 2)
+				set_bit(fif, 69);
+			set_bit(fif, 70);
+			if (get_bit(dis, dis_len, 78))
+				set_bit(fif, 78);
+			set_bit(fif, 80);
+			set_bit(fif, 88);
+			set_bit(fif, 92);
+			len = 12;
+		} else if (jpeg) {
 			t85_octets(fif);
 			set_bit(fif, 68);       /* JPEG */
 			if (jpeg == 2)
@@ -1155,10 +1222,8 @@ void T30::send_dcs()
 	}
 	DSP_DBG("t30: DCS: %" PRId32 " bit/s, %s, min scan %d ms%s%s\n",
 		rates[rate].bps, fine ? "fine" : "standard",
-		ecm_on ? 0 : min_ms, ecm_on ? ", ECM" : "",
-		jpeg == 2 ? ", JPEG colour" : jpeg ? ", JPEG grey" :
-		t43 == 2 ? ", T.43 colour" : t43 ? ", T.43 grey" :
-		t85 ? ", T.85" : "");
+		ecm_on ? 0 : min_ms, ecm_on ? ", ECM, " : "",
+		ecm_on ? coding_name() : "");
 	new_frames();
 	add_frame(FCF_TSI, id, put_ident(id, cfg.ident));
 	add_frame(FCF_DCS, fif, len);
@@ -1186,11 +1251,25 @@ void T30::send_page()
 /* the next page of the document into next; 1 if there is one */
 s16 T30::load_next()
 {
-	if (have_next)
-		return 1;
-	if (cfg.next_page && cfg.next_page(cfg.ctx, &next) == 1)
-		have_next = 1;
+	while (!have_next && cfg.next_page && cfg.next_page(cfg.ctx, &next) == 1) {
+		if (left_out(next))
+			next.release();
+		else
+			have_next = 1;
+	}
 	return have_next;
+}
+
+/* a binary file the remote can't take (its DIS known): left out, and
+   counted */
+bool T30::left_out(const T4Page &p)
+{
+	if (p.file.empty() || !dis_len || page_bft(p))
+		return false;
+	DSP_DBG("t30: a binary file of %zu octets left out: the remote %s\n",
+		p.file.size(), !ecm_on ? "has no ECM" : "takes none");
+	files_left_out++;
+	return true;
 }
 
 /* what follows the page: EOP, MPS, or EOM (another resolution needs
@@ -1204,9 +1283,10 @@ s16 T30::post_command()
 	}
 	s16 more = load_next();
 	return !more ? FCF_EOP :
-		(next.fine != 0) != (fine != 0) ||
-		page_jpeg(next) != jpeg || page_t43(next) != t43 ? FCF_EOM :
-		FCF_MPS;
+		page_bft(next) != bft ||
+		(!bft && (next.fine != 0) != (fine != 0)) ||
+		page_jpeg(next) != jpeg || page_t43(next) != t43 ||
+		page_mrc(next) != mrc ? FCF_EOM : FCF_MPS;
 }
 
 /* the command after a page (EOP, MPS or EOM), MCF and the rest wanted */
@@ -1261,9 +1341,13 @@ void T30::page_settings()
 {
 	if (cfg.host)
 		return;         /* (host_dcs()) */
+	bft = page_bft(page);
 	jpeg = page_jpeg(page);
 	t43 = page_t43(page);
-	if (jpeg || t43) {
+	mrc = page_mrc(page);
+	if (bft)
+		return;
+	if (jpeg || t43 || mrc) {
 		fine = 1;       /* 200 by 200 pels an inch */
 		return;
 	}
@@ -1367,7 +1451,10 @@ void T30::sender_message()
 				break;
 			}
 			/* the page is through */
-			pages++;
+			if (bft)
+				files++;
+			else
+				pages++;
 			ecm_page++;
 			page_tries = 0;
 			next_page_or_end();
@@ -1418,6 +1505,11 @@ void T30::sender_message()
 		} else if (fcf == FCF_RTN || fcf == FCF_PIN) {
 			/* not an ECM receiver after all */
 			send_dcn(T30_ERR_PAGE);
+		} else if (fcf == FCF_FDM) {
+			/* the receiver won't take the file as it is (T.30
+			   V.5.1.3: we can't make it another) */
+			DSP_DBG("t30: FDM: the file not taken\n");
+			send_dcn(T30_ERR_PAGE);
 		}
 		break;
 	case S_WAIT_CTR:
@@ -1458,8 +1550,14 @@ void T30::got_dis()
 		send_dcn(T30_ERR_INCOMPATIBLE);
 		return;
 	}
+	/* (the first page came before the DIS: a file it may not take) */
+	if (have_page && left_out(page)) {
+		page.release();
+		have_page = 0;
+	}
 	if (!have_page && !load_next()) {
-		send_dcn(T30_ERR_DOCUMENT);
+		send_dcn(files_left_out ? T30_ERR_INCOMPATIBLE :
+			 T30_ERR_DOCUMENT);
 		return;
 	}
 	if (!have_page)
@@ -1612,6 +1710,8 @@ static bool page_t43_image(const T4Page &page, s16 mode, T43Image *img)
 	return true;
 }
 
+static void page_t44_image(const T4Page &page, s16 mode, T44Image *img);
+
 /* the page coded (MH, no fill: ECM has no minimum row time), its bits
    packed into octets in the order they go out, the first in the lowest
    bit (T.4 A.3.6.2), then the first block */
@@ -1621,7 +1721,17 @@ void T30::start_ecm_page()
 	if (cfg.host && !have_page && !host_page(&T30::start_ecm_page))
 		return;
 	page_bits.release();
-	if (jpeg) {
+	if (bft) {
+		/* T.434: the BINARY-DATA message as it is */
+		ecm_doc = page.file;
+	} else if (mrc) {
+		/* T.44: the mask in T.85 if the remote has it, else MH */
+		T44Image img;
+		T44Options o;
+		page_t44_image(page, mrc, &img);
+		o.mask_coder = get_bit(dis, dis_len, 78) ? T44_MASK_JBIG : T44_MASK_MH;
+		t44_encode(img, o, &ecm_doc);
+	} else if (jpeg) {
 		/* T.42: the page's colour (or grey, or its black and
 		   white) in CIELAB, the JPEG's octets as they are */
 		JpegImage img;
@@ -1657,8 +1767,8 @@ void T30::start_ecm_page()
 	}
 	ecm_doc_pos = 0;
 	ecm_block = 0;
-	DSP_DBG("t30: page %d: %" PRId32 " rows, %zu octets in ECM\n",
-		pages + 1, page.rows, ecm_doc.size());
+	DSP_DBG("t30: page %d: %" PRId32 " rows, %zu octets in ECM (%s)\n",
+		pages + 1, page.rows, ecm_doc.size(), coding_name());
 	start_ecm_block();
 }
 
@@ -1701,12 +1811,12 @@ s16 T30::hdlc_tx_next(HdlcEcm, unsigned char *buf, s16 /* max */)
 		buf[2] = FCF_FCD;
 		buf[3] = static_cast<unsigned char>(etx_frame);
 		/* the last frame padded to the size, as most receivers
-		   expect */
+		   expect; a file's short (T.4 B.6: no pad octets) */
 		memset(buf + 4, 0, ecm_size);
 		if (n)
 			memcpy(buf + 4, &ecm_doc[at], n);
 		etx_frame++;
-		return 4 + ecm_size;
+		return static_cast<s16>(4 + (bft && n ? n : ecm_size));
 	}
 	if (etx_rcp < 3) {
 		buf[0] = HDLC_ADDR;
@@ -1877,8 +1987,15 @@ enum state T30::ecm_page_end(s16 fcf2)
 {
 	T4Page *p = &rx_page;
 	bool came = false;
-	if (rx_page_on) {
-		if (jpeg)
+	if (rx_page_on && bft) {
+		came = page_ok = bft_page();
+		t4rx.release();
+		p->release();
+		rx_page_on = 0;
+	} else if (rx_page_on) {
+		if (mrc)
+			mrc_page();
+		else if (jpeg)
 			jpeg_page();
 		else if (t43)
 			t43_page();
@@ -1983,6 +2100,57 @@ void T30::t43_page()
 	doc_rx.clear();
 }
 
+/* T.44: the page's MRC into rx_page (as jpeg_page()) */
+void T30::mrc_page()
+{
+	T44Image img;
+	s16 r = t44_decode(doc_rx.data(), doc_rx.size(), T43_MAX_ROWS, &img);
+	DSP_DBG("t30: T.44 page of %zu octets: %u by %u, %d components %s\n",
+		doc_rx.size(), img.width, img.height, img.comps,
+		r == 0 ? "" : r > 0 ? "(cut short)" : "(no MRC)");
+	rx_page.release();
+	rx_page.init(T4_WIDTH, 1);
+	if (r >= 0 && img.width && img.height)
+		rx_page.set_pix(img.pix.data(), img.comps, img.width, img.height);
+	if (r)
+		rx_page.bad_rows = rx_page.rows ? 1 : 0;
+	doc_rx.clear();
+}
+
+/* T.434: the page's octets after the files' so far; each BINARY-DATA
+   message whole to the receiver (a file may take pages, a page hold
+   files: T.30 V.4).  False when they are none */
+bool T30::bft_page()
+{
+	bft_rx.insert(bft_rx.end(), doc_rx.begin(), doc_rx.end());
+	doc_rx.clear();
+	size_t pos = 0;
+	bool ok = true;
+	while (pos < bft_rx.size()) {
+		long n = t434_length(bft_rx.data() + pos, bft_rx.size() - pos);
+		if (n == 0)
+			break;          /* (the rest on the next page) */
+		if (n < 0) {
+			DSP_DBG("t30: %zu octets of no binary file\n",
+				bft_rx.size() - pos);
+			pos = bft_rx.size();
+			ok = false;
+			break;
+		}
+		T4Page f;
+		f.file.assign(bft_rx.begin() + static_cast<long>(pos),
+			      bft_rx.begin() + static_cast<long>(pos) + n);
+		DSP_DBG("t30: a binary file's message of %ld octets\n", n);
+		files++;
+		if (cfg.page_received)
+			cfg.page_received(cfg.ctx, &f);
+		f.release();
+		pos += static_cast<size_t>(n);
+	}
+	bft_rx.erase(bft_rx.begin(), bft_rx.begin() + static_cast<long>(pos));
+	return ok;
+}
+
 /* how a page would go: 2 in colour JPEG, 1 in grey JPEG (the remote
    without colour), 0 not in JPEG (it has no colour, or the remote no
    JPEG) */
@@ -1990,9 +2158,60 @@ s16 T30::page_jpeg(const T4Page &p) const
 {
 	if (!p.comps || !ecm_on || cfg.no_colour || cfg.host ||
 	    !get_bit(dis, dis_len, 68) || !get_bit(dis, dis_len, 15) ||
-	    page_t43(p))
+	    page_t43(p) || page_mrc(p))
 		return 0;
 	return p.comps == 3 && get_bit(dis, dis_len, 69) ? 2 : 1;
+}
+
+/* the page as a T.44 image: its colour (or, mode 1, grey) at 200 pels
+   an inch */
+static void page_t44_image(const T4Page &page, s16 mode, T44Image *img)
+{
+	img->width = static_cast<u32>(page.width);
+	img->height = static_cast<u32>(page.rows);
+	img->dpi = 200;
+	if (mode == 2 && page.comps == 3) {
+		img->comps = 3;
+		img->pix = page.pix;
+	} else {
+		img->comps = 1;
+		page_grey(page, &img->pix);
+	}
+}
+
+/* how a page would go in T.44 instead (its text sharp in the mask, the
+   rest in JPEG): 2 in colour, 1 in grey (a grey page, or the remote
+   without colour), 0 not (the remote has no T.44 mode 1, or the page
+   no text: JPEG, if any; one of few colours goes in T.43) */
+s16 T30::page_mrc(const T4Page &p) const
+{
+	if (!p.comps || !ecm_on || cfg.no_colour || cfg.no_mrc || cfg.host ||
+	    !get_bit(dis, dis_len, 68) || !get_bit(dis, dis_len, 15) ||
+	    !(get_bit(dis, dis_len, 92) | get_bit(dis, dis_len, 93) |
+	      get_bit(dis, dis_len, 94)) || page_t43(p))
+		return 0;
+	s16 mode = p.comps == 3 && get_bit(dis, dis_len, 69) ? 2 : 1;
+	u32 sum = 2166136261u;
+	for (size_t i = 0; i < p.pix.size(); i += 61)
+		sum = (sum ^ p.pix[i]) * 16777619u;
+	if (p.pix.data() != worth_pix || p.pix.size() != worth_len || sum != worth_sum ||
+	    mode != worth_mode) {
+		T44Image img;
+		page_t44_image(p, mode, &img);
+		worth = t44_worth(img);
+		worth_pix = p.pix.data();
+		worth_len = p.pix.size();
+		worth_sum = sum;
+		worth_mode = mode;
+	}
+	return worth ? mode : 0;
+}
+
+/* a binary file that goes: 1 with ECM and the remote's BFT */
+s16 T30::page_bft(const T4Page &p) const
+{
+	return !p.file.empty() && ecm_on && cfg.bft && !cfg.host &&
+		get_bit(dis, dis_len, 53);
 }
 
 /* how a page would go in T.43 instead (lossless, and smaller for few
@@ -2021,9 +2240,9 @@ s16 T30::page_t43(const T4Page &p) const
 bool T30::ecm_block_decodes(bool last, unsigned char *map)
 {
 	s16 k, bad = -1;
-	if (t85 || jpeg || t43) {
-		/* the BIE, JPEG or BCIE is decoded at the end of the page; its
-		   frames came with good FCSs */
+	if (t85 || jpeg || t43 || mrc || bft) {
+		/* the BIE, JPEG, BCIE or MRC is decoded at the end of the page
+		   (a file's octets taken); its frames came with good FCSs */
 		for (k = 0; k < ecm_rx_frames; k++)
 			doc_rx.insert(doc_rx.end(),
 				       &ecm_rx[static_cast<size_t>(k) * ECM_SIZE],
@@ -3107,6 +3326,10 @@ void t30_get_status(T30 *t, struct t30_status *s)
 	s->t85 = t->t85;
 	s->jpeg = t->jpeg;
 	s->t43 = t->t43;
+	s->mrc = t->mrc;
+	s->bft = t->bft;
+	s->files = t->files;
+	s->files_left_out = t->files_left_out;
 	copy_array(s->remote_ident, t->remote_ident);
 	s->phase = state_name[t->state];
 	s->waiting = t->state == S_HOST ? t->waiting : T30_WAIT_NONE;

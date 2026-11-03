@@ -85,6 +85,9 @@ s16 TiffOut::write_page(const T4Page *p)
 	unsigned char ifd[2 + 20 * 12 + 4 + 16], *e = ifd + 2, link[4];
 	long data_at, ifd_at, res_at;
 	size_t len;
+
+	if (!p->file.empty())
+		return 0;               /* (a binary file: no page of TIFF's) */
 	s16 n = 0;
 
 	if (!f_)

@@ -66,6 +66,22 @@ the page is far smaller than in JPEG (a bar chart of five colours: 199
 octets instead of 25809). Photographs and other pages of many colours
 still go in JPEG. Pages that come in T.43 are saved like JPEG ones.
 
+Pages with **text over a picture** go in **T.44** (mixed raster
+content) when the other machine takes it: the text's shapes are kept
+sharp in black and white, and the picture goes in JPEG at half the
+resolution underneath. A page of text over a photo is far smaller than
+in JPEG (the test's page goes in about a quarter of the time) and its
+text comes out crisper. Pages that come in T.44 are saved like JPEG
+ones.
+
+### Binary files
+
+With error correction on, the fax machine can also send and receive
+**binary files** (T.434) in the same call as the pages: any file,
+with its name and type, arrives exactly as it was sent. A program
+using libdmodem turns this on with `t30_config`'s `bft`; a machine that
+doesn't take files still gets the pages, and the files are left out.
+
 ## Fax over the internet (T.38)
 
 Fax tones do not survive many internet phone calls well. **T.38** sends

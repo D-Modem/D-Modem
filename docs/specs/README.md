@@ -22,6 +22,8 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [T.85](https://www.itu.int/rec/T-REC-T.85) | JBIG (T.82) for fax pages, with ECM | `dsp/jbig.cpp`, `dsp/t30.cpp` ([fax-details.md](../dsp/fax-details.md#t85-jbig-pages)) | [T.85.pdf](T.85.pdf) |
 | [T.42](https://www.itu.int/rec/T-REC-T.42) | Colour fax's CIELAB (JPEG mode, with T.4 Annex E) | `dsp/jpeg.cpp`, `dsp/t30.cpp` ([fax-details.md](../dsp/fax-details.md#t42-jpeg-colour-and-grey-scale-pages)) | [T.42.pdf](T.42.pdf) |
 | [T.43](https://www.itu.int/rec/T-REC-T.43) | Lossless colour and grey-scale fax (JBIG bit-planes, with T.4 Annex G) | `dsp/t43.cpp`, `dsp/jbig.cpp`, `dsp/t30.cpp` ([fax-details.md](../dsp/fax-details.md#t43-lossless-jbig-colour-and-grey-scale-pages)) | [T.43.pdf](T.43.pdf) |
+| [T.44](https://www.itu.int/rec/T-REC-T.44) | Mixed raster content (MRC): text in a bi-level mask over JPEG or T.43 layers (with T.4 Annex H, T.30 Annex J) | `dsp/t44.cpp`, `dsp/t30.cpp` ([fax-details.md](../dsp/fax-details.md#t44-mixed-raster-content-pages)) | [T.44.pdf](T.44.pdf) |
+| [T.434](https://www.itu.int/rec/T-REC-T.434) | Binary file transfer format (BFT, with T.30 Appendix V) | `dsp/t434.cpp`, `dsp/t30.cpp` ([fax-details.md](../dsp/fax-details.md#binary-files-t434)) | [T.434.pdf](T.434.pdf) |
 | [V.8](https://www.itu.int/rec/T-REC-V.8) | Start-up: ANSam, CM/JM/CJ | `dsp/dp_v34.cpp` | [V.8.pdf](V.8.pdf) |
 | [V.13](https://www.itu.int/rec/T-REC-V.13) | Simulated carrier control | `core/v13.cpp` (S48) | [V.13.pdf](V.13.pdf) |
 | [V.17](https://www.itu.int/rec/T-REC-V.17) | 14400 bit/s fax modem | `dsp/fax_modems.cpp` | [V.17.pdf](V.17.pdf) |

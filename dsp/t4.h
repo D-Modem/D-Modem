@@ -34,6 +34,9 @@ struct T4Page {
 	   dithered, for what takes only black and white) */
 	s16 comps = 0;
 	std::vector<unsigned char> pix;
+	/* not a page but a binary file (T.434, with ECM): its BINARY-DATA
+	   message's octets (t434.h), no rows */
+	std::vector<unsigned char> file;
 
 	s16 init(s16 width_, s16 fine_);
 	void release();

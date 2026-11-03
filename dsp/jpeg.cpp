@@ -600,7 +600,7 @@ void jpeg_encode(const JpegImage &img, const JpegOptions &opt, std::vector<unsig
 
 /* the markers in turn, each scan's MCUs into the components' planes,
    then the planes to the image's size */
-s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *img)
+s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *img, size_t *used)
 {
 	u16 q[4][64];
 	Huff dc[4], ac[4];
@@ -627,8 +627,11 @@ s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *
 			break;
 		}
 		int m = data[pos++];
-		if (m == M_EOI)
+		if (m == M_EOI) {
+			if (used)
+				*used = pos;
 			break;
+		}
 		if ((m & 0xf8) == M_RST0 || m == 0x01)
 			continue;
 		if (pos + 2 > len) {
@@ -814,6 +817,8 @@ s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *
 	}
 	if (!frame || !scanned)
 		return -1;
+	if (early && used)
+		*used = len;
 	if (y_open && rows > y)
 		rows = y;
 	img->width = x;
