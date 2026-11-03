@@ -2017,6 +2017,11 @@ class CoreText : public testing::TestWithParam<TextCall> {};
 TEST_P(CoreText, LineEachWay)
 {
 	const TextCall &c = GetParam();
+	if (getenv("TEXT_DEBUG")) {
+		dcore::log_set_hook([](const char *s) { fputs(s, stderr); });
+		dcore::log_level = 2;
+		dsplibs_debug_level = 2;
+	}
 	Pair p("");
 	for (int k = 0; k < 2; k++) {
 		Modem *m = k ? p.b : p.a;
@@ -2077,10 +2082,15 @@ TEST_P(CoreText, LineEachWay)
 }
 
 /* the US TTY's 5-bit mode; telex (50 bit/s, ITA2, RTTY's 170 Hz
-   shift); EDT; V.18 automoding answering a TTY, an EDT terminal, and
-   another automoding modem (which hears the caller's 5-bit probe and
-   answers in 5-bit); V.18 automoding calling a V.21, a Bell 103 and a
-   V.23 modem (their answer signals tell) */
+   shift); EDT; DTMF (a new line LF alone on the line, CR LF to the
+   DTE); the V.21 text telephones; V.18 automoding answering a TTY, an
+   EDT terminal, a DTMF one, a V.21, a Bell 103 and a V.23 (Minitel)
+   text telephone, and another automoding modem (CI, the answer tone
+   and TXP: V.18's own mode); V.18 automoding calling a V.21, a Bell
+   103 and a V.23 text telephone (their carriers tell) and a V.21, a
+   Bell 103 and a V.23 data modem (after the answer tone and our TXP
+   for V.21 and V.23; their 8N1 receivers see the parity bit, so the
+   line has only characters of even parity) */
 static const TextCall text_calls[] = {
 	{ "+MS=BAUDOT", "+MS=BAUDOT", 45, 0, "Hello 123-?\r\n",
 	  "HELLO 123-?\r\n", nullptr },
@@ -2089,26 +2099,47 @@ static const TextCall text_calls[] = {
 	  "RYRY 1/2=3+4\r\n", nullptr },
 	{ "+MS=EDT", "+MS=EDT", 110, 0, "Hello, edt!\r\n", "Hello, edt!\r\n",
 	  nullptr },
+	{ "+MS=DTMF", "+MV18S=3", 10, 0, "Hi, DTMF 42?\r\n",
+	  "Hi, DTMF 42?\r\n", nullptr },
+	{ "+MV18S=5", "+MS=V21TXT", 300, 0, "Hej, V.21 {*}\r\n",
+	  "Hej, V.21 {*}\r\n", nullptr },
 	{ "+MS=BAUDOT", "+MV18S=1;+MV18R=1", 45, 0, "GA\r\n", "GA\r\n",
 	  "+MV18R: 2" },
 	{ "+MS=EDT", "+MV18S=1;+MV18R=1", 110, 0, "Hi edt\r\n",
 	  "Hi edt\r\n", "+MV18R: 4" },
-	{ "+MS=V18", "+MS=V18;+MV18R=1", 45, 0, "HELLO\r\n", "HELLO\r\n",
-	  "+MV18R: 2" },
-	{ "+MS=V18;+MV18R=1", "+MS=21,0", 300, 0, "Hello\r\n", "Hello\r\n",
+	{ "+MS=DTMF", "+MV18S=1;+MV18R=1", 10, 0, "Hi dtmf\r\n",
+	  "Hi dtmf\r\n", "+MV18R: 3" },
+	{ "+MV18S=5", "+MV18S=1;+MV18R=1", 300, 0, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 5" },
+	{ "+MV18S=7", "+MV18S=1;+MV18R=1", 300, 0, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 7" },
+	{ "+MV18S=6", "+MV18S=1;+MV18R=1", 1200, 75, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 6" },
+	{ "+MS=V18", "+MS=V18;+MV18R=1", 300, 0, "Hello, V.18\r\n",
+	  "Hello, V.18\r\n", "+MV18R: 1" },
+	{ "+MS=V18;+MV18R=1", "+MV18S=5", 300, 0, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 5" },
+	{ "+MS=V18;+MV18R=1", "+MV18S=7", 300, 0, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 7" },
+	{ "+MS=V18;+MV18R=1", "+MV18S=6", 1200, 75, "Hello GA\r\n",
+	  "Hello GA\r\n", "+MV18R: 6" },
+	{ "+MS=V18;+MV18R=1", "+MS=21,0", 300, 0, "Hello\n", "Hello\n",
 	  "+MV18R: 5" },
-	{ "+MS=V18;+MV18R=1", "+MS=103,0", 300, 0, "Hello\r\n",
-	  "Hello\r\n", "+MV18R: 7" },
-	{ "+MS=V18;+MV18R=1", "+MS=V23C,0", 1200, 75, "Hello\r\n",
-	  "Hello\r\n", "+MV18R: 6" },
+	{ "+MS=V18;+MV18R=1", "+MS=103,0", 300, 0, "Hello\n", "Hello\n",
+	  "+MV18R: 7" },
+	{ "+MS=V18;+MV18R=1", "+MS=V23C,0", 1200, 75, "Hello\n",
+	  "Hello\n", "+MV18R: 6" },
 };
 
 /* each case's name */
 static std::string text_name(const testing::TestParamInfo<TextCall> &i)
 {
 	static const char *names[] = {
-		"Tty", "Telex", "Edt", "V18Tty", "V18Edt", "V18V18",
-		"V18CallsV21", "V18CallsBell103", "V18CallsV23",
+		"Tty", "Telex", "Edt", "Dtmf", "V21Text", "V18Tty", "V18Edt",
+		"V18Dtmf", "V18AnswersV21", "V18AnswersBell103",
+		"V18AnswersMinitel", "V18V18", "V18CallsV21",
+		"V18CallsBell103", "V18CallsMinitel", "V18CallsV21Modem",
+		"V18CallsBell103Modem", "V18CallsV23Modem",
 	};
 	return names[i.index];
 }
@@ -2433,6 +2464,68 @@ static bool logged(const std::vector<std::string> &lines, const char *s)
 			return true;
 	return false;
 }
+
+/* V.34's cleardown (11.7/V.34): the caller hangs up in data mode, its
+   pump clears the call down, with LAPM (its DISC first, then both
+   pumps) and without error correction; the answerer's NO CARRIER comes
+   from the cleardown (ATI11: Remote cleardown), both go idle well
+   before the carrier's loss would have ended the call */
+class V34Cleardown : public testing::TestWithParam<const char *> {};
+
+/* (see V34Cleardown) the call's end, with +MS=34 and the case's link */
+TEST_P(V34Cleardown, EndsTheCall)
+{
+	std::vector<std::string> lines;
+	std::string ms = std::string("+MS=34") + GetParam();
+	Pair p(ms.c_str());
+	log_kept = &lines;
+	dcore::log_set_hook([](const char *s) {
+		if (log_kept)
+			log_kept->push_back(s);
+	});
+	dcore::log_level = 2;
+	dsplibs_debug_level = 2;
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	p.a->dte_input("hello", 5);
+	p.run_until([](Pair &q) {
+		return q.got_b.find("hello") != std::string::npos; }, 3000);
+	p.got_b.clear();
+	p.a->hangup();
+	bool idle = p.run_until([](Pair &q) {
+		return !q.a->started() && !q.b->started(); }, 3000);
+	if (getenv("SHOW"))
+		for (const std::string &l : lines)
+			printf("%s", l.c_str());
+	dcore::log_level = 0;
+	dsplibs_debug_level = 0;
+	dcore::log_set_hook(nullptr);
+	log_kept = nullptr;
+	EXPECT_TRUE(idle) << "still in the call 3 s after the hangup";
+	/* both ends through it: their MP' sequences (with LAPM both
+	   start one, the answerer on the caller's DISC) */
+	int done = 0;
+	for (const std::string &l : lines)
+		done += l.find("v34: cleardown done") != std::string::npos;
+	EXPECT_TRUE(logged(lines, "v34: cleardown (ours)"));
+	EXPECT_EQ(done, 2);
+	EXPECT_TRUE(p.got_b.find("NO CARRIER") != std::string::npos)
+		<< p.got_b;
+	std::string i11 = cmd(p.b, p.lb, "ATI11\r");
+	EXPECT_TRUE(i11.find("Remote cleardown") != std::string::npos)
+		<< i11;
+	EXPECT_TRUE(std::regex_search(i11,
+		std::regex("Rate Renegotiation by Remote Modem\\s+0\\b")))
+		<< i11;
+}
+
+INSTANTIATE_TEST_SUITE_P(Link, V34Cleardown, testing::Values("", "\\N0"),
+	[](const testing::TestParamInfo<const char *> &i) {
+		return std::string(*i.param ? "plain" : "lapm");
+	});
 
 /* +A8E and +DSVD: their values, their ranges, the values they refuse */
 TEST(Core, A8e)

@@ -38,6 +38,7 @@
 #include "modem_param.h"
 #include "dsplibs.h"
 #include "codec_sim.h"
+#include "g711.h"
 #include "loopback.h"
 #include "test_util.h"
 
@@ -378,6 +379,8 @@ public:
 			clock.init(step, n);
 		flat = cfg.flat;
 		lowpass.lowpass(3000, 0.6f, cfg.srate);
+		tilt = cfg.tilt;
+		tilt_x[0] = tilt_x[1] = 0;
 		gain = cfg.gain;
 		noise = pow(10.0, -cfg.snr / 20.0);
 		power = 0;
@@ -397,6 +400,12 @@ public:
 			y = clock.run(y);
 		if (!flat)
 			y = lowpass.run(y);
+		if (tilt > 0) {
+			float t = tilt * (y + tilt_x[1]) + tilt_x[0];
+			tilt_x[1] = tilt_x[0];
+			tilt_x[0] = y;
+			y = t;
+		}
 		y *= gain;
 		power += ((double)y * y - power) / 2400;
 		if (power > 0.05 * ref)
@@ -411,6 +420,7 @@ private:
 	ClockOffset clock;
 	bool flat;
 	Biquad lowpass;
+	float tilt, tilt_x[2];  /* (cfg.tilt) and its last inputs */
 	float gain;
 	double noise;           /* the noise's rms for a reference of 1 */
 	double power;           /* the signal's slow mean square */
@@ -475,6 +485,7 @@ public:
 		for (Echoes &e : echoes)
 			e.init(cfg);
 		codecs = false;
+		ulaw = cfg.ulaw;
 		if (cfg.codec && *cfg.codec) {
 			const char *err = "";
 
@@ -502,6 +513,10 @@ public:
 				a = codec[0].sample(dsp_clip16(a));
 				c = codec[1].sample(dsp_clip16(c));
 			}
+			if (ulaw) {
+				a = dsp::g711::ulaw2lin(dsp::g711::lin2ulaw(dsp_clip16(a)));
+				c = dsp::g711::ulaw2lin(dsp::g711::lin2ulaw(dsp_clip16(c)));
+			}
 			in[1][i] = dsp_clip16(a + echoes[1].run(out[1][i]));
 			in[0][i] = dsp_clip16(c + echoes[0].run(out[0][i]));
 		}
@@ -509,6 +524,7 @@ public:
 
 private:
 	LineDirection to_answerer, to_caller;
+	bool ulaw;              /* (cfg.ulaw) */
 	Echoes echoes[2];
 	bool codecs;
 	dsp::SpeechCodec codec[2]; /* to the answerer, to the caller */

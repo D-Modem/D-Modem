@@ -134,6 +134,20 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	/* only 2400 baud carries data (2400 bit/s, which no other symbol
 	   rate has) */
 	Pumps{ "v34_snr10", line(8, 10, 25) },
+	/* through G.711 (mu-law) each way, its noise larger on the outer
+	   points: non-linear encoding asked for (V34NonLinear) */
+	Pumps{ "v34_ulaw", [] {
+		LoopbackConfig c = line(8, 45, 25, 8000);
+		c.ulaw = true;
+		return c;
+	}() },
+	/* a line whose loss rises 7 dB over the band: L1's 3000 Hz tone
+	   much weaker, pre-emphasis asked for (V34PreEmphasis) */
+	Pumps{ "v34_tilt", [] {
+		LoopbackConfig c = line(8, 30, 25);
+		c.tilt = 0.25f;
+		return c;
+	}() },
 	/* (the caller on the answerer's clock: loop timing) */
 	Pumps{ "v34_150ppm", line(8, 30, 25, 9600, 0.5f, 150) },
 	Pumps{ "v34_echoes", line(8, 40, 22, 9600, 0.5f, 0, -10, -15) },
@@ -414,7 +428,225 @@ INSTANTIATE_TEST_SUITE_P(Automode, PumpLoopback, testing::Values(
 	Pumps{ "v23_to_v34", automode(23, 8, 60) },
 	Pumps{ "bell103_to_v34", automode(103, 8, 45) }), name);
 
+#include <cmath>
+
 #include "v34.h"
+
+/* the pre-emphasis filters (5.4/V.34) at every symbol rate and carrier:
+   the magnitude over d/e - 0.45 to d/e + 0.45 of the symbol rate within
+   the templates' 1 dB of their shape (Figures 1 and 2; the level is the
+   signal's own), at the power of a signal without them */
+TEST(V34PreEmphasis, FiltersMatchTheTemplates)
+{
+	for (s16 idx = 1; idx <= V34_PE_MAX; idx++)
+		for (s16 b = 0; b < dsp::V34_NBAUDS; b++)
+			for (s16 high = 0; high < 2; high++) {
+				float h[V34_PE_TAPS];
+				double S = dsp::v34_symbol_rate(b),
+				       fc = dsp::v34_carrier(b, high),
+				       worst = 0, pw = 0, ref = 0, tref = 0;
+				int n = 0;
+				ASSERT_EQ(dsp::v34_preemph_design(idx, b, high, h),
+					  0);
+				auto db = [&](double f) {
+					double re = 0, im = 0;
+					for (int k = 0; k < V34_PE_TAPS; k++) {
+						re += h[k] * cos(2 * M_PI * f * k / 9600);
+						im -= h[k] * sin(2 * M_PI * f * k / 9600);
+					}
+					return 10 * log10(re * re + im * im);
+				};
+				/* (the level where the shapes are compared) */
+				ref = db(fc);
+				tref = dsp::v34_preemph_db(idx, fc / S);
+				for (double v = fc / S - 0.45; v <= fc / S + 0.45;
+				     v += 0.01) {
+					/* (indices 6 to 10: their step from 0 to
+					   beta has no template) */
+					if (idx > 5 && v > 0.65 && v < 0.9)
+						continue;
+					double e = db(v * S) - ref -
+						   (dsp::v34_preemph_db(idx, v) - tref);
+					worst = std::max(worst, fabs(e));
+				}
+				EXPECT_LT(worst, 1.0) << "index " << idx
+					<< " at " << S << " baud, carrier " << fc;
+				for (double f = fc - S / 2; f <= fc + S / 2; f += 10) {
+					pw += pow(10, db(f) / 10);
+					n++;
+				}
+				EXPECT_NEAR(pw / n, 1, 0.02) << "index " << idx
+					<< " at " << S << " baud, carrier " << fc;
+			}
+	float h[V34_PE_TAPS];
+	EXPECT_EQ(dsp::v34_preemph_design(0, 0, 0, h), -1);
+	EXPECT_EQ(dsp::v34_preemph_design(11, 0, 0, h), -1);
+}
+
+/* a line whose loss rises 7 dB over the band (v34_tilt): the receivers'
+   probing finds that pre-emphasis gains and asks for it, the
+   transmitters apply it, and the call carries its data */
+TEST(V34PreEmphasis, TiltedLineAsksForIt)
+{
+	LoopbackConfig c = line(8, 30, 20);
+	c.tilt = 0.25f;
+	setenv("DSP_DEBUG", "2", 1);
+	testing::internal::CaptureStderr();
+	LoopbackResult r = loopback_run(c);
+	std::string log = testing::internal::GetCapturedStderr();
+	unsetenv("DSP_DEBUG");
+	dsplibs_debug_level = 0;
+
+	EXPECT_NE(log.find("gains"), std::string::npos)
+		<< "the probing found no gain";
+	EXPECT_NE(log.find("v34 tx: pre-emphasis filter"), std::string::npos)
+		<< "no pre-emphasis";
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+}
+
+/* each filter, both ways, asked for whatever the line (DSP_V34_PREEMPH):
+   the call connects and carries its data */
+class V34PreEmphasisIndex : public testing::TestWithParam<int> {};
+
+/* (see V34PreEmphasisIndex) */
+TEST_P(V34PreEmphasisIndex, DataBothWays)
+{
+	setenv("DSP_V34_PREEMPH", std::to_string(GetParam()).c_str(), 1);
+	LoopbackResult r = loopback_run(line(8, 35, 20));
+	unsetenv("DSP_V34_PREEMPH");
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+	printf("pre-emphasis %d: %d/%d bit/s\n", GetParam(),
+	       r.side[0].tx_rate, r.side[0].rx_rate);
+}
+
+INSTANTIATE_TEST_SUITE_P(Index, V34PreEmphasisIndex,
+			 testing::Values(3, 5, 8, 10));
+
+/* non-linear encoding (9.7/V.34) asked for both ways
+   (DSP_V34_NONLINEAR=1) over G.711, with precoding (from a gain of
+   0.3 dB on) and without: each transmitter warps its points, each
+   receiver undoes it (and 1 + H(z) after it), the data carried */
+class V34NonLinear : public testing::TestWithParam<const char *> {};
+
+/* (see V34NonLinear; the parameter: DSP_V34_PRECODE_MIN) */
+TEST_P(V34NonLinear, DataBothWays)
+{
+	LoopbackConfig c = line(8, 45, 20, 8000);
+	c.ulaw = true;
+	setenv("DSP_V34_NONLINEAR", "1", 1);
+	setenv("DSP_V34_PRECODE_MIN", GetParam(), 1);
+	setenv("DSP_DEBUG", "2", 1);
+	testing::internal::CaptureStderr();
+	LoopbackResult r = loopback_run(c);
+	std::string log = testing::internal::GetCapturedStderr();
+	unsetenv("DSP_V34_NONLINEAR");
+	unsetenv("DSP_V34_PRECODE_MIN");
+	unsetenv("DSP_DEBUG");
+	dsplibs_debug_level = 0;
+
+	EXPECT_NE(log.find("non-linear tx, non-linear rx"), std::string::npos)
+		<< "not asked for";
+	/* precoding where asked for: its 1 + H(z) never in the equalizer */
+	EXPECT_EQ(log.find("into the equalizer"), std::string::npos);
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+	EXPECT_GE(r.side[0].rx_rate, 28800);
+	EXPECT_GE(r.side[1].rx_rate, 28800);
+}
+
+INSTANTIATE_TEST_SUITE_P(Precoding, V34NonLinear,
+			 testing::Values("0.3", "99"),
+	[](const testing::TestParamInfo<const char *> &i) {
+		return std::string(i.param[0] == '0' ? "precoded" :
+				   "plain");
+	});
+
+/* the non-linear encoder and its inverse (9.7/V.34): back to the point
+   to 1e-5 over the whole superconstellation's range */
+TEST(V34NonLinear, InverseUndoesIt)
+{
+	for (float x = -3; x <= 3; x += 0.05f)
+		for (float y = -3; y <= 3; y += 0.25f) {
+			dsp::cplx s = { x, y };
+			dsp::cplx w = dsp::v34_nonlinear(s, 0.3125f);
+			dsp::cplx b = dsp::v34_nonlinear_inv(w, 0.3125f);
+			EXPECT_NEAR(b.re, x, 1e-5) << x << " " << y;
+			EXPECT_NEAR(b.im, y, 1e-5) << x << " " << y;
+		}
+}
+
+/* the auxiliary channel (8.3/V.34): Table 9's multiplexing patterns
+   from W and P, Table 8's b for each rate with its 200 bit/s */
+TEST(V34Aux, PatternsAndFrames)
+{
+	static const u16 amp[dsp::V34_NBAUDS] = { 0x6DB, 0x56B, 0x15AB,
+						  0x2AAB, 0x5555, 0x1555 };
+	for (s16 baud = 0; baud < dsp::V34_NBAUDS; baud++) {
+		dsp::V34Params p{};
+		ASSERT_EQ(p.init(baud, 4, 1, 1), 0) << baud;
+		EXPECT_EQ(p.aux, 1);
+		u16 pat = 0;
+		s16 c = 0;
+		for (s16 i = 0; i < p.P; i++) {
+			c += p.W;
+			pat = static_cast<u16>(pat << 1 | (c >= p.P));
+			if (c >= p.P)
+				c -= p.P;
+		}
+		EXPECT_EQ(pat, amp[baud]) << baud;
+		float S = dsp::v34_symbol_rate(baud);
+		for (s16 n = 1; n <= 14; n++) {
+			bool ok = dsp::v34_rates[baud][n - 1].b != 0;
+			EXPECT_EQ(dsp::v34_aux_rates[baud][n - 1].b != 0,
+				  ok || (baud == 0 && n == 1)) << baud << " " << n;
+			if (!dsp::v34_aux_rates[baud][n - 1].b)
+				continue;
+			s16 b = static_cast<s16>(
+				std::ceil((2400 * n + 200) * 8 / S - 1e-3));
+			EXPECT_EQ(dsp::v34_aux_rates[baud][n - 1].b, b)
+				<< baud << " " << n;
+			dsp::V34Params q{};
+			EXPECT_EQ(q.init(baud, n, 1, 1), 0) << baud << " " << n;
+		}
+	}
+}
+
+/* the auxiliary channel both ways (DSP_V34_AUX=2: in both MPs, a PRBS
+   in it): its bits arrive without errors, the primary channel's data
+   with them */
+TEST(V34Aux, DataBothWays)
+{
+	setenv("DSP_V34_AUX", "2", 1);
+	setenv("DSP_DEBUG", "2", 1);
+	testing::internal::CaptureStderr();
+	LoopbackResult r = loopback_run(line(8, 40, 25));
+	std::string log = testing::internal::GetCapturedStderr();
+	unsetenv("DSP_V34_AUX");
+	unsetenv("DSP_DEBUG");
+	dsplibs_debug_level = 0;
+
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+	s16 sides = 0;
+	for (size_t at = 0;
+	     (at = log.find("aux channel: ", at)) != std::string::npos;
+	     at++) {
+		int bits = 0, errs = -1;
+		ASSERT_EQ(sscanf(log.c_str() + at,
+				 "aux channel: %d bits in, %d errors", &bits,
+				 &errs), 2);
+		EXPECT_GE(bits, 500);
+		EXPECT_EQ(errs, 0);
+		sides++;
+	}
+	EXPECT_EQ(sides, 2) << "the aux channel not on both ways";
+}
 
 /* V.34's J (it repeats) and J': TRN's random bits match J's 16 now and
    then, which once took a call's TRN for J; two in a row are J */

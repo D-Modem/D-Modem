@@ -28,7 +28,7 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.21](https://www.itu.int/rec/T-REC-V.21) | 300 bit/s FSK | `dsp/dp_fsk.cpp`, V.8 and fax HDLC | [V.21.pdf](V.21.pdf) |
 | [V.22](https://www.itu.int/rec/T-REC-V.22) | 1200 bit/s DPSK | `dsp/dp_v22.cpp` | [V.22.pdf](V.22.pdf) |
 | [V.22bis](https://www.itu.int/rec/T-REC-V.22bis) | 2400 bit/s QAM | `dsp/dp_v22.cpp` | [V.22bis.pdf](V.22bis.pdf) |
-| [V.18](https://www.itu.int/rec/T-REC-V.18) | Text telephones: 5-bit, EDT, automoding | `dsp/dp_text.cpp` | [V.18.pdf](V.18.pdf) |
+| [V.18](https://www.itu.int/rec/T-REC-V.18) | Text telephones: 5-bit, DTMF, EDT, Bell 103, V.23, V.21, V.18's mode, automoding | `dsp/dp_text.cpp` | [V.18.pdf](V.18.pdf) |
 | [V.23](https://www.itu.int/rec/T-REC-V.23) | 1200/75 bit/s FSK | `dsp/dp_fsk.cpp` | [V.23.pdf](V.23.pdf) |
 | [V.25](https://www.itu.int/rec/T-REC-V.25) | Answer and calling tones | `dsp/dp_callprog.cpp` | [V.25.pdf](V.25.pdf) |
 | [V.26 bis](https://www.itu.int/rec/T-REC-V.26bis) | 2400/1200 bit/s on the switched network, with a 75 baud backward channel | `dsp/dp_v26bis.cpp` ([v26-details.md](../dsp/v26-details.md)) | [V.26bis.pdf](V.26bis.pdf) |

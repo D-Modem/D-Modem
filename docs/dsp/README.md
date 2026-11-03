@@ -35,7 +35,7 @@ receiver works inside, see [the technical details](dsp-details.md).
 | V.26, Bell 201, 202, 208 | 2400, 2400, 1200, 4800 bit/s | older 4-wire [leased line](../leased.md) modems |
 | [V.cvm](vcvm.md) | 175 to 3500 bit/s | D-Modem's proposal for data through mobile phone calls |
 | [V.wb](vwb.md) | about 149000 bit/s each way | D-Modem's own mode for a bare pair of wires |
-| Text telephones | 45 to 300 bit/s | TTY (Baudot), EDT and V.18 automatic detection, for deaf and hard of hearing users |
+| Text telephones | 45 to 1200 bit/s | TTY (Baudot), DTMF, EDT, Bell 103, V.23 (Minitel), V.21 and V.18's own mode, with V.18 automatic detection, for deaf and hard of hearing users |
 | Contact ID | (DTMF digits) | alarm panels reporting to a monitoring centre; D-Modem can be either end |
 | Fixed-line SMS | 1200 bit/s | text messages to and from home phones that have an SMS button, as some European phone companies offered; D-Modem can be the phone or the message centre |
 | [V.8bis](v8bis.md) | (a start-up) | agreeing on the kind of call before V.8, the first part of voice and data together (V.70, V.61) |

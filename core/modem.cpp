@@ -559,13 +559,13 @@ void Modem::set_cause(Cause c)
    another result is due */
 void Modem::hup(bool local)
 {
-	struct dp *dp = dp_;
+	u32 wait = 0;
 
 	switch (state_) {
 	case DP_ESTAB:
 		dialed_ = false;
-		if (local && dp && dp->op->hangup)
-			dp->op->hangup(dp);
+		if (local)
+			wait = dp_hangup();
 		set_state(DP_DISC);
 		break;
 	case EC_ESTAB:
@@ -576,16 +576,15 @@ void Modem::hup(bool local)
 			      link_->protocol() == dlink::Protocol::V120)) {
 			link_->disconnect();
 			set_state(EC_DISC);
-		} else {
-			if (local && dp && dp->op->hangup)
-				dp->op->hangup(dp);
+		} else
 			set_state(DP_DISC);
-		}
+		if (local)
+			wait = dp_hangup();
 		carrier_ = false;
 		break;
 	case EC_DISC:
-		if (local && dp && dp->op->hangup)
-			dp->op->hangup(dp);
+		if (local)
+			dp_hangup();
 		set_state(DP_DISC);
 		return;
 	default:
@@ -595,7 +594,21 @@ void Modem::hup(bool local)
 		result_ = Result::NoCarrier;
 		have_result_ = true;
 	}
-	later(Later::Stop, STOP_SAMPLES);
+	later(Later::Stop, std::max(STOP_SAMPLES, wait));
+}
+
+/* the pump told the local side hangs up: the samples it may still need
+   (V.34's cleardown), 0 when none; it ends sooner with DPSTAT_ERROR */
+u32 Modem::dp_hangup()
+{
+	struct dp *dp = dp_;
+	if (!dp || !dp->op->hangup || run_ != Run::Dp)
+		return 0;
+	int ms = dp->op->hangup(dp);
+	if (ms <= 0)
+		return 0;
+	logf("the pump ends the call (up to %d ms)\n", ms);
+	return static_cast<u32>(static_cast<s64>(ms) * srate_ / 1000);
 }
 
 /* the line starts: its samples counted from 0, the Host's start();
@@ -1021,6 +1034,10 @@ void Modem::update_status(Status s)
 					dp_->id == DP_V18 ||
 					dp_->id == DP_BAUDOT ||
 					dp_->id == DP_EDT ||
+					dp_->id == DP_DTMFTXT ||
+					dp_->id == DP_V21TXT ||
+					dp_->id == DP_V23TXT ||
+					dp_->id == DP_B103TXT ||
 					dp_->id == DP_CONTACTID ||
 					dp_->id == DP_SMS ||
 					dp_->id == DP_RELAY))) {
@@ -1112,6 +1129,16 @@ void Modem::update_status(Status s)
 			  Cause::ProtocolFailure);
 		result_ = Result::NoCarrier;
 		have_result_ = true;
+		/* the remote's link let go (V.42's DISC): the pump ends the
+		   call as it would on our hangup (V.34's cleardown) */
+		if (s == ST_EC_RELEASE && state_ != EC_DISC &&
+		    (state_ == ONLINE || state_ == COMMAND_ONLINE)) {
+			u32 w = dp_hangup();
+			hup(false);
+			if (w > STOP_SAMPLES)
+				later(Later::Stop, w);
+			break;
+		}
 		hup(state_ == EC_DISC);
 		break;
 	case ST_ERROR:
@@ -1134,7 +1161,9 @@ void Modem::update_status(Status s)
 			result_ = Result::NoAnswer;
 			break;
 		default:
-			set_cause(stats_.connected ? Cause::CarrierLost :
+			set_cause(dp_stats_.cleardown ?
+				  Cause::RemoteCleardown :
+				  stats_.connected ? Cause::CarrierLost :
 				  Cause::TrainingFailed);
 			result_ = Result::NoCarrier;
 			break;
@@ -1729,6 +1758,13 @@ void Modem::dp_process(s16 *in, s16 *out, s32 n)
 			break;
 		case DPSTAT_ERROR:
 			failed = true;
+			/* hanging up: the pump's end (its cleardown) is
+			   over, the stop due now */
+			if ((state_ == DP_DISC || state_ == EC_DISC) &&
+			    later_ == Later::Stop) {
+				later_at_ = count_;
+				break;
+			}
 			update_status(ST_DP_ERROR);
 			break;
 		case DPSTAT_NODIALTONE:
@@ -2424,9 +2460,11 @@ void Modem::report(Result r)
 	if (r == Result::Connect) {
 		u16 a = sregs_[SREG_CONNNECT_MSG_FORMAT];
 		s16 m = modulation(dp_stats_, dp_);
-		/* V.18's automoding: the mode found, as +MV18S numbers it */
+		/* V.18's automoding: the mode found, as +MV18S numbers it
+		   (1 V.18's own, with another V.18 modem) */
 		if (mv18r_ && sregs_[SREG_DP] == DP_V18) {
-			s16 n = m == DP_BAUDOT ? 2 : m == DP_EDT ? 4 :
+			s16 n = m == DP_V18 ? 1 : m == DP_BAUDOT ? 2 :
+				m == DP_DTMFTXT ? 3 : m == DP_EDT ? 4 :
 				m == DP_V21 ? 5 : m == DP_V23 ? 6 :
 				m == DP_B103 ? 7 : 0;
 			if (n) {
@@ -3854,7 +3892,9 @@ void Modem::text_reset()
 bool Modem::text_pump() const
 {
 	u32 id = sregs_[SREG_DP];
-	return id == DP_V18 || id == DP_BAUDOT || id == DP_EDT;
+	return id == DP_V18 || id == DP_BAUDOT || id == DP_EDT ||
+		id == DP_DTMFTXT || id == DP_V21TXT || id == DP_V23TXT ||
+		id == DP_B103TXT;
 }
 
 /* class 2 and 2.0 fax there is (the T.30 library linked in) */
