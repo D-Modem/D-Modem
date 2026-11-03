@@ -925,6 +925,20 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 
 	s16 connected;          /* CONNECT has been reported */
 
+	/* cleardown (11.7/V.34): 1 ours (the core hung up), 2 the
+	   remote's, 3 over; ours starts at clear_at (the link's last frames out
+	   first); the MP sequences sent when ours was acknowledged; the
+	   samples without the remote's signal since its MP */
+	s16 clearing;
+	s32 clear_at;
+	s16 clear_mp;
+	s32 clear_quiet;
+	s16 clear_ok;           /* we start one (DSP_V34_CLEARDOWN=0: not) */
+	s16 hangup() override;
+	void cleardown();
+	bool remote_clears() const;
+	s16 clear_step();
+
 	/* V.34 half-duplex (clause 12/V.34) for a fax machine
 	   (v34_hdx_create()) */
 	s16 hdx;                /* our CM / JM is a fax call's */
@@ -4061,6 +4075,12 @@ void V34Pump::mp_start()
 	mp->trellis = V34_TRELLIS;
 	mp->rate_mask = 0x3FFF;
 	mp->asym = 1;
+	/* a cleardown: no rates either way (11.7/V.34) */
+	if (clearing || remote_clears()) {
+		mp->rate_ca = mp->rate_ac = 0;
+		tx_next(P4_MP, V34_TX_MP);
+		return;
+	}
 	/* precoding where it gains enough over the power of its dither */
 	{
 		float gain = prx.precoder(mp->h);
@@ -4120,6 +4140,84 @@ void V34Pump::link_req_poll()
 		else
 			renegotiate("the DTE's", n);
 	}
+}
+
+/* the core hangs up (pump.h): in V.34's data mode a cleardown
+   (11.7/V.34) instead of the signal just stopping, once the link's
+   last frames (V.42's DISC) have had 50 ms to go; the longest it may
+   take, in ms, for the core to wait (0: nothing to wait for) */
+s16 V34Pump::hangup()
+{
+	if (!clear_ok || clearing || state != V34_DATA || pcm || hdx_on ||
+	    !connected)
+		return 0;
+	DSP_DBG("v34: hangup: a cleardown\n");
+	clearing = 1;
+	clear_at = total + ms2samples(50, srate);
+	return static_cast<s16>(50 + 2500 + 3 * rtd * 1000 / srate);
+}
+
+/* our cleardown (11.7.1/V.34): the data stops, S for 128 symbols,
+   S-bar for 16, then MP with no rates until the remote's MP, MP' then;
+   as a renegotiation, but with no TRN and no data after */
+void V34Pump::cleardown()
+{
+	DSP_DBG("v34: cleardown (ours)\n");
+	renegotiating = 1;
+	ptx.data_on = 0;
+	ptx.ack_mp = 0;
+	ptx.mp_sent = 0;
+	ptx.trn16 = 0;
+	clear_quiet = 0;
+	/* (the MP of the start-up, or of the last renegotiation, is not
+	   the remote's answer) */
+	prx.ev_mp = prx.ev_e = 0;
+	zero(prx.mp);
+	timeout = total + ms2samples(2500, srate) + 3 * rtd;
+	tx_next(V34_RN_S, V34_TX_S);
+}
+
+/* the remote's MP asks for no rates: its cleardown */
+bool V34Pump::remote_clears() const
+{
+	return renegotiating && prx.ev_mp && !prx.mp.rate_ca &&
+	       !prx.mp.rate_ac;
+}
+
+/* P4_MP in a cleardown, ours or the remote's: our MP' once the
+   remote's MP is in; the call ends (DPSTAT_ERROR) when the remote's
+   MP' is in and a whole MP' of ours has gone (11.7.1.4, 11.7.2.3)
+   (or as sample() says) */
+s16 V34Pump::clear_step()
+{
+	if (!clearing) {
+		DSP_DBG("v34: cleardown by the remote\n");
+		clearing = 2;
+		clear_quiet = 0;
+		/* (an MP of ours that went before the remote's: none
+		   either from now on) */
+		ptx.mp.rate_ca = ptx.mp.rate_ac = 0;
+		if (stats) {
+			stats->cleardown = 1;
+			/* (its S was no renegotiation) */
+			if (stats->renegs_remote)
+				stats->renegs_remote--;
+		}
+	}
+	if (prx.ev_mp && !ptx.ack_mp) {
+		ptx.ack_mp = 1;
+		clear_mp = ptx.mp_sent;
+	}
+	/* (ours: two whole MP's, the remote's receiver settles on the
+	   4 point signals again without TRN) */
+	if (prx.ev_mp && prx.mp.ack && ptx.ack_mp &&
+	    ptx.mp_sent >= clear_mp + (clearing == 1 ? 3 : 2)) {
+		DSP_DBG("v34: cleardown done (%s)\n",
+			clearing == 1 ? "ours" : "the remote's");
+		clearing = 3;
+		return DPSTAT_ERROR;
+	}
+	return DPSTAT_OK;
 }
 
 /* a retrain: both modems go back to phase 2 at tones A and B
@@ -4978,10 +5076,21 @@ s16 V34Retrain<P>::rt_step(s32 c)
 			self.tx_next(V34_RN_SBAR, V34_TX_SBAR);
 		break;
 	case V34_RN_SBAR:
+		/* a cleardown, ours or the remote's: MP straight after
+		   S-bar, without TRN (11.7/V.34) */
+		if (self.ptx.n >= 16 && (self.clearing ||
+					 self.remote_clears())) {
+			self.mp_start();
+			break;
+		}
 		if (self.ptx.n >= 16)
 			self.tx_next(V34_RN_TRN, V34_TX_TRN);
 		break;
 	case V34_RN_TRN:
+		if (self.remote_clears()) {
+			self.mp_start();
+			break;
+		}
 		/* MP once the remote's training has been there a while
 		   (both started theirs), at most 2 s */
 		if ((self.ptx.n >= 512 && self.prx.stage == V34_RX_TRN &&
@@ -6881,11 +6990,8 @@ s16 V34Pump::handshake()
 	/* phase 4, both */
 	case P4_MP:
 		/* a cleardown (11.7/V.34): MP with no rates */
-		if (renegotiating && prx.ev_mp && !prx.mp.rate_ca &&
-		    !prx.mp.rate_ac) {
-			DSP_DBG("v34: cleardown by the remote\n");
-			return DPSTAT_ERROR;
-		}
+		if (clearing || (renegotiating && remote_clears()))
+			return clear_step();
 		if (prx.ev_mp && !ptx.ack_mp) {
 			/* before the remote's E: its data follows at once */
 			if (data_setup()) {
@@ -6949,6 +7055,13 @@ s16 V34Pump::handshake()
 		}
 		break;
 	case V34_DATA:
+		/* ours, or the remote's S (its cleardown or its
+		   renegotiation) before it: ours now, the two meet */
+		if (clearing == 1 && (total >= clear_at || prx.ev_reneg)) {
+			prx.ev_reneg = 0;
+			cleardown();
+			break;
+		}
 		if (prx.on)
 			lost = 0;
 		else
@@ -7129,14 +7242,34 @@ float V34Pump::pump_tx_sample()
    (the PCM signal, for the echo canceller) */
 s16 V34Pump::sample(float x, float *y, const float *ref)
 {
+	/* the cleardown is over: nothing more */
+	if (clearing == 3)
+		return DPSTAT_ERROR;
 	s16 r = handshake();
 	if (r == DPSTAT_CHANGEDP || r == DPSTAT_ERROR)
 		return r;
 	*y = dsp_clip16(pump_tx_sample());
 	last_tx = ref ? *ref : *y;
 	pump_rx_sample(x);
-	if (renegotiating && total >= timeout)
+	/* a cleardown ends when the remote's signal goes for 30 ms (a
+	   modem that ends as soon as it has our MP, or one gone already)
+	   or after the renegotiation's time */
+	if (clearing && renegotiating) {
+		clear_quiet = prx.on ? 0 : clear_quiet + 1;
+		if (clear_quiet >= ms2samples(30, srate)) {
+			DSP_DBG("v34: cleardown: the remote's signal gone\n");
+			clearing = 3;
+			return DPSTAT_ERROR;
+		}
+	}
+	if (renegotiating && total >= timeout) {
+		if (clearing) {
+			DSP_DBG("v34: cleardown: no answer, the call ends\n");
+			clearing = 3;
+			return DPSTAT_ERROR;
+		}
 		retrain("renegotiation timed out");
+	}
 	/* no Ed within 5000 ms plus 2 round trips of our S-bar
 	   (9.6.2/V.90) */
 	if (v90a_rn && total >= timeout) {
@@ -7501,6 +7634,9 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	   answerer's or the caller's (anything else: either) */
 	lose_info0 = pump_test_env("DSP_V34_LOSE_INFO0", caller_) != nullptr;
 	reneg_test = false;
+	/* DSP_V34_CLEARDOWN=0: our hangup drops the line without a
+	   cleardown */
+	clear_ok = env_int("DSP_V34_CLEARDOWN", 1) ? 1 : 0;
 	test_echo.init(pump_test_env("DSP_TEST_ECHO", caller_), line_rate);
 	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
 	   renegotiation to N * 2400 bit/s (what we receive) */

@@ -478,6 +478,7 @@ private:
 	/* the state machine (modem.c) */
 	s16 set_state(State s);
 	void hup(bool local);
+	u32 dp_hangup();
 	s16 start_call(bool keep_line = false);
 	s16 do_start();
 	s16 stop_call();
