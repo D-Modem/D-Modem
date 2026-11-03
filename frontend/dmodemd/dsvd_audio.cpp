@@ -13,7 +13,14 @@
 #include <cstring>
 
 #include <fcntl.h>
+/* (Android's posix_spawn() is from API level 28: fork() before it;
+   DMODEM_DSVD_FORK to test that elsewhere) */
+#if defined(__ANDROID__) && __ANDROID_API__ < 28 && !defined(DMODEM_DSVD_FORK)
+#define DMODEM_DSVD_FORK 1
+#endif
+#ifndef DMODEM_DSVD_FORK
 #include <spawn.h>
+#endif
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -49,18 +56,35 @@ bool DsvdAudio::start()
 		close(in[1]);
 		return false;
 	}
+	char sh[] = "/bin/sh", c[] = "-c";
+	char *argv[] = { sh, c, const_cast<char *>(cmd_), nullptr };
+	pid_t pid;
+#ifdef DMODEM_DSVD_FORK
+	int err = 0;
+	pid = fork();
+	if (pid == 0) {
+		/* the child: the pipes as its stdin and stdout, then the
+		   shell (only async-signal-safe calls here) */
+		dup2(in[0], 0);
+		dup2(out[1], 1);
+		close(in[1]);
+		close(out[0]);
+		execve("/bin/sh", argv, environ);
+		_exit(127);
+	}
+	if (pid < 0)
+		err = errno;
+#else
 	posix_spawn_file_actions_t fa;
 	posix_spawn_file_actions_init(&fa);
 	posix_spawn_file_actions_adddup2(&fa, in[0], 0);
 	posix_spawn_file_actions_adddup2(&fa, out[1], 1);
 	posix_spawn_file_actions_addclose(&fa, in[1]);
 	posix_spawn_file_actions_addclose(&fa, out[0]);
-	char sh[] = "/bin/sh", c[] = "-c";
-	char *argv[] = { sh, c, const_cast<char *>(cmd_), nullptr };
-	pid_t pid;
 	const int err = posix_spawn(&pid, "/bin/sh", &fa, nullptr, argv,
 				    environ);
 	posix_spawn_file_actions_destroy(&fa);
+#endif
 	close(in[0]);
 	close(out[1]);
 	if (err) {
