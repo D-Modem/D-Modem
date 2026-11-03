@@ -81,6 +81,10 @@ struct Config {
 	bool mnp5 = false;
 	s16 tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
 	s16 tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
+	/* LAPM's 32-bit FCS (10 c/V.42) offered by the originator, agreed
+	   to by the answerer; in the remote's XID, what it asked for or
+	   agreed to */
+	bool fcs32 = true;
 	s16 comp = 0;                   /* V.42bis: bit 0 decoder (what we
 					   receive), bit 1 encoder */
 	/* the directions (as comp's bits) V.42bis and V.44 may each have

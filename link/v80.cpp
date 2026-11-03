@@ -38,19 +38,6 @@ using namespace v80;
 /* the HDLC flag, and an abort's (and marks') octet */
 static const u8 HDLC_FLAG = 0x7e, ONES = 0xff;
 
-/* the FCS-32 register before a frame, and after a whole good frame,
-   its FCS included (8.1.1.6.2/V.42) */
-static const u32 FCS32_INIT = 0xffffffff, FCS32_GOOD = 0xdebb20e3;
-
-/* the FCS-32 (the register reflected) after one more octet */
-static u32 fcs32_add(u32 fcs, u8 c)
-{
-	fcs ^= c;
-	for (s16 i = 0; i < 8; i++)
-		fcs = fcs & 1 ? fcs >> 1 ^ 0xedb88320 : fcs >> 1;
-	return fcs;
-}
-
 /* the octets of the shielding codes T1 to T20 (Table 9/V.80), from the
    set 19h, 99h, DC1, DC3: T1 to T4 one, T5 to T8 the same twice, T9 to
    T20 each ordered pair of two different ones */

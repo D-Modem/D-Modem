@@ -3,8 +3,8 @@
  * Copyright (C) 2026 D-Modem Authors
  *
  *    hdlc.h - bit level framing: HDLC frames (flags, zero insertion,
- *             FCS-16), asynchronous characters, and the V.42 detection
- *             phase (ODP/ADP)
+ *             FCS-16 or FCS-32), asynchronous characters, and the V.42
+ *             detection phase (ODP/ADP)
  *
  *    Bits come and go nbits at a time in the low bits of each byte, the
  *    first one on the line in the most significant of them (the data
@@ -38,6 +38,8 @@ struct Frame {
 	s16 size;               /* to send / room */
 	u16 fcs;
 	u8 *buf;
+	/* a received frame: it came with an FCS-32 (else an FCS-16) */
+	bool fcs32 = false;
 };
 
 /* the bits not yet given out or taken in */
@@ -83,6 +85,23 @@ inline u16 fcs16_add(u16 fcs, u8 c)
 			static_cast<u16>(fcs >> 1);
 	return fcs;
 }
+
+/* the FCS-32 register before a frame, and after a whole good frame,
+   its FCS included (8.1.1.6.2/V.42) */
+const u32 FCS32_INIT = 0xffffffff, FCS32_GOOD = 0xdebb20e3;
+
+/* the FCS-32 (x^32 + x^26 + ... + x + 1, the register reflected) after
+   one more octet */
+inline u32 fcs32_add(u32 fcs, u8 c)
+{
+	fcs ^= c;
+	for (s16 i = 0; i < 8; i++)
+		fcs = fcs & 1 ? fcs >> 1 ^ 0xedb88320 : fcs >> 1;
+	return fcs;
+}
+
+/* the FCSs an Hdlc receiver accepts (a mask) */
+enum : u8 { RX_FCS16 = 1, RX_FCS32 = 2 };
 
 /* who sends and receives the frames */
 class Framer {
@@ -146,6 +165,17 @@ public:
 	void set_framer(Framer *f, bool tx) { framer_ = f; tx_on_ = tx; }
 	/* the framer's frames go out, or only flags */
 	void enable_tx(bool tx) { tx_on_ = tx; }
+	/* the FCS of the frames that start from now on: FCS-32, or FCS-16
+	   (as after start()) */
+	void set_tx_fcs32(bool on) { tx_fcs32_ = on; }
+	/* the frames that start from now on have an FCS-32 */
+	bool tx_fcs32() const { return tx_fcs32_; }
+	/* the FCSs a received frame may have (RX_FCS16, RX_FCS32; FCS-16
+	   only after start()): with both, a frame is good if either is
+	   (8.10.2/V.42), and Frame::fcs32 says which */
+	void set_rx_fcs(u8 mask) { rx_fcs_ = mask; }
+	/* the FCSs a received frame may have */
+	u8 rx_fcs() const { return rx_fcs_; }
 
 private:
 	friend class BitFramer<Hdlc>;
@@ -158,8 +188,14 @@ private:
 	Frame *tx_frame_ = nullptr;
 	Frame rx_frame_ = {};
 	/* the longest frame received: X.75's or V.120's address, control
-	   and header, 2048 octets of information, and the FCS */
-	u8 rx_buf_[5 + 2048 + 2];
+	   and header, 2048 octets of information, and the FCS (32 bits at
+	   most) */
+	u8 rx_buf_[5 + 2048 + 4];
+	bool tx_fcs32_ = false, tx_frame32_ = false;
+	u32 tx_fcs32_reg_ = 0;
+	s16 tx_fcs32_left_ = 0;         /* FCS-32 octets still to go */
+	u8 rx_fcs_ = RX_FCS16;
+	u32 rx_fcs32_reg_ = 0;
 	s16 rx_error_ = 0;
 	s16 rx_ones_ = 0, tx_ones_ = 0;
 };

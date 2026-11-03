@@ -319,9 +319,10 @@ These changes are now written into the Recommendation:
 
 Through AMR 7.4, after some 200 s of data at 175 bit/s, one run ended
 with V.44 reporting a decoder error: a corrupted frame had got past
-LAPM's 16-bit FCS. The Reed-Solomon decoder miscorrects now and then,
-and LAPM has no 32-bit FCS yet. `open_vcvm_amr74` sends only one line
-each way.
+LAPM's 16-bit FCS. The Reed-Solomon decoder miscorrects now and then.
+LAPM now negotiates a 32-bit FCS, which two D-Modems agree on, so such
+a frame should be caught. This has not been rerun for 200 s through AMR
+7.4 yet. `open_vcvm_amr74` sends only one line each way.
 
 ### Slow start-ups through AMR-WB 23.85
 

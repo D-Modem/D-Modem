@@ -135,18 +135,18 @@
   22380 A: Shaping (Tx/Rx)                     ON/ON\r\n
   22380 A: Estimated SNR (dB)                  29.0\r\n
   22380 A: Receive Signal Power Level (dBm0)   -14.8\r\n
-  22380 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
+  22380 A: Transmit Signal Power Level (dBm0)  -15.0\r\n
   22380 A: Round Trip Delay (ms)               37\r\n
-  22380 A: Near Echo Level (dBm0)              -57.8\r\n
-  22380 A: Far Echo Level (dBm0)               -27.2\r\n
-  22380 A: Carrier Frequency Offset (Hz)       -0.1\r\n
-  22380 A: Timing Offset (ppm)                 -1\r\n
+  22380 A: Near Echo Level (dBm0)              -57.5\r\n
+  22380 A: Far Echo Level (dBm0)               -27.0\r\n
+  22380 A: Carrier Frequency Offset (Hz)       0.0\r\n
+  22380 A: Timing Offset (ppm)                 3\r\n
   22380 A: Characters Sent                     3003\r\n
   22380 A: Characters Received                 3000\r\n
   22380 A: Transmit Frame Count                8\r\n
   22380 A: Transmit Frame Error Count          0\r\n
   22380 A: Receive Frame Count                 7\r\n
-  22380 A: Receive Frame Error Count           14\r\n
+  22380 A: Receive Frame Error Count           20\r\n
   22380 A: Retrains by Local Modem             0\r\n
   22380 A: Retrains Requested by Remote Modem  0\r\n
   22380 A: Rate Renegotiation by Local Modem   1\r\n
@@ -164,7 +164,7 @@
   22380 A: DIAG <2A4D3263 11=0F>\r\n
   22380 A: DIAG <2A4D3263 12=2C>\r\n
   22380 A: DIAG <2A4D3263 13=03>\r\n
-  22380 A: DIAG <2A4D3263 14=2B>\r\n
+  22380 A: DIAG <2A4D3263 14=2A>\r\n
   22380 A: DIAG <2A4D3263 15=0C>\r\n
   22380 A: DIAG <2A4D3263 16=1E>\r\n
   22380 A: DIAG <2A4D3263 17=25>\r\n
@@ -197,7 +197,7 @@
   22380 A: DIAG <2A4D3263 56=00000008>\r\n
   22380 A: DIAG <2A4D3263 57=00000007>\r\n
   22380 A: DIAG <2A4D3263 58=0000>\r\n
-  22380 A: DIAG <2A4D3263 59=000E>\r\n
+  22380 A: DIAG <2A4D3263 59=0014>\r\n
   22380 A: DIAG <2A4D3263 60=2>\r\n
   22380 A: OK\r\n
   22380 A< ATO\r
@@ -226,20 +226,20 @@
   26220 A: Nonlinear Encoding (Tx/Rx)          OFF/OFF\r\n
   26220 A: Precoding (Tx/Rx)                   ON/OFF\r\n
   26220 A: Shaping (Tx/Rx)                     ON/ON\r\n
-  26220 A: Estimated SNR (dB)                  29.2\r\n
+  26220 A: Estimated SNR (dB)                  29.6\r\n
   26220 A: Receive Signal Power Level (dBm0)   -14.8\r\n
-  26220 A: Transmit Signal Power Level (dBm0)  -15.0\r\n
+  26220 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
   26220 A: Round Trip Delay (ms)               37\r\n
-  26220 A: Near Echo Level (dBm0)              -57.0\r\n
+  26220 A: Near Echo Level (dBm0)              -56.7\r\n
   26220 A: Far Echo Level (dBm0)               -27.1\r\n
-  26220 A: Carrier Frequency Offset (Hz)       0.0\r\n
-  26220 A: Timing Offset (ppm)                 -2\r\n
+  26220 A: Carrier Frequency Offset (Hz)       0.1\r\n
+  26220 A: Timing Offset (ppm)                 11\r\n
   26220 A: Characters Sent                     3006\r\n
   26220 A: Characters Received                 3000\r\n
   26220 A: Transmit Frame Count                10\r\n
   26220 A: Transmit Frame Error Count          0\r\n
   26220 A: Receive Frame Count                 8\r\n
-  26220 A: Receive Frame Error Count           14\r\n
+  26220 A: Receive Frame Error Count           20\r\n
   26220 A: Retrains by Local Modem             0\r\n
   26220 A: Retrains Requested by Remote Modem  0\r\n
   26220 A: Rate Renegotiation by Local Modem   1\r\n
@@ -263,8 +263,8 @@
   26220 B: Nonlinear Encoding (Tx/Rx)          OFF/OFF\r\n
   26220 B: Precoding (Tx/Rx)                   OFF/ON\r\n
   26220 B: Shaping (Tx/Rx)                     ON/ON\r\n
-  26220 B: Estimated SNR (dB)                  48.2\r\n
-  26220 B: Receive Signal Power Level (dBm0)   -15.1\r\n
+  26220 B: Estimated SNR (dB)                  48.7\r\n
+  26220 B: Receive Signal Power Level (dBm0)   -15.0\r\n
   26220 B: Transmit Signal Power Level (dBm0)  -15.1\r\n
   26220 B: Round Trip Delay (ms)               37\r\n
   26220 B: Carrier Frequency Offset (Hz)       0.0\r\n
@@ -326,7 +326,7 @@
   26220 A: DIAG <2A4D3263 56=0000000A>\r\n
   26220 A: DIAG <2A4D3263 57=00000008>\r\n
   26220 A: DIAG <2A4D3263 58=0000>\r\n
-  26220 A: DIAG <2A4D3263 59=000E>\r\n
+  26220 A: DIAG <2A4D3263 59=0014>\r\n
   26220 A: DIAG <2A4D3263 60=51>\r\n
   26220 A: OK\r\n
   26220 B< AT#UD\r
@@ -338,7 +338,7 @@
   26220 B: DIAG <2A4D3263 5="C14513942A0D">\r\n
   26220 B: DIAG <2A4D3263 10=0F>\r\n
   26220 B: DIAG <2A4D3263 11=0F>\r\n
-  26220 B: DIAG <2A4D3263 12=3F>\r\n
+  26220 B: DIAG <2A4D3263 12=40>\r\n
   26220 B: DIAG <2A4D3263 13=00>\r\n
   26220 B: DIAG <2A4D3263 17=25>\r\n
   26220 B: DIAG <2A4D3263 18=00000800>\r\n

@@ -12,6 +12,13 @@
  *    out, and stay in the other ring until the remote acknowledges them.
  *    T401 is the Link's bit timer, which counts transmitted bits.
  *
+ *    The 32-bit FCS (8.10.2, 10 c): the originator asks for it in its
+ *    XID (Config::fcs32); an answerer that agrees checks the frames
+ *    after its XID response against both FCSs and goes on in the FCS
+ *    of the SABME, while the originator sends everything from its
+ *    SABME on with an FCS-32 and checks for both until the first one
+ *    comes back.
+ *
  */
 
 #include <algorithm>
@@ -55,10 +62,13 @@ static const u8 PI_V44_SET = 0x40, PI_V44_C0 = 0x41, PI_V44_P0 = 0x42,
 static const u8 PI_ZSTD_SET = 0x60, PI_ZSTD_P0 = 0x61, PI_ZSTD_WIN = 0x62,
 	PI_ZSTD_DICT = 0x63;
 
-/* the HDLC optional functions we send (PL 3): the ISO bit positions 2,
-   4, 8, 9, 12 and 16 only (Note 1 of Table 11a), so neither SREJ, TEST
-   nor the 32-bit FCS is asked for */
-static const u32 HDLC_OPT = 0x8a8900;
+/* the HDLC optional functions we send (PL 3; Note 1 of Table 11a: bit
+   position 1 is the low-order bit of the first octet): the ISO bit
+   positions 2, 4, 8, 9, 12 and 16, so neither SREJ nor TEST is asked
+   for; position 17 asks for or agrees to the 32-bit FCS, and a response
+   that agrees clears 16 (the 16-bit FCS) */
+static const u32 HDLC_OPT = 0x8a8900, HDLC_OPT_FCS16 = 0x008000,
+	HDLC_OPT_FCS32 = 0x000001;
 
 /* T401's bits when the data pump's rate is not known */
 static const s32 T401_NO_RATE = 57600;
@@ -194,6 +204,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	state_ = IDLE;
 	config_ = was_up_ = reject_ = busy_ = peer_busy_ = false;
 	v76_ = false;
+	fcs32_asked_ = fcs32_ = false;
 	cmd_ud_.clear();
 	rsp_ud_.clear();
 	rtx_count_ = 0;
@@ -547,7 +558,15 @@ s16 Lapm::tx_xid(u8 addr)
 	*p++ = U_XID;
 	*p++ = FI_GENERAL;
 	g = p;
-	p = put_param(p + 3, PI_HDLC_OPT, HDLC_OPT, 3);
+	/* the 32-bit FCS: asked for before the link is first up, agreed
+	   to when asked for; later what the link has */
+	bool fcs32 = state_ == IDLE && !was_up_ ?
+		c.fcs32 && !v76_ && (!response || fcs32_asked_) : fcs32_;
+	u32 opt = HDLC_OPT;
+	if (fcs32)
+		opt = (response ? opt & ~HDLC_OPT_FCS16 : opt) |
+			HDLC_OPT_FCS32;
+	p = put_param(p + 3, PI_HDLC_OPT, opt, 3);
 	p = put_param(p, PI_N401_TX, info_i * 8, 2);
 	p = put_param(p, PI_N401_RX, info_r * 8, 2);
 	p = put_param(p, PI_K_TX, win_i, 1);
@@ -662,6 +681,7 @@ void Lapm::rx_complete(Frame *f)
 	}
 	const bool cmd = f->buf[0] == rsp_addr_;
 	const u8 ctrl = f->buf[1];
+	fcs_seen(f, false);
 	if ((ctrl & 3) == 3) {
 		if (cmd)
 			rx_unnum_cmd(f);
@@ -922,6 +942,7 @@ void Lapm::rx_unnum_cmd(Frame *f)
 
 	switch (f->buf[1] & ~PF) {
 	case U_SABME:
+		fcs_seen(f, true);
 		connect();
 		tx_unnum(rsp_addr_, static_cast<u8>(U_UA | pf));
 		timer_stop();
@@ -941,6 +962,13 @@ void Lapm::rx_unnum_cmd(Frame *f)
 	case U_XID:
 		rx_xid(f, false);
 		tx_xid(rsp_addr_);
+		/* agreed: either FCS until the SABME says which */
+		if (state_ == IDLE && !was_up_) {
+			fcs32_ = fcs32_asked_ && link_->cfg().fcs32 && !v76_;
+			if (!v76_)
+				link_->hdlc().set_rx_fcs(fcs32_ ?
+					RX_FCS16 | RX_FCS32 : RX_FCS16);
+		}
 		break;
 	case U_UI:
 	case U_TEST:
@@ -1037,6 +1065,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 		return;
 	}
 	Config r;
+	bool hdlc32 = false;
 	s16 p0 = 0;
 	s32 v44_p0 = 0, zstd_p0 = 0;
 	bool v44_set = false, zstd_set = false;
@@ -1055,6 +1084,10 @@ void Lapm::rx_xid(Frame *f, bool response)
 	auto param = [&](u8 pi, const u8 *pv, s16 pl) {
 		const u32 v = get_be(pv, pl);
 		switch (pi) {
+		case PI_HDLC_OPT:
+			/* bit position 17: the third octet's low-order bit */
+			hdlc32 = pl >= 3 && pv[2] & 1;
+			break;
 		case PI_N401_TX:
 			info_i = settle(info_i, v / 8, LAPM_DFLT_INFO);
 			break;
@@ -1153,12 +1186,54 @@ void Lapm::rx_xid(Frame *f, bool response)
 	r.tx_info = static_cast<s16>(tx_info_);
 	r.rx_info = static_cast<s16>(rx_info_);
 	r.ec = r.detect = true;
-	link_->logf("ec: XID %s: compression %d%s, k %u/%u, N401 %u/%u.",
+	/* the 32-bit FCS, before the link is first up: a command asks for
+	   it; a response to ours that asked agrees, and our frames carry
+	   it from the SABME on, while either may come back until the
+	   first FCS-32 does */
+	if (state_ == IDLE && !was_up_ && !v76_) {
+		if (!response) {
+			fcs32_asked_ = hdlc32;
+		} else {
+			fcs32_ = hdlc32 && link_->cfg().fcs32;
+			link_->hdlc().set_tx_fcs32(fcs32_);
+			link_->hdlc().set_rx_fcs(fcs32_ ?
+				RX_FCS16 | RX_FCS32 : RX_FCS16);
+		}
+	}
+	r.fcs32 = response ? fcs32_ : hdlc32;
+	link_->logf("ec: XID %s: compression %d%s, k %u/%u, N401 %u/%u%s.",
 		    response ? "response" : "command", r.comp,
 		    r.zstd ? (r.v44 ? " (zstd, V.44)" : " (zstd)") :
 		    r.v44 ? " (V.44)" : "", tx_win_, rx_win_, tx_info_,
-		    rx_info_);
+		    rx_info_, r.fcs32 ? ", FCS-32" : "");
 	link_->update_config(r);
+}
+
+/* the FCS of a received frame f, while the 32-bit FCS is agreed and
+   Hdlc takes either: at the answerer the SABME's (sabme) says which
+   the link has from now on, both ways (8.10.2); at the originator, the
+   first frame with an FCS-32 ends the 16-bit checks */
+void Lapm::fcs_seen(const Frame *f, bool sabme)
+{
+	if (v76_ || !fcs32_)
+		return;
+	Hdlc &h = link_->hdlc();
+	if (h.rx_fcs() != (RX_FCS16 | RX_FCS32))
+		return;
+	if (link_->caller()) {
+		if (f->fcs32) {
+			h.set_rx_fcs(RX_FCS32);
+			link_->logf("ec: FCS-32 both ways.");
+		}
+		return;
+	}
+	if (!sabme)
+		return;
+	fcs32_ = f->fcs32;
+	h.set_tx_fcs32(fcs32_);
+	h.set_rx_fcs(fcs32_ ? RX_FCS32 : RX_FCS16);
+	link_->logf("ec: SABME with an FCS-%d: it both ways.",
+		    fcs32_ ? 32 : 16);
 }
 
 /* a line about the frame f (a command, or a response): title, then its

@@ -12,24 +12,24 @@
    8040 until B 'CONNECT': yes
    8040 A: state 2, tx 2400 rx 2400, started
    8040 B: state 2, tx 2400 rx 2400, started
-   8400 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8400 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   8420 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
   12060 A: B0009 The quick brown fox jumps over the l3\r\n
   13040 B: A0009 The quick brown fox jumps over the lNO CARRIER\r\n
   13040 until B 'NO CARRIER': yes

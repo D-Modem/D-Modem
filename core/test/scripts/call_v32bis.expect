@@ -114,8 +114,8 @@
   19220 B< ATH\r
   19220 B: OK\r\n
   19240 B: NO CARRIER\r\n
-  19260 A: +++NO CARRIER\r\n
-  19260 until A 'NO CARRIER': yes
-  19260 until B 'OK': yes
-  19260 A: state 0, tx 14400 rx 14400, idle
-  19260 B: state 0, tx 14400 rx 14400, idle
+  19280 A: +++NO CARRIER\r\n
+  19280 until A 'NO CARRIER': yes
+  19280 until B 'OK': yes
+  19280 A: state 0, tx 14400 rx 14400, idle
+  19280 B: state 0, tx 14400 rx 14400, idle

@@ -36,7 +36,17 @@ port or pty.) It is C++, in `namespace dlink`.
   - N400 = 5 retransmissions (of an XID, SABME, DISC or the data phase's
     polls) before it gives up;
   - parameter negotiation in XID, with V.42bis's private parameters
-    (and zstd's set after them) and V.44's user data subfield.
+    (and zstd's set after them) and V.44's user data subfield;
+  - the 32-bit FCS (10 c and 8.10.2/V.42), on unless `Config::fcs32`
+    is off. The originator asks for it with bit position 17 of the HDLC
+    optional functions in its XID. An answerer that agrees sets 17 and
+    clears 16 in its XID response, then checks each frame against both
+    FCSs until the SABME arrives. The SABME's FCS is what the link uses
+    both ways from then on. The originator sends its SABME and every
+    frame after it with an FCS-32. It takes either FCS until the first
+    FCS-32 comes back, then only FCS-32. An FCS-16 misses about one
+    corrupted frame in 65536; an FCS-32 about one in 4 billion. A modem
+    that does not set 17 in its response gets an FCS-16 as before.
 - **MNP 2 to 4** (`Mnp`, `mnp.cpp`), V.42's "alternative procedure"
   (Annex A of V.42 (10/96)), for modems that have no LAPM. The LR, LR,
   LA establishment goes in start-stop octets (`MnpAsync`); the data
@@ -146,8 +156,8 @@ modem. Most cases connect two `Link`s back to back, bit by bit.
 | Area | Tests | What they check |
 |---|---|---|
 | Compression | `V44`, `V44Preset`, `Zstd`, `ZstdDict`, `V42bis`, `V42bisStepup` | V.42bis, V.44 and zstd round trips (text, noise, escape characters, repeats, small dictionaries, flushes); V.44's transparent mode; V.cvm's preset dictionary and zstd dictionary; two V.42bis STEPUPs taken and a third a C-ERROR |
-| HDLC | `Hdlc`, `BitsMasked` | 200 frames through a bit error; every item to the pump `nbits` wide with nothing above it, in every mode |
-| LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; no compression; one direction only; each V.42bis parameter the smaller of the two |
+| HDLC | `Hdlc`, `HdlcFcs32`, `BitsMasked` | 200 frames through a bit error; CRC-32's check value, frames with an FCS-32 (runs of 1s among them) to receivers that take FCS-32, FCS-16 or both, and one with a bit error dropped; every item to the pump `nbits` wide with nothing above it, in every mode |
+| LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmFcs32`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; the 32-bit FCS (the caller's XID with and without it, the answerer's response, a SABME with each FCS, FCS-16 when either side has it off, and the data with bit errors); no compression; one direction only; each V.42bis parameter the smaller of the two |
 | LAPM faults | `LapmBadFrames`, `LapmNrPastVs`, `LapmUnsolicitedDm`, `LapmBitErrors`, `LapmSlowDte`, `LapmCompressedSlowDte`, `LapmN400` | frames LAPM must drop; an N(R) past V(S) ignored; an unsolicited DM (F = 0) while idle, which asks for the link (8.8/V.42: an SABME, not the link up; ignored after a release); REJ and T401 recovery; a slow DTE (RNR); five retransmissions of an unanswered XID and five polls with the line cut, no more |
 | Detection and async | `DetectHangup`, `AdpCellular`, `Async`, `V14`, `OdpUnanswered`, `LapmCallerAsyncRemote` | a hangup during T400; an originator against a cellular answerer's ADPs, "EM" then "EC" (LAPM) or "EM" alone (async after T400); async; an answerer or caller falling back to async after T400; a LAPM answerer with an async caller |
 | MNP | `MnpLr`, `MnpResponder`, `MnpResponderNoLr`, `Mnp`, `MnpAfterOdp`, `MnpOctets`, `MnpBitErrors`, `MnpSlowDte`, `MnpRequired`, `MnpN400` | our LR octet for octet as the Agere modem's, FCS and all, three of them unanswered, then async; our responder against the Agere modem's LR, then an LA, an LT, an LN (LNA) and an LD as HDLC frames; against SYN DLE STX with no LR after it (async after its wait, nothing sent); MNP first, and after ODPs a V.42 answerer did not answer; framing mode 2 and no optimizations; bit errors in both modes; a slow DTE (no credit); MNP required against a modem without it; N400 with the line cut |

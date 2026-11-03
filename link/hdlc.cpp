@@ -4,8 +4,8 @@
  *
  *    hdlc.cpp - the bit framers: the loops between the data pump's bits
  *               and a framer, HDLC frames (V.42 8.1: flags, zero
- *               insertion, FCS-16), start-stop characters, and the V.42
- *               detection phase (7.2: ODP, ADP)
+ *               insertion, FCS-16 or FCS-32), start-stop characters,
+ *               and the V.42 detection phase (7.2: ODP, ADP)
  *
  *    The BitQueue of a framer holds its bits in line order: the oldest
  *    at position bit - 1 of data, the newest at position 0.
@@ -25,7 +25,8 @@ static const u8 FLAG = 0x7e;
 enum {
 	RX_LOOKAHEAD = 18,      /* bits the HDLC receiver needs for a step:
 				   an octet, two inserted zeros, a flag */
-	MIN_FRAME = 4,          /* address, control, FCS */
+	MIN_FRAME = 4,          /* address, control, FCS-16 */
+	MIN_FRAME32 = 6,        /* address, control, FCS-32 */
 };
 
 /* the detection phase's characters: ODP (DC1 with even, then odd
@@ -312,17 +313,21 @@ void Detector::rx_scan()
  *
  */
 
-/* f empty, for the next frame */
-static void frame_reset(Frame &f)
+/* f empty, for the next frame (fcs32: its FCS-32 register) */
+static void frame_reset(Frame &f, u32 &fcs32)
 {
 	f.count = 0;
 	f.fcs = FCS16_INIT;
+	fcs32 = FCS32_INIT;
 }
 
 /* a flag has ended frame f (bits: the data bits after its last whole
-   octet): a good one to framer (its octets without the FCS, counted),
-   one with a bad FCS reported to it (counted), the rest dropped */
-static void frame_end(Link *link, Framer *framer, Frame &f, s16 bits)
+   octet; fcs32: its FCS-32 register; accept: the FCSs it may have): a
+   good one to framer (its octets without the FCS, counted, and which
+   FCS it had; an FCS-32 first when both would do), one with a bad FCS
+   reported to it (counted), the rest dropped */
+static void frame_end(Link *link, Framer *framer, Frame &f, s16 bits,
+		      u32 fcs32, u8 accept)
 {
 	if (!f.count)
 		return;
@@ -331,11 +336,15 @@ static void frame_end(Link *link, Framer *framer, Frame &f, s16 bits)
 			   f.count, bits);
 		return;
 	}
-	if (f.count < MIN_FRAME) {
+	const bool ok32 = accept & RX_FCS32 && f.count >= MIN_FRAME32 &&
+		fcs32 == FCS32_GOOD;
+	const bool ok16 = accept & RX_FCS16 && f.count >= MIN_FRAME &&
+		f.fcs == FCS16_GOOD;
+	if (f.count < ((accept & RX_FCS16) ? MIN_FRAME : MIN_FRAME32)) {
 		link->logf("hdlc: rx frame too short (%d octets).", f.count);
 		return;
 	}
-	if (f.fcs != FCS16_GOOD) {
+	if (!ok32 && !ok16) {
 		link->logf("hdlc: rx frame fcs error (%d octets).", f.count);
 		if (framer) {
 			link->stats().rx_errors++;
@@ -345,7 +354,8 @@ static void frame_end(Link *link, Framer *framer, Frame &f, s16 bits)
 	}
 	if (framer) {
 		link->stats().rx_frames++;
-		f.count -= 2;
+		f.fcs32 = ok32;
+		f.count = static_cast<s16>(f.count - (ok32 ? 4 : 2));
 		framer->rx_complete(&f);
 	}
 }
@@ -359,10 +369,13 @@ void Hdlc::start(Link *link)
 	tx_on_ = false;
 	tx_frame_ = nullptr;
 	tx_ones_ = 0;
+	tx_fcs32_ = tx_frame32_ = false;
+	tx_fcs32_left_ = 0;
+	rx_fcs_ = RX_FCS16;
 	rx_frame_ = {};
 	rx_frame_.buf = rx_buf_;
 	rx_frame_.size = sizeof(rx_buf_);
-	frame_reset(rx_frame_);
+	frame_reset(rx_frame_, rx_fcs32_reg_);
 	rx_error_ = 1;
 	rx_ones_ = 0;
 	link->set_timer(0, Link::Timer::None);
@@ -385,9 +398,11 @@ void Hdlc::put_byte(u8 in)
 }
 
 /* the next unit: between frames a flag, after which the framer's next
-   frame starts (when it has one and may send); in a frame its next
-   octet, then the FCS, at which the framer hears that the frame is out
-   (the flag after it closes it) */
+   frame starts (when it has one and may send), with the FCS set for it
+   then (set_tx_fcs32(); the framer may change it in next_tx_frame());
+   in a frame its next octet, then the FCS (the register's complement,
+   its least significant octet first), at which the framer
+   hears that the frame is out (the flag after it closes it) */
 bool Hdlc::tx_fill()
 {
 	if (!tx_frame_) {
@@ -396,19 +411,38 @@ bool Hdlc::tx_fill()
 		    (tx_frame_ = framer_->next_tx_frame())) {
 			tx_frame_->count = 0;
 			tx_frame_->fcs = FCS16_INIT;
+			tx_frame32_ = tx_fcs32_;
+			tx_fcs32_reg_ = FCS32_INIT;
+			tx_fcs32_left_ = 0;
 			link_->stats().tx_frames++;
 		}
 		return true;
 	}
 	if (tx_frame_->count < tx_frame_->size) {
 		u8 c = tx_frame_->buf[tx_frame_->count++];
-		tx_frame_->fcs = fcs16_add(tx_frame_->fcs, c);
+		if (tx_frame32_)
+			tx_fcs32_reg_ = fcs32_add(tx_fcs32_reg_, c);
+		else
+			tx_frame_->fcs = fcs16_add(tx_frame_->fcs, c);
 		put_byte(c);
 		return true;
 	}
-	u16 fcs = static_cast<u16>(~tx_frame_->fcs);
-	put_byte(static_cast<u8>(fcs));
-	put_byte(static_cast<u8>(fcs >> 8));
+	if (tx_frame32_) {
+		/* an octet at a time (the queue holds 32 bits): the
+		   register's complement, shifted, and the octets put out */
+		if (!tx_fcs32_left_) {
+			tx_fcs32_reg_ = ~tx_fcs32_reg_;
+			tx_fcs32_left_ = 4;
+		}
+		put_byte(static_cast<u8>(tx_fcs32_reg_));
+		tx_fcs32_reg_ >>= 8;
+		if (--tx_fcs32_left_)
+			return true;
+	} else {
+		const u16 fcs = static_cast<u16>(~tx_frame_->fcs);
+		put_byte(static_cast<u8>(fcs));
+		put_byte(static_cast<u8>(fcs >> 8));
+	}
 	tx_ones_ = 0;
 	Frame *f = tx_frame_;
 	tx_frame_ = nullptr;
@@ -440,8 +474,9 @@ void Hdlc::rx_scan()
 		if (peek_octet(rx_) == FLAG) {
 			rx_.bit -= 8;
 			if (!rx_error_)
-				frame_end(link_, framer_, rx_frame_, n);
-			frame_reset(rx_frame_);
+				frame_end(link_, framer_, rx_frame_, n,
+					  rx_fcs32_reg_, rx_fcs_);
+			frame_reset(rx_frame_, rx_fcs32_reg_);
 			rx_error_ = 0;
 			rx_ones_ = 0;
 			return;
@@ -462,6 +497,8 @@ void Hdlc::rx_scan()
 	}
 	rx_frame_.buf[rx_frame_.count++] = octet;
 	rx_frame_.fcs = fcs16_add(rx_frame_.fcs, octet);
+	if (rx_fcs_ & RX_FCS32)
+		rx_fcs32_reg_ = fcs32_add(rx_fcs32_reg_, octet);
 }
 
 /* the loops of the five framers (MnpAsync's hooks are in mnp.cpp) */
