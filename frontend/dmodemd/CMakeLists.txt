@@ -80,11 +80,11 @@ if(DMODEM_DMODEMD)
 	# dmodemd_fake_<fake>, dmodemd with test/fake_<fake>.cpp in libusb's
 	# place, linked into it (where there is no LD_PRELOAD to put it in
 	# front of libusb: Windows, macOS; DMODEM_TEST_BUILTIN_FAKES on
-	# Linux); usb_test.py, pico_line_test.py, pico_wb_test.py and
-	# agere_test.py run it with "-" for the fake
+	# Linux); usb_test.py, pico_line_test.py, pico_wb_test.py,
+	# agere_test.py and apple_test.py run it with "-" for the fake
 	function(dmodem_usb_fake fake main)
 		add_executable(dmodemd_fake_${fake} ${main} usb_line.cpp
-			usb_agere.cpp usb_wb.cpp si3056.cpp test/fake_${fake}.cpp)
+			usb_agere.cpp usb_apple.cpp usb_wb.cpp si3056.cpp test/fake_${fake}.cpp)
 		target_compile_definitions(dmodemd_fake_${fake} PRIVATE
 			DMODEM_USB)
 		target_include_directories(dmodemd_fake_${fake} SYSTEM PRIVATE
@@ -153,8 +153,8 @@ if(DMODEM_DMODEMD)
 		message(STATUS "dmodemd: no ALSA (libasound2-dev): no -a")
 	endif()
 	# --usb: a Smart Link SmartUSB56 (ST7554), a pico-serial Line or WB
-	# stick or an Agere USB modem through libusb for the line
-	# (usb_line.cpp, usb_wb.cpp, usb_agere.cpp), if libusb-1.0-0-dev is
+	# stick, an Agere USB modem or an Apple USB Modem through libusb for the line
+	# (usb_line.cpp, usb_wb.cpp, usb_agere.cpp, usb_apple.cpp), if libusb-1.0-0-dev is
 	# there
 	if(PkgConfig_FOUND AND NOT WIN32)
 		pkg_check_modules(LIBUSB QUIET IMPORTED_TARGET libusb-1.0)
@@ -163,7 +163,7 @@ if(DMODEM_DMODEMD)
 	# devices on WinUSB, docs/windows.md)
 	if((WIN32 OR APPLE) AND DMODEM_USB)
 		include(libusb)
-		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_wb.cpp si3056.cpp)
+		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_apple.cpp usb_wb.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE dmodem_libusb)
 		set(_usb_headers
@@ -204,7 +204,7 @@ if(DMODEM_DMODEMD)
 			set(_usb_builtin_fakes ON)
 		endif()
 	elseif(LIBUSB_FOUND)
-		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_wb.cpp si3056.cpp)
+		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_apple.cpp usb_wb.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE PkgConfig::LIBUSB)
 		# test/usb_test.py: two dmodemd on fake SmartUSB56s
@@ -238,6 +238,13 @@ if(DMODEM_DMODEMD)
 			dmodem_flags(dmodem_fake_agere EXTRA NOOPT)
 			target_include_directories(dmodem_fake_agere PRIVATE
 				${LIBUSB_INCLUDE_DIRS})
+			# test/apple_test.py: on fake Apple USB Modems
+			# (test/fake_apple.cpp)
+			add_library(dmodem_fake_apple SHARED
+				test/fake_apple.cpp)
+			dmodem_flags(dmodem_fake_apple EXTRA NOOPT)
+			target_include_directories(dmodem_fake_apple PRIVATE
+				${LIBUSB_INCLUDE_DIRS})
 			# (the fakes linked in libusb's place too, as macOS's
 			# tests have them: their own tests, *_builtin)
 			option(DMODEM_TEST_BUILTIN_FAKES
@@ -251,7 +258,7 @@ if(DMODEM_DMODEMD)
 		message(STATUS "dmodemd: no libusb (libusb-1.0-0-dev): no --usb")
 	endif()
 	if(_usb_builtin_fakes)
-		foreach(_f st7554 pico_line pico_wb agere)
+		foreach(_f st7554 pico_line pico_wb agere apple)
 			dmodem_usb_fake(${_f} main.cpp ${_usb_headers})
 		endforeach()
 	endif()
@@ -474,6 +481,14 @@ if(DMODEM_DMODEMD)
 			set_tests_properties(dmodemd_agere PROPERTIES
 				TIMEOUT 300 COST 1000)
 			set_property(TEST dmodemd_agere APPEND PROPERTY LABELS alsa)
+			dmodem_add_test(dmodemd_apple ${Python3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/test/apple_test.py
+				$<TARGET_FILE:dmodemd>
+				$<TARGET_FILE:line_exchange>
+				$<TARGET_FILE:dmodem_fake_apple>)
+			set_tests_properties(dmodemd_apple PROPERTIES
+				TIMEOUT 300 COST 1000)
+			set_property(TEST dmodemd_apple APPEND PROPERTY LABELS alsa)
 		endif()
 		# the same with the fakes linked in (macOS's; on Linux with
 		# DMODEM_TEST_BUILTIN_FAKES, as dmodemd_*_builtin)
@@ -487,7 +502,8 @@ if(DMODEM_DMODEMD)
 			foreach(_t usb:usb_test:st7554:line_exchange
 				pico_line:pico_line_test:pico_line:line_exchange
 				pico_wb:pico_wb_test:pico_wb:wb_pair
-				agere:agere_test:agere:line_exchange)
+				agere:agere_test:agere:line_exchange
+				apple:apple_test:apple:line_exchange)
 				string(REPLACE ":" ";" _t ${_t})
 				list(GET _t 0 _name)
 				list(GET _t 1 _script)

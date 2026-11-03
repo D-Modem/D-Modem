@@ -5,7 +5,8 @@
  *    usb_line.cpp - the modem's line a Smart Link SmartUSB56 (ST7554)
  *                   or a pico-serial Line or WB stick through libusb
  *                   (usb_line.h; the WB stick's own in usb_wb.cpp, the
- *                   Agere modem's in usb_agere.cpp)
+ *                   Agere modem's in usb_agere.cpp, the Apple USB
+ *                   Modem's in usb_apple.cpp)
  *
  *    The ST7554's registers, their values and its start-up are those of
  *    Smart Link's Linux driver for it (drivers/st7554.c of slmodem
@@ -355,16 +356,18 @@ bool UsbLine::find(const char *dev)
 		bool stick = d.idVendor == STICK_VENDOR && d.idProduct == STICK_PRODUCT;
 		bool wb = wb_device(d.idVendor, d.idProduct);
 		bool agere = agere_device(d.idVendor, d.idProduct);
-		if (!st7554 && !stick && !wb && !agere)
+		bool apple = apple_device(d.idVendor, d.idProduct);
+		if (!st7554 && !stick && !wb && !agere && !apple)
 			continue;
 		found++;
 		if (!any && (libusb_get_bus_number(list[i]) != bus ||
 			     libusb_get_device_address(list[i]) != addr))
 			continue;
 		kind_ = stick ? Kind::Stick : wb ? Kind::Wb :
-			agere ? Kind::Agere : Kind::St7554;
+			agere ? Kind::Agere : apple ? Kind::Apple : Kind::St7554;
 		name_ = stick ? "pico-serial Line" : wb ? "pico-serial WB" :
-			agere ? "Agere USB modem" : "SmartUSB56";
+			agere ? "Agere USB modem" : apple ? "Apple USB Modem" :
+			"SmartUSB56";
 		int err = libusb_open(list[i], &h_);
 		if (err < 0) {
 			char idbuf[10];
@@ -400,12 +403,12 @@ bool UsbLine::find(const char *dev)
 	libusb_free_device_list(list, 1);
 	if (!h_ && !found)
 		ERR("no Smart Link SmartUSB56 (USB 0483:7554), pico-serial "
-		    "Line (1209:0002), pico-serial WB (1209:0003) or Agere USB "
-		    "modem (047e:2892, 047e:2828)%s%s\n", any ? "" : " at ",
-		    any ? "" : dev);
+		    "Line (1209:0002), pico-serial WB (1209:0003), Agere USB "
+		    "modem (047e:2892, 047e:2828) or Apple USB Modem (05ac:1401, "
+		    "05ac:8220)%s%s\n", any ? "" : " at ", any ? "" : dev);
 	else if (!h_ && found && !any)
-		ERR("no SmartUSB56, pico-serial Line or WB, or Agere USB modem "
-		    "at %s (%d elsewhere)\n", dev, found);
+		ERR("no SmartUSB56, pico-serial Line or WB, Agere or Apple USB "
+		    "modem at %s (%d elsewhere)\n", dev, found);
 	return h_ != nullptr;
 }
 
@@ -432,7 +435,8 @@ u32 UsbLine::line_rate(const char *dev, u32 rate, bool given)
 		bool ours = agere_device(d.idVendor, d.idProduct) ||
 			(d.idVendor == ST7554_VENDOR && d.idProduct == ST7554_PRODUCT) ||
 			(d.idVendor == STICK_VENDOR && d.idProduct == STICK_PRODUCT) ||
-			wb_device(d.idVendor, d.idProduct);
+			wb_device(d.idVendor, d.idProduct) ||
+			apple_device(d.idVendor, d.idProduct);
 		if (!ours || (!any && (libusb_get_bus_number(list[i]) != bus ||
 				       libusb_get_device_address(list[i]) != addr)))
 			continue;
@@ -481,7 +485,8 @@ s16 UsbLine::list()
 			d.idProduct == STICK_PRODUCT;
 		bool wb = wb_device(d.idVendor, d.idProduct);
 		bool agere = agere_device(d.idVendor, d.idProduct);
-		if (!st7554 && !stick && !wb && !agere)
+		bool apple = apple_device(d.idVendor, d.idProduct);
+		if (!st7554 && !stick && !wb && !agere && !apple)
 			continue;
 		found++;
 		err = libusb_open(devs[i], &h);
@@ -492,7 +497,8 @@ s16 UsbLine::list()
 		       libusb_get_device_address(devs[i]), d.idVendor,
 		       d.idProduct, stick ? "pico-serial Line" :
 		       wb ? "pico-serial WB" :
-		       agere ? "Agere USB modem" : "SmartUSB56",
+		       agere ? "Agere USB modem" :
+		       apple ? "Apple USB Modem" : "SmartUSB56",
 		       err == 0 ? "ready" : libusb_strerror(err),
 #ifdef _WIN32
 		       err == LIBUSB_ERROR_NOT_SUPPORTED ?
@@ -504,8 +510,9 @@ s16 UsbLine::list()
 		libusb_free_device_list(devs, 1);
 	if (!found)
 		printf("no SmartUSB56 (0483:7554), pico-serial Line "
-		       "(1209:0002), pico-serial WB (1209:0003) or Agere USB "
-		       "modem (047e:2892, 047e:2828)\n");
+		       "(1209:0002), pico-serial WB (1209:0003), Agere USB "
+		       "modem (047e:2892, 047e:2828) or Apple USB Modem "
+		       "(05ac:1401, 05ac:8220)\n");
 #ifdef _WIN32
 	else if (usbdk)
 		printf("(through UsbDk)\n");
@@ -673,7 +680,8 @@ bool UsbLine::open(const char *dev, u32 rate)
 	claimed_ = true;
 	if (!(kind_ == Kind::Stick ? open_stick(rate) :
 	      kind_ == Kind::Wb ? open_wb(rate) :
-	      kind_ == Kind::Agere ? open_agere() : open_st7554(rate)) ||
+	      kind_ == Kind::Agere ? open_agere() :
+	      kind_ == Kind::Apple ? open_apple(rate) : open_st7554(rate)) ||
 	    !start_streams()) {
 		close();
 		return false;
@@ -938,8 +946,10 @@ bool UsbLine::start_streams()
 		if (!start_iso(viso_, static_cast<s16>(VOICE_RATE / 1000)))
 			return false;
 	}
-	/* (the sticks' samples run since their alternate setting 1) */
-	return kind_ == Kind::Stick || kind_ == Kind::Wb || start_fifos();
+	/* (the sticks' samples run since their alternate setting 1, the
+	   Apple modem's since its streams' alternate settings) */
+	return kind_ == Kind::Stick || kind_ == Kind::Wb ||
+		kind_ == Kind::Apple || start_fifos();
 }
 
 /* stream s's transfers: ISO_TRANSFERS IN ones, the OUT ones (each sent
@@ -1126,6 +1136,9 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 	} else if (l->kind_ == Kind::Wb) {
 		if (t->status == LIBUSB_TRANSFER_COMPLETED)
 			l->wb_event(t->buffer, t->actual_length);
+	} else if (l->kind_ == Kind::Apple) {
+		if (t->status == LIBUSB_TRANSFER_COMPLETED)
+			l->apple_event(t->buffer, t->actual_length);
 	} else if (t->status == LIBUSB_TRANSFER_COMPLETED && t->actual_length >= 4) {
 		u16 fifo =
 			static_cast<u16>(t->buffer[0] |
@@ -1177,6 +1190,9 @@ void UsbLine::country(dcore::Modem &, const char *name)
 	intl_aus_ = same_name(n, "AUSTRALIA");
 	if (h_ && kind_ == Kind::Stick && claimed_ && hook_ != MODEM_HOOK_OFF)
 		stick_country();
+	if (h_ && kind_ == Kind::Apple && claimed_ && apple_regs_read_ &&
+	    hook_ != MODEM_HOOK_OFF)
+		apple_country();
 }
 
 /* see usb_line.h: registers 16, 26, 31, 59, and 30 on a Si3019 */
@@ -1417,6 +1433,10 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 		return agere_hook(off) && agere_caller_id(!off) ? 0 : -1;
 	if (kind_ == Kind::Wb)      /* (no hook: a bare pair's) */
 		return 0;
+	if (kind_ == Kind::Apple)   /* (the line monitor on, on hook) */
+		return off ? (apple_hook(true) && apple_monitor(false) ? 0 : -1) :
+			(apple_hook(false) && apple_monitor(true) &&
+			 (!daa_due_ || apple_country()) ? 0 : -1);
 	if (kind_ == Kind::Stick)
 		return off ? (stick_out(LP_SET_HOOK, 1) &&
 			      stick_out(LP_SET_MONITOR, 0) ? 0 : -1) :
@@ -1504,6 +1524,8 @@ void UsbLine::hook_flash(dcore::Modem &, u16 ms)
 	}
 	if (kind_ == Kind::Agere)
 		agere_hook(false);
+	else if (kind_ == Kind::Apple)
+		apple_hook(false);
 	else
 		set_gpio(static_cast<u16>(gpio_ & ~GPIO_HOOK1));
 	flash_end_ =
@@ -1521,6 +1543,8 @@ s16 UsbLine::pulse_hook(dcore::Modem &, bool broken)
 		return stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
 	if (kind_ == Kind::Agere)
 		return agere_hook(!broken) ? 0 : -1;
+	if (kind_ == Kind::Apple)
+		return apple_hook(!broken) ? 0 : -1;
 	u16 v = broken ? static_cast<u16>(gpio_ & ~GPIO_HOOK1) :
 		static_cast<u16>(gpio_ | GPIO_HOOK1);
 	if (intl_)
@@ -1641,6 +1665,8 @@ s16 UsbLine::pump(dcore::Modem &m)
 			flash_end_ = 0;
 			if (hook_ == MODEM_HOOK_OFF && kind_ == Kind::Agere)
 				agere_hook(true);
+			else if (hook_ == MODEM_HOOK_OFF && kind_ == Kind::Apple)
+				apple_hook(true);
 			else if (hook_ == MODEM_HOOK_OFF)
 				set_gpio(static_cast<u16>(gpio_ |
 							       GPIO_HOOK1));
@@ -1688,6 +1714,8 @@ s16 UsbLine::pump(dcore::Modem &m)
 	}
 	if (kind_ == Kind::Agere && hook_ != MODEM_HOOK_OFF)
 		agere_ring_poll();
+	if (kind_ == Kind::Apple && hook_ != MODEM_HOOK_OFF)
+		apple_ring_tick();
 	update_leds(m);
 	/* (a playback that has drifted ahead: dropped back to its lead;
 	   so is the handset's, and its microphone's samples not taken) */
@@ -2096,6 +2124,9 @@ void UsbLine::close()
 	} else if (h_ && kind_ == Kind::Wb && claimed_) {
 		/* its LINK LED its own again, the samples stopped */
 		wb_close();
+	} else if (h_ && kind_ == Kind::Apple) {
+		/* on hook, the streams stopped, its interfaces released */
+		apple_close();
 	} else if (h_ && kind_ == Kind::St7554) {
 		set_reg(FIFO_MASK, 0);
 		set_reg(GPIO_MASK, 0);

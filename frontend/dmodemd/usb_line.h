@@ -6,10 +6,11 @@
  *                 0483:7554 with an STLC7550 codec), a pico-serial Line
  *                 stick (USB 1209:0002, a Si3056 DAA behind an RP2040), a
  *                 pico-serial WB stick (USB 1209:0003, a TLV320AIC3204
- *                 codec on a bare pair) or an Agere USB 2.0 soft modem
+ *                 codec on a bare pair), an Agere USB 2.0 soft modem
  *                 (USB 047E:2892 or 047E:2828, an Agere "USS" ARM
- *                 controller with a Mercury codec) through libusb: no
- *                 kernel driver
+ *                 controller with a Mercury codec) or an Apple USB Modem
+ *                 (USB 05AC:1401 or 05AC:8220, Motorola's SM56 USB: a
+ *                 Si3056 DAA) through libusb: no kernel driver
  *
  *    The ST7554 is a USB bridge to a codec and a DAA: its registers are
  *    vendor control requests, its samples isochronous transfers both
@@ -54,6 +55,16 @@
  *    detector.  Its codec's registers, its ARM's memory and its commands
  *    are vendor requests; its hook is codec register 0xc0.  It hears the
  *    line on hook, so caller ID comes in the samples.
+ *
+ *    The Apple USB Modem (docs/apple-usb-modem.md, usb_apple.cpp) is
+ *    Motorola's SM56 USB soft modem: a USB audio device (its samples on
+ *    two audio streaming interfaces, S16 little-endian, mono, at the
+ *    rates its descriptors list) with a Si3056 DAA, whose hook is a CDC
+ *    Direct Line Control request (SET_HOOK_STATE), whose ring detector's
+ *    changes come as CDC RING_DETECT notifications, and whose DAA's
+ *    registers are 3-octet encapsulated commands on a vendor interface.
+ *    It hears the line on hook with the Si3056's on-hook line monitor
+ *    (ONHM) set, so caller ID comes in the samples.
  *
  */
 #ifndef DMODEMD_USB_LINE_H
@@ -209,7 +220,8 @@ public:
 	const char *driver_name() override {
 		return kind_ == Kind::Stick ? "pico-serial Line (Si3056)" :
 			kind_ == Kind::Wb ? "pico-serial WB (TLV320AIC3204)" :
-			kind_ == Kind::Agere ? "Agere USB 2.0 (Mercury)" : "ST7554";
+			kind_ == Kind::Agere ? "Agere USB 2.0 (Mercury)" :
+			kind_ == Kind::Apple ? "Apple USB Modem (Si3056)" : "ST7554";
 	}
 	/* the modem's characters to the DTE: how many it took (data, for
 	   the data LED, once the call has been seen online: not its
@@ -246,7 +258,7 @@ private:
 	enum { MAX_TRANSFERS = 32 };
 	/* the four devices it drives (Stick: the pico-serial Line; Wb: the
 	   pico-serial WB) */
-	enum class Kind { St7554, Stick, Wb, Agere };
+	enum class Kind { St7554, Stick, Wb, Agere, Apple };
 	/* an isochronous stream both ways: the codec's (the modem's line,
 	   S16 little-endian) or the voice codec's (set_voice_codec(): an
 	   octet a sample, at VOICE_RATE).  An OUT transfer goes when an
@@ -373,6 +385,49 @@ private:
 	bool agere_ring_stuck_ = false;
 	void agere_leds(dcore::Modem &m);
 	static bool agere_device(u16 vendor, u16 product);
+	/* the Apple USB Modem's (usb_apple.cpp): whether a USB ID is one;
+	   its start-up (its interfaces found and claimed, the audio
+	   streams' formats checked and the rate set on both, the DAA's
+	   line side powered up and checked, on hook with the line monitor
+	   on, the country's settings); the streams' interfaces and
+	   endpoints for a rate (its descriptors); a command to the DAA (3
+	   octets: SEND_ENCAPSULATED_COMMAND), a register written, a
+	   register read (only before the streams: the notification waited
+	   for on the interrupt endpoint, then GET_ENCAPSULATED_RESPONSE);
+	   its hook (SET_HOOK_STATE) and line monitor; a notification from
+	   its interrupt endpoint; the country's settings into its DAA (the
+	   registers as read at the start, changed); its interfaces released
+	   at close() */
+	static bool apple_device(u16 vendor, u16 product);
+	bool open_apple(u32 rate);
+	bool apple_find_streams(u32 rate);
+	bool apple_cmd(u8 cmd, u8 reg, u8 value);
+	bool apple_write(u8 reg, u8 value) { return apple_cmd(0x00, reg, value); }
+	bool apple_read(u8 reg, u8 *value);
+	bool apple_hook(bool off);
+	bool apple_monitor(bool on);
+	void apple_event(const u8 *b, s16 len);
+	bool apple_country();
+	void apple_close();
+	/* its interfaces: the Direct Line Control one (the hook, the
+	   notifications), the vendor one of the DAA's commands, the audio
+	   control one, the streams' (OUT, IN) and their alternate settings;
+	   those claimed; the DAA's country registers as read at the start
+	   (16, 26, 30, 31, 59: country() changes them, on hook); the ring
+	   detector as last told */
+	s16 apple_dlc_ = 0, apple_mgmt_ = 1, apple_ac_ = -1;
+	s16 apple_out_if_ = 3, apple_in_if_ = 4, apple_out_alt_ = 1, apple_in_alt_ = 1;
+	std::vector<s16> apple_claimed_;
+	Si3056Regs apple_regs_ = {};
+	bool apple_regs_read_ = false;
+	bool apple_ringing_ = false;
+	/* on hook, each pump: a ring pulse every RING_PULSE_MS of the
+	   device's clock while it rings (the notifications say when a ring
+	   starts and stops, not its cycles), none past a ring longer than
+	   any cadence's (a notification missed); when it began, the last
+	   pulse */
+	void apple_ring_tick();
+	u64 apple_ring_since_ = 0, apple_ring_pulse_ = 0;
 	bool start_iso(Iso &s, s16 pkt);
 	bool start_fifos();
 	void close();
@@ -401,7 +456,7 @@ private:
 	/* the codec's stream, and the voice codec's (set_voice_codec()) */
 	Iso iso_, viso_;
 	s16 in_flight_ = 0;             /* transfers submitted */
-	u8 intr_buf_[8] = {};           /* the ST7554's 4 octets, the stick's 8 */
+	u8 intr_buf_[16] = {};          /* the ST7554's 4 octets, the sticks' 8, the Apple's up to 16 */
 	s16 intr_len_ = 4;
 	s16 fifo_samples_ = 0;          /* the device's own delay */
 	/* the stick: its ring detector's changes (mod 256) so far, its

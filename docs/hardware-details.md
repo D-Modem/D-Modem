@@ -8,10 +8,11 @@ telephone line instead:
 - With `-a`, the line is a softmodem's codec, driven through ALSA (the
   Advanced Linux Sound Architecture, Linux's sound drivers).
 - With `--usb`, the line is a USB modem, driven through libusb. dmodemd
-  knows four kinds: a Smart Link SmartUSB56
+  knows five kinds: a Smart Link SmartUSB56
   ([below](#smart-link-smartusb56)), a pico-serial Line stick
-  ([below](#pico-serial-line)), a pico-serial WB stick and an Agere USB
-  2.0 soft modem ([below](#agere-usb-20-soft-modem)).
+  ([below](#pico-serial-line)), a pico-serial WB stick, an Agere USB
+  2.0 soft modem ([below](#agere-usb-20-soft-modem)) and an Apple USB
+  Modem ([below](#apple-usb-modem)).
 
 The WB stick is not for a telephone line: it sits on a bare copper pair
 and runs D-Modem's wideband mode. Any ALSA codec that runs at 96 kHz can
@@ -745,6 +746,41 @@ tested against a fake of it ([below](#testing-without-hardware)), but
 does not yet work reliably on a real one: [agere-usb.md](agere-usb-details.md#bring-up)
 says what to look for, and what to send, on a run.
 
+### Apple USB Modem
+
+Apple's USB modem for Macs (A1101, MA034Z/A), USB `05ac:1401` (and
+`05ac:8220`, which Apple's driver also takes), is Motorola's SM56 USB
+soft modem with a Silicon Labs Si3056 DAA. dmodemd drives it through
+libusb (`frontend/dmodemd/usb_apple.cpp`).
+
+    lsusb -d 05ac:1401            # Bus 001 Device 007: ID 05ac:1401 Apple, Inc. Modem
+    dmodemd --usb=auto
+
+It works as Apple's Mac OS X drivers do:
+
+- **Samples:** USB audio class 1, an isochronous stream each way
+  (interfaces 3 and 4, alternate setting 1), 16-bit mono at the `-r`
+  rate, set with `SET_CUR` on each endpoint. A rate the device does not
+  list is refused, with the ones it has.
+- **Hook:** CDC's `SET_HOOK_STATE` to interface 0 (Direct Line Control).
+- **Rings and the phone cord:** interface 0's interrupt notifications
+  (`RING_DETECT`, and 0x29 for the cord).
+- **DAA:** the Si3056's registers through 3-octet commands to interface
+  1 (`SEND_ENCAPSULATED_COMMAND`, a read's value with
+  `GET_ENCAPSULATED_RESPONSE`): the line side powered up, its link
+  checked, the on-hook line monitor for caller ID, the country's
+  registers (`-c`, `AT+GCI`).
+
+A udev rule (`/etc/udev/rules.d/60-apple-usb-modem.rules`) lets dmodemd
+open it without root:
+
+    SUBSYSTEM=="usb", ATTR{idVendor}=="05ac", ATTR{idProduct}=="1401", MODE="0660", GROUP="dialout"
+
+ATI3 says `Apple USB Modem (Si3056)`. It has been tested against a fake
+of it ([below](#the-apple-usb-modem)), not yet on a real one.
+[apple-usb-modem-details.md](apple-usb-modem-details.md) has the full
+protocol and where each part was found.
+
 ### Not covered
 
 These are not covered yet, because Linux has no driver that gives their
@@ -1067,3 +1103,16 @@ changes. The test checks:
 - no ring from a ring bit stuck after the call;
 - a call dialled in pulses;
 - that both exit once the exchange has gone.
+
+### The Apple USB Modem
+
+`frontend/dmodemd/test/apple_test.py` (ctest's `dmodemd_apple`, label `alsa`)
+runs two Apple USB Modems. `frontend/dmodemd/test/fake_apple.cpp` is one
+(05ac:1401) whose line is the exchange's: its six interfaces and their
+descriptors (the streams' format type I rates), the DAA's commands on
+its registers (register 5's ONHM the exchange's monitor switch),
+`SET_HOOK_STATE` the exchange's hook, and its ring detector's and phone
+cord's notifications. It checks the interfaces found, a line side that
+does not answer, a rate it has not, the country's registers, and the
+same calls as the pico-serial Line's test
+([apple-usb-modem-details.md](apple-usb-modem-details.md#testing-without-hardware)).
