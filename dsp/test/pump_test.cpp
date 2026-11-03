@@ -134,6 +134,13 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	/* only 2400 baud carries data (2400 bit/s, which no other symbol
 	   rate has) */
 	Pumps{ "v34_snr10", line(8, 10, 25) },
+	/* a line whose loss rises 7 dB over the band: L1's 3000 Hz tone
+	   much weaker, pre-emphasis asked for (V34PreEmphasis) */
+	Pumps{ "v34_tilt", [] {
+		LoopbackConfig c = line(8, 30, 25);
+		c.tilt = 0.25f;
+		return c;
+	}() },
 	/* (the caller on the answerer's clock: loop timing) */
 	Pumps{ "v34_150ppm", line(8, 30, 25, 9600, 0.5f, 150) },
 	Pumps{ "v34_echoes", line(8, 40, 22, 9600, 0.5f, 0, -10, -15) },
@@ -414,7 +421,103 @@ INSTANTIATE_TEST_SUITE_P(Automode, PumpLoopback, testing::Values(
 	Pumps{ "v23_to_v34", automode(23, 8, 60) },
 	Pumps{ "bell103_to_v34", automode(103, 8, 45) }), name);
 
+#include <cmath>
+
 #include "v34.h"
+
+/* the pre-emphasis filters (5.4/V.34) at every symbol rate and carrier:
+   the magnitude over d/e - 0.45 to d/e + 0.45 of the symbol rate within
+   the templates' 1 dB of their shape (Figures 1 and 2; the level is the
+   signal's own), at the power of a signal without them */
+TEST(V34PreEmphasis, FiltersMatchTheTemplates)
+{
+	for (s16 idx = 1; idx <= V34_PE_MAX; idx++)
+		for (s16 b = 0; b < dsp::V34_NBAUDS; b++)
+			for (s16 high = 0; high < 2; high++) {
+				float h[V34_PE_TAPS];
+				double S = dsp::v34_symbol_rate(b),
+				       fc = dsp::v34_carrier(b, high),
+				       worst = 0, pw = 0, ref = 0, tref = 0;
+				int n = 0;
+				ASSERT_EQ(dsp::v34_preemph_design(idx, b, high, h),
+					  0);
+				auto db = [&](double f) {
+					double re = 0, im = 0;
+					for (int k = 0; k < V34_PE_TAPS; k++) {
+						re += h[k] * cos(2 * M_PI * f * k / 9600);
+						im -= h[k] * sin(2 * M_PI * f * k / 9600);
+					}
+					return 10 * log10(re * re + im * im);
+				};
+				/* (the level where the shapes are compared) */
+				ref = db(fc);
+				tref = dsp::v34_preemph_db(idx, fc / S);
+				for (double v = fc / S - 0.45; v <= fc / S + 0.45;
+				     v += 0.01) {
+					/* (indices 6 to 10: their step from 0 to
+					   beta has no template) */
+					if (idx > 5 && v > 0.65 && v < 0.9)
+						continue;
+					double e = db(v * S) - ref -
+						   (dsp::v34_preemph_db(idx, v) - tref);
+					worst = std::max(worst, fabs(e));
+				}
+				EXPECT_LT(worst, 1.0) << "index " << idx
+					<< " at " << S << " baud, carrier " << fc;
+				for (double f = fc - S / 2; f <= fc + S / 2; f += 10) {
+					pw += pow(10, db(f) / 10);
+					n++;
+				}
+				EXPECT_NEAR(pw / n, 1, 0.02) << "index " << idx
+					<< " at " << S << " baud, carrier " << fc;
+			}
+	float h[V34_PE_TAPS];
+	EXPECT_EQ(dsp::v34_preemph_design(0, 0, 0, h), -1);
+	EXPECT_EQ(dsp::v34_preemph_design(11, 0, 0, h), -1);
+}
+
+/* a line whose loss rises 7 dB over the band (v34_tilt): the receivers'
+   probing finds that pre-emphasis gains and asks for it, the
+   transmitters apply it, and the call carries its data */
+TEST(V34PreEmphasis, TiltedLineAsksForIt)
+{
+	LoopbackConfig c = line(8, 30, 20);
+	c.tilt = 0.25f;
+	setenv("DSP_DEBUG", "2", 1);
+	testing::internal::CaptureStderr();
+	LoopbackResult r = loopback_run(c);
+	std::string log = testing::internal::GetCapturedStderr();
+	unsetenv("DSP_DEBUG");
+	dsplibs_debug_level = 0;
+
+	EXPECT_NE(log.find("gains"), std::string::npos)
+		<< "the probing found no gain";
+	EXPECT_NE(log.find("v34 tx: pre-emphasis filter"), std::string::npos)
+		<< "no pre-emphasis";
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+}
+
+/* each filter, both ways, asked for whatever the line (DSP_V34_PREEMPH):
+   the call connects and carries its data */
+class V34PreEmphasisIndex : public testing::TestWithParam<int> {};
+
+/* (see V34PreEmphasisIndex) */
+TEST_P(V34PreEmphasisIndex, DataBothWays)
+{
+	setenv("DSP_V34_PREEMPH", std::to_string(GetParam()).c_str(), 1);
+	LoopbackResult r = loopback_run(line(8, 35, 20));
+	unsetenv("DSP_V34_PREEMPH");
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+	printf("pre-emphasis %d: %d/%d bit/s\n", GetParam(),
+	       r.side[0].tx_rate, r.side[0].rx_rate);
+}
+
+INSTANTIATE_TEST_SUITE_P(Index, V34PreEmphasisIndex,
+			 testing::Values(3, 5, 8, 10));
 
 /* V.34's J (it repeats) and J': TRN's random bits match J's 16 now and
    then, which once took a call's TRN for J; two in a row are J */

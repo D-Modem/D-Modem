@@ -274,6 +274,7 @@ void V34Tx::init(s16 baud_, s16 high, s16 caller)
 {
 	reinit(*this);
 	baud = baud_;
+	this->high = high;
 	qam.init(V34_SRATE, v34_carrier(baud_, high),
 		    v34_symbol_rate(baud_), V34_ALPHA, V34_SPAN, 1.41421f,
 		    V34_PRIMARY_RMS * 1.41421f);
@@ -318,10 +319,100 @@ void V34Tx::start_data(const V34Params *p, CoreBits link)
 	data_on = 1;
 }
 
-/* the next line sample, at 9600 Hz */
+/* (see v34.h) */
+double v34_preemph_db(s16 index, double v)
+{
+	if (index <= 0 || index > V34_PE_MAX)
+		return 0;
+	/* indices 1 to 5: a line from 0 dB at 0 to alpha (2, 4 .. 10 dB)
+	   at 1.0 */
+	if (index <= 5)
+		return 2.0 * index * v;
+	/* 6 to 10: flat, then from beta (0.5 .. 2.5 dB) at 0.8 up by gamma
+	   (1 .. 5 dB) at 1.2; the step between them is not given (the
+	   template has no limits from 0.7 to 0.8), a line here */
+	double beta = 0.5 * (index - 5), gamma = 2 * beta;
+	if (v <= 0.7)
+		return 0;
+	if (v < 0.8)
+		return beta * (v - 0.7) / 0.1;
+	return beta + gamma * (v - 0.8) / 0.4;
+}
+
+/* (see v34.h) The template over the band (d/e - 0.45 to d/e + 0.45 of
+   the symbol rate, held at its ends outside), a cosine series of it
+   windowed (Hann), then scaled for the power of a signal flat over the
+   band */
+s16 v34_preemph_design(s16 index, s16 baud, s16 high,
+		       float h[V34_PE_TAPS])
+{
+	const s16 c = V34_PE_TAPS / 2, grid = 512;
+	double S = v34_symbol_rate(baud), fc = v34_carrier(baud, high),
+	       lo = fc / S - 0.45, hi = fc / S + 0.45, a[V34_PE_TAPS / 2 + 1],
+	       pw = 0;
+	s16 i, k, n = 0;
+
+	if (index <= 0 || index > V34_PE_MAX)
+		return -1;
+	for (k = 0; k <= c; k++) {
+		double s = 0;
+		for (i = 0; i < grid; i++) {
+			double w = M_PI * (i + 0.5) / grid,
+			       v = w * V34_SRATE / (2 * M_PI) / S;
+			v = v < lo ? lo : v > hi ? hi : v;
+			s += pow(10, v34_preemph_db(index, v) / 20) *
+			     cos(k * w);
+		}
+		/* the window's half over the c taps each side */
+		a[k] = s / grid * (k ? 0.5 + 0.5 * cos(M_PI * k / (c + 1)) :
+				       1);
+	}
+	/* the power over the band (where the signal is) */
+	for (i = 0; i < grid; i++) {
+		double f = (i + 0.5) * V34_SRATE / 2 / grid, m = a[0];
+		if (fabs(f - fc) > S / 2)
+			continue;
+		for (k = 1; k <= c; k++)
+			m += 2 * a[k] * cos(2 * M_PI * f * k / V34_SRATE);
+		pw += m * m;
+		n++;
+	}
+	pw = n ? sqrt(pw / n) : 1;
+	for (k = 0; k <= c; k++)
+		h[c + k] = h[c - k] = static_cast<float>(a[k] / pw);
+	return 0;
+}
+
+/* (see v34.h) */
+void V34Tx::set_preemph(s16 index)
+{
+	preemph = 0;
+	zero(pe_x);
+	pe_pos = 0;
+	if (v34_preemph_design(index, baud, high, pe_h))
+		return;
+	preemph = index;
+	DSP_DBG("v34 tx: pre-emphasis filter %d\n", index);
+}
+
+/* the next line sample, at 9600 Hz (through the pre-emphasis filter
+   when there is one) */
 float V34Tx::sample()
 {
-	return qam.sample([this] { return tx_symbol(this); });
+	float y = qam.sample([this] { return tx_symbol(this); }), r = 0;
+	s16 k, j;
+
+	if (!preemph)
+		return y;
+	pe_x[pe_pos] = y;
+	for (k = 0, j = pe_pos; k < V34_PE_TAPS; k++) {
+		r += pe_h[k] * pe_x[j];
+		if (--j < 0)
+			j = V34_PE_TAPS - 1;
+	}
+	if (++pe_pos >= V34_PE_TAPS)
+		pe_pos = 0;
+	return r;
 }
 
 

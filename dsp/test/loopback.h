@@ -28,6 +28,10 @@ struct LoopbackConfig {
 	int line_delay = 0;     /* samples more to the answerer (VoIP) */
 	int line_delay_c = -1;  /* to the caller (< 0: line_delay) */
 	bool flat = false;      /* no band limitation */
+	float tilt = 0;         /* > 0: the loss rises with the frequency,
+				   tilt + z^-1 + tilt z^-2 after the band
+				   limit (linear phase; 0.3: about 8 dB
+				   more at 3400 Hz than at 300 Hz) */
 	float cut_s = 0;        /* > 0: what the pumps receive from then
 				   on dropped (a call that stalls) */
 	const char *codec = nullptr;    /* a speech codec each way on the

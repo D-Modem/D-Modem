@@ -2441,6 +2441,7 @@ static bool logged(const std::vector<std::string> &lines, const char *s)
    before the carrier's loss would have ended the call */
 class V34Cleardown : public testing::TestWithParam<const char *> {};
 
+/* (see V34Cleardown) the call's end, with +MS=34 and the case's link */
 TEST_P(V34Cleardown, EndsTheCall)
 {
 	std::vector<std::string> lines;

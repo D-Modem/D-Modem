@@ -705,6 +705,10 @@ struct V34Probe {
 	float snr_db;
 	float tone_db[26];      /* received level of each 150 Hz tone */
 	s16 rate_of_baud[V34_NBAUDS];   /* receivable rates (N), by probing */
+	s16 preemph_of_baud[V34_NBAUDS];        /* the pre-emphasis to ask
+						   for at each */
+	s16 preemph_force;      /* DSP_V34_PREEMPH: that index (0 none);
+				   -1 the probing's choice */
 	void probe_init();
 	s16 probe_rx_sample(float x);
 	void probe_collect(float x);
@@ -1147,7 +1151,8 @@ void V34Info0<P>::make_info0(BitQ *q)
 
 /* our INFO1c (Table 15/V.34; INFO1d, Table 17/V.92): at each symbol
    rate the most the probing allows (none at 3429 when the remote cannot
-   do it), low carrier, no pre-emphasis; no MD, no power reduction */
+   do it) and the pre-emphasis it chose, low carrier; no MD, no power
+   reduction */
 void V34Pump::make_info1c(BitQ *q)
 {
 	s16 i;
@@ -1164,7 +1169,7 @@ void V34Pump::make_info1c(BitQ *q)
 		/* low carrier; for 3429, V.92's INFO1d (Table 17/V.92)
 		   has bit 70 instead: PCM upstream on this channel */
 		q->put(v92_on && pcmup_ok && i == V34_BAUD_3429, 1);
-		q->put(0, 4);        /* no pre-emphasis */
+		q->put(rate ? preemph_of_baud[i] : 0, 4);
 		q->put(rate, 4);
 	}
 	/* frequency offset: K56flex's analogue modem says so with 1 */
@@ -1173,8 +1178,9 @@ void V34Pump::make_info1c(BitQ *q)
 }
 
 /* our INFO1a (Table 16/V.34), the answerer's: the symbol rates
-   choose_bauds() picked, the caller's carrier and the most we receive
-   (max_rate_rx), no pre-emphasis; no MD, no power reduction */
+   choose_bauds() picked, the caller's carrier, its pre-emphasis and the
+   most we receive (max_rate_rx), as the probing chose them; no MD, no
+   power reduction */
 void V34Pump::make_info1a(BitQ *q)
 {
 	q->info_start();
@@ -1182,7 +1188,7 @@ void V34Pump::make_info1a(BitQ *q)
 	q->put(0, 3);
 	q->put(0, 7);        /* no MD */
 	q->put(high_rx, 1);
-	q->put(0, 4);        /* no pre-emphasis */
+	q->put(preemph_of_baud[baud_rx], 4);
 	q->put(max_rate_rx, 4);
 	q->put(baud_tx, 3);       /* answerer -> caller */
 	q->put(baud_rx, 3);       /* caller -> answerer */
@@ -1961,7 +1967,9 @@ s16 CcRx::sample(float x)
 
 /* the remote's L1/L2, once per sample: returns -1, or at the end of a
    block of one period whether two of the probe tones are clearly there
-   (each carries 1/21 of the power) */
+   (each carries 1/21 of the power; the one at 3000 Hz down to 9 dB
+   less on a line whose loss rises with the frequency, the lines
+   pre-emphasis is for) */
 template <class P>
 s16 V34Probe<P>::probe_rx_sample(float x)
 {
@@ -1974,7 +1982,7 @@ s16 V34Probe<P>::probe_rx_sample(float x)
 	e = pblock_e / PROBE_PERIOD;
 	pblock_e = 0;
 	on = e > tone_power(300) && probe_g[0].power > e / 60 &&
-		probe_g[1].power > e / 60;
+		probe_g[1].power > e / 480;
 	return on;
 }
 
@@ -2008,6 +2016,8 @@ static s16 v34_min_rate(s16 baud)
 
 /* over the SNR a rate needs, for the receiver's own impairments */
 #define PROBE_MARGIN 2	/* dB */
+/* the least gain for which we ask for pre-emphasis */
+#define PREEMPH_MIN 0.5	/* dB */
 
 /* the remote's L2: the signal to noise ratio after equalization at
    each symbol rate, and the data rates (in 2400 bit/s steps) they
@@ -2037,25 +2047,60 @@ s16 V34Probe<P>::probe_analyse()
 		ptone[k] = (re * re + im * im) * 2 / (PROBE_PERIOD * PROBE_PERIOD);
 		tone_db[k] = 10 * log10(ptone[k] + 1e-3);
 	}
+	zero(preemph_of_baud);
 	for (b = 0; b < V34_NBAUDS; b++) {
 		float rs = v34_symbol_rate(b), fc = v34_carrier(b, 0);
-		double inv = 0, snr;
-		s16 cnt = 0;
-		for (k = 1; k <= 25; k++) {
-			float f = 150.0f * k;
-			if (k == 6 || k == 8 || k == 12 || k == 16 ||
-			    fabsf(f - fc) > 0.45f * rs)
+		double snr = 0, snr0 = 0;
+		s16 cnt = 0, pe, pe_best = 0;
+		/* pre-emphasis (5.4/V.34): each filter shapes the signal's
+		   spectrum at the same power, the noise stays; the one that
+		   gives the best SNR after equalization (the tones' harmonic
+		   mean), when it gains PREEMPH_MIN or more over none */
+		for (pe = 0; pe <= V34_PE_MAX; pe++) {
+			double inv = 0, g[26], gm = 0, x;
+			if (preemph_force >= 0 && pe && pe != preemph_force)
 				continue;
-			/* the data signal's density over the noise density
-			   (white up to half the sample rate) */
-			inv += 1 / (ptone[k] * 21 * (V34_SRATE / 2) / (rs * pn) +
-				    1e-9);
-			cnt++;
+			cnt = 0;
+			for (k = 1; k <= 25; k++) {
+				float f = 150.0f * k;
+				if (k == 6 || k == 8 || k == 12 || k == 16 ||
+				    fabsf(f - fc) > 0.45f * rs)
+					continue;
+				g[k] = pow(10, v34_preemph_db(pe, f / rs) / 10);
+				gm += g[k];
+				cnt++;
+			}
+			if (!cnt)
+				break;
+			gm /= cnt;
+			for (k = 1; k <= 25; k++) {
+				float f = 150.0f * k;
+				if (k == 6 || k == 8 || k == 12 || k == 16 ||
+				    fabsf(f - fc) > 0.45f * rs)
+					continue;
+				/* the data signal's density over the noise
+				   density (white up to half the sample
+				   rate) */
+				inv += 1 / (ptone[k] * g[k] / gm * 21 *
+					    (V34_SRATE / 2) / (rs * pn) + 1e-9);
+			}
+			/* what the receiver itself achieves: about 40 dB */
+			x = 10 * log10(1 / (inv / cnt + 1e-4));
+			if (!pe)
+				snr = snr0 = x;
+			else if (preemph_force > 0 ||
+				 (x >= snr0 + PREEMPH_MIN && x > snr)) {
+				snr = x;
+				pe_best = pe;
+			}
 		}
 		if (!cnt)
 			continue;
-		/* what the receiver itself achieves: about 40 dB */
-		snr = 10 * log10(1 / (inv / cnt + 1e-4));
+		preemph_of_baud[b] = pe_best;
+		if (pe_best)
+			DSP_DBG("v34: probe %d baud: pre-emphasis %d gains "
+				"%.1f dB\n", (s16)(rs + 0.5f), pe_best,
+				snr - snr0);
 		/* with the 16 state code the bit error rate stays below 1e-5
 		   from 3 dB per bit per symbol + 4 dB, at every symbol rate;
 		   plus a margin for the receiver's own impairments */
@@ -3379,6 +3424,8 @@ s16 V34Pump::primary_start()
 	   (answerer -> caller) and INFO1a (caller -> answerer) */
 	s16 high = caller ? high_tx : rinfo1c.r[baud_tx].high;
 	ptx.init(baud_tx, high, caller);
+	/* the pre-emphasis the remote asked for, in INFO1a or INFO1c */
+	ptx.set_preemph(caller ? preemph_tx : rinfo1c.r[baud_tx].preemph);
 	if (prx.init(baud_rx, caller ? 0 : high_rx, caller))
 		return -1;
 	prx_on = 1;
@@ -3401,6 +3448,7 @@ void V34Pump::v90a_start()
 					      0, 1, 0, 0, 1, 1 };
 	s16 i;
 	ptx.init(baud_tx, rinfo1c.r[baud_tx].high, 0);
+	ptx.set_preemph(rinfo1c.r[baud_tx].preemph);
 	zero(v90a_dil);
 	v90a_dil.lsp = v90a_dil.ltp = 1;
 	if (env_on("DSP_V90A_DIL")) {
@@ -5367,6 +5415,7 @@ s16 V34Pump::hdx_step(s32 c)
 			high_tx = rinfoh.high;
 			hdx_trn = rinfoh.trn;
 			ptx.init(baud_tx, high_tx, caller);
+			ptx.set_preemph(rinfoh.preemph);
 			txm = TXM_PRIMARY;
 			set_state(P3H_SILENCE);
 		} else if (c >= ms2samples(3000, srate)) {
@@ -7637,6 +7686,11 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	/* DSP_V34_CLEARDOWN=0: our hangup drops the line without a
 	   cleardown */
 	clear_ok = env_int("DSP_V34_CLEARDOWN", 1) ? 1 : 0;
+	/* test: DSP_V34_PREEMPH=<index>: ask for that pre-emphasis (0:
+	   none) wherever the rate allows it */
+	preemph_force = static_cast<s16>(env_int("DSP_V34_PREEMPH", -1));
+	if (preemph_force > V34_PE_MAX)
+		preemph_force = V34_PE_MAX;
 	test_echo.init(pump_test_env("DSP_TEST_ECHO", caller_), line_rate);
 	/* test: DSP_V34_RENEG=<ms in data mode>:<N>[a|c]: a rate
 	   renegotiation to N * 2400 bit/s (what we receive) */

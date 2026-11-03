@@ -353,9 +353,29 @@ enum v34_txseg {
 	V34_TX_DATA,
 };
 
+/* pre-emphasis (5.4/V.34): the filters of indices 1 to 10, linear phase
+   FIRs on the line samples at 9600 Hz */
+#define V34_PE_TAPS     47
+#define V34_PE_MAX      10
+/* the template's magnitude (dB) of filter index (0 to 10) at the
+   normalized frequency v = f / S (Figures 1 and 2, Tables 3 and 4/V.34);
+   0 at v = 0 */
+double v34_preemph_db(s16 index, double v);
+/* the taps of filter index at symbol rate baud on its low or high
+   carrier, at the signal's power of no pre-emphasis; 0, or -1 when there
+   is no filter (index 0, or out of range) */
+s16 v34_preemph_design(s16 index, s16 baud, s16 high,
+		       float h[V34_PE_TAPS]);
+
 struct V34Tx {
 	QamTx qam;
 	s16 baud;
+	s16 high;
+	/* pre-emphasis: the remote's index (0: none), the filter's taps
+	   and its last inputs */
+	s16 preemph;
+	float pe_h[V34_PE_TAPS], pe_x[V34_PE_TAPS];
+	s16 pe_pos;
 	u32 scr;
 	s16 tap;
 	enum v34_txseg seg;
@@ -385,6 +405,8 @@ struct V34Tx {
 
 	s16 dibit(s16 b0, s16 b1);
 	void init(s16 baud_, s16 high, s16 caller);
+	/* pre-emphasis filter index (5.4/V.34) from the next sample on */
+	void set_preemph(s16 index);
 	void segment(enum v34_txseg seg_);
 	void start_data(const V34Params *p, CoreBits link);
 	float sample();
