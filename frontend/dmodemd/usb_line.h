@@ -402,7 +402,7 @@ private:
 	bool open_apple(u32 rate);
 	bool apple_find_streams(u32 rate);
 	bool apple_cmd(u8 cmd, u8 reg, u8 value);
-	bool apple_write(u8 reg, u8 value) { return apple_cmd(0x00, reg, value); }
+	bool apple_write(u8 reg, u8 value);
 	bool apple_read(u8 reg, u8 *value);
 	bool apple_hook(bool off);
 	bool apple_monitor(bool on);

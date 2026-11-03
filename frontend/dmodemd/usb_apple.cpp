@@ -89,7 +89,7 @@ const u8 N_RESPONSE = 0x02, N_RING_DETECT = 0x03, N_LINE = 0x29;
 
 /* the DAA's commands (AppleSM56KUSBModemFamily's write_DAA_Register: apple_write(),
    OR_, AND_, XOR_DAA_Register, get_DAA_Register) */
-const u8 DAA_OR = 0x01, DAA_AND = 0x02, DAA_READ = 0x80;
+const u8 DAA_WRITE = 0x00, DAA_OR = 0x01, DAA_AND = 0x02, DAA_READ = 0x80;
 
 /* the audio class's: a format type descriptor, type I, PCM; SET_CUR
    of an endpoint's SAMPLING_FREQ_CONTROL */
@@ -406,6 +406,12 @@ bool UsbLine::apple_cmd(u8 cmd, u8 reg, u8 value)
 		ERR("Apple USB Modem: DAA command %02x (register %u, %02x): %s\n",
 		    cmd, reg, value, libusb_strerror(err));
 	return err >= 0;
+}
+
+/* see usb_line.h: command 0x00 */
+bool UsbLine::apple_write(u8 reg, u8 value)
+{
+	return apple_cmd(DAA_WRITE, reg, value);
 }
 
 /* see usb_line.h: the read sent; its response's notification waited for
