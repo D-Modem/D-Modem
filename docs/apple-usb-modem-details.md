@@ -37,8 +37,8 @@ The code is D-Modem's own; only the protocol comes from them.
 | 0 | CDC (2), Direct Line Control (3) | the hook; an interrupt IN endpoint of notifications |
 | 1 | vendor (0xff), subclass 2 | the DAA's commands |
 | 2 | audio (1), control (1) | audio control |
-| 3 | audio, streaming (2) | samples OUT, in alternate setting 1 |
-| 4 | audio, streaming | samples IN, in alternate setting 1 |
+| 3 | audio, streaming (2) | samples IN (endpoint 0x82, 24 octets), in alternate setting 1 |
+| 4 | audio, streaming | samples OUT (endpoint 0x03, 24 octets), in alternate setting 1 |
 | 5 | application (0xfe), DFU (1) | firmware update; not used |
 
 dmodemd finds each by its class (falling back on these numbers), and
@@ -117,12 +117,22 @@ does:
 On close: on hook, the monitor off, alternate settings 0, the
 interfaces released.
 
+## A real one
+
+The first real device tried (November 2026, on Android) listed 16-bit
+mono at 7200, 8000, 8229, 8400, 9000, 9600 and 10286 Hz on both
+streams, and a Si3056 revision 4 with a Si3018 line side. Its first
+register read worked; the second's notification overflowed a 16-octet
+read, and SET_HOOK_STATE then stalled. dmodemd now reads the
+interrupt endpoint a whole packet at a time, as Apple's driver does
+(`intReadComplete` takes the pipe's maximum packet size), and fetches a
+read's response even when its notification was lost, since a response
+left unread may hold up the device's other requests.
+
 ## Not yet known
 
 - Whether the real device's ring notification comes once a ring or
   more often. Either way gives rings.
-- Which sample formats and rates a real device lists. Only 16-bit mono
-  is taken.
 - The LEDs' bits.
 
 ## Testing without hardware

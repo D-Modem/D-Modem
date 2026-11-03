@@ -456,7 +456,7 @@ private:
 	/* the codec's stream, and the voice codec's (set_voice_codec()) */
 	Iso iso_, viso_;
 	s16 in_flight_ = 0;             /* transfers submitted */
-	u8 intr_buf_[16] = {};          /* the ST7554's 4 octets, the sticks' 8, the Apple's up to 16 */
+	u8 intr_buf_[64] = {};          /* the ST7554's 4 octets, the sticks' 8, the Apple's endpoint's packet (64 at most, full speed) */
 	s16 intr_len_ = 4;
 	s16 fifo_samples_ = 0;          /* the device's own delay */
 	/* the stick: its ring detector's changes (mod 256) so far, its
