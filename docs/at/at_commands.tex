@@ -503,8 +503,9 @@ D-Modem program:
   detect \std{DTMF} and tones, use a handset, and turn a voice call into a fax
   or data call (\hyperref[sec:voice]{Section~\ref*{sec:voice}}).
 \item \textbf{Text telephones} (\std{V.18}): the 5-bit \std{TTY} of the deaf
-  community, telex and \std{RTTY}, \std{EDT}, and automoding between them
-  (\hyperref[sec:text]{Section~\ref*{sec:text}}).
+  community, telex and \std{RTTY}, \std{DTMF}, \std{EDT}, Bell 103, Minitel's
+  \std{V.23}, the \std{V.21} text telephones, \std{V.18}'s own mode, and
+  automoding between them (\hyperref[sec:text]{Section~\ref*{sec:text}}).
 \item \textbf{Caller ID}, from a \std{SIP} call or a telephone line (\std{FSK} and
   \std{DTMF}), and a waiting call's caller in voice mode.
 \item \textbf{Leased lines}, 2-wire and 4-wire (\std{V.29}, \std{V.33},
@@ -1668,6 +1669,11 @@ directions' rates (sent in its \std{MP} sequences).
 45 & BAUDOT & \std{V.18}, TIA-825-A & 5-bit text telephone: \std{TTY}, telex,
   \std{RTTY} (\cmdl[plusMBAUDOT]{+MBAUDOT}). \\ \hline
 110 & \std{EDT} & \std{V.18} & \std{EDT} text telephone, \std{110} bit/s. \\ \hline
+118 & \std{DTMF} & \std{V.18} & \std{DTMF} text telephone. \\ \hline
+121 & V21TXT & \std{V.18} & \std{V.21} text telephone (7 bits, even parity). \\ \hline
+123 & V23TXT & \std{V.18} & \std{V.23} Videotex text telephone (Minitel, Prestel),
+  \std{1200}/\std{75} bit/s. \\ \hline
+203 & B103TXT & \std{V.18} & Bell 103 text telephone (7 bits, even parity). \\ \hline
 5 & CONTACTID & \std{SIA} \std{DC-05} & Contact ID alarm reports: the answerer is
   the receiver, the caller the panel
   (\hyperref[sec:contactid]{Section~\ref*{sec:contactid}}). \\ \hline
@@ -3158,30 +3164,51 @@ The modem is a text telephone in \std{V.18}'s modes (\cmdl[plusMS]{+MS} or
 \cmdl[plusMV18S]{+MV18S} chooses one): the 5-bit (Baudot) mode of the
 \std{TTYs}, at \std{45.45}~bit/s on 1400 and 1800~Hz (TIA-825-A), and with
 \cmdl[plusMBAUDOT]{+MBAUDOT} the telex and \std{RTTY} variants (\std{50}~bit/s,
-ITA2's figures, other tones); \std{EDT} (\std{V.21}'s channel~1 at \std{110}~bit/s, 7
-bits, even parity, 2 stop bits); and \std{V.21}, \std{V.23} and Bell 103 as their
-data modes.  The 5-bit mode and \std{EDT} are half duplex: the modem sends
-150~ms of mark, the characters, and 300~ms of mark after the last, and
-does not hear the line meanwhile; it starts no characters while the
-remote's carrier is on.  Neither hangs up for want of carrier.  The \std{DTE}
-sends and receives \std{ASCII}: in the 5-bit mode lower case goes as capitals,
-the shift codes are the modem's, and characters the code has not are
-dropped.  A text telephone call has no answer tone: dialling, the modem
-goes into its mode as the dialling ends; answering, at once.
+ITA2's figures, other tones); \std{DTMF} (each character one to four
+\std{DTMF} digits, Annex~B); \std{EDT} (\std{V.21}'s channel~1 at \std{110}~bit/s, 7
+bits, even parity, 2 stop bits); Bell 103 (\std{300}~bit/s), \std{V.23}'s
+Minitel and Prestel terminals (\std{1200}/\std{75}~bit/s) and the \std{V.21} text
+telephones of the Nordic countries and the UK (\std{300}~bit/s), all three 7
+bits, even parity and a stop bit; and \std{V.18}'s own mode between two
+\std{V.18} modems (\std{V.21}, 8 bits and no parity, the \std{DTE}'s \std{T.140}).  The
+5-bit mode, \std{DTMF} and \std{EDT} are half duplex: the modem sends
+150~ms of mark, the characters, and 300~ms of mark after the last (\std{DTMF}:
+75~ms a digit, 55~ms between), and does not hear the line meanwhile; it
+starts no characters while the remote's carrier is on.  The others are
+duplex on a continuous carrier: calling, the modem sends in \std{V.21}'s and
+Bell 103's calling channel and in \std{V.23}'s 75~bit/s one, as a Minitel
+does; answering, in the others.  The \rc{CONNECT} gives the rate received
+(\rc{CONNECT 10} for \std{DTMF}, about its characters a second).  None hangs up
+for want of carrier.  The
+\std{DTE} sends and receives \std{ASCII}: in the 5-bit mode lower case goes as
+capitals, the shift codes are the modem's, and characters the code has not
+are dropped; \std{DTMF} has no CR (the modem drops the \std{DTE}'s and gives it
+CR LF for each new line); the modes with parity send it even and ignore
+it received.  A text telephone call has no answer tone: dialling, the
+modem goes into its mode as the dialling ends; answering, at once.
 
-\cmdl[plusMS]{AT+MS=V18} (or \cmdl[plusMV18S]{AT+MV18S=1}) finds the remote's mode.  It
-listens for 3~s, for a 5-bit character, an \std{EDT} character, \std{V.21}'s
-channel~1 at \std{300}~bit/s (or a steady mark), a Bell 103 or \std{V.23} caller's
-mark (answering), or \std{V.21}'s channel~2, Bell 103's 2225~Hz or \std{V.23}'s
-1300~Hz (calling).  Hearing nothing it probes, in turn: the answer
-message (\cmdl[plusMV18AM]{+MV18AM}) and a new line in the 5-bit mode,
-then in \std{EDT}, each followed by 2~s of listening, then 3~s each of its own
-\std{V.21}, Bell 103 and \std{V.23} mark, listening for the answer to it; and over
-again until \sreg{7} runs out.  Found, a 5-bit or \std{EDT} remote is answered
-in its mode (once it is quiet, so that another automoding modem, whose
-probe this may have been, finds it too); \std{V.21}, \std{V.23} and Bell 103 go on
-as those modems do.  \std{DTMF} text telephones (\std{V.18}'s \std{DTMF} mode) are not
-supported.
+\cmdl[plusMS]{AT+MS=V18} (or \cmdl[plusMV18S]{AT+MV18S=1}) finds the remote's mode.
+Calling, it sends \std{V.18}'s calling signals: 1~s of silence, then three
+times \std{V.8}'s CI coded for a textphone (400~ms) and 2~s of silence, then
+\std{V.23}'s XCI (3~s), and over again.  Answering, it listens for 3~s.  Both
+listen for a 5-bit character, \std{DTMF}, an \std{EDT} character, \std{V.21}
+characters, a \std{V.21}, Bell 103 or \std{V.23} carrier, and the other modem's
+\std{V.18} signals.  An answering \std{V.18} modem that hears CI or XCI sends the
+answer tone (2100~Hz) for up to 3~s; the caller, 0.5~s after the tone
+comes, sends TXP while the tone lasts; the answerer, hearing TXP, sends
+three of its own, and both are in \std{V.18}'s mode.  A caller that hears the
+answer tone of a data modem goes on with that modem's carrier (\std{V.21},
+\std{V.23} or Bell 103).  Hearing nothing the answerer probes, in turn: the
+answer message (\cmdl[plusMV18AM]{+MV18AM}) and a new line in the 5-bit mode,
+then in \std{EDT}, then in \std{DTMF}, each followed by 2~s of listening, then
+3~s each of its own \std{V.21}, Bell 103 and \std{V.23} mark, listening for the
+answer to it; and over again until \sreg{7} runs out.  Found, a carrierless
+remote is answered in its mode (once it is quiet, so that another
+automoding modem, whose probe this may have been, finds it too).  The
+characters heard while the modem was finding the mode go to the \std{DTE}
+after the \rc{CONNECT}.  \std{V.8}'s CM and \std{V.8 bis} (clause~6/\std{V.18}) are not
+supported: the answerer sends \std{V.25}'s answer tone rather than ANSam, so
+that a \std{V.18} caller goes on with TXP.
 
 \begin{command}{plusMV18S}{+MV18S}{V.18 Selection}
 This command chooses the text telephone mode (as \cmdl[plusMS]{+MS} would; 0
@@ -3191,20 +3218,21 @@ probes a silent remote and sends the answer message on answering.
 \begin{syntax}
 \item +MV18S=[\p{mode}][,[\p{dflt}][,[\p{fbk}][,[\p{msg}][,[\p{probe}]]]]]
 \item +MV18S? (gives \rc{+MV18S: 0,0,0,0,1})
-\item +MV18S=? (gives \rc{+MV18S: (0-2,4-7),(0-7),(0,1),(0,1),(0-2)})
+\item +MV18S=? (gives \rc{+MV18S: (0-7),(0-7),(0,1),(0,1),(0-2)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{Always.}
-\res{\rc{ERROR}}{For a value out of range, or \p{mode} 3 (\std{DTMF}).}
+\res{\rc{ERROR}}{For a value out of range.}
 \end{results}
 \begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+MV18S Values}
   {\thd{Value} & \thd{Meaning}}
-\p{mode} & 0 off; 1 automoding (\cmdl[plusMS]{+MS=18}); 2 5-bit (45); 4 \std{EDT}
-  (110); 5 \std{V.21}; 6 \std{V.23}; 7 Bell 103. \\ \hline
+\p{mode} & 0 off; 1 automoding (\cmdl[plusMS]{+MS=18}); 2 5-bit (45); 3 \std{DTMF}
+  (118); 4 \std{EDT} (110); 5 \std{V.21} (121); 6 \std{V.23} (123); 7 Bell 103 (203):
+  their text telephones. \\ \hline
 \p{dflt} & The \emph{default} answering mode: kept. \\ \hline
 \p{fbk} & Kept. \\ \hline
-\p{msg} & 1: the answer message on answering in the 5-bit mode or
-  \std{EDT}. \\ \hline
+\p{msg} & 1: the answer message on answering in one of the modes 2 to
+  7. \\ \hline
 \p{probe} & 0: automoding only listens; 1 or 2: it probes. \\ \hline
 \end{vtable}
 \end{command}
@@ -3212,7 +3240,8 @@ probes a silent remote and sends the answer message on answering.
 \begin{command}{plusMV18R}{+MV18R}{V.18 Report}
 With \cmdl[plusMV18R]{+MV18R=1} automoding reports the mode it found before the
 \rc{CONNECT}, as \rc{+MV18R: \p{mode}} with \cmdl[plusMV18S]{+MV18S}'s numbers
-(\rc{+MV18R: 2} for a \std{TTY}).
+(\rc{+MV18R: 2} for a \std{TTY}; \rc{+MV18R: 1} for \std{V.18}'s own mode, with
+another \std{V.18} modem).
 \begin{syntax}
 \item +MV18R=\p{n}
 \item +MV18R? (gives \rc{+MV18R: 0})

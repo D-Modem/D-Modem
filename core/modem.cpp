@@ -1034,6 +1034,10 @@ void Modem::update_status(Status s)
 					dp_->id == DP_V18 ||
 					dp_->id == DP_BAUDOT ||
 					dp_->id == DP_EDT ||
+					dp_->id == DP_DTMFTXT ||
+					dp_->id == DP_V21TXT ||
+					dp_->id == DP_V23TXT ||
+					dp_->id == DP_B103TXT ||
 					dp_->id == DP_CONTACTID ||
 					dp_->id == DP_SMS ||
 					dp_->id == DP_RELAY))) {
@@ -2456,9 +2460,11 @@ void Modem::report(Result r)
 	if (r == Result::Connect) {
 		u16 a = sregs_[SREG_CONNNECT_MSG_FORMAT];
 		s16 m = modulation(dp_stats_, dp_);
-		/* V.18's automoding: the mode found, as +MV18S numbers it */
+		/* V.18's automoding: the mode found, as +MV18S numbers it
+		   (1 V.18's own, with another V.18 modem) */
 		if (mv18r_ && sregs_[SREG_DP] == DP_V18) {
-			s16 n = m == DP_BAUDOT ? 2 : m == DP_EDT ? 4 :
+			s16 n = m == DP_V18 ? 1 : m == DP_BAUDOT ? 2 :
+				m == DP_DTMFTXT ? 3 : m == DP_EDT ? 4 :
 				m == DP_V21 ? 5 : m == DP_V23 ? 6 :
 				m == DP_B103 ? 7 : 0;
 			if (n) {
@@ -3886,7 +3892,9 @@ void Modem::text_reset()
 bool Modem::text_pump() const
 {
 	u32 id = sregs_[SREG_DP];
-	return id == DP_V18 || id == DP_BAUDOT || id == DP_EDT;
+	return id == DP_V18 || id == DP_BAUDOT || id == DP_EDT ||
+		id == DP_DTMFTXT || id == DP_V21TXT || id == DP_V23TXT ||
+		id == DP_B103TXT;
 }
 
 /* class 2 and 2.0 fax there is (the T.30 library linked in) */

@@ -304,6 +304,8 @@ const struct {
 	{ "V27TC", DP_V27TER },
 	{ "V29", DP_V29 }, { "V33", DP_V33 }, { "CLEAR", DP_CLEAR },
 	{ "V18", DP_V18 }, { "BAUDOT", DP_BAUDOT }, { "EDT", DP_EDT },
+	{ "DTMF", DP_DTMFTXT }, { "V21TXT", DP_V21TXT },
+	{ "V23TXT", DP_V23TXT }, { "B103TXT", DP_B103TXT },
 	{ "CONTACTID", DP_CONTACTID }, { "SMS", DP_SMS },
 };
 
@@ -1289,9 +1291,11 @@ s16 Modem::at_MS(char *p, s16 *len)
 }
 
 /* +MV18S's <mode>s and the pumps they choose: 1 automoding, 2 5-bit,
-   4 EDT, 5 V.21, 6 V.23, 7 Bell 103 (3, DTMF, the modem has not) */
+   3 DTMF, 4 EDT, 5 V.21, 6 V.23, 7 Bell 103 (the text telephones of
+   Annexes A to F/V.18) */
 static const u32 mv18_pumps[8] = {
-	0, DP_V18, DP_BAUDOT, 0, DP_EDT, DP_V21, DP_V23, DP_B103,
+	0, DP_V18, DP_BAUDOT, DP_DTMFTXT, DP_EDT, DP_V21TXT, DP_V23TXT,
+	DP_B103TXT,
 };
 
 /* V.18's commands (V.250 6.8) and D-Modem's 5-bit settings:
@@ -1356,12 +1360,12 @@ s16 Modem::at_text(char *p, s16 *len)
 			return show(x);
 		}
 		if (range)
-			return show("(0-2,4-7),(0-7),(0,1),(0,1),(0-2)");
+			return show("(0-7),(0-7),(0,1),(0,1),(0-2)");
 		if (!set)
 			return -1;
 		u32 w[5];
 		std::copy(std::begin(mv18s_), std::end(mv18s_), w);
-		if (!numbers(w, lo, hi, 5) || w[0] == 3 ||
+		if (!numbers(w, lo, hi, 5) ||
 		    (w[0] && !ms_choosable(mv18_pumps[w[0]])))
 			return -1;
 		std::copy(w, w + 5, mv18s_);

@@ -66,9 +66,11 @@ The DTE selects one with `AT+MS=` and either the number or a name.
 | 103 | Bell 103, 300 bit/s FSK | |
 | `BAUDOT` (45) | 5-bit (Baudot) text telephone: TTY (45.45 bit/s, 1400/1800 Hz), telex, RTTY | `dp_text.cpp`. Half duplex, with its own character framing (5 bits, 1.5 stop bits, the shift codes) and conversion to and from ASCII on the core's asynchronous link. The rate, tones and figures set come from `AT+MBAUDOT` (`struct dp_text`, `MDMPRM_TEXT`) |
 | `EDT` (110) | EDT text telephone: V.21 channel 1 at 110 bit/s, 7 bits, even parity | `dp_text.cpp`, half duplex |
+| `DTMF` (118) | DTMF text telephone (Annex B/V.18) | `dp_text.cpp`. Half duplex: each character one to four DTMF digits (75 ms on, 55 ms off), the receiver deaf 300 ms after it |
+| `V21TXT` (121), `B103TXT` (203), `V23TXT` (123) | The V.21 (Annex F), Bell 103 (Annex D) and V.23 Videotex (Annex E: Minitel, Prestel) text telephones | `dp_text.cpp`. Duplex FSK on a continuous carrier, 7 bits, even parity sent and ignored received. Calling sends in the low channel (V.23's 75 bit/s one), answering in the high one |
 | `CONTACTID` (5) | Contact ID (SIA DC-05) alarm reports | `dp_contactid.cpp`. The answering side is the alarm receiver and the calling side is the panel. DTMF messages of 16 digits with their checksum, the receiver's 1400/2300 Hz handshake and 1400 Hz kissoff, half duplex. Each message is one line to or from the core's asynchronous link. Call progress hands over to it as soon as dialling ends |
 | `SMS` (12) | Fixed-line SMS (ETSI ES 201 912, protocol 1) | `dp_sms.cpp`, with the messages' coding in `sms_pdu.cpp`. V.23's 1200 bit/s channel (1300/2100 Hz) both ways, half duplex. The answering side receives: it sends SMS_EST, then SMS_ACK for each SMS_DATA, and each message goes to the DTE as `+CMT:` (a delivery) or `+SUBMIT:` (a submission) and its text. The calling side sends: each line the DTE types becomes an SMS-SUBMIT, an SMS-DELIVER or a raw TPDU, and SMS_REL ends the call when the DTE has nothing more for 3 s. Text in GSM's 7-bit alphabet, or UCS2 when it has a character that alphabet lacks. Call progress hands over as soon as dialling ends |
-| `V18` (18) | V.18 text telephone automoding | `dp_text.cpp`. Listens for a 5-bit, EDT, V.21, V.23 or Bell 103 remote, probes a silent one, then runs that mode (V.21, V.23 and Bell 103 through their own pumps). Call progress hands over as soon as dialling ends, since there is no answer tone to wait for |
+| `V18` (18) | V.18 text telephone automoding | `dp_text.cpp`. Calling, sends CI and XCI in V.18's cycle; answering, listens and then probes a silent remote. Finds a 5-bit, DTMF, EDT, V.21, V.23 or Bell 103 remote and runs that mode, or with another V.18 modem exchanges the answer tone and TXP and runs V.18's own mode (V.21, 8 bits, no parity). V.8's CM and V.8 bis are not used. Call progress hands over as soon as dialling ends, since there is no answer tone to wait for |
 | 22 | ITU V.22, 1200 bit/s DPSK | |
 | 212 | Bell 212A, 1200 bit/s DPSK | 2225 Hz answer tone, scrambled ones handshake |
 | 122 | ITU V.22bis, 2400 bit/s 16-QAM | The full S1 handshake; falls back to V.22 |
@@ -213,7 +215,7 @@ Everything here is in `namespace dsp`, except the C entry points of
 Every data pump derives from `Pump` (`pump.h`):
 
 - `CallProgPump` (call progress), `FskPump` (V.21, V.23, Bell 103),
-  `TextPump` (V.18, Baudot, EDT), `ContactIdPump`, `V22Pump`, `V26Pump`, `V26bisPump`,
+  `TextPump` (V.18 and its text modes), `ContactIdPump`, `V22Pump`, `V26Pump`, `V26bisPump`,
   `V32Pump`;
 - `V34Pump`, which is also V.8, V.90, V.91 and V.92;
 - `FourWirePump` (V.29, V.33, V.27ter), `ClearPump`, `VcvmPump`, and
