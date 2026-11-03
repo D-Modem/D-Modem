@@ -1162,8 +1162,10 @@ void V34Rx::symbol()
 		last_d[1] = last_d[0];
 		last_d[0] = d;
 		diff_decode(z);
-		/* E is over: the next symbol is data */
-		if (stage == V34_RX_DATA && data_on && drx.p.precode)
+		/* E is over: the next symbol is data (with non-linear
+		   encoding 1 + H(z) comes after its decoder instead) */
+		if (stage == V34_RX_DATA && data_on && drx.p.precode &&
+		    drx.p.theta <= 0)
 			precode_eq(&drx.p);
 		break;
 	case V34_RX_DATA:
@@ -1179,7 +1181,12 @@ void V34Rx::symbol()
 			s_count = 0;
 		if (data_on) {
 			float g2 = drx.p.g * drx.p.g;
-			if (drx.p.precode && n <= 3)
+			/* non-linear encoding: the equalizer gives x'(n),
+			   undone here (and 1 + H(z) after it) */
+			bool nl = drx.p.theta > 0;
+			if (nl)
+				z = nl_decode(z);
+			else if (drx.p.precode && n <= 3)
 				z = precode_start(z);
 			d = drx.symbol(z, &scr, tap);
 			if (!level_ok())
@@ -1191,11 +1198,16 @@ void V34Rx::symbol()
 			e = cplx_pow(cplx_sub(z, d)) / g2;
 			mse += 0.01f * (e - mse);
 			sig += 0.01f * (cplx_pow(d) / g2 - sig);
+			/* (the equalizer's own decision: x'(n)'s) */
+			if (nl)
+				d = nl_target(d);
 			timing_dd(d);
 			qam.adapt(d, 0.004f, 0.02f, 0.0002f);
 			/* the equalizer to go back to in a renegotiation (with
-			   precoding, the one from the training) */
-			if (!drx.p.precode && mse < 0.15f && (n & 255) == 0)
+			   precoding, the one from the training; with
+			   non-linear encoding 1 + H(z) is not in it) */
+			if ((!drx.p.precode || nl) && mse < 0.15f &&
+			    (n & 255) == 0)
 				copy_array(good_eq, qam.eq);
 			if ((n & 63) == 0) {
 				mse_old = mse_mid;
@@ -1396,6 +1408,49 @@ void V34Rx::start_data(const V34Params *p, CoreBits link)
 	drx.link = link;
 	mse = 0;
 	data_on = 1;
+	/* (the precoder starts from zeros, as B1 does) */
+	zero(nl_x);
+	nl_p = cplx_make(0, 0);
+	/* with non-linear encoding the equalizer is the plain one, not one
+	   with 1 + H(z) from before */
+	if (p->theta > 0 && qam.eq_len > V34_EQ_LEN && have_good) {
+		copy_array(qam.eq, good_eq);
+		qam.eq_len = V34_EQ_LEN;
+	}
+}
+
+/* non-linear decoding (9.7/V.34): the equalizer's z is x'(n) (the
+   transmitter's points warped, at its power): x(n) from it, and with
+   precoding the channel output y(n) = x(n) + p(n), p(n) from the last
+   decoded x as the transmitter's precoder has it (the noise through
+   1 + H(z), as when 1 + H(z) is in the equalizer) */
+cplx V34Rx::nl_decode(cplx z)
+{
+	const V34Params *p = &drx.p;
+	cplx x = v34_nonlinear_inv(cplx_scale(z, 1 / p->nl_gain), p->theta);
+	s16 k;
+
+	nl_p = cplx_make(0, 0);
+	if (!p->precode)
+		return x;
+	for (k = 0; k < 3; k++) {
+		cplx h = cplx_make(p->h[2 * k] / 16384.0f,
+				   p->h[2 * k + 1] / 16384.0f);
+		nl_p = cplx_add(nl_p, cplx_mul(h, nl_x[k]));
+	}
+	nl_x[2] = nl_x[1];
+	nl_x[1] = nl_x[0];
+	nl_x[0] = x;
+	return cplx_add(x, nl_p);
+}
+
+/* the equalizer's target for the decided channel output d: x(n) =
+   d - p(n), through the non-linear encoder as the transmitter sent it */
+cplx V34Rx::nl_target(cplx d) const
+{
+	const V34Params *p = &drx.p;
+	return cplx_scale(v34_nonlinear(cplx_sub(d, nl_p), p->theta),
+			  p->nl_gain);
 }
 
 /* a line sample at 9600 Hz: signal detection (its loss in training

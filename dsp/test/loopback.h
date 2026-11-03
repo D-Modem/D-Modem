@@ -34,6 +34,9 @@ struct LoopbackConfig {
 				   more at 3400 Hz than at 300 Hz) */
 	float cut_s = 0;        /* > 0: what the pumps receive from then
 				   on dropped (a call that stalls) */
+	bool ulaw = false;      /* each way through G.711 mu-law (the
+				   network's PCM, its noise in step with
+				   the signal), at 8000 Hz alone */
 	const char *codec = nullptr;    /* a speech codec each way on the
 					   line (codec_sim.h's spec, at 8000
 					   Hz alone), e.g. "amr:12.2" */

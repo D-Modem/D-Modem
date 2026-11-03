@@ -938,6 +938,11 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	s16 clear_mp;
 	s32 clear_quiet;
 	s16 clear_ok;           /* we start one (DSP_V34_CLEARDOWN=0: not) */
+	/* non-linear encoding (9.7/V.34) asked of the remote's
+	   transmitter: DSP_V34_NONLINEAR=1 always, 0 never; -1 (the
+	   default) as nonlinear_rx() decides */
+	s16 nl_req;
+	s16 nonlinear_rx() const;
 	s16 hangup() override;
 	void cleardown();
 	bool remote_clears() const;
@@ -4083,15 +4088,19 @@ s16 V34Pump::data_setup()
 	stat_coding(false, p.states, r->nonlinear, p.precode, r->expanded);
 	if (p.init(prx.baud, nrx, l->expanded))
 		return -1;
+	/* our MP asked for the remote's non-linear encoder: undone */
+	if (l->nonlinear)
+		p.set_nonlinear(0.3125);
 	p.states = 16 << l->trellis;
 	p.set_precoder(l->h);
 	prx.start_data(&p, CoreBits{ modem });
 	rate_rx = p.rate;
 	stat_coding(true, p.states, l->nonlinear, p.precode, l->expanded);
 	DSP_DBG("v34: data rates tx %" PRId32 " rx %" PRId32
-		", trellis tx %d rx %d states%s\n",
+		", trellis tx %d rx %d states%s%s\n",
 		rate_tx, rate_rx, 16 << r->trellis, 16 << l->trellis,
-		r->nonlinear ? ", non-linear tx" : "");
+		r->nonlinear ? ", non-linear tx" : "",
+		l->nonlinear ? ", non-linear rx" : "");
 	return 0;
 }
 
@@ -4121,6 +4130,7 @@ void V34Pump::mp_start()
 	   (a V.92 modem's answer did, with precoding) */
 	mp->expanded = env_int("DSP_V34_MP_EXPANDED", 1) ? 1 : 0;
 	mp->trellis = V34_TRELLIS;
+	mp->nonlinear = nonlinear_rx();
 	mp->rate_mask = 0x3FFF;
 	mp->asym = 1;
 	/* a cleardown: no rates either way (11.7/V.34) */
@@ -4139,6 +4149,14 @@ void V34Pump::mp_start()
 			zero(mp->h);
 	}
 	tx_next(P4_MP, V34_TX_MP);
+}
+
+/* whether our MP asks for the remote's non-linear encoder (9.7/V.34) */
+s16 V34Pump::nonlinear_rx() const
+{
+	if (nl_req >= 0)
+		return nl_req ? 1 : 0;
+	return 0;
 }
 
 /* the core's highest rate param (MDMPRM_MAX_RATE, MDMPRM_MAX_RX_RATE)
@@ -7686,6 +7704,7 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	/* DSP_V34_CLEARDOWN=0: our hangup drops the line without a
 	   cleardown */
 	clear_ok = env_int("DSP_V34_CLEARDOWN", 1) ? 1 : 0;
+	nl_req = static_cast<s16>(env_int("DSP_V34_NONLINEAR", -1));
 	/* test: DSP_V34_PREEMPH=<index>: ask for that pre-emphasis (0:
 	   none) wherever the rate allows it */
 	preemph_force = static_cast<s16>(env_int("DSP_V34_PREEMPH", -1));

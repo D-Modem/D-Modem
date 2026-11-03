@@ -7,8 +7,8 @@
  *                 state 4D trellis codes and superframe
  *                 synchronisation
  *
- *    With precoding when the remote asks for it (9.6.2/V.34), without
- *    non-linear encoding.  As the original library does:
+ *    With precoding and non-linear encoding when the remote asks for
+ *    them (9.6.2, 9.7/V.34).  As the original library does:
  *    - the trellis output Y0 of a 4D symbol is the low bit of the
  *      encoder state before that symbol's labels are shifted in, with
  *      the state recursions of Figures 10 to 12/V.34 (for the 32 and
@@ -423,10 +423,36 @@ void V34DataTx::init(const V34Params *p_)
 /* 9.7/V.34: x'(n) = (1 + z/6 + z^2/120) x(n), z = theta |x(n)|^2 over the
    average energy of x(n); the points are g x(n) and g^2 times that
    average is 2 */
-static cplx nonlinear(cplx s, float theta)
+cplx v34_nonlinear(cplx s, float theta)
 {
 	float z = theta * (s.re * s.re + s.im * s.im) / 2;
 	return cplx_scale(s, 1 + z / 6 + z * z / 120);
+}
+
+/* the x(n) whose v34_nonlinear() is w: phi depends on |x| alone, so the
+   magnitude r with r phi(r) = |w| (Newton's method from |w|: r phi(r)
+   grows steadily), the direction w's */
+cplx v34_nonlinear_inv(cplx w, float theta)
+{
+	double m = sqrt(static_cast<double>(w.re) * w.re +
+			static_cast<double>(w.im) * w.im),
+	       a = theta / 2.0, r = m;
+	if (m <= 0 || theta <= 0)
+		return w;
+	for (s16 i = 0; i < 8; i++) {
+		double r2 = r * r,
+		       f = r * (1 + a * r2 / 6 + a * a * r2 * r2 / 120) - m,
+		       df = 1 + a * r2 / 2 + a * a * r2 * r2 / 24;
+		r -= f / df;
+		if (fabs(f) < 1e-9)
+			break;
+	}
+	return cplx_scale(w, static_cast<float>(r / m));
+}
+
+static cplx nonlinear(cplx s, float theta)
+{
+	return v34_nonlinear(s, theta);
 }
 
 /* the 8 symbols of the next mapping frame into sym[]: high or low by

@@ -137,7 +137,7 @@ struct V34Params {
 	s16 precode, w;         /* h is not zero; c(n) in multiples of
 				   2^w */
 	float theta;            /* non-linear encoder (9.7/V.34): 0 or
-				   0.3125, transmitter only */
+				   0.3125 (the receiver undoes it) */
 	float nl_gain;          /* after it: the power without it */
 	double pw_;             /* mean power of the points (integers) */
 	u64 g2[V34_G2_LEN], g4[V34_G4_LEN], z8[V34_Z8_LEN];
@@ -194,6 +194,10 @@ struct V34DataTx {
    states; its low bit is Y0) */
 s16 v34_subset_label(s16 x, s16 y);
 s16 v34_conv_in(s16 s0, s16 s1);
+/* the non-linear encoder (9.7/V.34) on a point s in units of the
+   training points (their mean energy 2), and its inverse */
+cplx v34_nonlinear(cplx s, float theta);
+cplx v34_nonlinear_inv(cplx w, float theta);
 s16 v34_trellis_next(s16 states, s16 st, s16 y);
 
 /* the Viterbi decoder of the 4D trellis code (9.6.3/V.34; V.92's PCM
@@ -515,6 +519,11 @@ struct V34Rx {
 	cplx err_h[3];
 	s32 err_n;
 	s16 data_on;
+	/* non-linear decoding (9.7/V.34, drx.p.theta): the decoder's last
+	   outputs x(n - 1) .. x(n - 3) and the precoder's p(n) from them */
+	cplx nl_x[3], nl_p;
+	cplx nl_decode(cplx z);
+	cplx nl_target(cplx d) const;
 	/* rate renegotiation (11.6/V.34): the remote's S in data mode */
 	s16 ev_reneg;
 	float mse_mid, mse_old; /* data mode mse 64 and 128 symbols ago */

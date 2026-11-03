@@ -38,6 +38,7 @@
 #include "modem_param.h"
 #include "dsplibs.h"
 #include "codec_sim.h"
+#include "g711.h"
 #include "loopback.h"
 #include "test_util.h"
 
@@ -484,6 +485,7 @@ public:
 		for (Echoes &e : echoes)
 			e.init(cfg);
 		codecs = false;
+		ulaw = cfg.ulaw;
 		if (cfg.codec && *cfg.codec) {
 			const char *err = "";
 
@@ -511,6 +513,10 @@ public:
 				a = codec[0].sample(dsp_clip16(a));
 				c = codec[1].sample(dsp_clip16(c));
 			}
+			if (ulaw) {
+				a = dsp::g711::ulaw2lin(dsp::g711::lin2ulaw(dsp_clip16(a)));
+				c = dsp::g711::ulaw2lin(dsp::g711::lin2ulaw(dsp_clip16(c)));
+			}
 			in[1][i] = dsp_clip16(a + echoes[1].run(out[1][i]));
 			in[0][i] = dsp_clip16(c + echoes[0].run(out[0][i]));
 		}
@@ -518,6 +524,7 @@ public:
 
 private:
 	LineDirection to_answerer, to_caller;
+	bool ulaw;              /* (cfg.ulaw) */
 	Echoes echoes[2];
 	bool codecs;
 	dsp::SpeechCodec codec[2]; /* to the answerer, to the caller */

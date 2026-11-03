@@ -134,6 +134,13 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	/* only 2400 baud carries data (2400 bit/s, which no other symbol
 	   rate has) */
 	Pumps{ "v34_snr10", line(8, 10, 25) },
+	/* through G.711 (mu-law) each way, its noise larger on the outer
+	   points: non-linear encoding asked for (V34NonLinear) */
+	Pumps{ "v34_ulaw", [] {
+		LoopbackConfig c = line(8, 45, 25, 8000);
+		c.ulaw = true;
+		return c;
+	}() },
 	/* a line whose loss rises 7 dB over the band: L1's 3000 Hz tone
 	   much weaker, pre-emphasis asked for (V34PreEmphasis) */
 	Pumps{ "v34_tilt", [] {
@@ -518,6 +525,60 @@ TEST_P(V34PreEmphasisIndex, DataBothWays)
 
 INSTANTIATE_TEST_SUITE_P(Index, V34PreEmphasisIndex,
 			 testing::Values(3, 5, 8, 10));
+
+/* non-linear encoding (9.7/V.34) asked for both ways
+   (DSP_V34_NONLINEAR=1) over G.711, with precoding (from a gain of
+   0.3 dB on) and without: each transmitter warps its points, each
+   receiver undoes it (and 1 + H(z) after it), the data carried */
+class V34NonLinear : public testing::TestWithParam<const char *> {};
+
+/* (see V34NonLinear; the parameter: DSP_V34_PRECODE_MIN) */
+TEST_P(V34NonLinear, DataBothWays)
+{
+	LoopbackConfig c = line(8, 45, 20, 8000);
+	c.ulaw = true;
+	setenv("DSP_V34_NONLINEAR", "1", 1);
+	setenv("DSP_V34_PRECODE_MIN", GetParam(), 1);
+	setenv("DSP_DEBUG", "2", 1);
+	testing::internal::CaptureStderr();
+	LoopbackResult r = loopback_run(c);
+	std::string log = testing::internal::GetCapturedStderr();
+	unsetenv("DSP_V34_NONLINEAR");
+	unsetenv("DSP_V34_PRECODE_MIN");
+	unsetenv("DSP_DEBUG");
+	dsplibs_debug_level = 0;
+
+	EXPECT_NE(log.find("non-linear tx, non-linear rx"), std::string::npos)
+		<< "not asked for";
+	/* precoding where asked for: its 1 + H(z) never in the equalizer */
+	EXPECT_EQ(log.find("into the equalizer"), std::string::npos);
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+	EXPECT_GE(r.side[0].rx_rate, 28800);
+	EXPECT_GE(r.side[1].rx_rate, 28800);
+}
+
+INSTANTIATE_TEST_SUITE_P(Precoding, V34NonLinear,
+			 testing::Values("0.3", "99"),
+	[](const testing::TestParamInfo<const char *> &i) {
+		return std::string(i.param[0] == '0' ? "precoded" :
+				   "plain");
+	});
+
+/* the non-linear encoder and its inverse (9.7/V.34): back to the point
+   to 1e-5 over the whole superconstellation's range */
+TEST(V34NonLinear, InverseUndoesIt)
+{
+	for (float x = -3; x <= 3; x += 0.05f)
+		for (float y = -3; y <= 3; y += 0.25f) {
+			dsp::cplx s = { x, y };
+			dsp::cplx w = dsp::v34_nonlinear(s, 0.3125f);
+			dsp::cplx b = dsp::v34_nonlinear_inv(w, 0.3125f);
+			EXPECT_NEAR(b.re, x, 1e-5) << x << " " << y;
+			EXPECT_NEAR(b.im, y, 1e-5) << x << " " << y;
+		}
+}
 
 /* V.34's J (it repeats) and J': TRN's random bits match J's 16 now and
    then, which once took a call's TRN for J; two in a row are J */
