@@ -67,6 +67,8 @@ struct PairCase {
 	unsigned rate = 0;              /* online at least this fast */
 	long bulk = 0;                  /* then that many bytes from the
 					   caller to the answerer */
+	double within = 0;              /* > 0: both online this many s
+					   after the dial, at most */
 };
 
 /* bulk data that does not compress */
@@ -215,8 +217,11 @@ static void *run(void *arg)
 			online = i;
 			p->tx_rate = s1.tx_rate;
 			p->rx_rate = s1.rx_rate;
-			printf("pair %d: online after %.1f s, %u/%u bit/s\n",
+			printf("pair %d: online after %.2f s, %u/%u bit/s\n",
 			       p->id, i / 50.0, s1.tx_rate, s1.rx_rate);
+			if (pc.within > 0 && i / 50.0 > pc.within)
+				p->failures.push_back("online after " +
+					std::to_string(i / 50.0) + " s");
 			if (s1.tx_rate < pc.rate || s1.rx_rate < pc.rate)
 				p->failures.push_back("online at " +
 					std::to_string(s1.tx_rate) + "/" +
@@ -359,6 +364,16 @@ static PairCase v8_to_122(const char *name, int delay)
 	return c;
 }
 
+/* point of sale fast connect with the AT commands ms (S49 and +MS, with
+   \N0, no error correction, as the terminals run it): online within
+   within s of the dial */
+static PairCase fast(const char *name, const char *ms, double within)
+{
+	PairCase c = pair(name, ms, 1, 20);
+	c.within = within;
+	return c;
+}
+
 /* V.91 (or what finds it) on a G.711 network */
 static PairCase v91(const char *name, const char *ms, Net net, unsigned rate,
 		    int seconds = 25, std::map<std::string, std::string> env = {})
@@ -396,6 +411,16 @@ INSTANTIATE_TEST_SUITE_P(Modulations, DmodemPair, testing::Values(
 	pair("v26bis", "+MS=V26B", 1, 60),
 	pair("v26bis_1200", "+MS=V26B,0,1200,1200", 1, 60),
 	v8_to_122("v8_to_122_d0", 0), v8_to_122("v8_to_122_d5", 5)), name);
+
+/* point of sale fast connect through the whole modem: V.22, Bell 212A
+   and V.22bis, each online in about a second where the normal V.22
+   handshake takes 5.6 (HDLC flags in the handshake are for synchronous
+   DTEs: the SDLC tests below) */
+INSTANTIATE_TEST_SUITE_P(FastConnect, DmodemPair, testing::Values(
+	fast("v22_fast", "\\N0S49=1S92=0+MS=22", 1.0),
+	fast("b212_fast", "\\N0S49=1S92=0+MS=212", 1.0),
+	fast("v22bis_fast", "\\N0S49=1S92=0+MS=122", 1.5),
+	pair("v22_normal", "\\N0S92=0+MS=22", 1, 20)), name);
 
 /* retrains in the middle of the data (V.42 carries on): by both modems,
    by the answerer or the caller alone (the other one follows); V.34 rate

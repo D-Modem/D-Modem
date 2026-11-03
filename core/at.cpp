@@ -303,6 +303,7 @@ const struct {
 	{ "BELL208", DP_B208 },
 	{ "V27TC", DP_V27TER },
 	{ "V29", DP_V29 }, { "V33", DP_V33 }, { "CLEAR", DP_CLEAR },
+	{ "V29FP", DP_V29FP }, { "V29FASTPOS", DP_V29FP },
 	{ "V18", DP_V18 }, { "BAUDOT", DP_BAUDOT }, { "EDT", DP_EDT },
 	{ "DTMF", DP_DTMFTXT }, { "V21TXT", DP_V21TXT },
 	{ "V23TXT", DP_V23TXT }, { "B103TXT", DP_B103TXT },

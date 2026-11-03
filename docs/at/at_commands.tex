@@ -1617,8 +1617,9 @@ directions' rates (sent in its \std{MP} sequences).
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
 \item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
-\item +MS=? (gives \rc{(21,22,23,26,126,226,27,29,122,32,132,232,61,33,34,103,18,}\allowbreak
-\rc{45,110,5,12,212,201,202,208,56,90,91,92,150,200,64),(0,1),}\allowbreak
+\item +MS=? (gives \rc{(21,22,23,26,126,226,27,29,229,122,32,132,232,61,}\allowbreak
+\rc{33,34,103,18,45,110,5,12,212,201,202,208,}\allowbreak
+\rc{56,90,91,92,150,200,64),(0,1),}\allowbreak
 \rc{(300-56000),}\allowbreak
 \rc{(300-56000)}, the
   modulations the program has)
@@ -1642,6 +1643,8 @@ directions' rates (sent in its \std{MP} sequences).
 61 & V61 & \std{ITU} \std{V.61} & \std{4800} bit/s with speech, \std{4800} to \std{14400} bit/s
   without (\cmdl[plusASVD]{+ASVD}; D-Modem's number). \\ \hline
 29 & V29 & \std{ITU} \std{V.29} & \std{4800} to \std{9600} bit/s, 4-wire leased. \\ \hline
+229 & V29FP, V29FASTPOS & V.29 FastPOS & \std{9600} bit/s (or \std{7200}, \std{4800}) half duplex on a
+  dial-up line, for point of sale terminals (Hypercom's; D-Modem's number). \\ \hline
 33 & V33 & \std{ITU} \std{V.33} & \std{12000} and \std{14400} bit/s, 4-wire leased. \\ \hline
 27 & V27TC & \std{ITU} \std{V.27ter} & \std{2400} and \std{4800} bit/s, 4-wire leased. \\ \hline
 26 & V26 & \std{ITU} \std{V.26} & \std{2400} bit/s \std{DPSK} (alternative A), 4-wire leased. \\ \hline
@@ -1698,6 +1701,32 @@ its rate, and one that loses its equalization twice in 20~s at its own
 rate drops to the next rate down.  A receiver that loses its equalization
 sends its synchronizing signal again and gets the far end's back (\std{V.29}
 10, \std{V.33} 9).
+
+\paragraph{Point of Sale.}\label{sec:pos}  Card terminals and vending
+machines that dial their host use two short start-ups that no
+Recommendation describes, so that a transaction of a few hundred octets
+takes a few seconds rather than ten.  \emph{Fast connect} (\sreg{49}=1)
+shortens \std{V.22}'s, Bell 212A's and \std{V.22bis}'s handshake: the answering
+modem sends a short answer tone (\sreg{50}, 400~ms by default), the calling
+modem answers it at once with its scrambled ones (with \std{V.22bis}, its S1
+as soon as it hears the unscrambled ones), and each side starts the data
+150~ms after 50~ms of the other's.  It comes up in about 0.9~s from the
+answer (\std{V.22bis}, 1.4~s) rather than 5.  \sreg{49}=3 sends HDLC flags,
+scrambled, in place of the scrambled ones at 1200 bit/s, which some
+hosts want; either kind is taken from the far end.  \emph{V.29 FastPOS}
+(\cmdl[plusMS]{+MS=V29FP}) is \std{V.29} half duplex: the calling modem sends a
+steady 980~Hz calling tone, the answering one a 2225~Hz answer tone
+(\sreg{50}), and both report \rc{CONNECT}; from then on whichever side's DTE has
+data sends it in a burst, the \std{V.29} training first, while the other
+listens, and the turn passes when the data stops (32 idle bits: marks
+or HDLC flags).  The DTEs take turns, as the SDLC of a terminal and its
+host does.  V.29 has no rate signal: both ends need the same \p{max}.
+Both kinds are made for synchronous DTEs, through \std{V.80}'s framed
+sub-mode (\cmdl[plusES]{+ES=6,,8}, with the FCS:
+\cmdl[plusESA]{+ESA=0,0,0,,1}) or with \cmd{\bs N0} and the DTE's own framing.
+Both ends need the same setting; such a call with a modem that has the
+normal handshake comes up late or not at all.  See
+\texttt{docs/dsp/fastpos.md}.
 
 \paragraph{V.90, \std{V.91} and \std{V.92}.}  \std{V.90} and \std{V.92} are there as the
 \emph{digital} modem (the server's side, as on a \std{G.711} VoIP line), on
@@ -2615,6 +2644,8 @@ set and read back, with no other effect.
 \hyperlink{sreg:45}{S45} & \std{V.cvm}: renegotiations (read only). & 0--255 & -- & 0 \\ \hline
 \hyperlink{sreg:47}{S47} & Leased line (\cmdl[ampL]{\&L}). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:48}{S48} & \std{V.13} simulated carrier. & 0, 1 & -- & 0 \\ \hline
+\hyperlink{sreg:49}{S49} & Point of sale fast connect. & 0, 1, 3 & -- & 0 \\ \hline
+\hyperlink{sreg:50}{S50} & Fast answer tone. & 0--255 & 10 ms & 0 \\ \hline
 \hyperlink{sreg:56}{S56} & Result codes and dial tone (\cmdl[X]{X}). & 0--4 & -- & 4 \\ \hline
 \hyperlink{sreg:60}{S60} & Carrier detect (kept). & 0, 1 & -- & 0 \\ \hline
 \hyperlink{sreg:62}{S62} & Flow control (kept). & 0--3 & -- & 0 \\ \hline
@@ -2767,6 +2798,19 @@ The renegotiations of the last \std{V.cvm} call.  Read only.
 1: \std{V.13}'s simulated carrier control on a leased line, on a call with no
 error correction (\cmdl[ampL]{\&L}).  \cmdl[Z]{ATZ} keeps it.
 \facts{0, 1}{0}{none}
+
+\sregdef{49}{Point of Sale Fast Connect}
+1: the short handshake of \std{V.22}, Bell 212A and \std{V.22bis} that point of
+sale terminals and their hosts use; 3: the same, with HDLC flags sent
+for the scrambled ones at 1200 bit/s
+(\hyperref[sec:pos]{Section~\ref*{sec:pos}}).  0: the Recommendations'
+handshakes.
+\facts{0, 1, 3}{0}{none}
+
+\sregdef{50}{Fast Answer Tone}
+The answer tone's length when \sreg{49} is set, and \std{V.29} FastPOS's;
+0 is 400~ms.
+\facts{0--255}{0}{10 ms}
 
 \sregdef{56}{Result Code Set}
 \cmdl[X]{X}'s setting.

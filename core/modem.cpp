@@ -1029,6 +1029,7 @@ void Modem::update_status(Status s)
 		adapt_ = Adapt::Off;
 		if (loop3_ || (dp_ && (dp_->id == DP_V23 ||
 					dp_->id == DP_V26BIS ||
+					dp_->id == DP_V29FP ||
 					dp_->id == DP_B103 ||
 					dp_->id == DP_V21 ||
 					dp_->id == DP_V18 ||

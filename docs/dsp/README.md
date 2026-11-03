@@ -20,8 +20,9 @@ receiver works inside, see [the technical details](dsp-details.md).
 |---|---|---|
 | Bell 103, V.21 | 300 bit/s | the earliest modems |
 | V.23 | 1200 bit/s one way, 75 the other | used by Minitel and videotex |
-| Bell 212A, V.22 | 1200 bit/s | |
+| Bell 212A, V.22 | 1200 bit/s | with a [fast connect](fastpos.md) for card terminals |
 | V.22bis | 2400 bit/s | |
+| [V.29 FastPOS](fastpos.md) | 9600 bit/s, one way at a time | card terminals and vending machines calling their bank's host |
 | [V.26 ter](v26.md) | 2400 bit/s | duplex on a dial-up line with echo cancelling, mostly European |
 | [V.26 bis](v26.md) | 2400 bit/s one way, 75 the other | the older dial-up version, run like V.23 |
 | V.32, V.32bis | 9600, 14400 bit/s | |

@@ -11,6 +11,8 @@
 #define DMODEM_LOOPBACK_H
 
 #include <string>
+#include <utility>
+#include <vector>
 
 struct LoopbackConfig {
 	int dp;                 /* the answerer's data pump (DP_ID) */
@@ -46,6 +48,9 @@ struct LoopbackConfig {
 	   caller's first: 0 none, > 0 a tone of that many Hz into its
 	   microphone, < 0 a silent microphone */
 	int voice_hz[2] = { 0, 0 };
+	/* S-registers both sides' pumps read, as register and value
+	   (S49=1: fast connect), over the defaults */
+	std::vector<std::pair<int, int>> sregs;
 };
 
 struct LoopbackSide {
