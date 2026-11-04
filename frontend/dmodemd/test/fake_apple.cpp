@@ -23,12 +23,11 @@
  *    done takes 1 ms of the line's samples a packet at the rate SET_CUR
  *    set, as they come from the exchange; heard off hook, or on hook with
  *    the monitor on (silence otherwise, as the Si3056 on hook); an OUT
- *    transfer's samples go to the exchange, and it is done, at once.  On
- *    hook the ring detector reports every 1 ms of the line's samples, as
- *    the first real device did (RING_DETECT, 0x03): wValue bit 15 set and
- *    a small level (0x8009) while it doesn't ring; while it rings, the
- *    ring signal's polarity, bit 15 set or clear with the sample's sign.
- *    A DAA read's response is
+ *    transfer's samples go to the exchange, and it is done, at once.  As
+ *    the first real device did: on hook the ring detector's level comes
+ *    every 1 ms of the line's samples (RING_DETECT, 0x03, 0x8009), and
+ *    while the line rings notification 0x09 every 40 ms; one 0x09 comes
+ *    at the start too.  A DAA read's response is
  *    notified (0x02, wValue 1) and taken with GET_ENCAPSULATED_RESPONSE.
  *    The phone cord is said plugged in (0x29, 5) when the device is
  *    opened.  The capture socket is libusb's descriptor to poll.  The
@@ -78,6 +77,8 @@ const unsigned RING_QUIET = 1500;
 /* the ring detector's reports waiting at most (the rest dropped, as a
    device's interrupt endpoint would) */
 const size_t RING_REPORTS_QUEUED = 16;
+/* the ring notification's spacing while it rings, ms */
+const unsigned RING_NOTE_MS = 40;
 
 /* (2 audio control, 5 DFU: nothing of theirs is asked) */
 const uint8_t IF_DLC = 0, IF_MGMT = 1, IF_IN = 3, IF_OUT = 4, N_IF = 6;
@@ -87,7 +88,7 @@ enum {
 	SEND_ENCAPSULATED_COMMAND = 0x00, GET_ENCAPSULATED_RESPONSE = 0x01,
 	SET_COMM_FEATURE = 0x02, SET_HOOK_STATE = 0x11,
 };
-const uint8_t N_RESPONSE = 0x02, N_RING_DETECT = 0x03, N_LINE = 0x29;
+const uint8_t N_RESPONSE = 0x02, N_RING_DETECT = 0x03, N_RING = 0x09, N_LINE = 0x29;
 /* the audio class's SET_CUR */
 const uint8_t SET_CUR = 0x01;
 
@@ -187,11 +188,15 @@ void take()
 			} else if (fake.ringing &&
 				   (fake.hook || fake.heard - fake.last_ring > RING_QUIET))
 				fake.ringing = false;
-			/* each 1 ms on hook: the ring detector's report */
-			if (!fake.hook && fake.rate >= 1000 && fake.heard % (fake.rate / 1000) == 0 &&
-			    fake.notes.size() < RING_REPORTS_QUEUED)
-				notify(N_RING_DETECT, fake.ringing ?
-				       (uint16_t)((s < 0 ? 0x8000 : 0) | 0x1e) : 0x8009);
+			/* each 1 ms on hook: the ring detector's level; each
+			   RING_NOTE_MS while it rings, the ring notification */
+			unsigned per_ms = fake.rate >= 1000 ? fake.rate / 1000 : 1;
+			if (!fake.hook && fake.heard % per_ms == 0) {
+				if (fake.ringing && fake.heard % (per_ms * RING_NOTE_MS) == 0)
+					notify(N_RING, 0);
+				else if (fake.notes.size() < RING_REPORTS_QUEUED)
+					notify(N_RING_DETECT, 0x8009);
+			}
 			if (streaming())
 				fake.in.push_back(fake.hook || fake.monitor ? s : 0);
 		}
@@ -534,6 +539,7 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
 	fake.regs[11] = 0x15;
 	fake.notes.clear();
 	notify(N_LINE, 5);
+	notify(N_RING, 0);
 	fake.open = true;
 	*h = new libusb_device_handle{ dev };
 	return 0;

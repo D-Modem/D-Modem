@@ -425,14 +425,14 @@ private:
 	/* SET_HOOK_STATE stalled: the hook is register 5's OH from then on */
 	bool apple_hook_reg_ = false;
 	/* on hook, each pump: a ring pulse every RING_PULSE_MS of the
-	   device's clock while it rings (both of the ring detector's
-	   polarities coming), its end when one stops, none past a ring
-	   longer than any cadence's; when it began, the last pulse */
+	   device's clock while it rings (its ring notifications coming),
+	   its end when they stop, none past a ring longer than any
+	   cadence's; when it began, the last pulse */
 	void apple_ring_tick();
 	u64 apple_ring_since_ = 0, apple_ring_pulse_ = 0;
-	/* the ring detector's polarities last seen (bit 15 set, clear: 0
-	   never), and its reports so far */
-	u64 apple_ring_neg_ = 0, apple_ring_pos_ = 0, apple_ring_reports_ = 0;
+	/* the last ring notification (0 never), the ring detector's
+	   reports so far */
+	u64 apple_ring_last_ = 0, apple_ring_reports_ = 0;
 	bool start_iso(Iso &s, s16 pkt);
 	bool start_fifos();
 	void close();
