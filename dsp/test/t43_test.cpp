@@ -295,7 +295,8 @@ TEST(T43, JbigPlanes)
 		T4Page page;
 		EXPECT_EQ(jbig_decode(bie.data(), bie.size(), 1000, &page), -1);
 		bie[18] = order | JBG_SMID;
-		if (order == 0 || order == (JBG_SEQ | JBG_ILEAVE))
+		if (order == 0 || order == (JBG_SEQ | JBG_ILEAVE)) {
 			EXPECT_EQ(jbig_decode_image(bie.data(), bie.size(), 1000, 3, &out, nullptr), -1);
+		}
 	}
 }

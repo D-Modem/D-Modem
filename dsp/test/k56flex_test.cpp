@@ -128,8 +128,9 @@ TEST(K56flex, G711)
 			/* the octet's value is the code's */
 			s32 v = k56_value(static_cast<unsigned char>(c), alaw);
 			s32 ref = alaw ? (((g ^ 0x55) & 0x80) ? 1 : -1) : ((g & 0x80) ? 1 : -1);
-			if (v)
+			if (v) {
 				EXPECT_EQ(v > 0 ? 1 : -1, ref) << c;
+			}
 		}
 }
 

@@ -365,9 +365,10 @@ void Mux::rx_open(Frame *f, u8 dlci)
 		cause = h245::UNKNOWN_TYPE;
 	else if (c.kind == h245::Kind::Audio && rx_voice(f, dlci, m, &cause))
 		return;
-	else if (c.kind != h245::Kind::Data)
-		cause = c.kind == h245::Kind::Audio ? cause :
-			h245::TYPE_NOT_SUPPORTED;
+	else if (c.kind != h245::Kind::Data) {
+		if (c.kind != h245::Kind::Audio)
+			cause = h245::TYPE_NOT_SUPPORTED;
+	}
 	else if (dlci_ >= 0)
 		cause = h245::TYPE_NOT_AVAILABLE;
 	else if (!c.fwd.erm || c.fwd.crc != 16 ||

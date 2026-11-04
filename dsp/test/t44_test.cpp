@@ -227,8 +227,9 @@ TEST(T44, Stripes)
 	EXPECT_LT(out.size(), 20000u);
 	/* the SOSts: mask only (type 2) */
 	for (size_t i = 0; i + 9 < out.size(); i++)
-		if (!memcmp(&out[i], "MRC\x01", 4))
+		if (!memcmp(&out[i], "MRC\x01", 4)) {
 			EXPECT_EQ(out[i + 4], 0x02);
+		}
 
 	T44Image pic = page(3, 1728, 300, true, &text);
 	for (size_t i = 0; i < text.size(); i++)
@@ -239,8 +240,9 @@ TEST(T44, Stripes)
 	ASSERT_EQ(t44_decode(out.data(), out.size(), 10000, &d), 0);
 	EXPECT_GT(psnr(pic.pix, d.pix), 38);
 	for (size_t i = 0; i + 9 < out.size(); i++)
-		if (!memcmp(&out[i], "MRC\x01", 4))
+		if (!memcmp(&out[i], "MRC\x01", 4)) {
 			EXPECT_EQ(out[i + 4], 0x01);
+		}
 
 	T44Image blank;
 	blank.width = 64;

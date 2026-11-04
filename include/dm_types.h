@@ -8,6 +8,9 @@
  *                 sensitive integer in the tree is one of these, so the
  *                 code means the same where int is 16 bits.
  *
+ *    size_t and ptrdiff_t (stddef.h) come with them: what uses one of
+ *    these short names nearly always sizes something too.
+ *
  *    C linkage; the header is valid C as well as C++.  The public
  *    libdmodem header (frontend/dmodemd/dmodem.h) keeps the <stdint.h>
  *    names, so that programs using it don't get these short names.
@@ -17,6 +20,7 @@
 #ifndef DM_TYPES_H
 #define DM_TYPES_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 typedef uint8_t  u8;

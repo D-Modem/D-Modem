@@ -2516,7 +2516,7 @@ void tell_caller(const struct sip_msg *msg)
 	std::string privacy;
 	time_t now = time(nullptr);
 	struct tm tm {};
-	char date[16];
+	char date[48];	/* (room for any int GCC can't rule out) */
 
 	h = sip_msg_hdr(msg, SIP_HDR_P_ASSERTED_IDENTITY);
 	if (h && !sip_addr_decode(&pai, &h->val)) {

@@ -22,6 +22,7 @@
 #define DMODEM_LINK_H245_H
 
 
+#include <cstddef>
 #include <vector>
 
 #include "dm_types.h"
