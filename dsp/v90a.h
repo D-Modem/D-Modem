@@ -23,6 +23,7 @@
 #include "dm_types.h"
 #include "v90.h"
 #include "v92.h"
+#include "pcm_eq.h"
 
 namespace dsp {
 
@@ -124,7 +125,7 @@ struct V90Interp {
 #define V90RX_Q         1024    /* data mode bits held for the caller */
 #define V90RX_SEQ       8192    /* MP, or V.92's SUVd or CPd, bits */
 
-struct V90Rx {
+struct V90Rx : PcmEqualizer<V90Rx, V90RX_TAPS> {
 	enum Stage {
 		WAIT_SD,        /* until Sd */
 		SD,             /* in Sd, until its reversal */
@@ -146,24 +147,17 @@ struct V90Rx {
 	float x8[V90RX_HIST8];  /* every other one, for Sd */
 	s32 n8;
 
-	/* Sd: running sums over the last SD_WIN samples of x(n)^2,
-	   x(n) x(n - 6), x(n) x(n - 3), and over the last 6 of the first
-	   two (the reversal) */
-	double e24, a6_24, a3_24, e6, a6_6;
+	/* Sd (+ + + - - -): its sums over 24 samples at lag 6 */
+	ReversalSums<6, 24> rev;
 	s16 sd_run;             /* samples Sd has been there */
 	s16 sd_dip;             /* the 24 sample sums say it is reversing */
-	double dip;             /* the reversal: its least a6_6 / e6 */
+	double dip;             /* the reversal: its least rev.r() */
 	s32 dip_at;
 
 	/* symbol k (0: the first of S-bar d) is around sample b + 2 k */
 	s32 b;
 	s32 k;                  /* the next symbol to decide */
 	s16 refined;
-	float c[V90RX_TAPS];
-	/* least squares: the normal equations, R's Cholesky factor (some
-	   250 KB: the pump is on the heap) */
-	double R[V90RX_TAPS][V90RX_TAPS], p[V90RX_TAPS];
-	double L[V90RX_TAPS][V90RX_TAPS];
 	u32 trn_scr;            /* TRN1d's signs: GPC on ones from zero */
 	float level;            /* lin[uinfo] */
 	/* UINFO's level at each symbol position mod 6, as the equaliser
@@ -175,15 +169,7 @@ struct V90Rx {
 	double err_sum;
 	s32 err_n;
 	float mse;              /* of the decisions, to the points' power */
-	/* the timing loop, from the equaliser's error times its slope
-	   (its output a sample either side): the frequency term (16 kHz
-	   samples a symbol) */
-	s16 t_on;
-	s32 t_n;                /* symbols it has followed */
-	double t_freq, t_pow;   /* t_pow: the targets' power */
-	double t_phase;         /* the phase it has moved (16 kHz samples) */
-	double t_sx, t_sy, t_sxx, t_sxy;        /* the line fitted to it */
-	s32 t_sn;
+	/* (the equaliser and the timing loop: PcmEqualizer) */
 	/* the second solution (ls2_n symbols in), then over NOISE_N
 	   symbols (before our S: well before the DIL, whose loud codes
 	   reach into the equaliser's span) UINFO's magnitudes by frame
@@ -370,10 +356,9 @@ struct V90Rx {
 	s16 take(unsigned char *b, s16 n);
 	/* its decisions' mean square error of late (16 bit scale) */
 	float data_mse() const { return de_mse; }
-	/* the codec's clock against the network's, parts per million */
-	double ppm() const { return t_freq / 2 * 1e6; }
 
 private:
+	friend struct PcmEqualizer<V90Rx, V90RX_TAPS>;
 	/* the sample i of the history */
 	float at(s32 i) const { return x[i & (V90RX_HIST - 1)]; }
 	/* the sample i of the 8 kHz history */
@@ -383,16 +368,11 @@ private:
 	{
 		return at(b + 2 * kk + V90RX_EQ_D + d - i);
 	}
-	void timing(s32 kk, float y, float a);
-	void timing_free();
-	void timing_step(double dt);
 	void sd_detect(float v);
 	void refine();
-	void solve();
-	float equalize(s32 kk, s16 d = 0) const;
 	void decide(float y);
 	void jd_bit(s16 bit);
-	void adapt(s32 kk, float e);
+	void timing_locked(double loop_ppm) const;
 	void ri_frame(const s16 *s);
 	void rd_frame(const s16 *s, const s16 *lab);
 	void rf_frame(const s16 *s, const s16 *lab);
