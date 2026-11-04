@@ -1988,7 +1988,8 @@ enum state T30::ecm_page_end(s16 fcf2)
 	T4Page *p = &rx_page;
 	bool came = false;
 	if (rx_page_on && bft) {
-		came = page_ok = bft_page();
+		page_ok = bft_page();
+		came = page_ok;
 		t4rx.release();
 		p->release();
 		rx_page_on = 0;

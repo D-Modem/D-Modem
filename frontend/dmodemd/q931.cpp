@@ -268,7 +268,7 @@ void Q931::receive(const u8 *msg, s16 n, u64 now)
 		return;
 	}
 
-	const s16 cause = info.cause >= 0 ? info.cause : NORMAL_CLEARING;
+	const s16 cause = info.cause >= 0 ? info.cause : s16(NORMAL_CLEARING);
 	switch (t) {
 	case SETUP_ACK:
 		if (state_ == U1) {

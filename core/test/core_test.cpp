@@ -1702,9 +1702,10 @@ TEST_P(CoreFax2, TwoPages)
 			p.a->dte_input("AT+FDT\r", 7);
 		ASSERT_TRUE(until([&] { return has(p.got_a, "CONNECT"); },
 				  20000)) << page << ": A [" << p.got_a << "]";
-		if (!page)
+		if (!page) {
 			EXPECT_TRUE(has(br(p.got_a), "+" + nm("FDCS", "FCS") +
 					":1,5,0,2,0,")) << p.got_a;
+		}
 		while (sent < d.size()) {
 			int n = p.a->dte_space();
 			if (n > (int)(d.size() - sent))

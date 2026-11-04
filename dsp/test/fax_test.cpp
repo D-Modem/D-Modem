@@ -865,8 +865,9 @@ TEST(T30Colour, SendsMrcPages)
 			       k + 1, q, dark, letters, edge_err);
 			EXPECT_GE(dark * 1000, letters * 995) << "page " << k;
 			EXPECT_GT(q, variant < 2 ? 38 : 25) << "page " << k;
-			if (variant < 2)
+			if (variant < 2) {
 				EXPECT_LT(edge_err, 5) << "page " << k;
+			}
 		}
 		ti.close();
 		to.close();
