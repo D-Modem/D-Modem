@@ -32,7 +32,7 @@
  *    FAKE_PICO_WB_NOCODEC=1: the codec does not come up (its state bit
  *    clear).
  *    FAKE_PICO_WB_LOG=1: the requests on stderr.
- *    FAKE_USB_NO_ISO, FAKE_USB_USBDK: fake_usb_backend.h (Windows 7's
+ *    FAKE_USB_NO_ISO, FAKE_USB_USBDK: fake_libusb.h (Windows 7's
  *    and 8's drivers).
  *
  */
@@ -46,19 +46,7 @@
 #include <deque>
 #include <vector>
 
-#include <libusb.h>
-
-struct libusb_context {
-	int dummy;
-};
-
-struct libusb_device {
-	int dummy;
-};
-
-struct libusb_device_handle {
-	libusb_device *dev;
-};
+#include "fake_libusb.h"
 
 namespace {
 
@@ -77,10 +65,7 @@ enum { LOOP_OFF, LOOP_FIRMWARE, LOOP_CODEC };
 const uint8_t ST_CODEC = 0x01, ST_CARRIER = 0x02, ST_LOOPBACK = 0x04,
 	ST_STREAMING = 0x08;
 
-libusb_device the_device;
-
 struct Fake {
-	libusb_context *ctx = nullptr;
 	bool open = false;
 	int cap = -1, play = -1;
 	unsigned rate = 96000;          /* the stick's after reset */
@@ -404,329 +389,152 @@ int request_out(uint8_t req, uint16_t value, uint16_t index)
 	return LIBUSB_ERROR_PIPE;
 }
 
-} // namespace
+/* the device on libusb's bus (fake_libusb.h) */
+struct PicoWb final : fake_usb::Device {
+	/* its log on stderr with FAKE_PICO_WB_LOG */
+	PicoWb() : Device("FAKE_PICO_WB_LOG") {}
 
-extern "C" {
-
-#include "fake_usb_backend.h"
-
-/* the context (FAKE_PICO_WB_LOG read) */
-int LIBUSB_CALL libusb_init(libusb_context **ctx)
-{
-	fake.ctx = new libusb_context();
-	fake.log = getenv("FAKE_PICO_WB_LOG") != nullptr;
-	if (ctx)
-		*ctx = fake.ctx;
-	return 0;
-}
-
-/* the context freed */
-void LIBUSB_CALL libusb_exit(libusb_context *ctx)
-{
-	if (ctx == fake.ctx) {
-		delete fake.ctx;
-		fake.ctx = nullptr;
+	/* the settings from the environment: the log's, the only one */
+	void init() override
+	{
+		fake.log = log;
 	}
-}
 
-/* libusb's text for the codes usb_line.cpp sees */
-const char *LIBUSB_CALL libusb_strerror(int code)
-{
-	switch (code) {
-	case LIBUSB_SUCCESS: return "Success";
-	case LIBUSB_ERROR_IO: return "Input/Output Error";
-	case LIBUSB_ERROR_ACCESS: return "Access denied (insufficient permissions)";
-	case LIBUSB_ERROR_NO_DEVICE: return "No such device (it may have been disconnected)";
-	case LIBUSB_ERROR_NOT_FOUND: return "Entity not found";
-	case LIBUSB_ERROR_BUSY: return "Resource busy";
-	case LIBUSB_ERROR_PIPE: return "Pipe error";
-	case LIBUSB_ERROR_INVALID_PARAM: return "Invalid parameter";
-	case LIBUSB_ERROR_NOT_SUPPORTED: return "Operation not supported or unimplemented on this platform";
+	/* the stick's descriptor (1209:0003, USB 2.1: its BOS descriptor) */
+	void descriptor(libusb_device_descriptor *d) override
+	{
+		d->bLength = LIBUSB_DT_DEVICE_SIZE;
+		d->bDescriptorType = LIBUSB_DT_DEVICE;
+		d->bcdUSB = 0x0210;
+		d->idVendor = 0x1209;
+		d->idProduct = 0x0003;
+		d->bNumConfigurations = 1;
 	}
-	return "Other error";
-}
 
-/* the bus: the one device */
-ssize_t LIBUSB_CALL libusb_get_device_list(libusb_context *,
-					   libusb_device ***list)
-{
-	libusb_device **l = (libusb_device **)calloc(2, sizeof(*l));
-	if (!l)
-		return LIBUSB_ERROR_NO_MEM;
-	l[0] = &the_device;
-	*list = l;
-	return 1;
-}
+	/* address 9 */
+	uint8_t address() const override
+	{
+		return 9;
+	}
 
-/* the list freed */
-void LIBUSB_CALL libusb_free_device_list(libusb_device **list, int)
-{
-	free(list);
-}
+	/* the device opened: its connections to wb_pair at FAKE_PICO_WB_SOCKET
+	   (LIBUSB_ERROR_BUSY if open, _ACCESS if no socket, _IO if no pair) */
+	int open() override
+	{
+		const char *path = getenv("FAKE_PICO_WB_SOCKET");
 
-/* the stick's descriptor (1209:0003, USB 2.1: its BOS descriptor) */
-int LIBUSB_CALL libusb_get_device_descriptor(libusb_device *,
-					     libusb_device_descriptor *d)
-{
-	memset(d, 0, sizeof(*d));
-	d->bLength = LIBUSB_DT_DEVICE_SIZE;
-	d->bDescriptorType = LIBUSB_DT_DEVICE;
-	d->bcdUSB = 0x0210;
-	d->idVendor = 0x1209;
-	d->idProduct = 0x0003;
-	d->bNumConfigurations = 1;
-	return 0;
-}
+		if (fake.open)
+			return LIBUSB_ERROR_BUSY;
+		if (!path)
+			return LIBUSB_ERROR_ACCESS;
+		fake.cap = fake_net::connect_exchange(path, 'C');
+		fake.play = fake_net::connect_exchange(path, 'P');
+		if (fake.cap < 0 || fake.play < 0) {
+			fprintf(stderr, "fake pico-serial WB: no pair at %s\n", path);
+			for (int fd : { fake.cap, fake.play })
+				fake_net::close_fd(fd);
+			fake.cap = fake.play = -1;
+			return LIBUSB_ERROR_IO;
+		}
+		fake.nocodec = getenv("FAKE_PICO_WB_NOCODEC") != nullptr;
+		fake.open = true;
+		return 0;
+	}
 
-/* bus 1 */
-uint8_t LIBUSB_CALL libusb_get_bus_number(libusb_device *)
-{
-	return 1;
-}
-
-/* its one port on the bus (only Linux's remote wakeup asks, through
-   /sys; the fake linked in libusb's place answers it too) */
-int LIBUSB_CALL libusb_get_port_numbers(libusb_device *, uint8_t *ports,
-					int len)
-{
-	if (len < 1)
-		return LIBUSB_ERROR_OVERFLOW;
-	ports[0] = 250;
-	return 1;
-}
-
-/* full speed (only the Agere line asks; on Windows this replaces
-   libusb, which would answer otherwise) */
-int LIBUSB_CALL libusb_get_device_speed(libusb_device *)
-{
-	return LIBUSB_SPEED_FULL;
-}
-
-/* address 9 */
-uint8_t LIBUSB_CALL libusb_get_device_address(libusb_device *)
-{
-	return 9;
-}
-
-/* the device opened: its connections to wb_pair at FAKE_PICO_WB_SOCKET
-   (LIBUSB_ERROR_BUSY if open, _ACCESS if no socket, _IO if no pair) */
-int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
-{
-	const char *path = getenv("FAKE_PICO_WB_SOCKET");
-
-	if (fake.open)
-		return LIBUSB_ERROR_BUSY;
-	if (!path)
-		return LIBUSB_ERROR_ACCESS;
-	fake.cap = fake_net::connect_exchange(path, 'C');
-	fake.play = fake_net::connect_exchange(path, 'P');
-	if (fake.cap < 0 || fake.play < 0) {
-		fprintf(stderr, "fake pico-serial WB: no pair at %s\n", path);
+	/* the connections closed, the device free again */
+	void close() override
+	{
 		for (int fd : { fake.cap, fake.play })
 			fake_net::close_fd(fd);
 		fake.cap = fake.play = -1;
-		return LIBUSB_ERROR_IO;
+		fake.open = false;
 	}
-	fake.nocodec = getenv("FAKE_PICO_WB_NOCODEC") != nullptr;
-	fake.open = true;
-	*h = new libusb_device_handle{ dev };
-	return 0;
-}
 
-/* the connections closed, the device free again */
-void LIBUSB_CALL libusb_close(libusb_device_handle *h)
-{
-	for (int fd : { fake.cap, fake.play })
-		fake_net::close_fd(fd);
-	fake.cap = fake.play = -1;
-	fake.open = false;
-	delete h;
-}
-
-/* h's device */
-libusb_device *LIBUSB_CALL libusb_get_device(libusb_device_handle *h)
-{
-	return h->dev;
-}
-
-/* no kernel driver to detach: 0 */
-int LIBUSB_CALL libusb_set_auto_detach_kernel_driver(libusb_device_handle *,
-						     int)
-{
-	return 0;
-}
-
-/* interface 0 claimed (the stick's other, the RP2040's reset
-   interface, is not for dmodemd) */
-int LIBUSB_CALL libusb_claim_interface(libusb_device_handle *, int n)
-{
-	return n == 0 ? 0 : LIBUSB_ERROR_NOT_FOUND;
-}
-
-/* interface 0 released */
-int LIBUSB_CALL libusb_release_interface(libusb_device_handle *, int n)
-{
-	return n == 0 ? 0 : LIBUSB_ERROR_NOT_FOUND;
-}
-
-/* interface 0's setting alt, 0 or 1: 1 starts the samples (the FIFOs
-   emptied either way), and an event says so */
-int LIBUSB_CALL libusb_set_interface_alt_setting(libusb_device_handle *,
-						 int n, int alt)
-{
-	if (fake.log)
-		fprintf(stderr, "fake pico-serial WB: alternate setting %d\n", alt);
-	if (n != 0 || (alt != 0 && alt != 1))
-		return LIBUSB_ERROR_NOT_FOUND;
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	fake.alt = alt;
-	fake.in.clear();
-	fake.ms = 0;
-	fake.event_due = alt == 1;
-	return 0;
-}
-
-/* nothing to clear: 0 */
-int LIBUSB_CALL libusb_clear_halt(libusb_device_handle *, unsigned char)
-{
-	return 0;
-}
-
-/* the configuration (make_config()), static */
-int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device *,
-						    libusb_config_descriptor **c)
-{
-	make_config();
-	*c = &config;
-	return 0;
-}
-
-/* the configuration by its index (the one: 0) */
-int LIBUSB_CALL libusb_get_config_descriptor(libusb_device *, uint8_t index,
-					     libusb_config_descriptor **c)
-{
-	if (index != 0)
-		return LIBUSB_ERROR_NOT_FOUND;
-	make_config();
-	*c = &config;
-	return 0;
-}
-
-/* nothing to free (static) */
-void LIBUSB_CALL libusb_free_config_descriptor(libusb_config_descriptor *)
-{
-}
-
-/* a vendor request to interface 0 (wIndex's low octet; its high one a
-   codec page) or the device: request_in() or request_out();
-   LIBUSB_ERROR_NO_DEVICE once gone */
-int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *,
-					uint8_t type, uint8_t request,
-					uint16_t value, uint16_t index,
-					unsigned char *data, uint16_t length,
-					unsigned int)
-{
-	int r;
-
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	if ((type & LIBUSB_REQUEST_TYPE_VENDOR) != LIBUSB_REQUEST_TYPE_VENDOR ||
-	    (index & 0xff) != 0)
-		return LIBUSB_ERROR_PIPE;
-	r = type & LIBUSB_ENDPOINT_IN ?
-		request_in(request, value, index, data, length) :
-		request_out(request, value, index);
-	if (fake.log)
-		fprintf(stderr, "fake pico-serial WB: request %02x %s %u: %d\n",
-			request, type & LIBUSB_ENDPOINT_IN ? "in" : "out", value, r);
-	return r;
-}
-
-/* a transfer of iso_packets packets, zeroed */
-libusb_transfer *LIBUSB_CALL libusb_alloc_transfer(int iso_packets)
-{
-	size_t n = sizeof(libusb_transfer) +
-		sizeof(libusb_iso_packet_descriptor) * (size_t)iso_packets;
-	libusb_transfer *t = (libusb_transfer *)calloc(1, n);
-	if (t)
-		t->num_iso_packets = iso_packets;
-	return t;
-}
-
-/* t freed (its buffer too if it has
-   LIBUSB_TRANSFER_FREE_BUFFER) */
-void LIBUSB_CALL libusb_free_transfer(libusb_transfer *t)
-{
-	if (!t)
-		return;
-	if (t->flags & LIBUSB_TRANSFER_FREE_BUFFER)
-		free(t->buffer);
-	free(t);
-}
-
-/* t queued at its endpoint, done in run() */
-int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
-{
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	if (fake_usb_refused(t))
-		return LIBUSB_ERROR_NOT_SUPPORTED;
-	if (t->endpoint == EP_EVENT)
-		fake.intr_q.push_back(t);
-	else if (t->endpoint == EP_IN)
-		fake.in_q.push_back(t);
-	else if (t->endpoint == EP_OUT)
-		fake.out_q.push_back(t);
-	else
-		return LIBUSB_ERROR_NOT_FOUND;
-	return 0;
-}
-
-/* t off its queue, done as cancelled in run();
-   LIBUSB_ERROR_NOT_FOUND if not queued */
-int LIBUSB_CALL libusb_cancel_transfer(libusb_transfer *t)
-{
-	for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q })
-		for (auto i = q->begin(); i != q->end(); ++i)
-			if (*i == t) {
-				q->erase(i);
-				fake.cancelled.push_back(t);
-				return 0;
-			}
-	return LIBUSB_ERROR_NOT_FOUND;
-}
-
-/* the descriptors to poll: the capture socket (if open) */
-const libusb_pollfd **LIBUSB_CALL libusb_get_pollfds(libusb_context *)
-{
-	const libusb_pollfd **l =
-		(const libusb_pollfd **)calloc(2, sizeof(*l));
-	static libusb_pollfd p;
-	if (!l)
-		return nullptr;
-	if (fake.cap >= 0) {
-		p.fd = fake.cap;
-		p.events = POLLIN;
-		l[0] = &p;
+	/* interface 0's setting alt, 0 or 1: 1 starts the samples (the FIFOs
+	   emptied either way), and an event says so */
+	int set_alt(int n, int alt) override
+	{
+		if (fake.log)
+			fprintf(stderr, "fake pico-serial WB: alternate setting %d\n", alt);
+		if (n != 0 || (alt != 0 && alt != 1))
+			return LIBUSB_ERROR_NOT_FOUND;
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		fake.alt = alt;
+		fake.in.clear();
+		fake.ms = 0;
+		fake.event_due = alt == 1;
+		return 0;
 	}
-	return l;
-}
 
-/* the list freed */
-void LIBUSB_CALL libusb_free_pollfds(const libusb_pollfd **l)
+	/* the configuration (make_config()), static */
+	libusb_config_descriptor *config() override
+	{
+		make_config();
+		return &::config;
+	}
+
+	/* a vendor request to interface 0 (wIndex's low octet; its high one a
+	   codec page) or the device: request_in() or request_out();
+	   LIBUSB_ERROR_NO_DEVICE once gone */
+	int control(uint8_t type, uint8_t request, uint16_t value,
+		    uint16_t index, unsigned char *data,
+		    uint16_t length) override
+	{
+		int r;
+
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		if ((type & LIBUSB_REQUEST_TYPE_VENDOR) != LIBUSB_REQUEST_TYPE_VENDOR ||
+		    (index & 0xff) != 0)
+			return LIBUSB_ERROR_PIPE;
+		r = type & LIBUSB_ENDPOINT_IN ?
+			request_in(request, value, index, data, length) :
+			request_out(request, value, index);
+		if (fake.log)
+			fprintf(stderr, "fake pico-serial WB: request %02x %s %u: %d\n",
+				request, type & LIBUSB_ENDPOINT_IN ? "in" : "out", value, r);
+		return r;
+	}
+
+	/* t queued at its endpoint, done in run() */
+	int submit(libusb_transfer *t) override
+	{
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		if (fake_usb::refused(t))
+			return LIBUSB_ERROR_NOT_SUPPORTED;
+		if (t->endpoint == EP_EVENT)
+			fake.intr_q.push_back(t);
+		else if (t->endpoint == EP_IN)
+			fake.in_q.push_back(t);
+		else if (t->endpoint == EP_OUT)
+			fake.out_q.push_back(t);
+		else
+			return LIBUSB_ERROR_NOT_FOUND;
+		return 0;
+	}
+
+	/* t off its queue, done as cancelled in run();
+	   LIBUSB_ERROR_NOT_FOUND if not queued */
+	int cancel(libusb_transfer *t) override
+	{
+		return fake_usb::cancel_from(t, { &fake.in_q, &fake.out_q,
+						  &fake.intr_q }, fake.cancelled);
+	}
+
+	/* the descriptor to poll: the capture socket (-1 if not open) */
+	int poll_fd() const override { return fake.cap; }
+
+	/* what the device has done (run()) */
+	void run() override { ::run(); }
+};
+
+} // namespace
+
+/* see fake_libusb.h */
+fake_usb::Device &fake_usb::device()
 {
-	free(l);
+	static PicoWb d;
+	return d;
 }
-
-/* what the device has done (run()), without waiting */
-int LIBUSB_CALL libusb_handle_events_timeout_completed(libusb_context *,
-						       struct timeval *tv,
-						       int *)
-{
-	run();
-	(void)tv;
-	return 0;
-}
-
-} // extern "C"

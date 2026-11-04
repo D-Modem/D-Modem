@@ -59,19 +59,7 @@
 #include <map>
 #include <vector>
 
-#include <libusb.h>
-
-struct libusb_context {
-	int dummy;
-};
-
-struct libusb_device {
-	int dummy;
-};
-
-struct libusb_device_handle {
-	libusb_device *dev;
-};
+#include "fake_libusb.h"
 
 namespace {
 
@@ -91,10 +79,7 @@ const uint16_t NONE = 0xaa55;
 /* command 0x0c's data, as Windows' driver sends it at high speed */
 const uint16_t START[4] = { 2, 0, 24, 0x2aaa };
 
-libusb_device the_device;
-
 struct Fake {
-	libusb_context *ctx = nullptr;
 	bool open = false;
 	int cap = -1, play = -1, ctl = -1;
 	int alt = 0;
@@ -600,340 +585,183 @@ int command_out(uint8_t cmd, uint16_t index, uint16_t value,
 	return LIBUSB_ERROR_PIPE;
 }
 
-} // namespace
+/* the device on libusb's bus (fake_libusb.h) */
+struct Agere final : fake_usb::Device {
+	/* its log on stderr with FAKE_AGERE_LOG */
+	Agere() : Device("FAKE_AGERE_LOG") {}
 
-extern "C" {
-
-#include "fake_usb_backend.h"
-
-/* the context (FAKE_AGERE_* read) */
-int LIBUSB_CALL libusb_init(libusb_context **ctx)
-{
-	fake.ctx = new libusb_context();
-	fake.log = getenv("FAKE_AGERE_LOG") != nullptr;
-	if (const char *r = getenv("FAKE_AGERE_ROM"))
-		fake.rom = (uint16_t)strtoul(r, nullptr, 16);
-	fake.polaris = getenv("FAKE_AGERE_POLARIS") != nullptr;
-	fake.sticks = getenv("FAKE_AGERE_RING_STICKS") != nullptr;
-	if (const char *e = getenv("FAKE_AGERE_DRIFT"))
-		fake.drift = strtol(e, nullptr, 10);
-	fake.full = getenv("FAKE_AGERE_FULL") != nullptr;
-	fake.patched = getenv("FAKE_AGERE_PATCHED") != nullptr;
-	if (ctx)
-		*ctx = fake.ctx;
-	return 0;
-}
-
-/* the context freed */
-void LIBUSB_CALL libusb_exit(libusb_context *ctx)
-{
-	if (ctx == fake.ctx) {
-		delete fake.ctx;
-		fake.ctx = nullptr;
+	/* the settings from the environment: the log's, and the device's */
+	void init() override
+	{
+		fake.log = log;
+		if (const char *r = getenv("FAKE_AGERE_ROM"))
+			fake.rom = (uint16_t)strtoul(r, nullptr, 16);
+		fake.polaris = getenv("FAKE_AGERE_POLARIS") != nullptr;
+		fake.sticks = getenv("FAKE_AGERE_RING_STICKS") != nullptr;
+		if (const char *e = getenv("FAKE_AGERE_DRIFT"))
+			fake.drift = strtol(e, nullptr, 10);
+		fake.full = getenv("FAKE_AGERE_FULL") != nullptr;
+		fake.patched = getenv("FAKE_AGERE_PATCHED") != nullptr;
 	}
-}
 
-/* libusb's text for the codes usb_line.cpp sees */
-const char *LIBUSB_CALL libusb_strerror(int code)
-{
-	switch (code) {
-	case LIBUSB_SUCCESS: return "Success";
-	case LIBUSB_ERROR_IO: return "Input/Output Error";
-	case LIBUSB_ERROR_ACCESS: return "Access denied (insufficient permissions)";
-	case LIBUSB_ERROR_NO_DEVICE: return "No such device (it may have been disconnected)";
-	case LIBUSB_ERROR_NOT_FOUND: return "Entity not found";
-	case LIBUSB_ERROR_BUSY: return "Resource busy";
-	case LIBUSB_ERROR_PIPE: return "Pipe error";
-	case LIBUSB_ERROR_INVALID_PARAM: return "Invalid parameter";
-	case LIBUSB_ERROR_NOT_SUPPORTED: return "Operation not supported or unimplemented on this platform";
+	/* the modem's descriptor (047e:2892, USB 2.0) */
+	void descriptor(libusb_device_descriptor *d) override
+	{
+		d->bLength = LIBUSB_DT_DEVICE_SIZE;
+		d->bDescriptorType = LIBUSB_DT_DEVICE;
+		d->bcdUSB = 0x0200;
+		d->idVendor = 0x047e;
+		d->idProduct = 0x2892;
+		d->bNumConfigurations = 1;
 	}
-	return "Other error";
-}
 
-/* the bus: the one device */
-ssize_t LIBUSB_CALL libusb_get_device_list(libusb_context *,
-					   libusb_device ***list)
-{
-	libusb_device **l = (libusb_device **)calloc(2, sizeof(*l));
-	if (!l)
-		return LIBUSB_ERROR_NO_MEM;
-	l[0] = &the_device;
-	*list = l;
-	return 1;
-}
+	/* address 9 */
+	uint8_t address() const override
+	{
+		return 9;
+	}
 
-/* the list freed */
-void LIBUSB_CALL libusb_free_device_list(libusb_device **list, int)
-{
-	free(list);
-}
+	/* high speed, or full (FAKE_AGERE_FULL) */
+	int speed() const override
+	{
+		return fake.full ? LIBUSB_SPEED_FULL : LIBUSB_SPEED_HIGH;
+	}
 
-/* the modem's descriptor (047e:2892, USB 2.0) */
-int LIBUSB_CALL libusb_get_device_descriptor(libusb_device *,
-					     libusb_device_descriptor *d)
-{
-	memset(d, 0, sizeof(*d));
-	d->bLength = LIBUSB_DT_DEVICE_SIZE;
-	d->bDescriptorType = LIBUSB_DT_DEVICE;
-	d->bcdUSB = 0x0200;
-	d->idVendor = 0x047e;
-	d->idProduct = 0x2892;
-	d->bNumConfigurations = 1;
-	return 0;
-}
+	/* the device opened: its connections to the exchange at
+	   FAKE_AGERE_SOCKET, the line monitor on (LIBUSB_ERROR_BUSY if open,
+	   _ACCESS if no socket, _IO if no exchange) */
+	int open() override
+	{
+		const char *path = getenv("FAKE_AGERE_SOCKET");
 
-/* bus 1 */
-uint8_t LIBUSB_CALL libusb_get_bus_number(libusb_device *)
-{
-	return 1;
-}
+		if (fake.open)
+			return LIBUSB_ERROR_BUSY;
+		if (!path)
+			return LIBUSB_ERROR_ACCESS;
+		fake.cap = connect_exchange(path, 'C');
+		fake.play = connect_exchange(path, 'P');
+		fake.ctl = connect_exchange(path, 'K');
+		if (fake.cap < 0 || fake.play < 0 || fake.ctl < 0) {
+			fprintf(stderr, "fake Agere: no exchange at %s\n", path);
+			for (int fd : { fake.cap, fake.play, fake.ctl })
+				fake_net::close_fd(fd);
+			fake.cap = fake.play = fake.ctl = -1;
+			return LIBUSB_ERROR_IO;
+		}
+		reset();
+		switch_to(1, true);
+		fake.open = true;
+		return 0;
+	}
 
-/* its one port on the bus (only Linux's remote wakeup asks, through
-   /sys; the fake linked in libusb's place answers it too) */
-int LIBUSB_CALL libusb_get_port_numbers(libusb_device *, uint8_t *ports,
-					int len)
-{
-	if (len < 1)
-		return LIBUSB_ERROR_OVERFLOW;
-	ports[0] = 250;
-	return 1;
-}
-
-/* address 9 */
-uint8_t LIBUSB_CALL libusb_get_device_address(libusb_device *)
-{
-	return 9;
-}
-
-/* high speed, or full (FAKE_AGERE_FULL) */
-int LIBUSB_CALL libusb_get_device_speed(libusb_device *)
-{
-	return fake.full ? LIBUSB_SPEED_FULL : LIBUSB_SPEED_HIGH;
-}
-
-/* the device opened: its connections to the exchange at
-   FAKE_AGERE_SOCKET, the line monitor on (LIBUSB_ERROR_BUSY if open,
-   _ACCESS if no socket, _IO if no exchange) */
-int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
-{
-	const char *path = getenv("FAKE_AGERE_SOCKET");
-
-	if (fake.open)
-		return LIBUSB_ERROR_BUSY;
-	if (!path)
-		return LIBUSB_ERROR_ACCESS;
-	fake.cap = connect_exchange(path, 'C');
-	fake.play = connect_exchange(path, 'P');
-	fake.ctl = connect_exchange(path, 'K');
-	if (fake.cap < 0 || fake.play < 0 || fake.ctl < 0) {
-		fprintf(stderr, "fake Agere: no exchange at %s\n", path);
+	/* the connections closed, the device free again */
+	void close() override
+	{
 		for (int fd : { fake.cap, fake.play, fake.ctl })
 			fake_net::close_fd(fd);
 		fake.cap = fake.play = fake.ctl = -1;
-		return LIBUSB_ERROR_IO;
+		fake.open = false;
 	}
-	reset();
-	switch_to(1, true);
-	fake.open = true;
-	*h = new libusb_device_handle{ dev };
-	return 0;
-}
 
-/* the connections closed, the device free again */
-void LIBUSB_CALL libusb_close(libusb_device_handle *h)
-{
-	for (int fd : { fake.cap, fake.play, fake.ctl })
-		fake_net::close_fd(fd);
-	fake.cap = fake.play = fake.ctl = -1;
-	fake.open = false;
-	delete h;
-}
-
-/* h's device */
-libusb_device *LIBUSB_CALL libusb_get_device(libusb_device_handle *h)
-{
-	return h->dev;
-}
-
-/* no kernel driver to detach: 0 */
-int LIBUSB_CALL libusb_set_auto_detach_kernel_driver(libusb_device_handle *,
-						     int)
-{
-	return 0;
-}
-
-/* interface 0 claimed */
-int LIBUSB_CALL libusb_claim_interface(libusb_device_handle *, int n)
-{
-	return n == 0 ? 0 : LIBUSB_ERROR_NOT_FOUND;
-}
-
-/* interface 0 released */
-int LIBUSB_CALL libusb_release_interface(libusb_device_handle *, int n)
-{
-	return n == 0 ? 0 : LIBUSB_ERROR_NOT_FOUND;
-}
-
-/* interface 0's setting alt, 0 to 3 */
-int LIBUSB_CALL libusb_set_interface_alt_setting(libusb_device_handle *,
-						 int n, int alt)
-{
-	if (fake.log)
-		fprintf(stderr, "fake Agere: alternate setting %d\n", alt);
-	if (n != 0 || alt < 0 || alt > 3)
-		return LIBUSB_ERROR_NOT_FOUND;
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	fake.alt = alt;
-	return 0;
-}
-
-/* nothing to clear: 0 */
-int LIBUSB_CALL libusb_clear_halt(libusb_device_handle *, unsigned char)
-{
-	return 0;
-}
-
-/* the configuration (make_config()), static */
-/* (FAKE_AGERE_NO_ACTIVE: none said, as Android's libusb had it for the
-   first device started again) */
-int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device *,
-						    libusb_config_descriptor **c)
-{
-	if (getenv("FAKE_AGERE_NO_ACTIVE"))
-		return LIBUSB_ERROR_NOT_FOUND;
-	make_config();
-	*c = &config;
-	return 0;
-}
-
-/* the configuration by its index (the one: 0) */
-int LIBUSB_CALL libusb_get_config_descriptor(libusb_device *, uint8_t index,
-					     libusb_config_descriptor **c)
-{
-	if (index != 0)
-		return LIBUSB_ERROR_NOT_FOUND;
-	make_config();
-	*c = &config;
-	return 0;
-}
-
-/* nothing to free (static) */
-void LIBUSB_CALL libusb_free_config_descriptor(libusb_config_descriptor *)
-{
-}
-
-/* a vendor command to the device: command_in() or command_out(); the
-   standard requests (SET_CONFIGURATION) stall;
-   LIBUSB_ERROR_NO_DEVICE once gone */
-int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *,
-					uint8_t type, uint8_t request,
-					uint16_t value, uint16_t index,
-					unsigned char *data, uint16_t length,
-					unsigned int)
-{
-	int r;
-
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	if ((type & LIBUSB_REQUEST_TYPE_VENDOR) != LIBUSB_REQUEST_TYPE_VENDOR ||
-	    (type & 0x1f) != LIBUSB_RECIPIENT_DEVICE)
-		r = LIBUSB_ERROR_PIPE;
-	else
-		r = type & LIBUSB_ENDPOINT_IN ?
-			command_in(request, index, value, data, length) :
-			command_out(request, index, value, data, length);
-	if (fake.log)
-		fprintf(stderr, "fake Agere: %02x command %02x index %04x value "
-			"%04x %u: %d\n", type, request, index, value, length, r);
-	return r;
-}
-
-/* a transfer, zeroed */
-libusb_transfer *LIBUSB_CALL libusb_alloc_transfer(int iso_packets)
-{
-	size_t n = sizeof(libusb_transfer) +
-		sizeof(libusb_iso_packet_descriptor) * (size_t)iso_packets;
-	libusb_transfer *t = (libusb_transfer *)calloc(1, n);
-	if (t)
-		t->num_iso_packets = iso_packets;
-	return t;
-}
-
-/* t freed (its buffer too if it has
-   LIBUSB_TRANSFER_FREE_BUFFER) */
-void LIBUSB_CALL libusb_free_transfer(libusb_transfer *t)
-{
-	if (!t)
-		return;
-	if (t->flags & LIBUSB_TRANSFER_FREE_BUFFER)
-		free(t->buffer);
-	free(t);
-}
-
-/* t queued at its endpoint (isochronous ones only, in alternate
-   setting 1), done in run() */
-int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
-{
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	if (t->type != LIBUSB_TRANSFER_TYPE_ISOCHRONOUS || fake.alt != 1)
-		return LIBUSB_ERROR_NOT_FOUND;
-	if (t->endpoint == EP_IN)
-		fake.in_q.push_back(t);
-	else if (t->endpoint == EP_OUT)
-		fake.out_q.push_back(t);
-	else
-		return LIBUSB_ERROR_NOT_FOUND;
-	fake.next[t] = 0;
-	return 0;
-}
-
-/* t off its queue, done as cancelled in run();
-   LIBUSB_ERROR_NOT_FOUND if not queued */
-int LIBUSB_CALL libusb_cancel_transfer(libusb_transfer *t)
-{
-	for (auto *q : { &fake.in_q, &fake.out_q })
-		for (auto i = q->begin(); i != q->end(); ++i)
-			if (*i == t) {
-				q->erase(i);
-				fake.next.erase(t);
-				fake.cancelled.push_back(t);
-				return 0;
-			}
-	return LIBUSB_ERROR_NOT_FOUND;
-}
-
-/* the descriptors to poll: the capture socket (if open) */
-const libusb_pollfd **LIBUSB_CALL libusb_get_pollfds(libusb_context *)
-{
-	const libusb_pollfd **l =
-		(const libusb_pollfd **)calloc(2, sizeof(*l));
-	static libusb_pollfd p;
-	if (!l)
-		return nullptr;
-	if (fake.cap >= 0) {
-		p.fd = fake.cap;
-		p.events = POLLIN;
-		l[0] = &p;
+	/* interface 0's setting alt, 0 to 3 */
+	int set_alt(int n, int alt) override
+	{
+		if (fake.log)
+			fprintf(stderr, "fake Agere: alternate setting %d\n", alt);
+		if (n != 0 || alt < 0 || alt > 3)
+			return LIBUSB_ERROR_NOT_FOUND;
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		fake.alt = alt;
+		return 0;
 	}
-	return l;
-}
 
-/* the list freed */
-void LIBUSB_CALL libusb_free_pollfds(const libusb_pollfd **l)
+	/* the configuration (make_config()), static */
+	libusb_config_descriptor *config() override
+	{
+		make_config();
+		return &::config;
+	}
+
+	/* (FAKE_AGERE_NO_ACTIVE: none said, as Android's libusb had it for the
+	   first device started again) */
+	int active_config(libusb_config_descriptor **c) override
+	{
+		if (getenv("FAKE_AGERE_NO_ACTIVE"))
+			return LIBUSB_ERROR_NOT_FOUND;
+		*c = config();
+		return 0;
+	}
+
+	/* a vendor command to the device: command_in() or command_out(); the
+	   standard requests (SET_CONFIGURATION) stall;
+	   LIBUSB_ERROR_NO_DEVICE once gone */
+	int control(uint8_t type, uint8_t request, uint16_t value,
+		    uint16_t index, unsigned char *data,
+		    uint16_t length) override
+	{
+		int r;
+
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		if ((type & LIBUSB_REQUEST_TYPE_VENDOR) != LIBUSB_REQUEST_TYPE_VENDOR ||
+		    (type & 0x1f) != LIBUSB_RECIPIENT_DEVICE)
+			r = LIBUSB_ERROR_PIPE;
+		else
+			r = type & LIBUSB_ENDPOINT_IN ?
+				command_in(request, index, value, data, length) :
+				command_out(request, index, value, data, length);
+		if (fake.log)
+			fprintf(stderr, "fake Agere: %02x command %02x index %04x value "
+				"%04x %u: %d\n", type, request, index, value, length, r);
+		return r;
+	}
+
+	/* t queued at its endpoint (isochronous ones only, in alternate
+	   setting 1), done in run() */
+	int submit(libusb_transfer *t) override
+	{
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		if (t->type != LIBUSB_TRANSFER_TYPE_ISOCHRONOUS || fake.alt != 1)
+			return LIBUSB_ERROR_NOT_FOUND;
+		if (t->endpoint == EP_IN)
+			fake.in_q.push_back(t);
+		else if (t->endpoint == EP_OUT)
+			fake.out_q.push_back(t);
+		else
+			return LIBUSB_ERROR_NOT_FOUND;
+		fake.next[t] = 0;
+		return 0;
+	}
+
+	/* t off its queue, done as cancelled in run();
+	   LIBUSB_ERROR_NOT_FOUND if not queued */
+	int cancel(libusb_transfer *t) override
+	{
+		for (auto *q : { &fake.in_q, &fake.out_q })
+			for (auto i = q->begin(); i != q->end(); ++i)
+				if (*i == t) {
+					q->erase(i);
+					fake.next.erase(t);
+					fake.cancelled.push_back(t);
+					return 0;
+				}
+		return LIBUSB_ERROR_NOT_FOUND;
+	}
+
+	/* the descriptor to poll: the capture socket (-1 if not open) */
+	int poll_fd() const override { return fake.cap; }
+
+	/* what the device has done (run()) */
+	void run() override { ::run(); }
+};
+
+} // namespace
+
+/* see fake_libusb.h */
+fake_usb::Device &fake_usb::device()
 {
-	free(l);
+	static Agere d;
+	return d;
 }
-
-/* what the device has done (run()), without waiting */
-int LIBUSB_CALL libusb_handle_events_timeout_completed(libusb_context *,
-						       struct timeval *tv,
-						       int *)
-{
-	run();
-	(void)tv;
-	return 0;
-}
-
-} // extern "C"
