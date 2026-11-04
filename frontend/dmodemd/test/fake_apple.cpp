@@ -23,9 +23,12 @@
  *    done takes 1 ms of the line's samples a packet at the rate SET_CUR
  *    set, as they come from the exchange; heard off hook, or on hook with
  *    the monitor on (silence otherwise, as the Si3056 on hook); an OUT
- *    transfer's samples go to the exchange, and it is done, at once.  The
- *    ring detector says when the line starts ringing and when it stops
- *    (RING_DETECT, wValue bit 15), on hook.  A DAA read's response is
+ *    transfer's samples go to the exchange, and it is done, at once.  On
+ *    hook the ring detector reports every 1 ms of the line's samples, as
+ *    the first real device did (RING_DETECT, 0x03): wValue bit 15 set and
+ *    a small level (0x8009) while it doesn't ring; while it rings, the
+ *    ring signal's polarity, bit 15 set or clear with the sample's sign.
+ *    A DAA read's response is
  *    notified (0x02, wValue 1) and taken with GET_ENCAPSULATED_RESPONSE.
  *    The phone cord is said plugged in (0x29, 5) when the device is
  *    opened.  The capture socket is libusb's descriptor to poll.  The
@@ -72,6 +75,9 @@ const uint16_t MAX_PACKET = 24;
 const int RING_LEVEL = 8000;
 /* the ring's end: no ring signal for this many of the line's samples */
 const unsigned RING_QUIET = 1500;
+/* the ring detector's reports waiting at most (the rest dropped, as a
+   device's interrupt endpoint would) */
+const size_t RING_REPORTS_QUEUED = 16;
 
 /* (2 audio control, 5 DFU: nothing of theirs is asked) */
 const uint8_t IF_DLC = 0, IF_MGMT = 1, IF_IN = 3, IF_OUT = 4, N_IF = 6;
@@ -175,17 +181,17 @@ void take()
 			int16_t s = (int16_t)(fake.half | b[i] << 8);
 			fake.half = -1;
 			fake.heard++;
-			if (s > RING_LEVEL && !fake.hook) {
+			if ((s > RING_LEVEL || s < -RING_LEVEL) && !fake.hook) {
 				fake.last_ring = fake.heard;
-				if (!fake.ringing) {
-					fake.ringing = true;
-					notify(N_RING_DETECT, 0x8000);
-				}
+				fake.ringing = true;
 			} else if (fake.ringing &&
-				   (fake.hook || fake.heard - fake.last_ring > RING_QUIET)) {
+				   (fake.hook || fake.heard - fake.last_ring > RING_QUIET))
 				fake.ringing = false;
-				notify(N_RING_DETECT, 0);
-			}
+			/* each 1 ms on hook: the ring detector's report */
+			if (!fake.hook && fake.rate >= 1000 && fake.heard % (fake.rate / 1000) == 0 &&
+			    fake.notes.size() < RING_REPORTS_QUEUED)
+				notify(N_RING_DETECT, fake.ringing ?
+				       (uint16_t)((s < 0 ? 0x8000 : 0) | 0x1e) : 0x8009);
 			if (streaming())
 				fake.in.push_back(fake.hook || fake.monitor ? s : 0);
 		}
@@ -361,10 +367,8 @@ void make_config()
 void set_hook(bool off)
 {
 	fake.hook = off;
-	if (fake.hook && fake.ringing) {
+	if (fake.hook)
 		fake.ringing = false;
-		notify(N_RING_DETECT, 0);
-	}
 	line_hook(fake.hook);
 }
 

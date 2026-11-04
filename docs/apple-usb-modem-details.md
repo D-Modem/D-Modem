@@ -71,11 +71,18 @@ each way.
 - **Notifications** on the interrupt endpoint, CDC's 8-octet header
   (`wValue` little-endian at octets 2 and 3):
   - 0x02, `wValue` bit 0: a DAA command's response is ready.
-  - 0x03 `RING_DETECT`: `wValue` bit 15 set while the line rings, clear
-    when it stops. dmodemd turns a ring into the core's ring pulses: one
-    at each change and one every 50 ms while it rings (the core counts
-    4 pulses in 150 ms as a ring). A ring that has not ended after 4 s
-    is dropped.
+  - 0x03 `RING_DETECT`: the ring detector's report. A real one sends
+    one every millisecond on hook: `wValue` bit 15 is the ring signal's
+    polarity and the low octet a level. Apple's `intReadComplete` splits
+    it that way, keeping the low octet of each polarity apart and
+    telling the modem nub which one came. A line that isn't ringing
+    gives one polarity only (`0x8007` to `0x800a` on the first device).
+    dmodemd takes it as ringing once both polarities have come within
+    100 ms, as a ring signal's do (a 20 Hz ring changes every 25 ms),
+    and as ended when one hasn't for 100 ms. It turns a ring into the
+    core's ring pulses: one at each change and one every 50 ms while it
+    rings (the core counts 4 pulses in 150 ms as a ring). A ring that
+    has not ended after 4 s is dropped.
   - 0x29: the phone cord, `wValue` 4 unplugged, 5 plugged in. dmodemd
     logs it.
   - 0x08, 0x09, 0x28: call and line states, and a vendor one. Traced at
@@ -138,10 +145,16 @@ stalled. So dmodemd hooks with register 5's OH when it does
 (`FAKE_APPLE_HOOK_STALL` has the fake stall it too). Whether the
 device takes the request off hook, or never, is not known yet.
 
+The next try started, but the modem gave phantom calls: its ring
+detector's report comes every millisecond, always with bit 15 set, and
+dmodemd had read bit 15 as "ringing". It now needs both polarities (see
+the notifications above). Whether a real ring gives both is not known
+yet.
+
 ## Not yet known
 
-- Whether the real device's ring notification comes once a ring or
-  more often. Either way gives rings.
+- What a real ring looks like in the ring detector's reports (both
+  polarities, as dmodemd expects, or only a higher level).
 - The LEDs' bits.
 
 ## Testing without hardware
@@ -158,6 +171,7 @@ cord's. The test checks:
   interfaces found, the phone cord plugged in;
 - a rate the modem has not (refused, its rates said);
 - the country's registers written: `-c UK` and `AT+GCI=09`;
+- no ring while nobody calls (the ring detector's steady reports);
 - a data call (rings, caller ID, the answer at the second ring, CONNECT
   at both ends, text each way), a busy line, a call dialled in pulses
   and a voice call;

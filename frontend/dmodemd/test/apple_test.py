@@ -16,6 +16,7 @@
 #   commands): -c UK's at start-up, AT+GCI=09's (Australia) after it;
 # - 1002's modem stalls SET_HOOK_STATE (FAKE_APPLE_HOOK_STALL), as the
 #   first real one did: its dmodemd hooks with the DAA's register 5;
+# - nobody calls: no RING (its ring detector's steady reports);
 # - 1001 dials 1002 (ATX4: after the dial tone, in DTMF); 1002 rings
 #   (its ring detector's notifications), shows the caller ID between
 #   the first two rings (AT#CID=1: the Si3056's line monitor on, on
@@ -200,6 +201,10 @@ try:
               m.cmd(b"ATI3", rb"Apple USB Modem \(Si3056\)\r\n(\r\n)?OK\r\n"))
     check("1002 answers at the 2nd ring", b.cmd(b"ATS0=2"))
     check("1002 caller ID on", b.cmd(b"AT#CID=1"))
+    # (its ring detector reports every 1 ms, one polarity while nobody
+    # calls, as the first real one did: no RING from that)
+    check("1002 no ring while nobody calls",
+          not b.expect_log(b"the line rings", 2) and not b.expect(rb"RING", 0.5))
     check("1001 waits for the dial tone", a.cmd(b"ATX4"))
 
     t = time.time()
