@@ -26,11 +26,11 @@
  *      (register 5's OH, as AppleSM56KUSBModemFamily::testInterface
  *      writes it); its interrupt
  *      endpoint's notifications (8 octets, CDC's header) are the ring
- *      detector's (RING_DETECT, 0x03: on a real one, one every 1 ms,
- *      wValue's bit 15 its polarity and its low octet a level, as
- *      AppleSM56KUSBModemFamily::intReadComplete splits it; a ring is
- *      both polarities, a steady line one), a command's response (0x02)
- *      and the phone cord (0x29: wValue 4 unplugged, 5 plugged in).
+ *      (0x09, every 40 ms while the line rings, on the first real one;
+ *      AppleSM56KUSBModemFamily::intReadComplete passes it to its client
+ *      as message 9), the ring detector's level (RING_DETECT, 0x03, every
+ *      1 ms: traced, not used), a command's response (0x02) and the
+ *      phone cord (0x29: wValue 4 unplugged, 5 plugged in).
  *    - Its DAA is a Silicon Labs Si3056 (si3056.h) whose registers are
  *      3-octet commands, SEND_ENCAPSULATED_COMMAND to a vendor interface
  *      (class 0xff, subclass 2: interface 1): 0x00 a register written,
@@ -91,7 +91,7 @@ const u8 CLASS_AUDIO = 0x01, SUBCLASS_AC = 0x01, SUBCLASS_AS = 0x02;
 /* CDC's requests and notifications */
 const u8 SEND_ENCAPSULATED_COMMAND = 0x00, GET_ENCAPSULATED_RESPONSE = 0x01;
 const u8 SET_HOOK_STATE = 0x11;
-const u8 N_RESPONSE = 0x02, N_RING_DETECT = 0x03, N_LINE = 0x29;
+const u8 N_RESPONSE = 0x02, N_RING_DETECT = 0x03, N_RING = 0x09, N_LINE = 0x29;
 
 /* the DAA's commands (AppleSM56KUSBModemFamily's write_DAA_Register: apple_write(),
    OR_, AND_, XOR_DAA_Register, get_DAA_Register) */
@@ -113,9 +113,9 @@ const u8 SI_STATUS_FDT = 0x40;
    0.15 s or more: modem.cpp's RING_PULSES, RING_MIN_MS), and a ring
    longer than any cadence's (Egypt's 2 s, with room) */
 const u64 RING_PULSE_MS = 50, RING_LONGEST_MS = 4000;
-/* ringing: both of the ring detector's polarities seen within this
-   (a 20 Hz ring's half wave is 25 ms; a 16 Hz one's 31) */
-const u64 RING_POLARITY_MS = 100;
+/* ringing: two ring notifications (0x09, 40 ms apart while it rings)
+   within this; its end, none for this long */
+const u64 RING_GAP_MS = 150;
 
 const u16 TIMEOUT_MS = 1000;
 /* a read's response: the notification waited for, ms, and how often */
@@ -397,8 +397,7 @@ bool UsbLine::open_apple(u32 rate)
 		return false;
 	apple_ringing_ = false;
 	apple_ring_since_ = apple_ring_pulse_ = 0;
-	apple_ring_neg_ = apple_ring_pos_ = 0;
-	apple_ring_reports_ = 0;
+	apple_ring_last_ = apple_ring_reports_ = 0;
 	/* (its controller's own buffering: a guess, 2 ms each way) */
 	fifo_samples_ = static_cast<s16>(rate * 4 / 1000);
 	return true;
@@ -511,32 +510,34 @@ bool UsbLine::apple_monitor(bool on)
 		apple_cmd(DAA_AND, SI_DAA1, static_cast<u8>(~SI_DAA1_ONHM));
 }
 
-/* see usb_line.h: the ring detector's report (a ring's start when both
-   polarities have come within RING_POLARITY_MS: a ring pulse, and a
-   pulse every RING_PULSE_MS after, apple_ring_tick(), which ends it),
-   the phone cord's state said; the rest traced */
+/* see usb_line.h: a ring notification (0x09: a ring's start at the
+   second within RING_GAP_MS, a ring pulse, and a pulse every
+   RING_PULSE_MS after, apple_ring_tick(), which ends it); the ring
+   detector's level traced (one report in 1000); the phone cord's state
+   said; the rest traced */
 void UsbLine::apple_event(const u8 *b, s16 len)
 {
 	if (len < 4)
 		return;
 	u16 value = static_cast<u16>(b[2] | u16{b[3]} << 8);
 	switch (b[1]) {
-	case N_RING_DETECT: {
-		/* (1000 a second: the first and every 1000th traced) */
+	case N_RING_DETECT:
 		if (apple_ring_reports_++ % 1000 == 0)
 			TRACE("Apple: ring detector %04x (report %" PRIu64 ")\n",
 			      value, apple_ring_reports_);
+		break;
+	case N_RING: {
 		u64 now = now_ms();
-		/* (0 is never: a polarity's time is 1 or more) */
-		(value & 0x8000 ? apple_ring_neg_ : apple_ring_pos_) = now ? now : 1;
-		if (!apple_ringing_ && apple_ring_neg_ && apple_ring_pos_ &&
-		    now - apple_ring_neg_ <= RING_POLARITY_MS &&
-		    now - apple_ring_pos_ <= RING_POLARITY_MS) {
+		/* (a lone one, as at start-up, is not a ring) */
+		if (!apple_ringing_ && apple_ring_last_ &&
+		    now - apple_ring_last_ <= RING_GAP_MS) {
 			TRACE("Apple: the line rings\n");
 			apple_ringing_ = true;
 			apple_ring_since_ = apple_ring_pulse_ = now;
 			rings_++;
 		}
+		/* (0 is never) */
+		apple_ring_last_ = now ? now : 1;
 		break;
 	}
 	case N_LINE:
@@ -552,16 +553,15 @@ void UsbLine::apple_event(const u8 *b, s16 len)
 	}
 }
 
-/* see usb_line.h: the ring ended when a polarity has not come for
-   RING_POLARITY_MS (a ring pulse), or dropped when it has gone on
+/* see usb_line.h: the ring ended when no ring notification has come
+   for RING_GAP_MS (a ring pulse), or dropped when it has gone on
    longer than any ring */
 void UsbLine::apple_ring_tick()
 {
 	if (!apple_ringing_)
 		return;
 	u64 now = now_ms();
-	if (now - apple_ring_neg_ > RING_POLARITY_MS ||
-	    now - apple_ring_pos_ > RING_POLARITY_MS) {
+	if (now - apple_ring_last_ > RING_GAP_MS) {
 		TRACE("Apple: the line stopped ringing\n");
 		apple_ringing_ = false;
 		rings_++;
@@ -571,8 +571,8 @@ void UsbLine::apple_ring_tick()
 		DBG("Apple: rang %" PRIu64 " ms with no end: not a ring\n",
 		    now - apple_ring_since_);
 		apple_ringing_ = false;
-		/* (not again until both polarities come anew) */
-		apple_ring_neg_ = apple_ring_pos_ = 0;
+		/* (not again until two come anew) */
+		apple_ring_last_ = 0;
 		return;
 	}
 	while (now - apple_ring_pulse_ >= RING_PULSE_MS) {

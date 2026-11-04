@@ -71,18 +71,20 @@ each way.
 - **Notifications** on the interrupt endpoint, CDC's 8-octet header
   (`wValue` little-endian at octets 2 and 3):
   - 0x02, `wValue` bit 0: a DAA command's response is ready.
-  - 0x03 `RING_DETECT`: the ring detector's report. A real one sends
-    one every millisecond on hook: `wValue` bit 15 is the ring signal's
-    polarity and the low octet a level. Apple's `intReadComplete` splits
-    it that way, keeping the low octet of each polarity apart and
-    telling the modem nub which one came. A line that isn't ringing
-    gives one polarity only (`0x8007` to `0x800a` on the first device).
-    dmodemd takes it as ringing once both polarities have come within
-    100 ms, as a ring signal's do (a 20 Hz ring changes every 25 ms),
-    and as ended when one hasn't for 100 ms. It turns a ring into the
-    core's ring pulses: one at each change and one every 50 ms while it
-    rings (the core counts 4 pulses in 150 ms as a ring). A ring that
-    has not ended after 4 s is dropped.
+  - 0x09: the ring. A real one sends it every 40 ms while the line
+    rings (2 s on, 4 s off on a US line), with `wValue` 0, and once at
+    start-up. Apple's `intReadComplete` passes it to its client as
+    message 9. dmodemd takes it as ringing at the second within 150 ms
+    (so not the lone one at start-up), and as ended when none has come
+    for 150 ms. It turns a ring into the core's ring pulses: one at each
+    change and one every 50 ms while it rings (the core counts 4 pulses
+    in 150 ms as a ring). A ring that has not ended after 4 s is
+    dropped.
+  - 0x03 `RING_DETECT`: the ring detector's level. A real one sends it
+    every millisecond on hook, `wValue` bit 15 set and a small level in
+    the low octet (`0x8007` to `0x800b`, now and then up to `0x801e`),
+    ringing or not. Apple's `intReadComplete` keeps its low octet apart
+    by bit 15. dmodemd traces one report in 1000 and doesn't use it.
   - 0x29: the phone cord, `wValue` 4 unplugged, 5 plugged in. dmodemd
     logs it.
   - 0x08, 0x09, 0x28: call and line states, and a vendor one. Traced at
@@ -145,16 +147,18 @@ stalled. So dmodemd hooks with register 5's OH when it does
 (`FAKE_APPLE_HOOK_STALL` has the fake stall it too). Whether the
 device takes the request off hook, or never, is not known yet.
 
-The next try started, but the modem gave phantom calls: its ring
-detector's report comes every millisecond, always with bit 15 set, and
-dmodemd had read bit 15 as "ringing". It now needs both polarities (see
-the notifications above). Whether a real ring gives both is not known
-yet.
+The next try started, but the modem gave phantom calls: dmodemd had
+read `RING_DETECT`'s bit 15 as "ringing", and it is set all the time.
+A log of a real incoming call then showed the ring itself: notification
+0x09 every 40 ms during each 2 s ring, nothing between rings, and
+`RING_DETECT` unchanged throughout. That call, answered with `ATA`,
+connected at V.34 33600 bit/s both ways. Off hook, register 5's OH
+works.
 
 ## Not yet known
 
-- What a real ring looks like in the ring detector's reports (both
-  polarities, as dmodemd expects, or only a higher level).
+- Whether caller ID comes through (the first call's log had no
+  number; it may need the line monitor's timing after the first ring).
 - The LEDs' bits.
 
 ## Testing without hardware
@@ -164,14 +168,15 @@ yet.
 exchange. `frontend/dmodemd/test/fake_apple.cpp` is one (05ac:1401): its six
 interfaces and their descriptors, the DAA's commands on registers (ONHM
 the exchange's monitor switch), `SET_HOOK_STATE` the exchange's hook,
-`SET_CUR` the rate, the ring detector's notifications and the phone
+`SET_CUR` the rate, the ring's and the ring detector's notifications and the phone
 cord's. The test checks:
 
 - a line side that does not answer (said, and dmodemd goes on), the
   interfaces found, the phone cord plugged in;
 - a rate the modem has not (refused, its rates said);
 - the country's registers written: `-c UK` and `AT+GCI=09`;
-- no ring while nobody calls (the ring detector's steady reports);
+- no ring while nobody calls (the ring detector's steady reports, the
+  lone ring notification at the start);
 - a data call (rings, caller ID, the answer at the second ring, CONNECT
   at both ends, text each way), a busy line, a call dialled in pulses
   and a voice call;
