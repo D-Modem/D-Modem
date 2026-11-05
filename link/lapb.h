@@ -43,7 +43,7 @@ enum {
 				   isdn4linux's 2048) */
 };
 
-class Lapb : public Framer {
+class Lapb : public Framer, public LinkProto {
 public:
 	enum class Variant { X75, V120 };
 
@@ -53,11 +53,11 @@ public:
 	/* the link is up at the bit level: the calling end's SABM */
 	void start();
 	/* we hang up: DISC */
-	void disconnect();
+	void disconnect() override;
 	/* characters the DTE did not take: try again */
-	void push_rest();
+	void push_rest() override;
 	/* I frames not sent yet or not acknowledged */
-	bool tx_pending() const { return sent_ != free_; }
+	bool tx_pending() const override { return sent_ != free_; }
 
 	/* the HDLC framer's side */
 	Frame *next_tx_frame() override;

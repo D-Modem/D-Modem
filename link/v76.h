@@ -56,7 +56,7 @@ namespace dlink {
 
 class Lapm;
 
-class Mux : public Framer {
+class Mux : public Framer, public LinkProto {
 public:
 	/* a call on link, its data DLC lapm (initialised by the Link) */
 	void init(Link *link, Lapm *lapm);
@@ -68,7 +68,11 @@ public:
 	void opening();
 	/* we hang up: the voice channel's DISC, then the data channel's
 	   (CloseLogicalChannel) */
-	void disconnect();
+	void disconnect() override;
+	/* (LinkProto) the data channel's, its LAPM's */
+	void push_rest() override;
+	/* (see push_rest()) */
+	bool tx_pending() const override;
 	/* the call is over: an open voice channel closed (the owner
 	   hears) */
 	void end() { voice_closed(); }

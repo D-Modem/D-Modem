@@ -107,7 +107,7 @@ void PppSync::tx_complete(Frame *f)
    FCS; dropped while the last one is not all taken */
 void PppSync::rx_complete(Frame *f)
 {
-	if (out_count_ && !push_rest()) {
+	if (out_count_ && !push_out()) {
 		link_->logf("err: ppp: the DTE is busy: a frame of %d octets "
 			    "dropped.", f->count);
 		return;
@@ -137,12 +137,12 @@ void PppSync::rx_complete(Frame *f)
 	out_[n++] = FLAG;
 	out_head_ = 0;
 	out_count_ = n;
-	if (!push_rest())
+	if (!push_out())
 		link_->push_pending = true;
 }
 
 /* the frame for the DTE: as much as it takes */
-bool PppSync::push_rest()
+bool PppSync::push_out()
 {
 	while (out_count_) {
 		s16 w = link_->write_chars(out_ + out_head_, out_count_);

@@ -31,13 +31,12 @@ enum {
 				   FCS): an MRU of 1500 and more */
 };
 
-class PppSync : public Framer {
+class PppSync : public Framer, public LinkProto {
 public:
 	/* a call over link: nothing held */
 	void start(Link *link);
-	/* the frame for the DTE that it has not all taken: on with it;
-	   true when it has it all */
-	bool push_rest();
+	/* the frame for the DTE that it has not all taken: on with it */
+	void push_rest() override { push_out(); }
 
 	/* the HDLC framer's side */
 	Frame *next_tx_frame() override;
@@ -45,6 +44,8 @@ public:
 	void rx_complete(Frame *f) override;
 
 private:
+	/* (see push_rest()) true when the DTE has it all */
+	bool push_out();
 	void dte_octet(u8 c);
 
 	Link *link_ = nullptr;

@@ -3,7 +3,7 @@
  * Copyright (C) 2026 D-Modem Authors
  *
  *    usb_wb.cpp - the pico-serial WB stick (USB 1209:0003) as the modem's
- *                 line: UsbLine's Kind::Wb (usb_line.h)
+ *                 line: UsbLine's Wb chip (usb_line.h)
  *
  *    The stick's protocol is its firmware's (pico-serial's
  *    firmware/PROTOCOL.md "WB stick", src/core/wb_proto.h): the Line
@@ -216,6 +216,50 @@ void UsbLine::wb_close()
 				LIBUSB_ENDPOINT_OUT, WP_SET_CARRIER,
 				WP_CARRIER_AUTO, 0, nullptr, 0, 1000);
 	libusb_set_interface_alt_setting(h_, 0, 0);
+}
+
+/* the pico-serial WB: a bare pair, no hook (no flashes, no pulse
+   dialling), its LINK LED the carrier's, its samples running since its
+   alternate setting 1 */
+struct UsbLine::Wb final : UsbLine::Chip {
+	using Chip::Chip;
+	/* (Chip) in the messages */
+	const char *name() const override { return "pico-serial WB"; }
+	/* (Chip) for ATI3 */
+	const char *model() const override
+	{
+		return "pico-serial WB (TLV320AIC3204)";
+	}
+	/* (Chip) in "not the endpoints of ..." */
+	const char *a_name() const override { return "a pico-serial WB"; }
+	/* (Chip) its start-up */
+	bool open(u32 rate) override { return l.open_wb(rate); }
+	/* (Chip) its interrupt transfer's octets */
+	void event(const u8 *b, s16 len) override { l.wb_event(b, len); }
+	/* (Chip) the core's hook state */
+	s16 set_hook(s16, bool) override { return 0; }
+	/* (Chip) the hook switch off hook or on */
+	void hook(bool) override {}
+	/* (Chip) pulse dialling's break or make */
+	s16 pulse(bool) override { return -1; }
+	/* (Chip) a hook flash */
+	bool flash(u16) override { return true; }
+	/* (Chip) a hook flash it can make */
+	bool can_flash() const override { return false; }
+	/* (Chip) its LEDs */
+	void leds(dcore::Modem &m) override { l.wb_carrier(m); }
+	/* its LINK LED its own again, the samples stopped */
+	void close() override
+	{
+		if (l.claimed_)
+			l.wb_close();
+	}
+};
+
+/* the pico-serial WB */
+std::unique_ptr<UsbLine::Chip> UsbLine::wb_chip(UsbLine &l)
+{
+	return std::make_unique<Wb>(l);
 }
 
 } // namespace dmd

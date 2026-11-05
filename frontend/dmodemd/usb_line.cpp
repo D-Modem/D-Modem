@@ -316,6 +316,9 @@ s16 mix(s32 a, s32 b)
 
 } // namespace
 
+/* see usb_line.h: the SmartUSB56's chip until find() sees another */
+UsbLine::UsbLine(Dte &dte) : dte_(dte), chip_(st7554_chip(*this)) {}
+
 /* the device closed (close()) */
 UsbLine::~UsbLine()
 {
@@ -363,11 +366,10 @@ bool UsbLine::find(const char *dev)
 		if (!any && (libusb_get_bus_number(list[i]) != bus ||
 			     libusb_get_device_address(list[i]) != addr))
 			continue;
-		kind_ = stick ? Kind::Stick : wb ? Kind::Wb :
-			agere ? Kind::Agere : apple ? Kind::Apple : Kind::St7554;
-		name_ = stick ? "pico-serial Line" : wb ? "pico-serial WB" :
-			agere ? "Agere USB modem" : apple ? "Apple USB Modem" :
-			"SmartUSB56";
+		chip_ = stick ? stick_chip(*this) : wb ? wb_chip(*this) :
+			agere ? agere_chip(*this) : apple ? apple_chip(*this) :
+			st7554_chip(*this);
+		name_ = chip_->name();
 		int err = libusb_open(list[i], &h_);
 		if (err < 0) {
 			char idbuf[10];
@@ -558,9 +560,7 @@ bool UsbLine::endpoints(s16 alt)
 	libusb_free_config_descriptor(cfg);
 	if (!ep_intr_ || !iso_.ep_in || !iso_.ep_out || !iso_.max_in ||
 	    !iso_.max_out) {
-		ERR("%s: not the endpoints of %s\n", name_,
-		    kind_ == Kind::Stick ? "a pico-serial Line" :
-		    kind_ == Kind::Wb ? "a pico-serial WB" : "an ST7554");
+		ERR("%s: not the endpoints of %s\n", name_, chip_->a_name());
 		return false;
 	}
 	if (alt == ALT_VOICE && (!viso_.ep_in || !viso_.ep_out ||
@@ -659,11 +659,7 @@ bool UsbLine::open(const char *dev, u32 rate)
 		DBG("the modem's samples to the line %+.1f dB to start (DMODEM_USB_TX_GAIN=auto: "
 		    "then from the remote's answer tone)\n", tx_auto_db_);
 	}
-	/* (an Agere modem's samples are at 8000 Hz) */
-	if (kind_ == Kind::Agere && rate != 8000) {
-		DBG("Agere USB modem: 8000 Hz, its rate (not %" PRIu32 ")\n", rate);
-		rate = 8000;
-	}
+	rate = chip_->rate(rate);
 	rate_ = rate;
 	frame_ = static_cast<s16>(rate / 50);
 	frame_in_.assign(frame_, 0);
@@ -678,11 +674,7 @@ bool UsbLine::open(const char *dev, u32 rate)
 		return false;
 	}
 	claimed_ = true;
-	if (!(kind_ == Kind::Stick ? open_stick(rate) :
-	      kind_ == Kind::Wb ? open_wb(rate) :
-	      kind_ == Kind::Agere ? open_agere() :
-	      kind_ == Kind::Apple ? open_apple(rate) : open_st7554(rate)) ||
-	    !start_streams()) {
+	if (!chip_->open(rate) || !chip_->start_streams()) {
 		close();
 		return false;
 	}
@@ -914,16 +906,13 @@ bool UsbLine::stick_in(u8 req, u16 value, u8 *buf, u16 len)
 	return true;
 }
 
-/* the transfers: the interrupt's, then each stream's (start_iso()),
-   then the FIFOs started */
-bool UsbLine::start_streams()
+/* see usb_line.h */
+bool UsbLine::start_isos()
 {
 	int err;
 	/* octets a ms, at most */
 	s16 pkt = static_cast<s16>((rate_ * 2 + 999) / 1000);
 
-	if (kind_ == Kind::Agere)
-		return agere_streams();
 	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
 	delay_ = static_cast<s16>(iso_.out_buf.size()) +
 		 ISO_TRANSFERS * ISO_PACKETS * static_cast<s32>(rate_) /
@@ -946,10 +935,7 @@ bool UsbLine::start_streams()
 		if (!start_iso(viso_, static_cast<s16>(VOICE_RATE / 1000)))
 			return false;
 	}
-	/* (the sticks' samples run since their alternate setting 1, the
-	   Apple modem's since its streams' alternate settings) */
-	return kind_ == Kind::Stick || kind_ == Kind::Wb ||
-		kind_ == Kind::Apple || start_fifos();
+	return true;
 }
 
 /* stream s's transfers: ISO_TRANSFERS IN ones, the OUT ones (each sent
@@ -1019,11 +1005,8 @@ void UsbLine::out_fill(Iso &s, libusb_transfer *t, const s16 *lengths)
 {
 	s16 off = 0;
 	s16 bps = s.voice ? 1 : 2;
-	if (kind_ == Kind::Agere) {
-		(void)lengths;
-		agere_fill(t);
+	if (chip_->fill_out(t))
 		return;
-	}
 	for (s16 i = 0; i < ISO_PACKETS; i++) {
 		s16 len = lengths[i] - lengths[i] % bps;
 		if (len > s.max_out)
@@ -1071,29 +1054,8 @@ void LIBUSB_CALL UsbLine::out_done(libusb_transfer *t)
 		l->gone("unplugged");
 	if (l->dead_ || t->status == LIBUSB_TRANSFER_CANCELLED)
 		return;
-	/* (the Agere modem's: sent again at once, paced as its samples come:
-	   its ROM answers each OUT packet with an IN one) */
-	if (l->kind_ == Kind::Agere) {
-		if (t->status == LIBUSB_TRANSFER_COMPLETED)
-			l->agere_sent(t);
-		/* (short of a transfer's samples: held until pump() has
-		   made the modem's from the line's come with it, all but 4
-		   of them at most, so that the device always has OUT packets
-		   queued: past that, sent as they are, the held ones first) */
-		if (!l->agere_out_ready() &&
-		    s->idle_out.size() < static_cast<size_t>(
-			    std::max<s16>(1, l->agere_transfers_ - 4))) {
-			s->idle_out.push_back(t);
-			return;
-		}
-		while (!s->idle_out.empty()) {
-			libusb_transfer *h = s->idle_out.front();
-			s->idle_out.pop_front();
-			l->agere_send(h);
-		}
-		l->agere_send(t);
+	if (l->chip_->out_sent(*s, t))
 		return;
-	}
 	/* sent again with the lengths an IN transfer has given, or once
 	   one does */
 	s->idle_out.push_back(t);
@@ -1130,39 +1092,8 @@ void LIBUSB_CALL UsbLine::intr_done(libusb_transfer *t)
 	}
 	if (l->dead_ || t->status == LIBUSB_TRANSFER_CANCELLED)
 		return;
-	if (l->kind_ == Kind::Stick) {
-		if (t->status == LIBUSB_TRANSFER_COMPLETED)
-			l->stick_event(t->buffer, t->actual_length);
-	} else if (l->kind_ == Kind::Wb) {
-		if (t->status == LIBUSB_TRANSFER_COMPLETED)
-			l->wb_event(t->buffer, t->actual_length);
-	} else if (l->kind_ == Kind::Apple) {
-		if (t->status == LIBUSB_TRANSFER_COMPLETED)
-			l->apple_event(t->buffer, t->actual_length);
-	} else if (t->status == LIBUSB_TRANSFER_COMPLETED && t->actual_length >= 4) {
-		u16 fifo =
-			static_cast<u16>(t->buffer[0] |
-					      u16{t->buffer[1]} << 8);
-		u16 gpio =
-			static_cast<u16>(t->buffer[2] |
-					      u16{t->buffer[3]} << 8);
-		if (fifo & SSI1_UNDERRUN)
-			DBG("FIFO underrun\n");
-		if (fifo & SSI1_OVERRUN)
-			DBG("FIFO overrun\n");
-		if (fifo & SSI2_UNDERRUN)
-			DBG("the voice codec's FIFO underrun\n");
-		if (fifo & SSI2_OVERRUN)
-			DBG("the voice codec's FIFO overrun\n");
-		/* (a FIFO's error comes with the ring detector's bit set
-		   on the SmartUSB56, ringing or not: a burst of underruns
-		   made a RING; the ring's own changes come on their own) */
-		if ((gpio & GPIO_RING1) &&
-		    !(fifo & (SSI1_UNDERRUN | SSI1_OVERRUN | SSI2_UNDERRUN | SSI2_OVERRUN)))
-			l->rings_++;
-		if ((gpio & GPIO_HANDSET) && l->handset_)
-			l->handset_due_ = true;
-	}
+	if (t->status == LIBUSB_TRANSFER_COMPLETED)
+		l->chip_->event(t->buffer, static_cast<s16>(t->actual_length));
 	int err = libusb_submit_transfer(t);
 	if (err == 0)
 		l->in_flight_++;
@@ -1188,11 +1119,8 @@ void UsbLine::country(dcore::Modem &, const char *name)
 	intl_dc_ = same_name(n, "FRANCE") || same_name(n, "ALGERIA") ||
 		same_name(n, "TUNISIA");
 	intl_aus_ = same_name(n, "AUSTRALIA");
-	if (h_ && kind_ == Kind::Stick && claimed_ && hook_ != MODEM_HOOK_OFF)
-		stick_country();
-	if (h_ && kind_ == Kind::Apple && claimed_ && apple_regs_read_ &&
-	    hook_ != MODEM_HOOK_OFF)
-		apple_country();
+	if (h_ && claimed_ && !off_hook())
+		chip_->country();
 }
 
 /* see usb_line.h: registers 16, 26, 31, 59, and 30 on a Si3019 */
@@ -1275,15 +1203,8 @@ void UsbLine::in_complete(Iso &s, libusb_transfer *t)
 	}
 	if (dead_ || t->status == LIBUSB_TRANSFER_CANCELLED)
 		return;
-	if (kind_ == Kind::Agere) {
-		agere_in(t);
-		int err = libusb_submit_transfer(t);
-		if (err == 0)
-			in_flight_++;
-		else
-			park(t, err);
+	if (chip_->in_come(t))
 		return;
-	}
 	if (t->status == LIBUSB_TRANSFER_COMPLETED) {
 		for (s16 i = 0; i < t->num_iso_packets; i++) {
 			const libusb_iso_packet_descriptor &p = t->iso_packet_desc[i];
@@ -1349,15 +1270,7 @@ void UsbLine::resume()
 		gone("its transfers fail");
 		return;
 	}
-	if (kind_ == Kind::St7554) {
-		if (!init_st7554_regs() || !start_fifos())
-			return;
-		if (wake_)
-			arm_wake(true);
-		handset_due_ = handset_;
-	}
-	/* (the Agere modem's stream may have gone with a reset) */
-	if (kind_ == Kind::Agere && (!agere_table() || !agere_start()))
+	if (!chip_->resume())
 		return;
 	agere_lead_ = 0;
 	/* the streams from their start again: nothing kept from before
@@ -1379,11 +1292,9 @@ void UsbLine::resume()
 			else
 				park(t, err);
 		} else if (!(t->endpoint & LIBUSB_ENDPOINT_IN) &&
-			   kind_ != Kind::Agere) {
+			   !chip_->fill_out(t)) {
 			static_cast<Iso *>(t->user_data)->idle_out.push_back(t);
 		} else {
-			if (!(t->endpoint & LIBUSB_ENDPOINT_IN))
-				agere_fill(t);
 			int err = libusb_submit_transfer(t);
 			if (err == 0)
 				in_flight_++;
@@ -1405,68 +1316,29 @@ void UsbLine::gone(const char *why)
 	dead_ = true;
 }
 
-/* see usb_line.h: the stick's line monitor on while on hook (rings and
-   caller ID heard), off off hook, as an ALSA codec's "Caller ID Switch";
-   the ST7554's CID1 GPIO on only while the core snoops for caller ID
-   (MODEM_HOOK_SNOOPING), cleared before the hook changes, as Windows'
-   driver does */
+/* see usb_line.h: the line recorded off hook, the transmit level from
+   its start, then the device's own (Chip::set_hook()) */
 s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 {
 	bool off = state == MODEM_HOOK_OFF;
 
-	bool was_off = hook_ == MODEM_HOOK_OFF;
+	bool was_off = off_hook();
 	DBG("%s\n", off ? "off hook" : "on hook");
-	hook_ = state;
+	hook_state(state);
 	if (off)
 		rec_start();
 	else
 		rec_stop();
 	if (off && tx_auto_)
 		tx_auto_start();
-	/* (the Agere's ring registers' changes said again after a call) */
-	agere_poll_said_ = 0;
-	/* (after a call: not caller ID's listening between rings) */
-	if (!off && was_off && kind_ == Kind::Agere)
-		agere_onhook_ms_ = clock_ms();
-	flash_end_ = 0;
-	if (kind_ == Kind::Agere)   /* (it hears the line on hook) */
-		return agere_hook(off) && agere_caller_id(!off) ? 0 : -1;
-	if (kind_ == Kind::Wb)      /* (no hook: a bare pair's) */
-		return 0;
-	if (kind_ == Kind::Apple)   /* (the line monitor on, on hook) */
-		return off ? (apple_hook(true) && apple_monitor(false) ? 0 : -1) :
-			(apple_hook(false) && apple_monitor(true) &&
-			 (!daa_due_ || apple_country()) ? 0 : -1);
-	if (kind_ == Kind::Stick)
-		return off ? (stick_out(LP_SET_HOOK, 1) &&
-			      stick_out(LP_SET_MONITOR, 0) ? 0 : -1) :
-			(stick_out(LP_SET_HOOK, 0) &&
-			 stick_out(LP_SET_MONITOR, 1) &&
-			 (!daa_due_ || stick_country()) ? 0 : -1);
-	bool cid = state == MODEM_HOOK_SNOOPING;
-	bool now_off = off && !(gpio_ & GPIO_HOOK1);
-	if ((gpio_ & GPIO_CID1) && !cid &&
-	    !set_gpio(static_cast<u16>(gpio_ & ~GPIO_CID1)))
-		return -1;
-	u16 v = off ? static_cast<u16>(gpio_ | GPIO_HOOK1 |
-						 GPIO_LED_HOOK) :
-			   static_cast<u16>(
-				   gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK |
-					     GPIO_LED_CARRIER | GPIO_LED_DATA));
-	if (!off)
-		data_seen_ = online_seen_ = pulse_active_ = false;
-	if (intl_)
-		v = intl_hook(v, off, now_off);
-	if (cid)
-		v |= GPIO_CID1;
-	return v == gpio_ || set_gpio(v) ? 0 : -1;
+	return chip_->set_hook(state, was_off);
 }
 
 /* see usb_line.h: GPIO 11 set for any volume but 0, as Windows'
    SetSpeakerVolume with Options.Buzzer */
 void UsbLine::speaker(dcore::Modem &, s16 volume)
 {
-	if (!buzzer_ || kind_ != Kind::St7554 || !h_ || dead_)
+	if (!buzzer_ || !chip_->smart() || !h_ || dead_)
 		return;
 	u16 v = volume > 0 ? static_cast<u16>(gpio_ | GPIO_BUZEN) :
 		static_cast<u16>(gpio_ & ~GPIO_BUZEN);
@@ -1476,80 +1348,28 @@ void UsbLine::speaker(dcore::Modem &, s16 volume)
 	set_gpio(v);
 }
 
-/* the Agere modem's LED (agere_leds(): always); the WB stick's LINK LED
-   (wb_carrier(): always); the SmartUSB56's LEDs
-   (set_leds()): the carrier's while the call is
-   online, the data one once data has passed (the DTE's waiting, or the
-   modem's to it after the pump that saw the call online), until on
-   hook */
+/* see usb_line.h: the device's own */
 void UsbLine::update_leds(dcore::Modem &m)
 {
-	if (kind_ == Kind::Agere) {
-		agere_leds(m);
-		return;
-	}
-	if (kind_ == Kind::Wb) {
-		wb_carrier(m);
-		return;
-	}
-	if (!leds_ || kind_ != Kind::St7554 || hook_ != MODEM_HOOK_OFF)
-		return;
-	bool online = m.link_state() == dcore::LinkState::Online;
-	if (online && m.tx_pending())
-		data_seen_ = true;
-	online_seen_ = online_seen_ || online;
-	u16 v = static_cast<u16>(gpio_ &
-					   ~(GPIO_LED_CARRIER | GPIO_LED_DATA));
-	if (online)
-		v |= GPIO_LED_CARRIER;
-	if (data_seen_)
-		v |= GPIO_LED_DATA;
-	if (v != gpio_)
-		set_gpio(v);
+	chip_->leds(m);
 }
 
-/* see dcore.h: on hook for ms, then off again (if it still is; not on the
-   WB stick, which has no hook) */
-void UsbLine::hook_flash(dcore::Modem &, u16 ms)
+/* see usb_line.h: the device's own */
+bool UsbLine::hw_flash(u16 ms)
 {
-	if (hook_ != MODEM_HOOK_OFF || kind_ == Kind::Wb)
-		return;
-	DBG("hook flash, %u ms\n", ms);
-	if (kind_ == Kind::Stick) {   /* the stick times it */
-		stick_out(LP_HOOK_FLASH,
-			  static_cast<u16>(ms < 1	  ? 1 :
-						ms > 2000 ? 2000 :
-							    ms));
-		return;
-	}
-	if (kind_ == Kind::Agere)
-		agere_hook(false);
-	else if (kind_ == Kind::Apple)
-		apple_hook(false);
-	else
-		set_gpio(static_cast<u16>(gpio_ & ~GPIO_HOOK1));
-	flash_end_ =
-		samples_ + static_cast<u64>(ms) * rate_ / 1000;
+	return chip_->flash(ms);
 }
 
-/* see dcore.h: the hook GPIO cleared (broken) or set again (-1 on the
-   WB stick: no hook) */
-s16 UsbLine::pulse_hook(dcore::Modem &, bool broken)
+/* see usb_line.h */
+void UsbLine::hw_hook(bool off)
 {
-	if (hook_ != MODEM_HOOK_OFF || kind_ == Kind::Wb)
-		return -1;
-	flash_end_ = 0;
-	if (kind_ == Kind::Stick)
-		return stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
-	if (kind_ == Kind::Agere)
-		return agere_hook(!broken) ? 0 : -1;
-	if (kind_ == Kind::Apple)
-		return apple_hook(!broken) ? 0 : -1;
-	u16 v = broken ? static_cast<u16>(gpio_ & ~GPIO_HOOK1) :
-		static_cast<u16>(gpio_ | GPIO_HOOK1);
-	if (intl_)
-		v = intl_hook(v, !broken, false);
-	return set_gpio(v) ? 0 : -1;
+	chip_->hook(off);
+}
+
+/* see usb_line.h */
+s16 UsbLine::hw_pulse(bool broken)
+{
+	return chip_->pulse(broken);
 }
 
 /* the international line controls (set_international()) of v, the GPIOs'
@@ -1584,7 +1404,7 @@ u16 UsbLine::intl_hook(u16 v, bool off, bool now_off)
    (the Australian timer cancelled) and cleared after it */
 void UsbLine::pulse_dialling(dcore::Modem &, bool on)
 {
-	if (!intl_ || kind_ != Kind::St7554 || on == pulse_active_)
+	if (!intl_ || !chip_->smart() || on == pulse_active_)
 		return;
 	pulse_active_ = on;
 	if (on)
@@ -1637,7 +1457,7 @@ s16 UsbLine::pump(dcore::Modem &m)
 	}
 	while (rings_) {
 		rings_--;
-		if (hook_ != MODEM_HOOK_OFF)
+		if (!off_hook())
 			m.ring();
 	}
 	if (viso_.ep_in && dsvd_) {
@@ -1661,16 +1481,7 @@ s16 UsbLine::pump(dcore::Modem &m)
 			DBG("Australian timer over: RFC off\n");
 			set_gpio(static_cast<u16>(gpio_ & ~GPIO_RFC));
 		}
-		if (flash_end_ && samples_ >= flash_end_) {
-			flash_end_ = 0;
-			if (hook_ == MODEM_HOOK_OFF && kind_ == Kind::Agere)
-				agere_hook(true);
-			else if (hook_ == MODEM_HOOK_OFF && kind_ == Kind::Apple)
-				apple_hook(true);
-			else if (hook_ == MODEM_HOOK_OFF)
-				set_gpio(static_cast<u16>(gpio_ |
-							       GPIO_HOOK1));
-		}
+		flash_expire();
 		samples_ += frame_;
 		if (viso_.ep_in)
 			voice_frame(m);
@@ -1679,12 +1490,12 @@ s16 UsbLine::pump(dcore::Modem &m)
 		else {
 			/* caller ID sent before the ring, on a line that
 			   hears the line on hook */
-			if (hook_ != MODEM_HOOK_OFF)
+			if (!off_hook())
 				m.idle_audio(frame_in_.data(), frame_);
 			std::fill_n(frame_out_.data(), frame_, 0);
 		}
 		/* (DMODEM_USB_TX_GAIN: louder or softer to the line) */
-		if (tx_auto_ && hook_ == MODEM_HOOK_OFF)
+		if (tx_auto_ && off_hook())
 			tx_auto_frame(m.link_state() == dcore::LinkState::Online ||
 				      m.link_state() == dcore::LinkState::HangingUp);
 		if (tx_gain_ != 4096)
@@ -1703,27 +1514,12 @@ s16 UsbLine::pump(dcore::Modem &m)
 				    frame_out_.end());
 	}
 	iso_.in_buf.erase(iso_.in_buf.begin(), iso_.in_buf.begin() + used);
-	if (kind_ == Kind::Agere && used)
-		agere_rate_check();
-	/* (the Agere modem's OUT transfers held by out_done(): their samples
-	   now, silence past them) */
-	while (kind_ == Kind::Agere && !iso_.idle_out.empty() && !dead_) {
-		libusb_transfer *t = iso_.idle_out.front();
-		iso_.idle_out.pop_front();
-		agere_send(t);
-	}
-	if (kind_ == Kind::Agere && hook_ != MODEM_HOOK_OFF)
-		agere_ring_poll();
-	if (kind_ == Kind::Apple && hook_ != MODEM_HOOK_OFF)
-		apple_ring_tick();
+	chip_->pumped(used);
 	update_leds(m);
 	/* (a playback that has drifted ahead: dropped back to its lead;
 	   so is the handset's, and its microphone's samples not taken) */
 	size_t most = static_cast<size_t>(3 * frame_);
-	/* (the Agere modem's playback catches up after a burst of its
-	   samples: agere_ahead_ more) */
-	if (kind_ == Kind::Agere)
-		most += static_cast<size_t>(agere_ahead_);
+	most += chip_->ahead();
 	if (iso_.out_buf.size() > most) {
 		DBG("playback ahead: %zu samples dropped\n",
 		    iso_.out_buf.size() - most);
@@ -1758,7 +1554,7 @@ u16 UsbLine::fifo_control2() const
 void UsbLine::update_rhom()
 {
 	u16 v = fifo_control2();
-	if (kind_ != Kind::St7554 || !h_ || dead_ || v == fifo2_)
+	if (!chip_->smart() || !h_ || dead_ || v == fifo2_)
 		return;
 	DBG("RHOM %s\n", v & RHOM_SSI1 ? "on" : "off");
 	if (set_reg(FIFO_CONTROL2, v))
@@ -1910,10 +1706,7 @@ void UsbLine::rec_start()
    the last call's tone's) */
 namespace {
 const double TONE_REF = -14.8, GAIN_SLOPE = 0.5;
-/* a device's transmit level: ref, min, max and start, dB */
-struct TxCal { double ref, min, max, start; };
-/* the Hiro H50113 on its first line: +6 and +10 connected */
-const TxCal AGERE_CAL = { 8.0, 0.0, 12.0, 6.0 };
+using TxCal = UsbLine::TxCal;
 /* the SmartUSB56 (STLC7550): +12 reached a USR Courier at -6 dBm and
    clipped, a tone at -18 dBFS; about 0 dB for -18 dBm there */
 const TxCal ST7554_CAL = { -2.0, -12.0, 6.0, -2.0 };
@@ -1924,12 +1717,6 @@ double last_tone_db = std::nan("");
 double gain_for(const TxCal &c, double tone_db)
 {
 	return std::max(c.min, std::min(c.max, c.ref + GAIN_SLOPE * (TONE_REF - tone_db)));
-}
-
-/* a device's transmit level (see TxCal) */
-const TxCal &cal_for(bool agere)
-{
-	return agere ? AGERE_CAL : ST7554_CAL;
 }
 
 /* a frame's level, dBFS */
@@ -1975,7 +1762,7 @@ void UsbLine::tx_gain_db(double db)
 /* see usb_line.h */
 void UsbLine::tx_auto_start()
 {
-	const TxCal &c = cal_for(kind_ == Kind::Agere);
+	const TxCal &c = chip_->tx_cal();
 	tx_gain_db(std::isnan(last_tone_db) ? c.start : gain_for(c, last_tone_db));
 	tx_auto_set_ = false;
 	tx_tone_n_ = 0;
@@ -1996,7 +1783,7 @@ void UsbLine::tx_auto_frame(bool online)
 			if (tx_tone_n_ == TONE_FRAMES) {
 				std::sort(tx_tone_db_, tx_tone_db_ + TONE_FRAMES);
 				last_tone_db = tx_tone_db_[TONE_FRAMES / 2];
-				tx_gain_db(gain_for(cal_for(kind_ == Kind::Agere), last_tone_db));
+				tx_gain_db(gain_for(chip_->tx_cal(), last_tone_db));
 				tx_auto_set_ = true;
 				DBG("the remote's answer tone at %.1f dBFS: the modem's samples to "
 				    "the line %+.1f dB (auto)\n", last_tone_db, tx_auto_db_);
@@ -2010,7 +1797,7 @@ void UsbLine::tx_auto_frame(bool online)
 	for (s16 k = 0; k < frame_; k++)
 		tx_clip_peak_ = std::max<s32>(tx_clip_peak_, std::abs(s32(frame_out_[k])));
 	if (++tx_clip_frames_ >= 50) {
-		double lo = cal_for(kind_ == Kind::Agere).min;
+		double lo = chip_->tx_cal().min;
 		u64 clipped = tx_clipped_ - tx_clip_mark_;
 		if (clipped > 8 && tx_auto_db_ > lo && online) {
 			DBG("%" PRIu64 " samples clipped in a second: the gain kept "
@@ -2065,25 +1852,8 @@ void UsbLine::rec_stop()
 void UsbLine::close()
 {
 	rec_stop();
-	if (h_ && !dead_ && kind_ == Kind::Agere && claimed_ && agere_codec_) {
-		/* the stream stopped, on hook, GPIOs 2 and 3 as CUsbStop leaves
-		   them, the OH LED (GPIO 4) out (not before its codec is known:
-		   a Polaris's hook is the other way round) */
-		u16 v;
-		agere_stop();
-		agere_hook(false);
-		if (agere_read16(0x30000008, &v))
-			agere_write16(0x30000008, static_cast<u16>(
-				((v & 0xfff3) | 0x000c) & ~0x0010));
-	}
-	if (h_ && !dead_ && kind_ == Kind::St7554) {
-		set_reg(FIFO_MASK, 0);
-		set_reg(SSI1_COUNTER, 0);
-		if (viso_.ep_in)
-			set_reg(SSI2_COUNTER, 0);
-		if (wake_)
-			arm_wake(false);
-	}
+	if (h_ && !dead_)
+		chip_->stop();
 	libusb_transfer *all[4 * MAX_TRANSFERS + 1];
 	s16 n = 0;
 	for (Iso *st : { &iso_, &viso_ })
@@ -2109,32 +1879,8 @@ void UsbLine::close()
 		st->idle_out.clear();
 	}
 	intr_ = nullptr;
-	if (h_ && kind_ == Kind::Agere && claimed_)
-		/* (no stream to the next open) */
-		libusb_set_interface_alt_setting(h_, 0, 0);
-	else if (h_ && kind_ == Kind::Stick) {
-		/* on hook, the samples stopped (alternate setting 0) */
-		if (claimed_) {
-			libusb_control_transfer(h_, LIBUSB_REQUEST_TYPE_VENDOR |
-						LIBUSB_RECIPIENT_INTERFACE |
-						LIBUSB_ENDPOINT_OUT, LP_SET_HOOK, 0,
-						0, nullptr, 0, TIMEOUT_MS);
-			libusb_set_interface_alt_setting(h_, 0, 0);
-		}
-	} else if (h_ && kind_ == Kind::Wb && claimed_) {
-		/* its LINK LED its own again, the samples stopped */
-		wb_close();
-	} else if (h_ && kind_ == Kind::Apple) {
-		/* on hook, the streams stopped, its interfaces released */
-		apple_close();
-	} else if (h_ && kind_ == Kind::St7554) {
-		set_reg(FIFO_MASK, 0);
-		set_reg(GPIO_MASK, 0);
-		set_reg(GPIO_OUT, 0);
-		set_reg(SSI1_CONTROL, st75951_ ? SSI1_ST75951 : SSI1_POWERDOWN);
-		if (viso_.ep_in)
-			set_reg(SSI2_CONTROL, 0);
-	}
+	if (h_)
+		chip_->close();
 	if (h_) {
 		if (claimed_)
 			libusb_release_interface(h_, 0);
@@ -2146,6 +1892,218 @@ void UsbLine::close()
 		libusb_exit(ctx_);
 		ctx_ = nullptr;
 	}
+}
+
+/* see usb_line.h: the SmartUSB56's */
+const UsbLine::TxCal &UsbLine::Chip::tx_cal() const
+{
+	return ST7554_CAL;
+}
+
+/* the SmartUSB56: an ST7554, its hook, ring detector, LEDs and the
+   rest on its GPIOs, its FIFOs started once its streams are */
+struct UsbLine::St7554 final : UsbLine::Chip {
+	using Chip::Chip;
+	/* (Chip) in the messages */
+	const char *name() const override { return "SmartUSB56"; }
+	/* (Chip) for ATI3 */
+	const char *model() const override { return "ST7554"; }
+	/* (Chip) in "not the endpoints of ..." */
+	const char *a_name() const override { return "an ST7554"; }
+	/* (Chip) its start-up */
+	bool open(u32 rate) override { return l.open_st7554(rate); }
+	/* (Chip) its transfers started */
+	bool start_streams() override
+	{
+		return l.start_isos() && l.start_fifos();
+	}
+	/* the FIFOs' errors logged, a ring counted (not on a FIFO's
+	   error), the handset's change to be read */
+	void event(const u8 *b, s16 len) override
+	{
+		if (len < 4)
+			return;
+		u16 fifo = static_cast<u16>(b[0] | u16{b[1]} << 8);
+		u16 gpio = static_cast<u16>(b[2] | u16{b[3]} << 8);
+		if (fifo & SSI1_UNDERRUN)
+			DBG("FIFO underrun\n");
+		if (fifo & SSI1_OVERRUN)
+			DBG("FIFO overrun\n");
+		if (fifo & SSI2_UNDERRUN)
+			DBG("the voice codec's FIFO underrun\n");
+		if (fifo & SSI2_OVERRUN)
+			DBG("the voice codec's FIFO overrun\n");
+		/* (a FIFO's error comes with the ring detector's bit set
+		   on the SmartUSB56, ringing or not: a burst of underruns
+		   made a RING; the ring's own changes come on their own) */
+		if ((gpio & GPIO_RING1) &&
+		    !(fifo & (SSI1_UNDERRUN | SSI1_OVERRUN | SSI2_UNDERRUN | SSI2_OVERRUN)))
+			l.rings_++;
+		if ((gpio & GPIO_HANDSET) && l.handset_)
+			l.handset_due_ = true;
+	}
+	/* the ST7554's CID1 GPIO on only while the core snoops for caller
+	   ID (MODEM_HOOK_SNOOPING), cleared before the hook changes, as
+	   Windows' driver does */
+	s16 set_hook(s16 state, bool) override
+	{
+		bool off = state == MODEM_HOOK_OFF;
+		bool cid = state == MODEM_HOOK_SNOOPING;
+		bool now_off = off && !(l.gpio_ & GPIO_HOOK1);
+		if ((l.gpio_ & GPIO_CID1) && !cid &&
+		    !l.set_gpio(static_cast<u16>(l.gpio_ & ~GPIO_CID1)))
+			return -1;
+		u16 v = off ? static_cast<u16>(l.gpio_ | GPIO_HOOK1 |
+					       GPIO_LED_HOOK) :
+			static_cast<u16>(
+				l.gpio_ & ~(GPIO_HOOK1 | GPIO_LED_HOOK |
+					    GPIO_LED_CARRIER | GPIO_LED_DATA));
+		if (!off)
+			l.data_seen_ = l.online_seen_ = l.pulse_active_ = false;
+		if (l.intl_)
+			v = l.intl_hook(v, off, now_off);
+		if (cid)
+			v |= GPIO_CID1;
+		return v == l.gpio_ || l.set_gpio(v) ? 0 : -1;
+	}
+	/* the hook GPIO */
+	void hook(bool off) override
+	{
+		l.set_gpio(off ? static_cast<u16>(l.gpio_ | GPIO_HOOK1) :
+			   static_cast<u16>(l.gpio_ & ~GPIO_HOOK1));
+	}
+	/* the hook GPIO cleared (broken) or set again */
+	s16 pulse(bool broken) override
+	{
+		u16 v = broken ? static_cast<u16>(l.gpio_ & ~GPIO_HOOK1) :
+			static_cast<u16>(l.gpio_ | GPIO_HOOK1);
+		if (l.intl_)
+			v = l.intl_hook(v, !broken, false);
+		return l.set_gpio(v) ? 0 : -1;
+	}
+	/* (set_leds()): the carrier's while the call is online, the data
+	   one once data has passed (the DTE's waiting, or the modem's to
+	   it after the pump that saw the call online), until on hook */
+	void leds(dcore::Modem &m) override
+	{
+		if (!l.leds_ || !l.off_hook())
+			return;
+		bool online = m.link_state() == dcore::LinkState::Online;
+		if (online && m.tx_pending())
+			l.data_seen_ = true;
+		l.online_seen_ = l.online_seen_ || online;
+		u16 v = static_cast<u16>(l.gpio_ &
+					 ~(GPIO_LED_CARRIER | GPIO_LED_DATA));
+		if (online)
+			v |= GPIO_LED_CARRIER;
+		if (l.data_seen_)
+			v |= GPIO_LED_DATA;
+		if (v != l.gpio_)
+			l.set_gpio(v);
+	}
+	/* (Chip) the SmartUSB56's extras */
+	bool smart() const override { return true; }
+	/* its registers and FIFOs again, its wake armed, the handset read */
+	bool resume() override
+	{
+		if (!l.init_st7554_regs() || !l.start_fifos())
+			return false;
+		if (l.wake_)
+			l.arm_wake(true);
+		l.handset_due_ = l.handset_;
+		return true;
+	}
+	/* the FIFOs and their counters stopped, the wake disarmed */
+	void stop() override
+	{
+		l.set_reg(FIFO_MASK, 0);
+		l.set_reg(SSI1_COUNTER, 0);
+		if (l.viso_.ep_in)
+			l.set_reg(SSI2_COUNTER, 0);
+		if (l.wake_)
+			l.arm_wake(false);
+	}
+	/* the GPIOs cleared, the codecs powered down */
+	void close() override
+	{
+		l.set_reg(FIFO_MASK, 0);
+		l.set_reg(GPIO_MASK, 0);
+		l.set_reg(GPIO_OUT, 0);
+		l.set_reg(SSI1_CONTROL, l.st75951_ ? SSI1_ST75951 :
+			  SSI1_POWERDOWN);
+		if (l.viso_.ep_in)
+			l.set_reg(SSI2_CONTROL, 0);
+	}
+};
+
+/* the pico-serial Line: its hook, line monitor, flashes and ring on
+   vendor requests, its samples running since its alternate setting 1 */
+struct UsbLine::Stick final : UsbLine::Chip {
+	using Chip::Chip;
+	/* (Chip) in the messages */
+	const char *name() const override { return "pico-serial Line"; }
+	/* (Chip) for ATI3 */
+	const char *model() const override
+	{
+		return "pico-serial Line (Si3056)";
+	}
+	/* (Chip) in "not the endpoints of ..." */
+	const char *a_name() const override { return "a pico-serial Line"; }
+	/* (Chip) its start-up */
+	bool open(u32 rate) override { return l.open_stick(rate); }
+	/* (Chip) its interrupt transfer's octets */
+	void event(const u8 *b, s16 len) override { l.stick_event(b, len); }
+	/* the line monitor on while on hook (rings and caller ID heard),
+	   off off hook, as an ALSA codec's "Caller ID Switch"; the
+	   country's settings if due */
+	s16 set_hook(s16 state, bool) override
+	{
+		return state == MODEM_HOOK_OFF ?
+			(l.stick_out(LP_SET_HOOK, 1) &&
+			 l.stick_out(LP_SET_MONITOR, 0) ? 0 : -1) :
+			(l.stick_out(LP_SET_HOOK, 0) &&
+			 l.stick_out(LP_SET_MONITOR, 1) &&
+			 (!l.daa_due_ || l.stick_country()) ? 0 : -1);
+	}
+	/* (Chip) the hook switch off hook or on */
+	void hook(bool off) override { l.stick_out(LP_SET_HOOK, off); }
+	/* (Chip) pulse dialling's break or make */
+	s16 pulse(bool broken) override
+	{
+		return l.stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
+	}
+	/* timed by the stick, 1 to 2000 ms */
+	bool flash(u16 ms) override
+	{
+		l.stick_out(LP_HOOK_FLASH,
+			    static_cast<u16>(ms < 1 ? 1 : ms > 2000 ? 2000 : ms));
+		return true;
+	}
+	/* (Chip) the country's line settings, on hook */
+	void country() override { l.stick_country(); }
+	/* on hook, the samples stopped (alternate setting 0) */
+	void close() override
+	{
+		if (!l.claimed_)
+			return;
+		libusb_control_transfer(l.h_, LIBUSB_REQUEST_TYPE_VENDOR |
+					LIBUSB_RECIPIENT_INTERFACE |
+					LIBUSB_ENDPOINT_OUT, LP_SET_HOOK, 0, 0,
+					nullptr, 0, TIMEOUT_MS);
+		libusb_set_interface_alt_setting(l.h_, 0, 0);
+	}
+};
+
+/* the SmartUSB56 */
+std::unique_ptr<UsbLine::Chip> UsbLine::st7554_chip(UsbLine &l)
+{
+	return std::make_unique<St7554>(l);
+}
+
+/* the pico-serial Line */
+std::unique_ptr<UsbLine::Chip> UsbLine::stick_chip(UsbLine &l)
+{
+	return std::make_unique<Stick>(l);
 }
 
 } // namespace dmd

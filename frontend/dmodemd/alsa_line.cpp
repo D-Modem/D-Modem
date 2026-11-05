@@ -218,8 +218,7 @@ s16 AlsaLine::set_hook(dcore::Modem &, s16 state)
 
 	DBG("%s\n", off ? "off hook" : state == MODEM_HOOK_ON ? "on hook" :
 	    "on hook, snooping");
-	hook_ = state;
-	flash_end_ = 0;
+	hook_state(state);
 	/* (off hook: the settings again, a resume may have reset them;
 	   on hook: RZ the country's again) */
 	if (daa_ && off)
@@ -244,7 +243,7 @@ void AlsaLine::country(dcore::Modem &, const char *name)
 		daa_country_ = &si3054_usa();
 	}
 	daa_due_ = true;
-	if (daa_ && hook_ != MODEM_HOOK_OFF)
+	if (daa_ && !off_hook())
 		daa_write(false);
 	cx_country_ = cx_country(name);
 	if (!cx_country_) {
@@ -378,23 +377,9 @@ void AlsaLine::hook_switch(bool off)
 	set(off_hook_, off);
 }
 
-/* see dcore.h: on hook for ms, then off again (if it still is) */
-void AlsaLine::hook_flash(dcore::Modem &, u16 ms)
-{
-	if (hook_ != MODEM_HOOK_OFF)
-		return;
-	DBG("hook flash, %u ms\n", ms);
-	hook_switch(false);
-	flash_end_ =
-		samples_ + static_cast<u64>(ms) * rate_ / 1000;
-}
-
 /* see alsa_line.h */
-s16 AlsaLine::pulse_hook(dcore::Modem &, bool broken)
+s16 AlsaLine::hw_pulse(bool broken)
 {
-	if (hook_ != MODEM_HOOK_OFF)
-		return -1;
-	flash_end_ = 0;
 	if (cx_) {
 		if (!cx_->set_hook(broken ? CxDaa::PULSE_BREAK :
 				   CxDaa::HOOK_OFF))
@@ -455,12 +440,8 @@ bool AlsaLine::restart(const char *why)
 /* see alsa_line.h */
 void AlsaLine::frame(dcore::Modem &m, const s16 *in, s16 *out)
 {
-	if (flash_end_ && samples_ >= flash_end_) {
-		flash_end_ = 0;
-		if (hook_ == MODEM_HOOK_OFF)
-			hook_switch(true);
-	}
-	if (hook_ != MODEM_HOOK_OFF) {
+	flash_expire();
+	if (!off_hook()) {
 		for (s16 i = 0; i < frame_; i++)
 			if (ring_.sample(in[i]))
 				m.ring();
@@ -470,7 +451,7 @@ void AlsaLine::frame(dcore::Modem &m, const s16 *in, s16 *out)
 		m.process(in, out, frame_);
 	} else {
 		/* caller ID sent before the ring */
-		if (hook_ != MODEM_HOOK_OFF)
+		if (!off_hook())
 			m.idle_audio(in, frame_);
 		std::fill_n(out, frame_, 0);
 	}

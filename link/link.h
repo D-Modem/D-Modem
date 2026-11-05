@@ -272,9 +272,8 @@ public:
 	Protocol protocol() const { return proto_; }
 	/* LAPM's or MNP's frames not sent yet or not acknowledged */
 	bool tx_pending() const {
-		return (mode_ == Mode::Lapm && lapm_.tx_pending()) ||
-			(mode_ == Mode::Mnp && mnp_.tx_pending()) ||
-			(mode_ == Mode::X75 && lapb_.tx_pending());
+		const LinkProto *p = active();
+		return p && p->tx_pending();
 	}
 	/* the data pump's transmit rate (bit/s), 0 if not known */
 	s32 tx_rate() const { return owner_->tx_rate(); }
@@ -362,6 +361,12 @@ private:
 	void start_b2();
 	enum class Mode { Idle, Detect, Lapm, Mnp, Async, Sync, X75, Ppp };
 	void run_timer();
+	/* the protocol of the mode (LinkProto), NULL for none */
+	LinkProto *active();
+	/* (see active()) */
+	const LinkProto *active() const {
+		return const_cast<Link *>(this)->active();
+	}
 	s16 comp_read(u8 *buf, s16 n);
 	s16 comp_write(const u8 *buf, s16 n);
 	bool comp_flush_output();

@@ -71,6 +71,7 @@
 #define DMODEMD_USB_LINE_H
 
 #include <deque>
+#include <memory>
 #include <string>
 #include <cstdio>
 #include <vector>
@@ -83,17 +84,18 @@
 #include <dcore.h>
 
 #include "dm_types.h"
+#include "analog_hook.h"
 #include "dte.h"
 #include "run_loop.h"
 #include "si3056.h"
 
 namespace dmd {
 
-class UsbLine final : public dcore::Host {
+class UsbLine final : public AnalogHook<UsbLine> {
 public:
 	/* the line of dte's modem (a pty, or on Windows any of its DTEs),
 	   not yet open */
-	explicit UsbLine(Dte &dte) : dte_(dte) {}
+	explicit UsbLine(Dte &dte);
 	~UsbLine();
 	UsbLine(const UsbLine &) = delete;
 	UsbLine &operator=(const UsbLine &) = delete;
@@ -179,12 +181,12 @@ public:
 	s16 set_hook(dcore::Modem &m, s16 state) override;
 	/* the local phone sensed (set_handset(), a SmartUSB56) */
 	bool senses_local_phone(dcore::Modem &) override {
-		return handset_ && kind_ == Kind::St7554;
+		return handset_ && chip_->smart();
 	}
 	/* the handset on the voice codec (set_voice_codec(), a SmartUSB56
 	   whose alternate setting 3 has its endpoints) */
 	bool has_handset(dcore::Modem &) override {
-		return voice_law_ != VoiceLaw::None && kind_ == Kind::St7554 &&
+		return voice_law_ != VoiceLaw::None && chip_->smart() &&
 			viso_.ep_in;
 	}
 	/* where the modem's samples are (pump()): the line's, the
@@ -206,9 +208,7 @@ public:
 	bool analog_line(dcore::Modem &) override { return true; }
 	/* a hook flash it can make (hook_flash()): not on the WB stick,
 	   which has no hook */
-	bool can_flash(dcore::Modem &) override { return kind_ != Kind::Wb; }
-	void hook_flash(dcore::Modem &m, u16 ms) override;
-	s16 pulse_hook(dcore::Modem &m, bool broken) override;
+	bool can_flash(dcore::Modem &) override { return chip_->can_flash(); }
 	/* (see set_international()) */
 	void pulse_dialling(dcore::Modem &m, bool on) override;
 	/* the playback's lead, in samples */
@@ -217,12 +217,7 @@ public:
 	   on hook, else once the line is on hook again */
 	void country(dcore::Modem &m, const char *name) override;
 	/* for ATI3 */
-	const char *driver_name() override {
-		return kind_ == Kind::Stick ? "pico-serial Line (Si3056)" :
-			kind_ == Kind::Wb ? "pico-serial WB (TLV320AIC3204)" :
-			kind_ == Kind::Agere ? "Agere USB 2.0 (Mercury)" :
-			kind_ == Kind::Apple ? "Apple USB Modem (Si3056)" : "ST7554";
-	}
+	const char *driver_name() override { return chip_->model(); }
 	/* the modem's characters to the DTE: how many it took (data, for
 	   the data LED, once the call has been seen online: not its
 	   CONNECT) */
@@ -233,10 +228,6 @@ public:
 			agere_data_ms_ = now_ms();
 		}
 		return dte_.write(buf, n);
-	}
-	/* the clock: the device's samples so far, in ms */
-	u64 now_ms() override {
-		return samples_ * 1000 / rate_;
 	}
 
 	/* the rate the line dev (as open() takes it) will run at, asked
@@ -252,13 +243,24 @@ public:
 	   WinUSB is its driver); 0, or -1 if libusb can't start */
 	static s16 list();
 
+	/* a device's transmit level for DMODEM_USB_TX_GAIN=auto: the gain
+	   (dB) for the remote's answer tone at TONE_REF dBFS (ref), its
+	   least and most, and the gain to start with */
+	struct TxCal { double ref, min, max, start; };
+
 private:
+	friend class AnalogHook<UsbLine>;
+	static constexpr const char *LOG_TAG = "usb";
+	/* (AnalogHook's) the device's hook switch; pulse dialling's break
+	   (broken) or make (-1 on the WB stick: no hook); a flash the
+	   stick times itself, or none on the WB stick */
+	void hw_hook(bool off);
+	s16 hw_pulse(bool broken);
+	bool hw_flash(u16 ms);
+
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
 	/* the most transfers a stream has each way (the Agere's: agere_transfers_) */
 	enum { MAX_TRANSFERS = 32 };
-	/* the four devices it drives (Stick: the pico-serial Line; Wb: the
-	   pico-serial WB) */
-	enum class Kind { St7554, Stick, Wb, Agere, Apple };
 	/* an isochronous stream both ways: the codec's (the modem's line,
 	   S16 little-endian) or the voice codec's (set_voice_codec(): an
 	   octet a sample, at VOICE_RATE).  An OUT transfer goes when an
@@ -276,6 +278,85 @@ private:
 		std::vector<s16> in_buf;        /* the samples come, not taken */
 		std::deque<s16> out_buf;        /* the samples to send */
 	};
+
+	/* what one device does its own way: a subclass for each (St7554 and
+	   Stick in usb_line.cpp, Wb in usb_wb.cpp, Agere in usb_agere.cpp,
+	   Apple in usb_apple.cpp), the device found by find(); its state
+	   the UsbLine's (l) */
+	struct Chip {
+		/* the chip of line */
+		explicit Chip(UsbLine &line) : l(line) {}
+		virtual ~Chip() = default;
+		Chip(const Chip &) = delete;
+		Chip &operator=(const Chip &) = delete;
+		/* in the messages; for ATI3; in "not the endpoints of ..." */
+		virtual const char *name() const = 0;
+		virtual const char *model() const = 0;
+		virtual const char *a_name() const = 0;
+		/* the rate it runs at, rate asked for */
+		virtual u32 rate(u32 asked) { return asked; }
+		/* its start-up, its interface claimed */
+		virtual bool open(u32 rate) = 0;
+		/* its transfers started (start_isos()'s, and on the SmartUSB56
+		   its FIFOs) */
+		virtual bool start_streams() { return l.start_isos(); }
+		/* its interrupt transfer's len octets */
+		virtual void event(const u8 *b, s16 len) = 0;
+		/* the core's hook state (set_hook()'s; was_off: off hook
+		   before): 0, or -1 */
+		virtual s16 set_hook(s16 state, bool was_off) = 0;
+		/* AnalogHook's hw_hook(), hw_pulse() and hw_flash() */
+		virtual void hook(bool off) = 0;
+		virtual s16 pulse(bool broken) = 0;
+		/* a hook flash the device makes itself, or cannot make: true
+		   (none timed by AnalogHook) */
+		virtual bool flash(u16 ms) { (void)ms; return false; }
+		/* a hook flash it can make */
+		virtual bool can_flash() const { return true; }
+		/* the country's line settings now, on hook (country()'s) */
+		virtual void country() {}
+		/* its LEDs (update_leds()'s) */
+		virtual void leds(dcore::Modem &m) { (void)m; }
+		/* the SmartUSB56's: its handset, voice codec, buzzer, RHOM
+		   and international line controls */
+		virtual bool smart() const { return false; }
+		/* set up again after a suspend (resume()'s); false: not yet */
+		virtual bool resume() { return true; }
+		/* its own transfers (the Agere's): an OUT one filled; one sent
+		   (on s); an IN one come; true if it took it */
+		virtual bool fill_out(libusb_transfer *t) { (void)t; return false; }
+		/* an OUT transfer sent */
+		virtual bool out_sent(Iso &s, libusb_transfer *t)
+		{
+			(void)s;
+			(void)t;
+			return false;
+		}
+		/* an IN transfer come */
+		virtual bool in_come(libusb_transfer *t) { (void)t; return false; }
+		/* after a pump's frames, used of the line's samples taken */
+		virtual void pumped(size_t used) { (void)used; }
+		/* the playback's samples ahead it may have past 3 frames */
+		virtual size_t ahead() const { return 0; }
+		/* its transmit level (see TxCal) */
+		virtual const TxCal &tx_cal() const;
+		/* close()'s: before its transfers are cancelled; after */
+		virtual void stop() {}
+		/* after its transfers are freed */
+		virtual void close() {}
+
+		UsbLine &l;
+	};
+	struct St7554;
+	struct Stick;
+	struct Wb;
+	struct Agere;
+	struct Apple;
+	static std::unique_ptr<Chip> st7554_chip(UsbLine &l);
+	static std::unique_ptr<Chip> stick_chip(UsbLine &l);
+	static std::unique_ptr<Chip> wb_chip(UsbLine &l);
+	static std::unique_ptr<Chip> agere_chip(UsbLine &l);
+	static std::unique_ptr<Chip> apple_chip(UsbLine &l);
 
 	bool find(const char *dev);
 	bool endpoints(s16 alt);
@@ -314,7 +395,8 @@ private:
 	void wb_event(const u8 *b, s16 len);
 	void wb_carrier(dcore::Modem &m);
 	void wb_close();
-	bool start_streams();
+	/* the interrupt's transfer and the streams' (start_iso()) */
+	bool start_isos();
 	/* the Agere modem's (usb_agere.cpp): its start-up, a vendor command
 	   (cmd, wLength, wIndex, wValue: IN or OUT as the command is), its
 	   ARM's memory and its codec's registers, the ROM's clock, the
@@ -451,7 +533,7 @@ private:
 	u16 intl_hook(u16 v, bool off, bool now_off);
 
 	Dte &dte_;
-	Kind kind_ = Kind::St7554;
+	std::unique_ptr<Chip> chip_;
 	const char *name_ = "SmartUSB56";   /* in the messages */
 	libusb_context *ctx_ = nullptr;
 	libusb_device_handle *h_ = nullptr;
@@ -478,7 +560,6 @@ private:
 	   last set (-1: not yet) */
 	double wb_tx_db_ = 0, wb_rx_db_ = 0;
 	s16 wb_carrier_ = -1;
-	u32 rate_ = 9600;
 	s16 frame_ = 192;               /* 20 ms */
 	s16 delay_ = 0;
 	std::vector<s16> frame_in_, frame_out_;
@@ -501,7 +582,6 @@ private:
 	   the microphone's samples for it (8000 a second) */
 	bool dsvd_ = false;
 	std::deque<s16> dsvd_mic_;
-	u64 samples_ = 0;
 	/* DMODEM_USB_REC: the line recorded while off hook (rec_start()) */
 	FILE *rec_ = nullptr;
 	u64 rec_frames_ = 0;
@@ -535,7 +615,6 @@ private:
 	void tx_auto_frame(bool online);
 	bool running_ = false;
 	bool dead_ = false;
-	s16 hook_ = MODEM_HOOK_ON;
 	u16 gpio_ = 0;
 	bool st75951_ = false;          /* the ST7554's codec an ST75951/2 */
 	bool leds_ = false;             /* set_leds() */
@@ -556,7 +635,6 @@ private:
 	std::vector<libusb_transfer *> parked_;
 	u64 parked_since_ = 0, resume_tried_ = 0;
 	enum { RESUME_MS = 1000, RESUME_GIVE_UP_MS = 30000 };
-	u64 flash_end_ = 0;
 	u16 rings_ = 0;                 /* ring detector changes not given */
 	/* the Agere modem: its ROM's version (0xffff unknown); the samples
 	   sent (OUT transfers done) less those come (IN), which sets each OUT
