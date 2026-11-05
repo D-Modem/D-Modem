@@ -2538,20 +2538,22 @@ void Modem::report(Result r)
 			crlf();
 		}
 	}
-	/* V.cvm's CONNECT: the coded rate and /CVM (12.2 c)/V.cvm) */
+	/* V.cvm's CONNECT: the coded rate and /CVM (12.2 c)/V.cvm); PEP's
+	   Telebit's CONNECT FAST in words, its rate in the number */
 	bool cvm = modulation(dp_stats_, dp_) == DP_VCVM;
+	const std::string rate = modulation(dp_stats_, dp_) == DP_PEP ?
+		std::string("FAST") : dec(rx_rate_) + (cvm ? "/CVM" : "");
 	if (r == Result::Connect && mode_ == MODEM_MODE_DATA && rx_rate_ &&
 	    sregs_[SREG_X_CODE]) {
 		if (!verbose) {
 			line = dec(connect_code(rx_rate_));
 		} else if (sregs_[SREG_CONNECT_PROTOCOL]) {
 			const std::string_view comp = compression_name();
-			line = "CONNECT " + dec(rx_rate_) + (cvm ? "/CVM" : "") +
-				"/" + protocol_name();
+			line = "CONNECT " + rate + "/" + protocol_name();
 			if (comp != "NONE")
 				line += "/" + std::string(comp);
 		} else {
-			line = "CONNECT " + dec(rx_rate_) + (cvm ? "/CVM" : "");
+			line = "CONNECT " + rate;
 		}
 	} else if (r == Result::Ring && kept("+CRC")[0]) {
 		/* +CRC=1: the call's type, in words whatever V says */

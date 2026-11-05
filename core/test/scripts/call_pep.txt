@@ -1,0 +1,16 @@
+# PEP (Telebit's, +MS=PEP) both ends, V.42 over it: CONNECT FAST, data
+# both ways, then the caller hangs up
+A ATE0X3W2+MS=PEP\r
+B ATE0+MS=255\r
+B ATA\r
+A ATD\r
+until A CONNECT 40000
+until B CONNECT 5000
+state
+send A 3000
+send B 3000
+run 12000
+hangup A
+until B NO CARRIER 40000
+run 500
+state

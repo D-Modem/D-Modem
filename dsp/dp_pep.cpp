@@ -63,7 +63,7 @@ s16 PepPump::start(struct modem *m, enum DP_ID, s16 caller_, s32 srate_, s32)
 		return -1;
 	PepModem::Config c;
 	c.calling = caller_;
-	c.timeout_s = static_cast<s32>(carrier_loss / srate_) + 20;
+	c.timeout_s = static_cast<s32>(carrier_loss / srate_) + 4;
 	if (const char *e = pump_test_env("DSP_PEP_MAXBITS", caller_))
 		c.max_bits = static_cast<s16>(std::strtol(e, nullptr, 10));
 	if (const char *e = pump_test_env("DSP_PEP_TURN", caller_))
