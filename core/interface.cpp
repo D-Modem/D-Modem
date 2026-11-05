@@ -73,6 +73,7 @@ static DpDriver pump_table[] = {
 	/* (V.58 has no V.32terbo: its V.32bis) */
 	{ DP_V32TERBO, "V32terbo", "232", nullptr, nullptr, 0, 0xB, 0xB, 0 },
 	{ DP_HST, "HST", "168", nullptr, "HST", 0, -1, -1, 0 },
+	{ DP_VFC, "VFC", "128", nullptr, "V.FC", 0, -1, -1, 0 },
 	{ DP_V61, "V61", "61", nullptr },
 	{ DP_V33, "V33", "33", nullptr,
 	  "V.33", 0, -1, -1, DPF_LEASED | DPF_LOOP3 },

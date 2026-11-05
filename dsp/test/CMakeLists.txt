@@ -71,6 +71,10 @@ dmodem_gtest(pcm_cp_test LABELS quick)
 dmodem_test_exe(v34_hdx_test v34_hdx_test.cpp test_util.cpp)
 target_link_libraries(v34_hdx_test PRIVATE dmodem_dsp)
 dmodem_gtest(v34_hdx_test LABELS quick)
+# V.FC's data mode: its parameters, the Courier's points, encoder to decoder
+dmodem_test_exe(vfc_test vfc_test.cpp test_util.cpp)
+target_link_libraries(vfc_test PRIVATE dmodem_dsp)
+dmodem_gtest(vfc_test LABELS quick)
 # bits.h: fields, the V.34 and frame CRCs, the HDLC FCS
 dmodem_test_exe(bits_test bits_test.cpp)
 dmodem_gtest(bits_test LABELS quick)

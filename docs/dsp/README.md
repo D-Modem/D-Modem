@@ -29,6 +29,7 @@ receiver works inside, see [the technical details](dsp-details.md).
 | [V.32terbo](v32terbo.md) | 19200 bit/s | AT&T's unpublished extension of V.32bis, rebuilt from a modem that has it |
 | [HST](hst.md) | 16800 bit/s one way, 300 the other | USRobotics' protocol for bulletin boards, rebuilt from the Courier's DSP firmware |
 | [V.61](v61.md) | 4800 bit/s with speech, 14400 without | talking and sending data at once, the voice added onto the modem's carrier (ASVD) |
+| [V.FC](vfc.md) | 28800 bit/s | Rockwell's pre-V.34 protocol; its data mode rebuilt from the Courier's DSP firmware |
 | V.34 | 33600 bit/s | the fastest purely analogue modem |
 | [V.90](v90.md) | 56000 bit/s down, 33600 up | "56k" modems |
 | [V.92](v92.md) | 56000 down, up to 48000 up | V.90 plus faster start-up, call waiting and a faster upload |
