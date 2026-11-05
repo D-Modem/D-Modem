@@ -39,6 +39,7 @@
 
 #include "dm_types.h"
 #include "hdlc.h"
+#include "hst_link.h"
 #include "lapb.h"
 #include "lapm.h"
 #include "mnp.h"
@@ -125,7 +126,7 @@ struct Config {
 };
 
 /* the error correction a call has */
-enum class Protocol { None, Lapm, Mnp, X75, Ppp, V120, V76 };
+enum class Protocol { None, Lapm, Mnp, X75, Ppp, V120, V76, Hst };
 
 /* a call's counts (ATI11): the DTE's characters each way; the frames
    of the error correction (LAPM's, MNP's) sent, the information frames
@@ -168,6 +169,10 @@ public:
 	   its forward channel at bps to start with, and calls start()
 	   again once it connects */
 	virtual void hst(s32 bps) { (void)bps; }
+	/* HST's link (hst_link.h) turns the channels around: the pump
+	   swaps its forward and back channels, the one sending the
+	   forward channel training it again */
+	virtual void hst_turn() {}
 	/* the DTE's in-band command in Synchronous Access Mode (<EM><rate>:
 	   tx and rx are its rate codes) */
 	virtual void sync_command(SyncCommand c, u8 tx, u8 rx) {
@@ -313,6 +318,7 @@ public:
 		Negotiate,      /* the caller's XID (Lapm::negotiate) */
 		T1,             /* X.75's T1 (Lapb::t1_timeout) */
 		Mux,            /* V.76's initiator opens (Mux::opening) */
+		Hst,            /* HST's link (HstLink::timeout) */
 	};
 	/* the bit timer: what once bits more bits went out (0: none) */
 	void set_timer(s32 bits, Timer what) {
@@ -349,9 +355,11 @@ public:
 	/* HST agreed in XID, the originator's DM sent (or, at the
 	   answerer, received): the owner changes to its HST pump
 	   (Owner::hst()), the link's flags going on until then; start()
-	   then goes on with LAPM, its XID done, without the detection
-	   phase */
+	   then goes on with HST's own link (hst_link.h), as a Courier
+	   does, without the detection phase */
 	void hst_switch();
+	/* HST's link turns the channels around (Owner::hst_turn()) */
+	void hst_turn() { owner_->hst_turn(); }
 	/* what MNP's LRs agreed (cfg()) to the owner */
 	void negotiated() { owner_->negotiated(cfg_); }
 	/* LAPM keeps characters the DTE did not take; push them on */
@@ -362,7 +370,9 @@ private:
 	void start_mnp(bool initiator, const BitQueue *rx);
 	void no_ec();
 	void start_b2();
-	enum class Mode { Idle, Detect, Lapm, Mnp, Async, Sync, X75, Ppp };
+	void start_hst();
+	enum class Mode { Idle, Detect, Lapm, Mnp, Async, Sync, X75, Ppp,
+			  Hst };
 	void run_timer();
 	/* the protocol of the mode (LinkProto), NULL for none */
 	LinkProto *active();
@@ -390,7 +400,7 @@ private:
 	bool mnp_tried_ = false;
 	bool phase_v42_ = false;
 	s32 hst_bps_ = 0;
-	bool hst_resume_ = false;       /* start(): LAPM after HST's switch */
+	bool hst_resume_ = false;       /* start(): HST's link after its switch */
 	s32 timer_ = 0;
 	Timer timer_what_ = Timer::None;
 
@@ -400,6 +410,7 @@ private:
 	Lapm lapm_;
 	Mux mux_;
 	Lapb lapb_;
+	HstLink hst_;
 	PppSync ppp_;
 	MnpAsync mnp_async_;
 	Mnp mnp_;

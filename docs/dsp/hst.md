@@ -18,7 +18,9 @@ and the Courier's own firmware: the call connects at 2400 bit/s
 retrain in HST. Two D-Modems connect to each other this way. The HST
 part, which the recording does not reach, was checked against the
 Courier's DSP firmware itself, run in an emulator: D-Modem connects to
-it as caller and as answerer at 4800 to 16800 bit/s. It has not been
+it as caller and as answerer at 4800 to 16800 bit/s. The whole Courier,
+its own firmware emulated, calls D-Modem and is called by it, with
+HST's own link layer and the channels turning around. It has not been
 tried against a real Courier yet.
 
 ## Using it
@@ -32,17 +34,20 @@ A call starts the way a Courier's does:
    same field a Courier uses.
 3. If both offer it, they skip the rest of V.42 at 2400, drop the
    carrier and train in HST: 9600 bit/s if both allow it, else 7200,
-   4800, 12000, 14400 or 16800, whichever both have first. V.42 then
-   starts over HST.
+   4800, 12000, 14400 or 16800, whichever both have first. Over HST
+   the modems run HST's own link layer, not V.42: error correction
+   without compression.
 4. If the other modem does not offer HST, the call stays at 2400 bit/s
    with V.42, as with a Courier.
 
 The speeds offered follow `+MS`, for example `AT+MS=HST,0,4800,7200`.
-The answering modem sends the forward channel; the caller sends the 300
-bit/s back channel. D-Modem does not change speed during the call (a
-Courier moves up from 9600 when the line allows) and does not turn the
-channels around, so the calling side's sending stays at 300 bit/s for
-the whole call.
+The answering modem sends the forward channel first; the caller sends
+the 300 bit/s back channel. When the side on the back channel has data
+to send, it asks, and the modems turn the channels around: the fast
+direction follows the data, every few seconds when both sides send.
+The rates `CONNECT` gives are those of the start. D-Modem does not
+change speed during the call (a Courier moves up from 9600 when the
+line allows).
 
 With V.42 off (`AT\N0`), there is no set-up to offer HST in, so the
 modems start HST at once with D-Modem's own start-up, in which the

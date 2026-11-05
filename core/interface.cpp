@@ -223,6 +223,8 @@ intptr_t Modem::get_param(u32 name)
 		return max_rx_rate_ ? max_rx_rate_ : max_rate_;
 	case MDMPRM_HST_START:
 		return hst_bps_;
+	case MDMPRM_HST_TURN:
+		return hst_turns_;
 
 	/* the settings the S-registers hold */
 	case GetDTMFDialSpeed:

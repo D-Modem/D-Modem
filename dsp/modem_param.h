@@ -157,6 +157,10 @@ enum MODEM_PARAMETER_NAMES {
 				      before the call changed to DP_HST,
 				      else 0; -1 from a core that has
 				      none */
+	MDMPRM_HST_TURN     = 79,  /* how many times HST's link has turned
+				      the channels around in the call:
+				      the pump turns at each new one (0
+				      or -1: never) */
 };
 
 /*

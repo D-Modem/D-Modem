@@ -1456,6 +1456,8 @@ The calls (label `courier`):
 | `courier_hst_pair` | Courier to Courier, HST | 16800/ARQ |
 | `courier_v32t_pair` | Courier to Courier, V.32terbo | 21600/ARQ |
 | `courier_v32_pair` | Courier to Courier, V.32bis | 14400/ARQ |
+| `courier_hst_courier_calls` | Courier to the open modem, HST | 9600/300, HST's link |
+| `courier_hst_open_calls` | the open modem to a Courier, HST | 16800/ARQ |
 | `courier_v32_courier_calls` | Courier to the open modem, V.32bis | 14400, V.42 |
 | `courier_v22_courier_calls` | Courier to the open modem, V.22bis | 2400, V.42 |
 | `courier_v32_open_calls` | the open modem to a Courier, V.32bis | 14400/ARQ |
@@ -1474,11 +1476,17 @@ The open modem's calls to a Courier found two faults in ours:
   link went on without V.42. When our first XID goes unanswered, the
   next offers no zstd (`link/lapm.cpp`).
 
+In HST, the calls found that a Courier does not run V.42 after the
+switch from V.22bis: HST has a link layer of its own, which turns the
+channels around when the back channel's side has data (a Courier
+holds its data until then). The open modem now has that link
+(`link/hst_link.cpp`) and its pump turns the channels at the link's
+word; see [HST's technical details](dsp/hst-details.md). Both calls
+send data both ways (`STREAM=5`) with the channels turning; a 30 kB
+transfer each way, past N(S)'s wrap, also gets through.
+
 Not yet:
 
-- **HST with the open modem.** Both switch from V.22bis to HST after
-  the XID, but the open modem does not receive the Courier's back
-  channel.
 - **V.FC and V.34.** Between two Couriers both start (the overlay
   loaded, line probing at 10266.67 Hz), but training does not finish,
   and they retrain over and over: the emulation is short of something

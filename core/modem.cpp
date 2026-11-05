@@ -235,6 +235,8 @@ struct LinkOwner final : public dlink::Owner {
 	}
 	/* HST agreed in XID: the call changes to it */
 	void hst(s32 bps) override { m_.hst_switch(bps); }
+	/* HST's link turns the channels around: the pump follows */
+	void hst_turn() override { m_.hst_turn(); }
 	/* the DTE's in-band command (V.80) */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx) override {
 		m_.sync_command(c, tx, rx);
@@ -869,6 +871,7 @@ void Modem::setup_config()
 	c.mnp_on = false;
 	cfg_ = c;
 	hst_bps_ = 0;
+	hst_turns_ = 0;
 	dsp_info_.qc_lapm = c.ec && c.ec_detector;
 }
 
@@ -1024,6 +1027,8 @@ const char *Modem::protocol_name() const
 		return "V.120";
 	if (link_->protocol() == dlink::Protocol::V76)
 		return "V.76";
+	if (link_->protocol() == dlink::Protocol::Hst)
+		return "HST";
 	if (v110_ && !cfg_.ec && !cfg_.mnp_on)
 		return "V.110";
 	return cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" : "NONE";

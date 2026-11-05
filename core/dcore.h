@@ -447,6 +447,9 @@ public:
 	/* HST (+MS=HST): the link agreed it in XID at 2400 bit/s, the
 	   forward channel at bps; the call changes to DP_HST */
 	void hst_switch(s32 bps);
+	/* HST's link turns the channels around: the pump follows
+	   (MDMPRM_HST_TURN) */
+	void hst_turn() { hst_turns_++; }
 	/* HST's rates for XID, 0 none */
 	u8 hst_offer() const;
 	/* the DTE's in-band command in V.80's Synchronous Access Mode */
@@ -785,6 +788,9 @@ private:
 	/* HST's forward rate (bit/s) from XID once the call has left
 	   V.22bis for DP_HST, else 0 (MDMPRM_HST_START) */
 	s32 hst_bps_ = 0;
+	/* the times HST's link turned the channels around in the call
+	   (MDMPRM_HST_TURN) */
+	s32 hst_turns_ = 0;
 	s16 line_law_ = 0;
 	Run run_ = Run::None;
 	struct dp *dp_ = nullptr;

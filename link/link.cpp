@@ -145,8 +145,7 @@ void Link::start(bool on, bool detect)
 	}
 	if (hst_resume_ && asked_.ec) {
 		hst_resume_ = false;
-		lapm_.resume();
-		detected(true);
+		start_hst();
 		return;
 	}
 	if (caller_ && asked_.mnp && (asked_.mnp_first || !asked_.ec)) {
@@ -207,6 +206,25 @@ void Link::start_b2()
 	logf("ppp: synchronous HDLC.");
 	ppp_.start(this);
 	owner_->status(Status::Up);
+}
+
+/* after HST's switch: Detected, then HST's own link over HDLC (Up
+   when the remote's first frame comes), no compression (a Courier
+   offers none in its XID) */
+void Link::start_hst()
+{
+	cfg_.ec = true;
+	cfg_.comp = 0;
+	cfg_.v44 = cfg_.zstd = false;
+	timer_ = 0;
+	timer_what_ = Timer::None;
+	push_pending = false;
+	proto_ = Protocol::Hst;
+	owner_->status(Status::Detected);
+	mode_ = Mode::Hst;
+	hst_.init(this);
+	hdlc_.start(this);
+	hst_.start();
 }
 
 /* the detection phase is over (or skipped): Detected, then LAPM (ec,
@@ -339,6 +357,8 @@ LinkProto *Link::active()
 			&lapm_;
 	case Mode::X75:
 		return &lapb_;
+	case Mode::Hst:
+		return &hst_;
 	case Mode::Mnp:
 		return &mnp_;
 	case Mode::Ppp:
@@ -361,6 +381,7 @@ s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 		break;
 	case Mode::Lapm:
 	case Mode::X75:
+	case Mode::Hst:
 	case Mode::Ppp:
 		n = hdlc_.get_bits(nbits, buf, n);
 		if (proto_ == Protocol::V76)
@@ -419,6 +440,9 @@ void Link::run_timer()
 	case Timer::Mux:
 		mux_.opening();
 		break;
+	case Timer::Hst:
+		hst_.timeout();
+		break;
 	case Timer::None:
 		break;
 	}
@@ -441,6 +465,7 @@ s32 Link::put_bits(s16 nbits, const u8 *buf, s32 n)
 		return n;
 	case Mode::Lapm:
 	case Mode::X75:
+	case Mode::Hst:
 	case Mode::Ppp:
 		return hdlc_.put_bits(nbits, buf, n);
 	case Mode::Mnp:

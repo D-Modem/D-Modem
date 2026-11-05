@@ -27,7 +27,7 @@ emulation of the hardware it expects.
 | Broadcom | its Windows driver, on a small Windows kernel written for the tests | V.92 quick connect, V.90 at 50666 bit/s |
 | ESS | its Windows driver, on the same small Windows kernel | V.92 at 49333 down, 41333 up |
 | spandsp | the open-source library used by Asterisk and FreeSWITCH | its speeds, up to V.22bis (2400 bit/s) |
-| USRobotics Courier V.Everything | the whole modem emulated, running its own firmware (a 1998 flash image) | V.32bis at 14400 bit/s with V.42 (the Courier calling) |
+| USRobotics Courier V.Everything | the whole modem emulated, running its own firmware (a 1998 flash image) | HST at 9600 bit/s with HST's own link, the channels turning around; V.32bis at 14400 bit/s with V.42 |
 
 In the V.90 and V.92 calls D-Modem plays the "digital" end, the role an
 internet provider's equipment played. Every modem also connects at the
@@ -39,8 +39,9 @@ work is done by its own processors. The tests emulate all of it (its
 80C186 controller, its TMS320C51 signal processor and the chips between
 them) and run USRobotics' firmware on it, so the Courier's own HST,
 V.32terbo and V.32bis go on the line. Two emulated Couriers call each
-other at HST 16800 and V.32terbo 21600. D-Modem's own calls to a
-Courier, HST and V.FC with D-Modem, and V.34 do not get through yet.
+other at HST 16800 and V.32terbo 21600, and D-Modem calls a Courier
+and is called by one in HST, V.32bis and V.22bis. V.FC and V.34 do not
+get through yet.
 
 The test suite also runs D-Modem itself on an emulated HD-audio modem
 chip (the kind in laptops from about 2005 to 2010), to test the code
