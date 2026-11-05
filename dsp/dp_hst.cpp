@@ -660,7 +660,7 @@ void HstPump::rx_symbol()
 		s16 e = model.next(0);
 		cplx d = v32_points_4800[e];
 		bool miss = e != k;
-		misses = static_cast<s16>((misses << 1 | miss) & 7);
+		misses = static_cast<s16>((misses << 1 | (miss ? 1 : 0)) & 7);
 		if (rxp == RX_TRN) {
 			rx_mse += 0.02f * (cplx_pow(cplx_sub(z, d)) / HST_POWER -
 					   rx_mse);
