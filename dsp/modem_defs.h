@@ -204,6 +204,9 @@ enum DP_ID {
 	DP_VCVM     = 150,      /* V.cvm, data over a mobile speech path
 				   (docs/v_cvm.pdf), after V.8 */
 	DP_V32BIS   = 132,
+	DP_HST      = 168,      /* USRobotics HST: 4800 to 16800 bit/s one
+				   way, 300 back (dp_hst.cpp); not in V.250,
+				   the number is D-Modem's */
 	DP_V32TERBO = 232,      /* V.32terbo: V.32bis and 16800, 19200
 				   bit/s (dp_v32.cpp); not in V.250, the
 				   number is D-Modem's */

@@ -215,6 +215,9 @@ template <s32 N> struct V32tPoints {
 extern const V32tPoints<256> v32_points_16800;
 extern const V32tPoints<512> v32_points_19200;
 extern const cplx v32_abcd[4];
+/* USRobotics HST's 16800 bit/s constellation (256 points, indexed as
+   V.32bis's) */
+extern const cplx hst_points_16800[256];
 
 /* narrow band tone tracker for a tone and its phase reversals (V.32's
    AA / AC, V.61's tones) */

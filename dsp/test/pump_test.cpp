@@ -85,7 +85,7 @@ static std::string name(const testing::TestParamInfo<Pumps> &i)
 	return i.param.name;
 }
 
-/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 232 V.32terbo, 61 V.61, 126 V.26 ter, 226 V.26 bis,
+/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 232 V.32terbo, 168 HST, 61 V.61, 126 V.26 ter, 226 V.26 bis,
    22 V.22, 122 V.22bis, 212 Bell 212A, 21 V.21, 23 V.23, 103 Bell 103 */
 INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v32bis", line(132, 40, 20) },
@@ -120,6 +120,13 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v26ter_8000", line(126, 30, 25, 8000) },
 	Pumps{ "v26ter_gain2_m300ppm", line(126, 30, 25, 9600, 2, -300) },
 	Pumps{ "v26ter_echo6", line(126, 30, 25, 9600, 0.5f, 0, -6) },
+	/* HST: the forward channel at the rate the line allows, 300
+	   bit/s back */
+	Pumps{ "hst", line(168, 40, 20) },
+	Pumps{ "hst_snr20", line(168, 20, 20) },
+	Pumps{ "hst_8000", line(168, 30, 20, 8000) },
+	Pumps{ "hst_gain2_m300ppm", line(168, 30, 20, 9600, 2, -300) },
+	Pumps{ "hst_echo6", line(168, 30, 20, 9600, 0.5f, 0, -6) },
 	Pumps{ "v26bis", line(226, 40, 25) },
 	Pumps{ "v26bis_snr15", line(226, 15, 25) },
 	Pumps{ "v26bis_8000", line(226, 30, 25, 8000) },
@@ -267,6 +274,31 @@ TEST(V32Terbo, Rates)
 						     << r.side[k].text(who);
 			EXPECT_EQ(r.side[k].tx_rate, rate) << snr << " dB";
 			EXPECT_EQ(r.side[k].rx_rate, rate) << snr << " dB";
+			EXPECT_EQ(r.side[k].errors, 0) << snr << " dB: "
+						      << r.side[k].text(who);
+		}
+	}
+}
+
+/* HST's forward channel follows the line: 16800 bit/s at 40 dB of SNR,
+   14400 at 27, 12000 at 23, 7200 at 17, 4800 at 12; each without
+   errors, the back channel at 300 bit/s */
+TEST(Hst, Rates)
+{
+	for (auto [snr, rate] : { std::make_pair(40.0f, 16800),
+				  std::make_pair(27.0f, 14400),
+				  std::make_pair(23.0f, 12000),
+				  std::make_pair(17.0f, 7200),
+				  std::make_pair(12.0f, 4800) }) {
+		LoopbackResult r = loopback_run(line(168, snr, 20));
+		for (int k = 0; k < 2; k++) {
+			const char *who = k ? "answerer" : "caller";
+			EXPECT_TRUE(r.side[k].ok()) << snr << " dB: "
+						     << r.side[k].text(who);
+			EXPECT_EQ(k ? r.side[k].tx_rate : r.side[k].rx_rate,
+				  rate) << snr << " dB";
+			EXPECT_EQ(k ? r.side[k].rx_rate : r.side[k].tx_rate,
+				  300) << snr << " dB";
 			EXPECT_EQ(r.side[k].errors, 0) << snr << " dB: "
 						      << r.side[k].text(who);
 		}

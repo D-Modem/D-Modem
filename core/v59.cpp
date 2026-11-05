@@ -320,6 +320,7 @@ const char *v59_rec(s16 dp)
 	case DP_V26: return "V.26";
 	case DP_V26TER: return "V.26ter";
 	case DP_V26BIS: return "V.26bis";
+	case DP_HST: return "HST";
 	case DP_V27TER: return "V.27ter";
 	case DP_V29: return "V.29";
 	case DP_V29FP: return "V.29FastPOS";
@@ -480,7 +481,7 @@ std::string Modem::v59_value(u16 tag) const
 		static const struct { u32 dp; const char *name; } other[] = {
 			{ DP_K56, "K56flex" }, { DP_V32TERBO, "V.32terbo" },
 			{ DP_V26TER, "V.26ter" }, { DP_V26BIS, "V.26bis" },
-			{ DP_V29FP, "V.29FastPOS" },
+			{ DP_V29FP, "V.29FastPOS" }, { DP_HST, "HST" },
 			{ DP_B103, "Bell103" }, { DP_B212, "Bell212A" },
 			{ DP_VCVM, "V.cvm" }, { DP_VWB, "V.wb" },
 		};

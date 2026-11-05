@@ -298,6 +298,7 @@ const struct {
 	{ "VCVM", DP_VCVM }, { "V_CVM", DP_VCVM }, { "VWB", DP_VWB },
 	{ "V26", DP_V26 }, { "V26T", DP_V26TER }, { "V26TER", DP_V26TER },
 	{ "V26B", DP_V26BIS }, { "V26BIS", DP_V26BIS },
+	{ "HST", DP_HST },
 	{ "B201", DP_B201 }, { "BELL201", DP_B201 },
 	{ "B202", DP_B202 }, { "BELL202", DP_B202 }, { "B208", DP_B208 },
 	{ "BELL208", DP_B208 },
