@@ -133,6 +133,8 @@ struct HstScr {
 	u32 r;
 	s16 at, tap;
 
+	/* starts the register at `seed`, inserting at bit `at_`, the
+	   second tap at `tap_` */
 	void init(u32 seed, s16 at_, s16 tap_)
 	{
 		r = seed;
@@ -172,6 +174,7 @@ struct HstFwd {
 	s16 rate;               /* hst_rates index */
 	TrellisEnc tenc;
 
+	/* back to the start of the training */
 	void init()
 	{
 		ph = ALT;
@@ -278,6 +281,7 @@ enum hst_rxp {
 struct HstPump : PumpBase<HstPump, hst_state> {
 	static constexpr const char *name = "HST data pump";
 
+	/* frees the two receivers */
 	~HstPump()
 	{
 		rx.release();

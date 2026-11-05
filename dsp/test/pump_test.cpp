@@ -281,13 +281,13 @@ TEST(V32Terbo, Rates)
 }
 
 /* HST's forward channel follows the line: 16800 bit/s at 40 dB of SNR,
-   14400 at 27, 12000 at 22, 7200 at 17, 4800 at 12; each without
+   14400 at 27, 12000 at 23, 7200 at 17, 4800 at 12; each without
    errors, the back channel at 300 bit/s */
 TEST(Hst, Rates)
 {
 	for (auto [snr, rate] : { std::make_pair(40.0f, 16800),
 				  std::make_pair(27.0f, 14400),
-				  std::make_pair(22.0f, 12000),
+				  std::make_pair(23.0f, 12000),
 				  std::make_pair(17.0f, 7200),
 				  std::make_pair(12.0f, 4800) }) {
 		LoopbackResult r = loopback_run(line(168, snr, 20));

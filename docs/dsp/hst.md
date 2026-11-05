@@ -39,7 +39,7 @@ Two D-Modems back to back on a simulated phone line (`pump_test`):
 |---|---|
 | 40 dB | 16800 bit/s |
 | 27 dB | 14400 bit/s |
-| 22 dB | 12000 bit/s |
+| 23 dB | 12000 bit/s |
 | 17 dB | 7200 bit/s |
 | 12 dB | 4800 bit/s |
 
