@@ -136,6 +136,8 @@ public:
 	s64 packets_bad() const { return pk_bad_; }
 	/* (see packets_bad()) */
 	s64 packets_good() const { return pk_good_; }
+	/* packets we sent again */
+	s64 packets_again() const { return pk_again_; }
 	/* the far side's sample clock against ours, less 1, in ppm */
 	double clock_ppm() const { return (r_ - 1) * 1e6; }
 	/* the mean SNR of the carriers received (dB) */
@@ -191,7 +193,7 @@ private:
 	/* the receiver */
 	void rx_sample(float x);
 	void rx_run();
-	bool tones_found(s64 at, float *ratio) const;
+	bool tones_found(s64 at, float *ratio, double *energy) const;
 	void window(double at, cf *Y) const;
 	void window(double at, cf *Y, double r) const;
 	double comb_fit(const cf *Y, const std::vector<cf> *H, cf *C) const;
@@ -262,6 +264,7 @@ private:
 	std::vector<u8> mask_both_;     /* the link's */
 	s64 heard_ = 0;                 /* the last good packet's sample */
 	s64 wait_until_ = 0;            /* no turn by then: ours again */
+	double floor_ = 0;              /* the quiet line's block energy */
 	float snr_db_ = 0;
 	double rtd_ = 0;
 
@@ -283,7 +286,7 @@ private:
 	std::vector<u8> ctrl_in_;
 	u8 far_ack_ = 0;
 	u16 far_map_ = 0;
-	s64 pk_good_ = 0, pk_bad_ = 0;
+	s64 pk_good_ = 0, pk_bad_ = 0, pk_again_ = 0;
 	s32 turns_tx_ = 0, turns_rx_ = 0;
 };
 

@@ -161,6 +161,9 @@ dmodem_gtest(t434_test LABELS quick)
 dmodem_test_exe(vwb_test vwb_test.cpp vwb_line.cpp ${S}/vwb.cpp ${S}/rs.cpp)
 dmodem_gtest(vwb_test LABELS quick)
 # and under libdmodem: AT&L1, V.42 and V.44 on top
+# Telebit's PEP (pep.h): two of it back to back on a simple line
+dmodem_test_exe(pep_test pep_test.cpp ${S}/pep.cpp ${S}/vwb.cpp ${S}/rs.cpp)
+dmodem_gtest(pep_test LABELS quick)
 dmodem_test_exe(vwb_call_test vwb_call_test.cpp vwb_line.cpp)
 target_include_directories(vwb_call_test PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 target_link_libraries(vwb_call_test PRIVATE dmodem)

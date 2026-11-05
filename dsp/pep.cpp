@@ -48,6 +48,10 @@ const s32 W_OFF = GUARD / 2;
 const s32 ECHO_GAP = 80;
 /* and the noise measured from this much after it */
 const s32 NOISE_GAP = 240;
+/* the quiet level's rise a block, and how far above it the line is in
+   use */
+const double FLOOR_RISE = 1.002;
+const double BUSY = 10;
 /* no turn of the far side's by this long after ours: ours again (the
    caller's shorter, so that the two do not collide again) */
 const s32 WAIT_CALLER = 4800, WAIT_ANSWERER = 7200;
@@ -95,8 +99,9 @@ void scramble(u8 *p, size_t n)
 	}
 }
 
-/* sequence numbers: b - a, and whether b is in [a, a + WINDOW) */
+/* sequence numbers: b - a */
 inline u8 seq_diff(u8 b, u8 a) { return static_cast<u8>(b - a); }
+/* whether b is in [a, a + WINDOW) */
 inline bool in_window(u8 b, u8 a) { return seq_diff(b, a) < WINDOW; }
 
 /* the bits a carrier may take, fewest first */
@@ -378,6 +383,7 @@ void PepModem::tx_turn()
 			continue;
 		ps.push_back(P{ it->second.type, it->first, &it->second.pay,
 				{} });
+		pk_again_++;
 	}
 	/* new */
 	while (ps.size() < static_cast<size_t>(cfg_.turn_max) &&
@@ -452,7 +458,17 @@ void PepModem::rx_run()
 			if (t_ < rx_scan_ + BLK)
 				return;
 			float ratio = 0;
-			bool on = tones_found(rx_scan_, &ratio);
+			double e = 0;
+			bool on = tones_found(rx_scan_, &ratio, &e);
+			/* the line's quiet level, followed down at once and
+			   up slowly; well above it, the far side is in a
+			   turn whose tones we missed: ours waits for it */
+			floor_ = floor_ <= 0 || e < floor_ ? e :
+				 std::min(e, floor_ * FLOOR_RISE);
+			if (ph_ == PH_LINK && e > BUSY * floor_)
+				wait_until_ = std::max(wait_until_, rx_scan_ +
+					BLK + (cfg_.calling ? WAIT_CALLER :
+					       WAIT_ANSWERER));
 			if (hits_ < TONES_HITS) {
 				hits_ = on ? hits_ + 1 : 0;
 			} else if (ratio < TONES_OFF) {
@@ -506,7 +522,7 @@ void PepModem::rx_run()
 
 /* the block of BLK samples at at: whether most of its power is in the
    two tones (the share in *ratio) */
-bool PepModem::tones_found(s64 at, float *ratio) const
+bool PepModem::tones_found(s64 at, float *ratio, double *energy) const
 {
 	cf a(0, 0), b(0, 0);
 	double e = 0;
@@ -516,6 +532,7 @@ bool PepModem::tones_found(s64 at, float *ratio) const
 		a += x * std::polar(1.0f, -TWO_PI_F * 23 * n / BLK);
 		b += x * std::polar(1.0f, -TWO_PI_F * 27 * n / BLK);
 	}
+	*energy = e;
 	if (e < 100.0 * BLK) {
 		*ratio = 0;
 		return false;
