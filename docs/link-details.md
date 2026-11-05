@@ -64,6 +64,14 @@ port or pty.) It is C++, in `namespace dlink`.
   carry up to 256 octets, 8 outstanding; LA acknowledges with credit;
   frames are sent again on T401 or a repeated N(R), with N400 = 12; LN
   and LNA; LD. See [MNP](#mnp) below.
+- **HST's own link** (`HstLink`, `hst_link.cpp`), the one a USRobotics
+  Courier runs once both modems agreed on HST in V.42's XID and left
+  V.22bis for it (`Link::hst_switch()`). Its frames have no address: a
+  type octet, then N(S), N(R) or both, modulo 256. Data frames of up to
+  64 octets (up to 256 taken), 8 outstanding, cumulative RRs, REJ and
+  T1 recovery, and the asks and grants that turn HST's channels around
+  (`Owner::hst_turn()`). No compression. See
+  [HST's technical details](dsp/hst-details.md).
 - **Asynchronous characters** (`Async`): a start bit, 8 data bits and a
   stop bit, for the modulations without V.42 and when the remote has no
   LAPM.

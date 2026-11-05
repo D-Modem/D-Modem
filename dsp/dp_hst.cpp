@@ -55,8 +55,12 @@
  *              symbols that follow (each candidate rate's training is
  *              a known sequence too), and the data after them
  *
- *    The forward channel goes from the answerer to the caller for the
- *    whole call: a BBS sends more than its callers do.
+ *    The forward channel goes from the answerer to the caller at first.
+ *    After a Courier's start-up, HST's link (link/hst_link.h) may turn
+ *    the channels around (MDMPRM_HST_TURN): the side that sent the
+ *    forward channel starts the back channel at once and trains its
+ *    receiver on the other's forward channel, which starts as the
+ *    answerer's does after V.22bis, at the same rate.
  *
  */
 
@@ -309,6 +313,10 @@ struct HstPump : PumpBase<HstPump, hst_state>, QamRxCore<HstPump> {
 	s16 rate;               /* the forward channel's, hst_rates index */
 	bool courier;           /* the rate agreed in XID: a Courier's
 				   start-up after V.22bis */
+	bool fwd_tx;            /* we send the forward channel (at first
+				   the answerer) */
+	intptr_t turns;         /* the link's turns of the channels seen */
+	bool turning;           /* turned in data: training again */
 	s32 gap;                /* the answerer's silence before its
 				   training, in samples */
 	Osc tone;
@@ -369,8 +377,11 @@ struct HstPump : PumpBase<HstPump, hst_state>, QamRxCore<HstPump> {
 
 	/* its name in the log */
 	const char *tag() const { return "hst"; }
-	/* in data mode (the carrier watched, no handshake timeout) */
-	bool in_data() const { return state == H_DATA; }
+	/* in data mode (the carrier watched, no handshake timeout, the
+	   link's bits flowing), or training again after the channels
+	   turned (the back channel's carry the link's bits from its
+	   start) */
+	bool in_data() const { return state == H_DATA || turning; }
 
 	cplx fwd_symbol();
 	cplx bc_symbol();
@@ -384,6 +395,8 @@ struct HstPump : PumpBase<HstPump, hst_state>, QamRxCore<HstPump> {
 	void bc_rx_symbol();
 	void bc_rx_bit(s16 b);
 	s16 handshake();
+	s16 role(bool send_fwd);
+	s16 block_start();
 	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
 		  s32 max_frag);
 	s16 sample(float x, float *y);
@@ -447,7 +460,7 @@ s16 HstPump::bc_bits()
 {
 	s16 v = 0;
 
-	if (state == H_DATA) {
+	if (in_data()) {
 		u8 b[3];
 		modem_get_bits(modem, 1, b, 3);
 		return (b[0] & 1) | (b[1] & 1) << 1 | (b[2] & 1) << 2;
@@ -790,7 +803,7 @@ void HstPump::rx_symbol()
    the data, the link's after */
 void HstPump::bc_rx_bit(s16 b)
 {
-	if (state == H_DATA) {
+	if (in_data()) {
 		u8 x = static_cast<u8>(b);
 		modem_put_bits(modem, 1, &x, 1);
 		return;
@@ -866,6 +879,11 @@ s16 HstPump::handshake()
 			set_state(H_DATA);
 			stat_line(HST_BAUD, HST_CARRIER, HST_BC_BAUD,
 				  HST_BC_CARRIER);
+			if (turning) {
+				turning = false;
+				set_rates(hst_rates[rate].bps, HST_BC_RATE);
+				break;
+			}
 			return connect_at(hst_rates[rate].bps, HST_BC_RATE);
 		}
 		break;
@@ -875,11 +893,16 @@ s16 HstPump::handshake()
 			data_power = rx.power;
 			stat_line(HST_BC_BAUD, HST_BC_CARRIER, HST_BAUD,
 				  HST_CARRIER);
+			if (turning) {
+				turning = false;
+				set_rates(HST_BC_RATE, hst_rates[rate].bps);
+				break;
+			}
 			return connect_at(HST_BC_RATE, hst_rates[rate].bps);
 		}
 		break;
 	case H_DATA:
-		if (caller && count % ms2samples(100, srate) == 0) {
+		if (!fwd_tx && count % ms2samples(100, srate) == 0) {
 			stat_snr(-10 * log10f(rx_mse + 1e-6f));
 			stat_freq_offset(rx.dtheta, HST_BAUD);
 			stat_timing_offset(rx.t_adj, rx.sps);
@@ -896,7 +919,7 @@ s16 HstPump::sample(float x, float *y)
 	s16 r = handshake();
 
 	*y = 0;
-	if (!caller) {
+	if (fwd_tx) {
 		if (state == H_ANS)
 			*y = DSP_TX_AMPLITUDE * tone.next();
 		else if (state == H_TRAIN || state == H_DATA)
@@ -949,6 +972,82 @@ void HstPump::carrier_went()
 	}
 }
 
+/* our side of the channels (send_fwd: the forward channel's
+   transmitter and the back channel's receiver, else the other two),
+   each from its start: the forward channel's training after the
+   Courier's silence, or the back channel at once and the receiver
+   waiting for the training.  0, or -1 when out of memory */
+s16 HstPump::role(bool send_fwd)
+{
+	if (!send_fwd) {
+		carrier.init(150, 90);
+		rx.release();
+		if (rx.init(srate, HST_CARRIER, HST_BAUD, HST_ALPHA,
+			    HST_SPAN, HST_EQ_LEN, HST_POWER))
+			return -1;
+		bc_tx.init(srate, HST_BC_CARRIER, HST_BC_BAUD, HST_BC_ALPHA,
+			   HST_BC_SPAN, sqrtf(HST_BC_POWER), HST_TX_AMPLITUDE);
+		bc_scr.init(HST_BC_SEED, 17, 3);
+		bc_syms = 0;
+		bc_ph = 0;
+		rxp = RX_IDLE;
+		alt_run = 0;
+		last_sgn = 0;
+		last_z = cplx_make(0, 0);
+		rx_syms = 0;
+		rx_mse = 0;
+		nhist = 0;
+		misses = 0;
+		change_at = -1;
+		data_at = 0x7fffffff;
+		vit_fed = 0;
+		rx_idx = 0;
+		data_power = 0;
+		agc_free = 0;
+		set_state(H_WAIT);
+		return 0;
+	}
+	tx.init(srate, HST_CARRIER, HST_BAUD, HST_ALPHA, HST_SPAN,
+		sqrtf(HST_POWER), HST_TX_AMPLITUDE);
+	tone.set_freq(2100, srate);
+	bc_rx.release();
+	if (bc_rx.init(srate, HST_BC_CARRIER, HST_BC_BAUD, HST_BC_ALPHA,
+		       HST_BC_SPAN, HST_BC_EQ_LEN, HST_BC_POWER))
+		return -1;
+	bc_bp[0].bandpass(HST_BC_CARRIER, 2, srate);
+	bc_bp[1].bandpass(HST_BC_CARRIER, 2, srate);
+	bc_carrier.init(60, 40);
+	bc_dscr.init(0, 17, 3);
+	bc_pwr = 0;
+	bc_on = 0;
+	bc_have_k = 0;
+	bc_last_p = 0;
+	bc_last_zero = 1;
+	bc_word = 0;
+	fwd.init();
+	set_state(H_GAP);
+	return 0;
+}
+
+/* each block: a new turn of the channels by the link (after a
+   Courier's start-up, in data): our side the other, training again */
+s16 HstPump::block_start()
+{
+	if (!courier || (state != H_DATA && !turning))
+		return DPSTAT_OK;
+	intptr_t n = modem_get_param(modem, MDMPRM_HST_TURN);
+	if (n <= 0 || n == turns)
+		return DPSTAT_OK;
+	turns = n;
+	fwd_tx = !fwd_tx;
+	turning = true;
+	gap = ms2samples(HST_COURIER_GAP_MS, srate);
+	DSP_DBG("hst: the channels turn around: we send the %s channel\n",
+		fwd_tx ? "forward" : "back");
+	stat_retrain(false);
+	return role(fwd_tx) ? DPSTAT_ERROR : DPSTAT_OK;
+}
+
 /* HST: the answerer sends the forward channel, at the rate XID chose
    (MDMPRM_HST_START) or else at the caller's request (+MS's highest
    rate at most either way), the caller the back channel; timeouts from
@@ -983,33 +1082,13 @@ s16 HstPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 		gap = ms2samples(HST_COURIER_GAP_MS, srate_);
 	}
 
-	if (caller_) {
-		carrier.init(150, 90);
-		if (rx.init(srate_, HST_CARRIER, HST_BAUD, HST_ALPHA,
-			    HST_SPAN, HST_EQ_LEN, HST_POWER))
-			return -1;
-		bc_tx.init(srate_, HST_BC_CARRIER, HST_BC_BAUD, HST_BC_ALPHA,
-			   HST_BC_SPAN, sqrtf(HST_BC_POWER), HST_TX_AMPLITUDE);
-		bc_scr.init(HST_BC_SEED, 17, 3);
-		rxp = RX_IDLE;
-		state = H_WAIT;
-	} else {
-		tx.init(srate_, HST_CARRIER, HST_BAUD, HST_ALPHA, HST_SPAN,
-			sqrtf(HST_POWER), HST_TX_AMPLITUDE);
-		tone.set_freq(2100, srate_);
-		if (bc_rx.init(srate_, HST_BC_CARRIER, HST_BC_BAUD,
-			       HST_BC_ALPHA, HST_BC_SPAN, HST_BC_EQ_LEN,
-			       HST_BC_POWER))
-			return -1;
-		bc_bp[0].bandpass(HST_BC_CARRIER, 2, srate_);
-		bc_bp[1].bandpass(HST_BC_CARRIER, 2, srate_);
-		bc_carrier.init(60, 40);
-		bc_dscr.init(0, 17, 3);
-		bc_last_p = 0;
-		bc_last_zero = 1;
-		if (courier) {
-			state = H_GAP;
-		} else if (rt && rt->ans_sent) {
+	fwd_tx = !caller_;
+	turns = 0;
+	turning = false;
+	if (role(fwd_tx))
+		return -1;
+	if (!caller_ && !courier) {
+		if (rt && rt->ans_sent) {
 			rt->ans_sent = 0;
 			state = H_GAP;
 		} else

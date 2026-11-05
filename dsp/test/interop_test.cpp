@@ -1449,11 +1449,12 @@ std::vector<Call> calls()
 	/* --- the USRobotics Courier V.Everything, the whole modem emulated
 	   with its own firmware (half_courier, its line at 8000 Hz): two
 	   Couriers call each other in HST, V.32terbo and V.32bis, and a
-	   Courier and the open modem (8000 Hz) call each other in V.32bis
-	   and V.22bis.  Its S registers choose its modulation: S27=4 no
-	   V.32, S34=128 no V.32terbo, S56=96 no V.34, 224 no V.FC either,
-	   S58=33 no x2 or V.90; &N3 its link at 2400 bit/s.  (Not yet: HST
-	   with the open modem, and V.FC and V.34, whose training two
+	   Courier and the open modem (8000 Hz) call each other in HST
+	   (V.22bis, XID, then HST's own link, the channels turning around
+	   as each side's data asks), V.32bis and V.22bis.  Its S registers
+	   choose its modulation: S27=4 no V.32, S34=128 no V.32terbo,
+	   S56=96 no V.34, 224 no V.FC either, S58=33 no x2 or V.90; &N3 its
+	   link at 2400 bit/s.  (Not yet: V.FC and V.34, whose training two
 	   Couriers do not finish) */
 	const std::string usr_hst = "ATS27=4S56=224S58=33",
 		usr_v32t = "ATS56=224S58=33",
@@ -1468,6 +1469,14 @@ std::vector<Call> calls()
 		      "EXPECT_A=CONNECT " + std::string(r) + "/ARQ",
 		      "EXPECT_B=CONNECT " + std::string(r) + "/ARQ" });
 	}
+	add("courier", "courier_hst_courier_calls", "courier", "open8",
+	    usr_hst, { "STREAM=5", "COURIER_DEBUG=1",
+		       "PROTO_B=ATX3;AT+MS=HST",
+		       "EXPECT_A=CONNECT 16800/ARQ" });
+	add("courier", "courier_hst_open_calls", "open8", "courier",
+	    "ATX3;AT+MS=HST", { "STREAM=5", "COURIER_DEBUG=1",
+				"PROTO_B=" + usr_hst,
+				"EXPECT_B=CONNECT 16800/ARQ" });
 	add("courier", "courier_v32_courier_calls", "courier", "open8",
 	    usr_v32, { "STREAM=5", "COURIER_DEBUG=1",
 		       "PROTO_B=ATX3;AT+MS=V32B",

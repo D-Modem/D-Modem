@@ -68,9 +68,6 @@ public:
 	/* the bit timers (Link::Timer::T401, Negotiate) */
 	void t401_timeout();
 	void negotiate();
-	/* after HST's switch (Link::hst_switch()): the XID is done, the
-	   originator's first frame its SABME */
-	void resume() { resume_ = true; }
 
 private:
 	enum State { IDLE, ESTAB, DATA, DISC };
@@ -117,7 +114,6 @@ private:
 	bool peer_busy_ = false;
 	bool v76_ = false;      /* a DLC of V.76's multiplexer */
 	bool hst_pending_ = false;      /* to HST once our frames are out */
-	bool resume_ = false;   /* (see resume()) */
 	/* the 32-bit FCS: asked for by the remote's XID command, agreed by
 	   the XID exchange */
 	bool fcs32_asked_ = false, fcs32_ = false;

@@ -694,6 +694,14 @@ struct Dte : Owner {
 	int32_t hst_bps = 0;
 	/* HST agreed: its rate kept */
 	void hst(int32_t bps) override { hst_bps = bps; }
+	/* the characters still to send */
+	s32 tx_buffered() override {
+		return static_cast<s32>(to_send.size() - pos);
+	}
+	/* the times HST's link turned the channels around */
+	int hst_turns = 0;
+	/* (see hst_turns) */
+	void hst_turn() override { hst_turns++; }
 	/* the link's lines (LINK_DEBUG) */
 	void log(const char *line) override {
 		if (verbose)
@@ -1079,8 +1087,9 @@ TEST(Link, LapmUnsolicitedDm)
    subfield has "HST", its capability (options 07, rates fc) and f1 06.
    An answerer offering HST answers with its own and goes to HST on the
    caller's DM; a caller answered with HST sends that DM, with an
-   FCS-16, and no SABME, which comes once HST is up; without HST the
-   same XID is LAPM's as before */
+   FCS-16, and no SABME: once HST is up its own link starts, with an
+   RR of nothing (05 00 08); without HST the same XID is LAPM's as
+   before */
 TEST(Link, LapmHst)
 {
 	const std::vector<uint8_t> courier_cmd = { 0x03, 0xaf, 0x82, 0x80,
@@ -1104,6 +1113,7 @@ TEST(Link, LapmHst)
 	auto is_sabme = [](const std::vector<uint8_t> &f) {
 		return f.size() == 2 && (f[1] & 0xef) == 0x6f;
 	};
+	const std::vector<uint8_t> rr0 = { 0x05, 0x00, 0x08 };
 
 	/* the answerer: its response with HST, 9600 to start; the DM */
 	for (int on = 0; on < 2; on++) {
@@ -1127,7 +1137,7 @@ TEST(Link, LapmHst)
 	}
 
 	/* the caller: its XID with HST; the response: a DM (FCS-16) and
-	   HST; then, started again, an SABME first */
+	   HST; then, started again, HST's RR first */
 	for (int on = 0; on < 2; on++) {
 		Dte d("caller");
 		Link l;
@@ -1149,9 +1159,10 @@ TEST(Link, LapmHst)
 			continue;
 		l.start(true, true);
 		out = exchange(l, {}, 4);
-		CHECK(!out.empty() && is_sabme(out[0]),
-		      "an SABME first once HST is up (%zu frames)",
+		CHECK(!out.empty() && out[0] == rr0,
+		      "HST's RR first once HST is up (%zu frames)",
 		      out.size());
+		CHECK(l.protocol() == Protocol::Hst, "HST's link");
 	}
 
 	/* two Links: 9600 when both offer it, else the lowest both have */
@@ -1173,6 +1184,84 @@ TEST(Link, LapmHst)
 		CHECK((p.dc.up && p.da.up) == (want == 0),
 		      "LAPM up at this rate only without HST (%02x/%02x)",
 		      o[0], o[1]);
+	}
+}
+
+/* HST's own link after the switch (hst_link.h), as two emulated
+   Couriers have it: a Courier's first frames to a caller (an RR of
+   nothing, a short frame of one octet, data, data with an
+   acknowledgement) delivered in order, acknowledged with RRs; then two
+   Links back to back, with and without bit errors: the data both ways,
+   the caller (on the back channel, with data) asking to turn the
+   channels around and the answerer granting it.  An answerer whose
+   grant is not heard (nothing comes after it) turns the channels
+   back */
+TEST(Link, Hst)
+{
+	{
+		Dte d("caller");
+		Link l;
+		Config c = lapm_config(0);
+		c.hst = 0x1c;
+		l.init(&d, true, c);
+		l.hst_switch();
+		l.start(true, true);
+		l.set_online(true);
+		const std::vector<std::vector<uint8_t>> in = {
+			{ 0x05, 0x00, 0x08 },
+			{ 0x19, 'a' },
+			{ 0x04, 0x02, 'b', 'c' },
+			{ 0x04, 0x02, 'b', 'c' },          /* again */
+			{ 0x08, 0x03, 0x00, 0x08, 'd' },
+			{ 0x4a, 'e', 'f' },          /* short, 4 */
+		};
+		std::vector<std::vector<uint8_t>> out = exchange(l, in, 6);
+		CHECK(d.up, "up on the remote's first frame");
+		CHECK(std::string(d.got.begin(), d.got.end()) == "abcdef",
+		      "delivered: %s",
+		      std::string(d.got.begin(), d.got.end()).c_str());
+		const std::vector<uint8_t> rr4 = { 0x05, 0x04, 0x08 };
+		CHECK(std::find(out.begin(), out.end(), rr4) != out.end(),
+		      "acknowledged up to 4 (%zu frames)", out.size());
+	}
+	{
+		Dte d("answerer");
+		Link l;
+		Config c = lapm_config(0);
+		c.hst = 0x1c;
+		l.init(&d, false, c);
+		l.hst_switch();
+		l.start(true, true);
+		l.set_online(true);
+		std::vector<std::vector<uint8_t>> out = exchange(l,
+			{ { 0x05, 0x00, 0x08 }, { 0x06, 0x01, 0x04 } }, 4);
+		const std::vector<uint8_t> grant = { 0x07, 0x01 };
+		CHECK(std::find(out.begin(), out.end(), grant) != out.end(),
+		      "the ask granted (%zu frames)", out.size());
+		CHECK(d.hst_turns >= 1, "turned %d times", d.hst_turns);
+		exchange(l, {}, 8);
+		CHECK(d.hst_turns == 2, "turned back: %d turns", d.hst_turns);
+	}
+	for (double ber : { 0.0, 1e-4 }) {
+		rnd_state = 12345;
+		Config cc = lapm_config(0), ca = lapm_config(0);
+		cc.hst = ca.hst = 0x1c;
+		Pair p(cc, ca);
+		p.start(true, true);
+		p.run(9600 * 3);
+		CHECK(p.dc.hst_bps == 9600 && p.da.hst_bps == 9600,
+		      "HST agreed");
+		p.ber = ber;
+		p.start(true, true);
+		p.run(9600);
+		CHECK(p.dc.up && p.da.up, "HST's link up");
+		CHECK(p.lc.protocol() == Protocol::Hst &&
+		      p.la.protocol() == Protocol::Hst, "HST's link");
+		transfer(ber ? "hst, bit errors" : "hst", p, 6000, 20000,
+			 9600 * 120);
+		CHECK(p.dc.hst_turns > 0 && p.da.hst_turns == p.dc.hst_turns,
+		      "turned around %d and %d times", p.dc.hst_turns,
+		      p.da.hst_turns);
 	}
 }
 

@@ -21,7 +21,8 @@ the turning around of the channels and HST's own link layer. Its
 start-up comes from two sources: a recording of a Courier answering a
 call (both directions demodulated, every HDLC frame's FCS good), and
 the supervisor's code in the same firmware image (IDSDL302, file
-offsets below). Its speed changes, channel reversal and own link layer
+offsets below). Its own link layer and its channel reversal come from
+two emulated Couriers calling each other (below); its speed changes
 have not been read.
 
 ## Forward channel
@@ -127,8 +128,64 @@ first, the same XID field (options 01: no online fallback or 450 bit/s
 back channel), the DM, 50 ms of flags, then the HST pump at the agreed
 rate with no answer tone and no rate request: the answerer's training
 after 180 ms of silence, the caller's back channel at once. After the
-switch LAPM goes on without a second detection phase or XID, the
-caller's SABME first. That the Courier does the same there is a guess.
+switch both run HST's own link, below.
+
+## HST's link layer
+
+After the switch a Courier does not go on with V.42: it has a link
+protocol of its own. It was read from two emulated Couriers calling
+each other, the frames each DSP received (its receive lanes, every FCS
+checked), with data both ways, idle, a hangup and a 20 kB transfer.
+The frames are HDLC frames with an FCS-16 and no address; the first
+octet is the frame's type:
+
+| Frame | Meaning |
+|---|---|
+| `04 ns data` | data, N(S) `ns`: 64 octets at first, up to 224 once the frames are acknowledged |
+| `08 ns nr 08 data` | data with an acknowledgement (the first frame after a turn, often) |
+| `s<<4 \| 8 \| l, data` | short data: the low 4 bits of N(S), 1 to 7 octets |
+| `05 nr 08` | RR: the other's frames up to `nr` received |
+| `03 nr 08` | REJ: from `nr` + 1 again |
+| `06 k 04` | the back channel's side asks to turn the channels around; `k` counts its asks, and it asks again with the same `k` until granted |
+| `06 k 3x` | asks for the forward rate of index x (ASL; 2 is 9600, 5 is 16800) |
+| `07 k` | ask `k` granted |
+
+What the frames show:
+
+- Each side numbers its own data frames from 1, modulo 256 (00 follows
+  ff). `nr` is the last frame received in order, 0 for none. A frame
+  ahead of its turn gets one REJ; T1 sends the outstanding ones again.
+- Up to 8 frames are outstanding (a sender goes back to the oldest
+  after 8).
+- Both sides start with `05 00 08` and send it again every 1.5 s or so
+  while idle.
+- The side on the back channel with data to send asks (`06 k 04`). It
+  sends its data on the back channel meanwhile, but a Courier itself
+  holds its own until it is granted. The forward side grants (`07 k`)
+  once its frames are out. Then the granting side starts the back
+  channel and trains its receiver (DSP tag 0x32) as soon as the grant
+  is out; the asking side starts the forward channel's training (tag
+  0x33) as after V.22bis, at the same rate. A Courier with data both
+  ways turns the channels every 2 to 3 s.
+- What the last octet of an RR (08) means is not known; it may be the
+  window.
+- A hangup sends no frame: the carrier stops.
+- In its first second a Courier also sends runs of 1-octet frames
+  with N(S) from 0xb0 (`04 b0 74`, ...), out of order, which the
+  receiving Courier drops. Why is not known (it may be the emulation);
+  D-Modem drops them too.
+
+D-Modem's link (`link/hst_link.cpp`, `HstLink`) does all of this but
+ASL: it never asks for another rate and does not grant the remote's
+asks for one (it offers no online fallback in XID, so a Courier should
+not ask). It sends 64-octet frames, grants a turn once its frames are
+out and either its DTE has nothing more or it has sent 32 frames since
+it got the forward channel, and asks for one before each of its data
+frames while it waits. The pump turns at the link's word
+(`MDMPRM_HST_TURN`): its forward channel's transmitter and back
+channel's receiver become a back channel's transmitter and forward
+channel's receiver, or the other way round, each trained afresh as
+after the start-up.
 
 ## D-Modem's own start-up
 
@@ -159,12 +216,9 @@ synchronous bits.
 ## Not done
 
 - A call to a real Courier.
-- The Courier's speed changes during the call (Adaptive Speed Leveling)
-  and channel reversal.
+- The Courier's speed changes during the call (Adaptive Speed Leveling).
 - HST negotiated in MNP's LR (PI 0xC0) instead of V.42's XID, as older
   Couriers without V.42 would.
-- HST's own link layer (the Courier's error control when it is not
-  using V.42 or MNP).
 - The 450 bit/s back channel.
 - 16800 bit/s from a Courier to a D-Modem caller has bursts of errors
   in its first second of data (see below).

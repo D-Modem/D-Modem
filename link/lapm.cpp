@@ -210,7 +210,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	link_ = link;
 	state_ = IDLE;
 	config_ = was_up_ = reject_ = busy_ = peer_busy_ = false;
-	hst_pending_ = resume_ = false;
+	hst_pending_ = false;
 	v76_ = false;
 	fcs32_asked_ = fcs32_ = false;
 	no_zstd_ = false;
@@ -303,12 +303,6 @@ void Lapm::start()
 	if (caller)
 		link_->set_timer(XID_DELAY, Link::Timer::Negotiate);
 	link_->push_pending = false;
-	/* after HST's switch: the FCS that XID agreed, as after it */
-	if (resume_ && fcs32_) {
-		if (caller)
-			link_->hdlc().set_tx_fcs32(true);
-		link_->hdlc().set_rx_fcs(RX_FCS16 | RX_FCS32);
-	}
 }
 
 /* the originator's flags are out: its frames go from now on, the first
@@ -316,11 +310,6 @@ void Lapm::start()
 void Lapm::negotiate()
 {
 	link_->hdlc().enable_tx(true);
-	if (resume_) {
-		resume_ = false;
-		open();
-		return;
-	}
 	configure();
 }
 
