@@ -104,7 +104,11 @@ namespace dsp {
 #define HST_RATE_SYMS_HI 24
 #define HST_REQ_AFTER   1200
 /* the scrambled training is looked for from its first this many symbols */
-#define HST_TRN_FIND    24
+#define HST_TRN_FIND    64
+/* and is matched over this many symbols, one of them wrong at most */
+#define HST_TRN_WIN     12
+/* and is checked over this many symbols after that */
+#define HST_TRN_CHECK   16
 
 /* the back channel's training (symbols, the silent ones counted) */
 #define HST_BC_TRN_SYMS 17
@@ -319,7 +323,7 @@ struct HstPump : PumpBase<HstPump, hst_state>, QamRxCore<HstPump> {
 	HstFwd model;           /* what the answerer sends */
 	cplx last_z;
 	s16 last_sgn, alt_run;
-	s16 dec[8];             /* the last 4800 decisions, newest first */
+	s16 dec[HST_TRN_WIN];   /* the last 4800 decisions, newest first */
 	s32 rx_syms;            /* symbols received */
 	float rx_mse;
 	s16 asked;              /* the request sent: its index, -1 not yet */
@@ -333,6 +337,8 @@ struct HstPump : PumpBase<HstPump, hst_state>, QamRxCore<HstPump> {
 	s32 change_at;          /* rx_syms of the first symbol off the
 				   training, -1 none */
 	s16 misses;             /* of the last 3 symbols */
+	s16 trn_seen, trn_off;  /* the first symbols after the training was
+				   found, and how many of them were off it */
 	s32 data_at;            /* rx_syms when the data begins */
 	Viterbi vit;
 	s32 vit_fed;            /* symbols fed to it */
@@ -622,7 +628,7 @@ void HstPump::rx_symbol()
 		return;
 	}
 	k = nearest_point(v32_points_4800, 4, z);
-	for (s16 i = 7; i > 0; i--)
+	for (s16 i = HST_TRN_WIN - 1; i > 0; i--)
 		dec[i] = dec[i - 1];
 	dec[0] = k;
 
@@ -651,32 +657,35 @@ void HstPump::rx_symbol()
 			DSP_DBG("hst: the forward channel's training\n");
 		}
 		if (rxp == RX_ALT) {
-			/* the scrambled part: 8 symbols in a row from its
-			   first HST_TRN_FIND, one of them wrong at most (the
-			   equalizer still settles as the alternation ends) */
+			/* the scrambled part: HST_TRN_WIN symbols in a row
+			   from its first HST_TRN_FIND, one of them wrong at
+			   most (the equalizer still settles as the
+			   alternation ends) */
 			HstFwd m, at[HST_TRN_FIND + 1];
-			s16 seq[HST_TRN_FIND + 8];
+			s16 seq[HST_TRN_FIND + HST_TRN_WIN];
 			m.init();
 			m.syms = HST_ALT_SYMS;
 			m.idx = 2;
 			m.trn();
-			for (s16 i = 0; i < HST_TRN_FIND + 8; i++) {
+			for (s16 i = 0; i < HST_TRN_FIND + HST_TRN_WIN; i++) {
 				if (i <= HST_TRN_FIND)
 					at[i] = m;
 				seq[i] = m.next(0);
 			}
 			for (s16 p = 0; p <= HST_TRN_FIND; p++) {
 				s16 miss = 0;
-				for (s16 i = 0; i < 8; i++)
-					miss += seq[p + i] != dec[7 - i];
+				for (s16 i = 0; i < HST_TRN_WIN; i++)
+					miss += seq[p + i] !=
+						dec[HST_TRN_WIN - 1 - i];
 				if (miss > 1)
 					continue;
 				model = at[p];
-				for (s16 i = 0; i < 8; i++)
+				for (s16 i = 0; i < HST_TRN_WIN; i++)
 					model.next(0);
 				rxp = RX_TRN;
 				rx_syms = p;
 				nhist = 0;
+				trn_seen = trn_off = 0;
 				DSP_DBG("hst: the scrambled training, from its "
 					"symbol %d\n", p);
 				break;
@@ -695,6 +704,20 @@ void HstPump::rx_symbol()
 		cplx d = v32_points_4800[e];
 		bool miss = e != k;
 		misses = static_cast<s16>((misses << 1 | (miss ? 1 : 0)) & 7);
+		if (rxp == RX_TRN && trn_seen < HST_TRN_CHECK) {
+			/* noise can pass for the training's start: if what
+			   follows is not the training, look for it again */
+			trn_seen++;
+			trn_off += miss;
+			if (trn_seen == HST_TRN_CHECK &&
+			    trn_off > HST_TRN_CHECK / 4) {
+				DSP_DBG("hst: not the training (%d of %d "
+					"off), looking again\n", trn_off,
+					trn_seen);
+				rxp = RX_ALT;
+				break;
+			}
+		}
 		if (rxp == RX_TRN) {
 			rx_mse += 0.02f * (cplx_pow(cplx_sub(z, d)) / HST_POWER -
 					   rx_mse);
