@@ -1095,8 +1095,17 @@ void Modem::update_status(Status s)
 			link_->start_v76(!caller_);
 			break;
 		}
+		/* the detection phase, as older answerers wait for the
+		   caller's ODPs (the USRobotics Courier), and an answerer
+		   without it sends flags, which end it; but not for V.cvm,
+		   a V.92 call (whose quick connect may have agreed LAPM:
+		   qc_lapm), or a pump that starts at once (a leased line,
+		   a wideband or clear channel), whose two ends connect too
+		   far apart for T400 */
 		link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
-			     !(caller_ && dsp_info_.qc_lapm) &&
+			     !(caller_ && dsp_info_.qc_lapm &&
+			       ((dp_ && dp_->id == DP_V92) ||
+				leased_direct())) &&
 			     !(dp_ && dp_->id == DP_VCVM));
 		break;
 	case ST_PACK_LINK:

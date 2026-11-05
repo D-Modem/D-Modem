@@ -98,7 +98,9 @@ int CourierPeer::start()
 	m.dbg = dbg >= 3 ? 1 | 4 | 8 : dbg >= 2 ? 1 | 8 : 0;
 	if (env("HW_DEBUG"))
 		m.dbg = (int)strtol(env("HW_DEBUG"), nullptr, 0);
-	m.log = [this](const char *s) { log("%s\n", s); };
+	m.log = [this](const char *s) {
+		log("<%07.3f> %s\n", ms() / 1000.0, s);
+	};
 	m.to_dte = [this](Courier::u8 b) { out_.push_back(b); };
 	m.on_hook = [this](bool off) {
 		if (dbg)

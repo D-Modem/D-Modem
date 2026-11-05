@@ -121,6 +121,10 @@ private:
 	/* the 32-bit FCS: asked for by the remote's XID command, agreed by
 	   the XID exchange */
 	bool fcs32_asked_ = false, fcs32_ = false;
+	/* our XID offers no zstd: its first went unanswered after the
+	   remote's ADP (an older V.42 ignores an XID with the private
+	   set: the Courier) */
+	bool no_zstd_ = false;
 	std::vector<u8> cmd_ud_, rsp_ud_;
 	u8 cmd_addr_ = 0, rsp_addr_ = 0;
 	u8 vs_ = 0, va_ = 0, vr_ = 0;

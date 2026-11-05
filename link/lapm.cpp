@@ -213,6 +213,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	hst_pending_ = resume_ = false;
 	v76_ = false;
 	fcs32_asked_ = fcs32_ = false;
+	no_zstd_ = false;
 	cmd_ud_.clear();
 	rsp_ud_.clear();
 	rtx_count_ = 0;
@@ -435,6 +436,15 @@ void Lapm::t401_timeout()
 		link_->stats().timeouts++;
 	if (rtx_count_ < MAX_RTX) {
 		rtx_count_++;
+		/* an XID unanswered by a remote whose ADP said it has
+		   V.42: offered again without zstd's private set, which
+		   an older V.42 takes for a reason to ignore the frame
+		   (the USRobotics Courier answering) */
+		if (config_ && !was_up_ && link_->caller() &&
+		    link_->phase_v42() && link_->cfg().zstd && !no_zstd_) {
+			no_zstd_ = true;
+			link_->logf("ec: XID unanswered: offered without zstd.");
+		}
 		if (config_)
 			tx_xid(cmd_addr_);
 		else if (state_ == ESTAB)
@@ -561,7 +571,7 @@ s16 Lapm::tx_xid(u8 addr)
 	const s16 p0_42 = response ? dirs42 & 3 : swap_dirs(dirs42);
 	const s16 p0_44 = response ? dirs44 & 3 : swap_dirs(dirs44);
 	const bool v44 = dirs44 && c.v44;
-	const bool zstd = c.comp && c.zstd;
+	const bool zstd = c.comp && c.zstd && !(no_zstd_ && !response);
 	const bool v42bis = dirs42 && !(response && (c.v44 || c.zstd));
 	u8 *p = f->buf, *g;
 
