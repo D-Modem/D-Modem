@@ -17,6 +17,7 @@
 
 #include <vector>
 
+#include "backlog.h"
 #include "dm_types.h"
 #include "hdlc.h"
 
@@ -128,8 +129,7 @@ private:
 	Frame *info_list_ = nullptr;
 	Frame *tx_ctrl_ = nullptr, *ctrl_list_ = nullptr;
 	/* received characters the DTE has not taken */
-	s16 rx_count_ = 0, rx_head_ = 0;
-	u8 rx_buf_[LAPM_MAX_INFO];
+	DteBacklog<LAPM_MAX_INFO> backlog_;
 	Slot info_buf_[INFO_FRAMES];
 	Slot ctrl_buf_[CTRL_FRAMES];
 };

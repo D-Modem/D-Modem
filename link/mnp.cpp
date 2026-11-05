@@ -707,16 +707,9 @@ void Mnp::rx_lt(const u8 *h, s16 len, const u8 *info, s16 n)
 	lt_rcvd_++;
 	if (!n)
 		return;
-	s16 w = link_->write_chars(info, n);
-	if (w < 0)
-		w = 0;
-	if (w < n) {
-		/* keep the rest; no credit until the DTE takes it */
-		rx_head_ = 0;
-		rx_count_ = n - w;
-		memcpy(rx_buf_, info + w, rx_count_);
+	/* the rest kept: no credit until the DTE takes it */
+	if (backlog_.deliver(link_, info, n)) {
 		busy_ = true;
-		link_->push_pending = true;
 		la_due_ = true;
 	}
 }
@@ -946,7 +939,7 @@ void Mnp::data_phase()
 	vr_ = vra_ = 1;
 	unacked_ = 0;
 	la_due_ = dup_seen_ = busy_ = lna_due_ = false;
-	rx_count_ = rx_head_ = 0;
+	backlog_.clear();
 	t401_ = t402_ = 0;
 	t404_ = t404(rate());
 	lt_sent_ = lt_again_ = lt_rcvd_ = 0;
@@ -991,20 +984,13 @@ void Mnp::disconnect()
    our credit again (LA) */
 void Mnp::push_rest()
 {
-	if (phase_ != Phase::Data || !rx_count_) {
+	if (phase_ != Phase::Data || backlog_.empty()) {
 		link_->push_pending = false;
 		return;
 	}
-	s16 w = link_->write_chars(rx_buf_ + rx_head_, rx_count_);
-	if (w > 0) {
-		rx_head_ += w;
-		rx_count_ -= w;
-	}
-	if (!rx_count_) {
-		rx_head_ = 0;
+	if (backlog_.push(link_)) {
 		busy_ = false;
 		la_due_ = true;
-		link_->push_pending = false;
 	}
 }
 
@@ -1074,7 +1060,7 @@ void Mnp::exit()
 	lt_sent_ = lt_again_ = lt_rcvd_ = 0;
 	phase_ = Phase::Idle;
 	t401_ = t402_ = t404_ = t_start_ = 0;
-	rx_count_ = 0;
+	backlog_.clear();
 }
 
 } // namespace dlink

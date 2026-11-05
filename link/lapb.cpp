@@ -83,7 +83,7 @@ void Lapb::init(Link *link, Variant v)
 	state_ = IDLE;
 	heard_ = false;
 	tries_ = 0;
-	rx_count_ = rx_head_ = 0;
+	backlog_.clear();
 }
 
 /* the link is up at the bit level: our frames to Hdlc; the calling end
@@ -113,18 +113,10 @@ void Lapb::disconnect()
    has them all our receiver is no longer busy, which an RR says */
 void Lapb::push_rest()
 {
-	if (state_ != DATA || !rx_count_)
-		return;
-	s16 taken = link_->write_chars(rx_buf_ + rx_head_, rx_count_);
-	if (taken > 0) {
-		rx_head_ += taken;
-		rx_count_ -= taken;
-	}
-	if (rx_count_)
+	if (state_ != DATA || backlog_.empty() || !backlog_.push(link_))
 		return;
 	busy_ = false;
 	super(cmd_addr_, S_RR, false);
-	link_->push_pending = false;
 }
 
 
@@ -422,16 +414,8 @@ void Lapb::rx_info(Frame *f, bool pf)
 	}
 	const s16 n = static_cast<s16>(at < f->count ? f->count - at : 0);
 	const u8 *info = f->buf + at;
-	s16 taken = n ? link_->write_chars(info, n) : 0;
-	if (taken < 0)
-		taken = 0;
-	if (taken < n) {
-		rx_head_ = 0;
-		rx_count_ = static_cast<s16>(n - taken);
-		memcpy(rx_buf_, info + taken, rx_count_);
+	if (n && backlog_.deliver(link_, info, n))
 		busy_ = true;
-		link_->push_pending = true;
-	}
 	vr_ = seq(vr_ + 1);
 	if (busy_)
 		super(rsp_addr_, S_RNR, pf);
