@@ -74,7 +74,7 @@ private:
 
 /* the procedure: establishment as initiator (the originator) or
    responder, the data phase, LD */
-class Mnp : public Framer {
+class Mnp : public Framer, public LinkProto {
 public:
 	/* a call: what we offer (mnp_mode, mnp_k, mnp_info, mnp5 of cfg) */
 	void init(Link *link, const Config &cfg);
@@ -84,11 +84,11 @@ public:
 	   the responder waits for one */
 	void start(bool initiator);
 	/* we hang up: LD, then released once it is out */
-	void disconnect();
+	void disconnect() override;
 	/* characters the DTE did not take: try again */
-	void push_rest();
+	void push_rest() override;
 	/* LT frames not sent yet or not acknowledged */
-	bool tx_pending() const;
+	bool tx_pending() const override;
 	/* the timers: bits more have gone out */
 	void clock(s32 bits);
 	/* the data phase's frames as HDLC frames (framing mode 3) */

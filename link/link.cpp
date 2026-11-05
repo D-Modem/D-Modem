@@ -317,24 +317,33 @@ void Link::hst_switch()
 void Link::disconnect()
 {
 	end_detect();
-	if (mode_ == Mode::Mnp) {
-		push_pending = false;
-		mnp_.disconnect();
+	LinkProto *p = active();
+	/* (PPP: its frame for the DTE still pushed) */
+	if (!p || mode_ == Mode::Ppp)
 		return;
-	}
-	if (mode_ == Mode::X75) {
-		push_pending = false;
-		lapb_.disconnect();
-		return;
-	}
-	if (mode_ != Mode::Lapm)
-		return;
-	timer_ = 0;
+	/* (V.76's multiplexer's timer too) */
+	if (mode_ == Mode::Lapm)
+		timer_ = 0;
 	push_pending = false;
-	if (proto_ == Protocol::V76)
-		mux_.disconnect();
-	else
-		lapm_.disconnect();
+	p->disconnect();
+}
+
+/* see link.h */
+LinkProto *Link::active()
+{
+	switch (mode_) {
+	case Mode::Lapm:
+		return proto_ == Protocol::V76 ? static_cast<LinkProto *>(&mux_) :
+			&lapm_;
+	case Mode::X75:
+		return &lapb_;
+	case Mode::Mnp:
+		return &mnp_;
+	case Mode::Ppp:
+		return &ppp_;
+	default:
+		return nullptr;
+	}
 }
 
 /* the data pump's transmitter: n items of nbits bits from the mode's
@@ -381,16 +390,8 @@ s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 	   came: to it again, as no frame may come after it) */
 	if (dec_count_ && online_)
 		comp_flush_output();
-	if (push_pending) {
-		if (mode_ == Mode::Lapm)
-			lapm_.push_rest();
-		else if (mode_ == Mode::Mnp)
-			mnp_.push_rest();
-		else if (mode_ == Mode::X75)
-			lapb_.push_rest();
-		else if (mode_ == Mode::Ppp)
-			ppp_.push_rest();
-	}
+	if (push_pending && active())
+		active()->push_rest();
 	return n;
 }
 

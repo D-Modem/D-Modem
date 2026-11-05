@@ -119,6 +119,21 @@ protected:
 	~Framer() = default;
 };
 
+/* the Link's protocol in the data phase (LAPM, or V.76's multiplexer
+   over it; X.75 / V.120; MNP; PPP): what the Link asks of whichever is
+   on (Link::active()) */
+class LinkProto {
+public:
+	/* we hang up: DISC, MNP's LD (PPP: nothing) */
+	virtual void disconnect() {}
+	/* the characters the DTE did not take: to it again */
+	virtual void push_rest() {}
+	/* frames not sent yet or not acknowledged */
+	virtual bool tx_pending() const { return false; }
+protected:
+	~LinkProto() = default;
+};
+
 /* what the three framers share, a mixin on the framer F (CRTP): the
    link, the bit queues each way, and the loops of get_bits() and
    put_bits().  Out: the queue's bits nbits at a time, F's tx_fill()

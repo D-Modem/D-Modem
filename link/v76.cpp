@@ -189,6 +189,18 @@ void Mux::disconnect()
 	lapm_->disconnect();
 }
 
+/* see v76.h */
+void Mux::push_rest()
+{
+	lapm_->push_rest();
+}
+
+/* see v76.h */
+bool Mux::tx_pending() const
+{
+	return lapm_->tx_pending();
+}
+
 /* whether a frame with address octet a is a command of the remote's:
    the initiator's commands have C/R 1, the responder's 0 (6.1.2/V.76) */
 bool Mux::command(u8 a) const

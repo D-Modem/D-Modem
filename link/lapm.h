@@ -30,7 +30,7 @@ enum {
 	LAPM_DFLT_INFO = 128,
 };
 
-class Lapm : public Framer {
+class Lapm : public Framer, public LinkProto {
 public:
 	/* a call: our windows (frames) and information fields (octets) */
 	void init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
@@ -40,9 +40,9 @@ public:
 	/* the link is up at the bit level */
 	void start();
 	/* we hang up: DISC */
-	void disconnect();
+	void disconnect() override;
 	/* characters the DTE did not take: try again */
-	void push_rest();
+	void push_rest() override;
 	/* V.76 (v76.h): this LAPM is a DLC of the multiplexer, which
 	   hands it its frames: the DLCI, our role (the initiator's
 	   commands have C/R 1), its windows and information fields */
@@ -56,7 +56,7 @@ public:
 	/* in the data phase */
 	bool up() const { return state_ == DATA; }
 	/* I frames not sent yet or not acknowledged */
-	bool tx_pending() const {
+	bool tx_pending() const override {
 		return sent_info_ && info_list_ && sent_info_ != info_list_;
 	}
 
