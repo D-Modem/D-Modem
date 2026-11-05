@@ -49,9 +49,13 @@ Conexant's, USRobotics'):
 
 ### The call's statistics
 
-`ATI11`, `ATI6` and `AT&V1` all print the same statistics
-(`call_stats()`). `AT#UD` prints them as Unimodem diagnostics
-(`unimodem_diag()`).
+`ATI11` and `ATI6` print the same statistics (`call_stats()`).
+`AT&V1` prints them as Rockwell's modems do (`rockwell_stats()`): its
+labels dot-padded to 28 columns, PCM rates rounded as Rockwell's are
+(53333), the termination as Rockwell's reasons (`LOCAL REQUEST`,
+`GSTN CLEARDOWN`, `CARRIER LOSS`, `NO CONNECT`, ...), the line quality
+as NMSE x 128, and `N/A` for Rockwell's pump states and EQM sum.
+`AT#UD` prints them as Unimodem diagnostics (`unimodem_diag()`).
 
 **What is kept.** The statistics (`CallStats`) are kept from one call's
 start to the next call's start:
@@ -232,7 +236,7 @@ This core goes beyond the old one where the old one fell short:
   leading 0, so `ATS08=1` and `ATS09?` were ERROR and `ATS0=010` set 8.
 - **Statistics.** `ATI11` gives the last call's statistics (the old
   core: ERROR). So do `ATI6` (USRobotics'; in the old core, its second
-  stored profile, empty) and `AT&V1` (Rockwell's; the old core: ERROR).
+  stored profile, empty) and `AT&V1` (in Rockwell's form; the old core: ERROR).
   `AT#UD` gives them as Unimodem's diagnostics. `&A`'s `Modulation:` is
   the one the call came up with (`V91` between two D-Modems); the old
   core named the pump that `AT+MS` chose (`V92`).

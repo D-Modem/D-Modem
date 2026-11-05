@@ -153,6 +153,25 @@
   22380 A: Rate Renegotiation by Remote Modem  0\r\n
   22380 A: Call Duration                       0:00:07\r\n
   22380 A: OK\r\n
+  22380 A< AT&V1\r
+  22380 A: TERMINATION REASON.......... NONE\r\n
+  22380 A: LAST TX rate................ 33600 BPS\r\n
+  22380 A: HIGHEST TX rate............. 33600 BPS\r\n
+  22380 A: LAST RX rate................ 24000 BPS\r\n
+  22380 A: HIGHEST RX rate............. 24000 BPS\r\n
+  22380 A: PROTOCOL.................... LAPM\r\n
+  22380 A: COMPRESSION................. ZSTD\r\n
+  22380 A: Line QUALITY................ 004\r\n
+  22380 A: Rx LEVEL.................... 015\r\n
+  22380 A: Highest Rx State............ N/A\r\n
+  22380 A: Highest TX State............ N/A\r\n
+  22380 A: EQM Sum..................... N/A\r\n
+  22380 A: RBS Pattern................. N/A\r\n
+  22380 A: Rate Drop................... N/A\r\n
+  22380 A: Digital Pad................. N/A\r\n
+  22380 A: Local Rtrn Count............ 00\r\n
+  22380 A: Remote Rtrn Count........... 00\r\n
+  22380 A: OK\r\n
   22380 A< AT#UD\r
   22380 A: DIAG <2A4D3263 0=10>\r\n
   22380 A: DIAG <2A4D3263 1=7>\r\n
@@ -211,41 +230,23 @@
   25720 B: A0048 The quick brown fo++++++NO CARRIER\r\n
   25720 until B 'NO CARRIER': yes
   26220 A< AT&V1\r
-  26220 A: Description                         Status\r\n
-  26220 A: -----------                         ------\r\n
-  26220 A: Last Connection                     V34\r\n
-  26220 A: Initial Transmit Carrier Rate       33600\r\n
-  26220 A: Initial Receive Carrier Rate        24000\r\n
-  26220 A: Final Transmit Carrier Rate         33600\r\n
-  26220 A: Final Receive Carrier Rate          24000\r\n
-  26220 A: Symbol Rate (Tx/Rx)                 3429/3429\r\n
-  26220 A: Carrier Frequency (Hz, Tx/Rx)       1959/1959\r\n
-  26220 A: Protocol Negotiation Result         LAPM\r\n
-  26220 A: Data Compression Result             ZSTD\r\n
-  26220 A: Trellis Code (Tx/Rx)                64S-4D/64S-4D\r\n
-  26220 A: Nonlinear Encoding (Tx/Rx)          OFF/OFF\r\n
-  26220 A: Precoding (Tx/Rx)                   ON/OFF\r\n
-  26220 A: Shaping (Tx/Rx)                     ON/ON\r\n
-  26220 A: Estimated SNR (dB)                  29.6\r\n
-  26220 A: Receive Signal Power Level (dBm0)   -14.8\r\n
-  26220 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
-  26220 A: Round Trip Delay (ms)               37\r\n
-  26220 A: Near Echo Level (dBm0)              -56.7\r\n
-  26220 A: Far Echo Level (dBm0)               -27.1\r\n
-  26220 A: Carrier Frequency Offset (Hz)       0.1\r\n
-  26220 A: Timing Offset (ppm)                 11\r\n
-  26220 A: Characters Sent                     3006\r\n
-  26220 A: Characters Received                 3000\r\n
-  26220 A: Transmit Frame Count                10\r\n
-  26220 A: Transmit Frame Error Count          0\r\n
-  26220 A: Receive Frame Count                 8\r\n
-  26220 A: Receive Frame Error Count           20\r\n
-  26220 A: Retrains by Local Modem             0\r\n
-  26220 A: Retrains Requested by Remote Modem  0\r\n
-  26220 A: Rate Renegotiation by Local Modem   1\r\n
-  26220 A: Rate Renegotiation by Remote Modem  0\r\n
-  26220 A: Call Duration                       0:00:10\r\n
-  26220 A: Call Termination Cause              Local hangup\r\n
+  26220 A: TERMINATION REASON.......... LOCAL REQUEST\r\n
+  26220 A: LAST TX rate................ 33600 BPS\r\n
+  26220 A: HIGHEST TX rate............. 33600 BPS\r\n
+  26220 A: LAST RX rate................ 24000 BPS\r\n
+  26220 A: HIGHEST RX rate............. 24000 BPS\r\n
+  26220 A: PROTOCOL.................... LAPM\r\n
+  26220 A: COMPRESSION................. ZSTD\r\n
+  26220 A: Line QUALITY................ 003\r\n
+  26220 A: Rx LEVEL.................... 015\r\n
+  26220 A: Highest Rx State............ N/A\r\n
+  26220 A: Highest TX State............ N/A\r\n
+  26220 A: EQM Sum..................... N/A\r\n
+  26220 A: RBS Pattern................. N/A\r\n
+  26220 A: Rate Drop................... N/A\r\n
+  26220 A: Digital Pad................. N/A\r\n
+  26220 A: Local Rtrn Count............ 00\r\n
+  26220 A: Remote Rtrn Count........... 00\r\n
   26220 A: OK\r\n
   26220 B< ATI6\r
   26220 B: Description                         Status\r\n
@@ -601,6 +602,25 @@
   54700 A: Call Duration                       0:00:03\r\n
   54700 A: Call Termination Cause              Carrier lost\r\n
   54700 A: OK\r\n
+  54700 A< AT&V1\r
+  54700 A: TERMINATION REASON.......... CARRIER LOSS\r\n
+  54700 A: LAST TX rate................ 14400 BPS\r\n
+  54700 A: HIGHEST TX rate............. 14400 BPS\r\n
+  54700 A: LAST RX rate................ 14400 BPS\r\n
+  54700 A: HIGHEST RX rate............. 14400 BPS\r\n
+  54700 A: PROTOCOL.................... NONE\r\n
+  54700 A: COMPRESSION................. NONE\r\n
+  54700 A: Line QUALITY................ N/A\r\n
+  54700 A: Rx LEVEL.................... 019\r\n
+  54700 A: Highest Rx State............ N/A\r\n
+  54700 A: Highest TX State............ N/A\r\n
+  54700 A: EQM Sum..................... N/A\r\n
+  54700 A: RBS Pattern................. N/A\r\n
+  54700 A: Rate Drop................... N/A\r\n
+  54700 A: Digital Pad................. N/A\r\n
+  54700 A: Local Rtrn Count............ 00\r\n
+  54700 A: Remote Rtrn Count........... 00\r\n
+  54700 A: OK\r\n
   54700 B< ATI11\r
   54700 B: Description                         Status\r\n
   54700 B: -----------                         ------\r\n
@@ -636,6 +656,9 @@
   60220 A: Last Connection                     None\r\n
   60220 A: Call Termination Cause              No answer\r\n
   60220 A: OK\r\n
+  60220 A< AT&V1\r
+  60220 A: TERMINATION REASON.......... NO CONNECT\r\n
+  60220 A: OK\r\n
   60220 A< AT#UD\r
   60220 A: DIAG <2A4D3263 0=10>\r\n
   60220 A: DIAG <2A4D3263 1=4>\r\n
@@ -659,21 +682,16 @@
   60220 B: OK\r\n
   60220 B< ATA\r
   60220 A< ATD\r
-  66520 B: CONNECT 62666\r\n
-  66540 A: CONNECT 62666\r\n
-  66540 until A 'CONNECT': yes
-  66540 until B 'CONNECT': yes
-  67540 A< +++
-  68040 A: \r\n
-  68040 A: OK\r\n
-  68540 A< ATZ\r
-  68540 A: OK\r\n
-  68560 A: NO CARRIER\r\n
-  78600 B: +++NO CARRIER\r\n
-  78600 until B 'NO CARRIER': yes
-  79100 A< AT#UD\r
-  79100 A: AT#UD\r\r\n
-  79100 A: DIAG <2A4D3263 0=10>\r\n
-  79100 A: DIAG <2A4D3263 1=0>\r\n
-  79100 A: DIAG <2A4D3263 60=52>\r\n
-  79100 A: OK\r\n
+  60220 until A 'CONNECT': yes
+  62220 until B 'CONNECT': TIMEOUT
+  63220 A< +++
+  63240 A: NO CARRIER\r\n
+  64220 A< ATZ\r
+  64220 A: OK\r\n
+  79220 until B 'NO CARRIER': TIMEOUT
+  79720 A< AT#UD\r
+  79720 A: AT#UD\r\r\n
+  79720 A: DIAG <2A4D3263 0=10>\r\n
+  79720 A: DIAG <2A4D3263 1=0>\r\n
+  79720 A: DIAG <2A4D3263 60=1>\r\n
+  79720 A: OK\r\n

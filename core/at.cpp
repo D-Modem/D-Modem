@@ -1108,7 +1108,8 @@ s16 Modem::at_Z(char *p, s16 *len)
 }
 
 /* AT&V, AT&V0: the active settings, in lines of PROFILE_COLUMNS at
-   most; AT&V1: the last call's statistics, as ATI11 */
+   most; AT&V1: the last call's statistics, as Rockwell's modems give
+   them */
 s16 Modem::at_ampV(char *p, s16 *len)
 {
 	static const unsigned char regs[] = {
@@ -1142,7 +1143,7 @@ s16 Modem::at_ampV(char *p, s16 *len)
 	if (p[2] == '1') {
 		/* AT&V1: the last call's statistics (Rockwell's) */
 		*len = 3;
-		call_stats();
+		rockwell_stats();
 		return 0;
 	}
 	if (is_digit(p[2]) && p[2] != '0')

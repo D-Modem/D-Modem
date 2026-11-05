@@ -29,7 +29,7 @@ The code is in `core/`. For the full technical description, see
   and then works out whether the caller is a fax machine or a modem, and
   carries on in the right mode.
 - **Records call statistics.** After a call, `ATI11` (or `ATI6`, or
-  `AT&V1`) shows what happened: the speed, the signal quality, how many
+  `AT&V1` in Rockwell's layout) shows what happened: the speed, the signal quality, how many
   times the line had to retrain, and why the call ended. `AT#UD` gives the
   same in the format of Microsoft's Unimodem diagnostics specification
   (`ATZ` clears it), and `AT+TMO` the standard way, as ITU-T V.59's
