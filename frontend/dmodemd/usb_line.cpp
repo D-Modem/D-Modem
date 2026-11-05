@@ -316,9 +316,10 @@ s16 mix(s32 a, s32 b)
 
 } // namespace
 
-/* the device closed (close()) */
+/* see usb_line.h: the SmartUSB56's chip until find() sees another */
 UsbLine::UsbLine(Dte &dte) : dte_(dte), chip_(st7554_chip(*this)) {}
 
+/* the device closed (close()) */
 UsbLine::~UsbLine()
 {
 	close();
@@ -1903,10 +1904,15 @@ const UsbLine::TxCal &UsbLine::Chip::tx_cal() const
    rest on its GPIOs, its FIFOs started once its streams are */
 struct UsbLine::St7554 final : UsbLine::Chip {
 	using Chip::Chip;
+	/* (Chip) in the messages */
 	const char *name() const override { return "SmartUSB56"; }
+	/* (Chip) for ATI3 */
 	const char *model() const override { return "ST7554"; }
+	/* (Chip) in "not the endpoints of ..." */
 	const char *a_name() const override { return "an ST7554"; }
+	/* (Chip) its start-up */
 	bool open(u32 rate) override { return l.open_st7554(rate); }
+	/* (Chip) its transfers started */
 	bool start_streams() override
 	{
 		return l.start_isos() && l.start_fifos();
@@ -1995,6 +2001,7 @@ struct UsbLine::St7554 final : UsbLine::Chip {
 		if (v != l.gpio_)
 			l.set_gpio(v);
 	}
+	/* (Chip) the SmartUSB56's extras */
 	bool smart() const override { return true; }
 	/* its registers and FIFOs again, its wake armed, the handset read */
 	bool resume() override
@@ -2033,13 +2040,18 @@ struct UsbLine::St7554 final : UsbLine::Chip {
    vendor requests, its samples running since its alternate setting 1 */
 struct UsbLine::Stick final : UsbLine::Chip {
 	using Chip::Chip;
+	/* (Chip) in the messages */
 	const char *name() const override { return "pico-serial Line"; }
+	/* (Chip) for ATI3 */
 	const char *model() const override
 	{
 		return "pico-serial Line (Si3056)";
 	}
+	/* (Chip) in "not the endpoints of ..." */
 	const char *a_name() const override { return "a pico-serial Line"; }
+	/* (Chip) its start-up */
 	bool open(u32 rate) override { return l.open_stick(rate); }
+	/* (Chip) its interrupt transfer's octets */
 	void event(const u8 *b, s16 len) override { l.stick_event(b, len); }
 	/* the line monitor on while on hook (rings and caller ID heard),
 	   off off hook, as an ALSA codec's "Caller ID Switch"; the
@@ -2053,7 +2065,9 @@ struct UsbLine::Stick final : UsbLine::Chip {
 			 l.stick_out(LP_SET_MONITOR, 1) &&
 			 (!l.daa_due_ || l.stick_country()) ? 0 : -1);
 	}
+	/* (Chip) the hook switch off hook or on */
 	void hook(bool off) override { l.stick_out(LP_SET_HOOK, off); }
+	/* (Chip) pulse dialling's break or make */
 	s16 pulse(bool broken) override
 	{
 		return l.stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
@@ -2065,6 +2079,7 @@ struct UsbLine::Stick final : UsbLine::Chip {
 			    static_cast<u16>(ms < 1 ? 1 : ms > 2000 ? 2000 : ms));
 		return true;
 	}
+	/* (Chip) the country's line settings, on hook */
 	void country() override { l.stick_country(); }
 	/* on hook, the samples stopped (alternate setting 0) */
 	void close() override
@@ -2079,11 +2094,13 @@ struct UsbLine::Stick final : UsbLine::Chip {
 	}
 };
 
+/* the SmartUSB56 */
 std::unique_ptr<UsbLine::Chip> UsbLine::st7554_chip(UsbLine &l)
 {
 	return std::make_unique<St7554>(l);
 }
 
+/* the pico-serial Line */
 std::unique_ptr<UsbLine::Chip> UsbLine::stick_chip(UsbLine &l)
 {
 	return std::make_unique<Stick>(l);

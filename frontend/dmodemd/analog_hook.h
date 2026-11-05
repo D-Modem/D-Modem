@@ -56,6 +56,7 @@ public:
 protected:
 	~AnalogHook() = default;
 
+	/* off hook, as the core has it */
 	bool off_hook() const { return hook_ == MODEM_HOOK_OFF; }
 	/* the core's hook state (set_hook()): a flash under way forgotten */
 	void hook_state(s16 state)
@@ -85,6 +86,7 @@ protected:
 	u32 rate_ = 9600;
 
 private:
+	/* the host */
 	H &self() { return static_cast<H &>(*this); }
 
 	u64 flash_end_ = 0;             /* samples_ the flash ends at, or 0 */

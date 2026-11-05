@@ -284,6 +284,7 @@ private:
 	   Apple in usb_apple.cpp), the device found by find(); its state
 	   the UsbLine's (l) */
 	struct Chip {
+		/* the chip of line */
 		explicit Chip(UsbLine &line) : l(line) {}
 		virtual ~Chip() = default;
 		Chip(const Chip &) = delete;
@@ -294,9 +295,10 @@ private:
 		virtual const char *a_name() const = 0;
 		/* the rate it runs at, rate asked for */
 		virtual u32 rate(u32 asked) { return asked; }
-		/* its start-up, its interface claimed; its transfers started
-		   (start_isos()'s) */
+		/* its start-up, its interface claimed */
 		virtual bool open(u32 rate) = 0;
+		/* its transfers started (start_isos()'s, and on the SmartUSB56
+		   its FIFOs) */
 		virtual bool start_streams() { return l.start_isos(); }
 		/* its interrupt transfer's len octets */
 		virtual void event(const u8 *b, s16 len) = 0;
@@ -306,7 +308,10 @@ private:
 		/* AnalogHook's hw_hook(), hw_pulse() and hw_flash() */
 		virtual void hook(bool off) = 0;
 		virtual s16 pulse(bool broken) = 0;
+		/* a hook flash the device makes itself, or cannot make: true
+		   (none timed by AnalogHook) */
 		virtual bool flash(u16 ms) { (void)ms; return false; }
+		/* a hook flash it can make */
 		virtual bool can_flash() const { return true; }
 		/* the country's line settings now, on hook (country()'s) */
 		virtual void country() {}
@@ -320,12 +325,14 @@ private:
 		/* its own transfers (the Agere's): an OUT one filled; one sent
 		   (on s); an IN one come; true if it took it */
 		virtual bool fill_out(libusb_transfer *t) { (void)t; return false; }
+		/* an OUT transfer sent */
 		virtual bool out_sent(Iso &s, libusb_transfer *t)
 		{
 			(void)s;
 			(void)t;
 			return false;
 		}
+		/* an IN transfer come */
 		virtual bool in_come(libusb_transfer *t) { (void)t; return false; }
 		/* after a pump's frames, used of the line's samples taken */
 		virtual void pumped(size_t used) { (void)used; }
@@ -335,6 +342,7 @@ private:
 		virtual const TxCal &tx_cal() const;
 		/* close()'s: before its transfers are cancelled; after */
 		virtual void stop() {}
+		/* after its transfers are freed */
 		virtual void close() {}
 
 		UsbLine &l;

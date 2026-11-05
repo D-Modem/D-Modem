@@ -1178,8 +1178,11 @@ void UsbLine::agere_rate_check()
    samples come), its hook, ring and LED through its codec and GPIOs */
 struct UsbLine::Agere final : UsbLine::Chip {
 	using Chip::Chip;
+	/* (Chip) in the messages */
 	const char *name() const override { return "Agere USB modem"; }
+	/* (Chip) for ATI3 */
 	const char *model() const override { return "Agere USB 2.0 (Mercury)"; }
+	/* (Chip) in "not the endpoints of ..." */
 	const char *a_name() const override { return "an Agere USB modem"; }
 	/* its samples are at 8000 Hz */
 	u32 rate(u32 asked) override
@@ -1189,7 +1192,9 @@ struct UsbLine::Agere final : UsbLine::Chip {
 			    ")\n", asked);
 		return 8000;
 	}
+	/* (Chip) its start-up */
 	bool open(u32) override { return l.open_agere(); }
+	/* (Chip) its transfers started */
 	bool start_streams() override { return l.agere_streams(); }
 	/* (no interrupt endpoint) */
 	void event(const u8 *, s16) override {}
@@ -1204,14 +1209,18 @@ struct UsbLine::Agere final : UsbLine::Chip {
 			l.agere_onhook_ms_ = sys_ms();
 		return l.agere_hook(off) && l.agere_caller_id(!off) ? 0 : -1;
 	}
+	/* (Chip) the hook switch off hook or on */
 	void hook(bool off) override { l.agere_hook(off); }
+	/* (Chip) pulse dialling's break or make */
 	s16 pulse(bool broken) override
 	{
 		return l.agere_hook(!broken) ? 0 : -1;
 	}
+	/* (Chip) its LEDs */
 	void leds(dcore::Modem &m) override { l.agere_leds(m); }
 	/* its stream may have gone with a reset */
 	bool resume() override { return l.agere_table() && l.agere_start(); }
+	/* (Chip) an OUT transfer filled */
 	bool fill_out(libusb_transfer *t) override
 	{
 		l.agere_fill(t);
@@ -1241,6 +1250,7 @@ struct UsbLine::Agere final : UsbLine::Chip {
 		l.agere_send(t);
 		return true;
 	}
+	/* (Chip) an IN transfer come */
 	bool in_come(libusb_transfer *t) override
 	{
 		l.agere_in(t);
@@ -1299,6 +1309,7 @@ struct UsbLine::Agere final : UsbLine::Chip {
 	}
 };
 
+/* the Agere modem */
 std::unique_ptr<UsbLine::Chip> UsbLine::agere_chip(UsbLine &l)
 {
 	return std::make_unique<Agere>(l);

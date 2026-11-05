@@ -624,10 +624,15 @@ void UsbLine::apple_close()
    running since its streams' alternate settings */
 struct UsbLine::Apple final : UsbLine::Chip {
 	using Chip::Chip;
+	/* (Chip) in the messages */
 	const char *name() const override { return "Apple USB Modem"; }
+	/* (Chip) for ATI3 */
 	const char *model() const override { return "Apple USB Modem (Si3056)"; }
+	/* (Chip) in "not the endpoints of ..." */
 	const char *a_name() const override { return "an Apple USB Modem"; }
+	/* (Chip) its start-up */
 	bool open(u32 rate) override { return l.open_apple(rate); }
+	/* (Chip) its interrupt transfer's octets */
 	void event(const u8 *b, s16 len) override { l.apple_event(b, len); }
 	/* the line monitor on, on hook, and the country's settings if
 	   due */
@@ -638,7 +643,9 @@ struct UsbLine::Apple final : UsbLine::Chip {
 			(l.apple_hook(false) && l.apple_monitor(true) &&
 			 (!l.daa_due_ || l.apple_country()) ? 0 : -1);
 	}
+	/* (Chip) the hook switch off hook or on */
 	void hook(bool off) override { l.apple_hook(off); }
+	/* (Chip) pulse dialling's break or make */
 	s16 pulse(bool broken) override
 	{
 		return l.apple_hook(!broken) ? 0 : -1;
@@ -659,6 +666,7 @@ struct UsbLine::Apple final : UsbLine::Chip {
 	void close() override { l.apple_close(); }
 };
 
+/* the Apple USB Modem */
 std::unique_ptr<UsbLine::Chip> UsbLine::apple_chip(UsbLine &l)
 {
 	return std::make_unique<Apple>(l);
