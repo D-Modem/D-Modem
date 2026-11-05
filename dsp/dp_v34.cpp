@@ -830,6 +830,10 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	s16 v90;                /* offer V.90 as the digital modem */
 	s16 pcm;                /* V.90 agreed in V.8 */
 	s16 v91;                /* offer V.91 */
+	s16 vfc;                /* +MS=VFC: V.FC's data mode where both
+				   MPs ask for it (bit 34), V.34's start-up
+				   before it (vfc_data.cpp) */
+	s16 vfc_on;             /* in this data mode */
 	s16 vcvm;               /* offer V.cvm (its information field in
 				   CM / JM's non-standard facilities),
 				   with V.22 and V.21 for the fallback */
@@ -3967,6 +3971,18 @@ static s16 v34_pick_rate(s16 baud, s16 max, s16 mask)
 	return 0;
 }
 
+/* V.FC's rate at symbol rate baud: the fastest up to V.34's n (14400
+   and up) that V.FC has there and the masks allow; 0 if none */
+static s16 vfc_pick_rate(s16 baud, s16 n, s16 mask)
+{
+	if (n > vfc_max_n(baud))
+		n = vfc_max_n(baud);
+	for (; n >= 6; n--)
+		if ((mask >> (n - 1)) & 1)
+			return n;
+	return 0;
+}
+
 /* the call's statistics (ATI11) while connected: each direction's
    symbol rate and carrier (PCM's 8000 and none), the receiver's carrier
    and clock offsets (a V.34 receiver's, in data mode), the network's
@@ -4066,6 +4082,30 @@ s16 V34Pump::data_setup()
 		r->rate_ca, r->rate_ac, l->asym, r->asym, r->nonlinear);
 	ntx = v34_pick_rate(ptx.baud, caller ? ca : ac, mask);
 	nrx = v34_pick_rate(prx.baud, caller ? ac : ca, mask);
+	vfc_on = 0;
+	if (l->vfc && r->vfc) {
+		s16 vt = vfc_pick_rate(ptx.baud, ntx, mask),
+		    vr = vfc_pick_rate(prx.baud, nrx, mask);
+		if (vt && vr && !p.vfc_init(ptx.baud, vt, r->trellis ? 32 : 8)) {
+			/* (each MP asks for the other's code: 16 states for
+			   V.FC's 8, more for its 32) */
+			ptx.start_data(&p, CoreBits{ modem });
+			rate_tx = p.rate;
+			stat_coding(false, p.states, 0, 0, 0);
+			p.vfc_init(prx.baud, vr, l->trellis ? 32 : 8);
+			prx.start_data(&p, CoreBits{ modem });
+			rate_rx = p.rate;
+			stat_coding(true, p.states, 0, 0, 0);
+			vfc_on = 1;
+			aux_on = 0;
+			DSP_DBG("v34: V.FC data mode: tx %" PRId32 " rx %" PRId32
+				", %d and %d states\n", rate_tx, rate_rx,
+				r->trellis ? 32 : 8, l->trellis ? 32 : 8);
+			return 0;
+		}
+		DSP_DBG("v34: V.FC has no rate here (V.34's %d and %d): "
+			"V.34's data mode\n", ntx, nrx);
+	}
 	if (!ntx || !nrx || r->trellis > 2 || l->trellis > 2 ||
 	    p.init(ptx.baud, ntx, r->expanded, aux))
 		return -1;
@@ -4148,6 +4188,7 @@ void V34Pump::mp_start()
 	mp->aux = aux_req && !pcm ? 1 : 0;
 	mp->rate_mask = 0x3FFF;
 	mp->asym = 1;
+	mp->vfc = vfc && !pcm ? 1 : 0;
 	/* a cleardown: no rates either way (11.7/V.34) */
 	if (clearing || remote_clears()) {
 		mp->rate_ca = mp->rate_ac = 0;
@@ -7132,7 +7173,7 @@ s16 V34Pump::handshake()
 				DSP_DBG("v34 tx: on the remote's clock (loop "
 					"timing), ours %+.0f ppm off it\n",
 					1e6 * tx_clk / ptx.qam.sps);
-			stat_dp(DP_V34);
+			stat_dp(vfc_on ? DP_VFC : DP_V34);
 			return DPSTAT_CONNECT;
 		}
 		break;
@@ -7625,6 +7666,8 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	/* V.cvm (+MS=VCVM): its field after +CVM's mode set, the pump
 	   at 8000 Hz (a 9600 Hz line through converters) */
 	vcvm = id == DP_VCVM;
+	vfc = id == DP_VFC;
+	vfc_on = 0;
 	{
 		intptr_t v = modem_get_param(m, MDMPRM_VCVM);
 		const struct dp_vcvm *vi = v == -1 || v == 0 ? nullptr :

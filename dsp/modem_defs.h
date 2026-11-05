@@ -207,6 +207,11 @@ enum DP_ID {
 	DP_HST      = 168,      /* USRobotics HST: 4800 to 16800 bit/s one
 				   way, 300 back (dp_hst.cpp); not in V.250,
 				   the number is D-Modem's */
+	DP_VFC      = 128,      /* Rockwell's V.FC: its data mode (from the
+				   Courier's firmware) after V.34's
+				   start-up, D-Modem to D-Modem
+				   (vfc_data.cpp); not in V.250, the
+				   number is D-Modem's */
 	DP_V32TERBO = 232,      /* V.32terbo: V.32bis and 16800, 19200
 				   bit/s (dp_v32.cpp); not in V.250, the
 				   number is D-Modem's */
