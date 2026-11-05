@@ -93,7 +93,7 @@ static std::vector<std::string> lines(const std::string &s)
 	return v;
 }
 
-/* an ATI11 (or AT#UD, or +TMO) line's measurement: its field and value; false if
+/* an ATI11 (or AT&V1, AT#UD, or +TMO) line's measurement: its field and value; false if
    line is not one of them */
 static bool measurement(const std::string &line, std::string *field,
 			double *value)
@@ -107,6 +107,9 @@ static bool measurement(const std::string &line, std::string *field,
 		"Receive Frame Error Count",
 		"Carrier Frequency Offset (Hz)",
 		"Timing Offset (ppm)",
+		/* AT&V1's (Rockwell's): the NMSE x 128, and -dBm0 */
+		"Line QUALITY................",
+		"Rx LEVEL....................",
 	};
 	/* AT#UD's levels (hexadecimal -dBm, dB) and receive frame errors:
 	   as ATI11's ("Error Count" for the errors) */
