@@ -61,6 +61,7 @@
 #include "bits.h"
 #include "pump.h"
 #include "qam.h"
+#include "rate_table.h"
 #include "v61_audio.h"
 
 namespace dsp {
@@ -103,7 +104,7 @@ namespace dsp {
 
 struct v61_rate {
 	s32 bps;
-	u16 bit;
+	u16 bits;
 	s16 nbits;
 };
 
@@ -373,7 +374,7 @@ struct V61Pump : PumpBase<V61Pump, v61_state> {
 static const struct v61_rate *rate_of_word(u16 w)
 {
 	for (s16 i = 0; i < V61_NRATES; i++)
-		if (w & v61_rates[i].bit)
+		if (w & v61_rates[i].bits)
 			return &v61_rates[i];
 	return nullptr;
 }
@@ -1176,24 +1177,17 @@ void V61Pump::retrain(bool remote)
 	set_state(caller ? C_G : A_F);
 }
 
-/* (see the table) the data mse past which the receiver at rate r has
-   lost its equalization: 4 dB short of its SNR (4800: 7 dB) */
+/* the data mse past which the receiver at rate r has lost its
+   equalization (rate_lost_limit()) */
 float V61Pump::lost_limit(const struct v61_rate *r)
 {
-	s16 i = static_cast<s16>(r - v61_rates);
-	float snr = v61_min_snr[i] > 0 ? v61_min_snr[i] - 4 : 7;
-	return powf(10, -snr / 10);
+	return rate_lost_limit(v61_rates, v61_min_snr, r);
 }
 
 /* the rates our receiver can take, judged on the training */
 u16 V61Pump::quality_caps()
 {
-	float snr = -10 * log10f(rx_mse + 1e-6f);
-	u16 c = 0;
-	for (s16 i = 0; i < V61_NRATES; i++)
-		if (snr >= v61_min_snr[i])
-			c |= v61_rates[i].bit;
-	return caps & (c | RB_4800);
+	return caps & (rate_caps(v61_rates, v61_min_snr, rx_mse) | RB_4800);
 }
 
 /* once a symbol, before it is made (every sample in the answer tone) */
@@ -1339,7 +1333,7 @@ s16 V61Pump::handshake()
 					    W3(1));
 			} else if (state == A_TRAIN2) {
 				set_state(A_R3);
-				start_words(TXM_R, W1(tx_rate->bit),
+				start_words(TXM_R, W1(tx_rate->bits),
 					    W2(tx_ad_on), W3(1));
 				ev_e = 0;
 			} else {
@@ -1378,7 +1372,7 @@ s16 V61Pump::handshake()
 	case A_R3:
 		if (ev_e && tx_word_bit == 0) {
 			set_state(A_E);
-			start_words(TXM_E, W1(tx_rate->bit) | RB_HEADER, 0, 0);
+			start_words(TXM_E, W1(tx_rate->bits) | RB_HEADER, 0, 0);
 		}
 		break;
 	case A_E:
@@ -1495,13 +1489,13 @@ s16 V61Pump::handshake()
 			ev_r = 0;
 			r = rate_of_word(r_words[0] & r2_caps);
 			if (!r || !ev_s ||
-			    (r_words[0] & RB_RATES) != r->bit)
+			    (r_words[0] & RB_RATES) != r->bits)
 				break;
 			tx_rate = r;
 			tx_ad_on = voice_ok && (r_words[1] & RB_AD);
 			tx_silence_ok = (r_words[2] & RB_SILENCE) != 0;
 			set_state(C_E);
-			start_words(TXM_E, W1(r->bit) | RB_HEADER, 0, 0);
+			start_words(TXM_E, W1(r->bits) | RB_HEADER, 0, 0);
 		}
 		break;
 
@@ -1584,7 +1578,7 @@ s16 V61Pump::start(struct modem *m, enum DP_ID, s16 caller_, s32 srate_,
 			continue;
 		if (min_rate > 0 && r->bps < min_rate)
 			continue;
-		caps |= r->bit;
+		caps |= r->bits;
 	}
 	if (!caps)
 		caps = RB_4800;
