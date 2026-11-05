@@ -21,12 +21,14 @@
  *              bit/s; scrambled with 1 + x^-14 + x^-17
  *
  *    The forward channel's training is the Courier's: 72 symbols
- *    alternating between two of the 4800 points, then scrambled 4800
- *    symbols whose input is the previous output (a fixed sequence from
- *    the seed 0x001f7310), then 16 symbols at the data rate (24 at
- *    12000 and up), whose input is again the previous output, then the
- *    data.  The back channel's is 17 symbols of the same kind.  Both are
- *    known sequences: the receivers train on them.
+ *    alternating between two of the 4800 points, then scrambled ones at
+ *    4800 bit/s (a fixed sequence from the seed 0x001f7310), then 16
+ *    symbols of scrambled ones at the data rate (24 at 12000 and up),
+ *    then the data.  The back channel's is 17 symbols of scrambled ones.
+ *    Both are known sequences: the receivers train on them.  All of it
+ *    was checked against the Courier's own DSP firmware, run in an
+ *    emulator: either side of this pump against the Courier's other side
+ *    connects at 4800 to 16800 bit/s.
  *
  *    A Courier's call starts at 2400 bit/s (V.22bis): both offer HST and
  *    its rates in V.42's XID, and then leave V.22bis for HST at the rate
@@ -86,6 +88,8 @@ namespace dsp {
 #define HST_BC_ALPHA    0.2f
 #define HST_BC_SPAN     6
 #define HST_BC_EQ_LEN   4
+#define HST_BC_MU       0.003f  /* its equalizer's step (0.01 drifts off
+				   the Courier's in seconds) */
 #define HST_BC_POWER    0.5f    /* unit points, every other one silent */
 #define HST_BC_RATE     300
 
@@ -99,6 +103,8 @@ namespace dsp {
 #define HST_RATE_SYMS   16
 #define HST_RATE_SYMS_HI 24
 #define HST_REQ_AFTER   1200
+/* the scrambled training is looked for from its first this many symbols */
+#define HST_TRN_FIND    24
 
 /* the back channel's training (symbols, the silent ones counted) */
 #define HST_BC_TRN_SYMS 17
@@ -180,8 +186,6 @@ struct HstFwd {
 	Phase ph;
 	s32 syms;               /* in the phase */
 	HstScr scr;
-	s16 in;                 /* the last symbol's index and its offset,
-				   the next input of the training */
 	s16 last_s;             /* the last scrambled training symbol */
 	s16 idx;                /* the last point's index */
 	s16 rate;               /* hst_rates index */
@@ -192,7 +196,6 @@ struct HstFwd {
 	{
 		ph = ALT;
 		syms = 0;
-		in = 0;
 		idx = 0;
 		last_s = 0;
 		rate = 0;
@@ -226,18 +229,17 @@ struct HstFwd {
 		case ALT:
 			/* points 0 and 2 in turn, 0 first */
 			idx = syms & 1 ? 2 : 0;
-			in = idx + 8;
 			break;
 		case TRN:
-			s = scr.scramble(in & 3, 2);
+			/* ones scrambled: the Courier's symbol engine sets
+			   its input to 0x7f before each symbol (0xca3f) */
+			s = scr.scramble(3, 2);
 			last_s = s;
 			idx = s;
-			in = s + 8;
 			break;
 		case RATE:
 		case DATA:
-			s = scr.scramble(ph == DATA ? bits : in & ((1 << n) - 1),
-					 n);
+			s = scr.scramble(ph == DATA ? bits : (1 << n) - 1, n);
 			if (n == 2) {
 				/* the first symbol's last point is 0, the last
 				   training symbol's first bit in the dibit's
@@ -247,10 +249,8 @@ struct HstFwd {
 						[(s | (last_s & 1) << 1) & 3];
 				else
 					idx = hst_4800_enc[idx][s];
-				in = idx + 8;
 			} else {
 				idx = tenc.encode(s, n);
-				in = idx + (2 << n);
 			}
 			break;
 		}
@@ -346,8 +346,6 @@ struct HstPump : PumpBase<HstPump, hst_state>, QamRxCore<HstPump> {
 	HstScr bc_scr;
 	s32 bc_syms;
 	s16 bc_ph;              /* the last phase (45 degree steps) */
-	s16 bc_in;              /* the last scrambled bits: the training's
-				   next input */
 	u16 req_word;
 	s16 req_bit;
 	/* its receiver (the answerer's) */
@@ -358,6 +356,8 @@ struct HstPump : PumpBase<HstPump, hst_state>, QamRxCore<HstPump> {
 	HstScr bc_dscr;
 	s16 bc_last_k;
 	s16 bc_have_k;
+	float bc_last_p;        /* the last symbol's power */
+	s16 bc_last_zero;       /* and whether it was a silent one */
 	u32 bc_word;            /* the last 32 bits received */
 	s16 bc_on;
 
@@ -457,7 +457,7 @@ s16 HstPump::bc_bits()
 
 /* the back channel's next symbol: a data symbol and a silent one in
    turn (two data symbols in a row as the training ends, as the
-   Courier's); the training's input is its previous output */
+   Courier's); the training is ones scrambled */
 cplx HstPump::bc_symbol()
 {
 	s32 k = bc_syms++;
@@ -466,9 +466,8 @@ cplx HstPump::bc_symbol()
 
 	if (!data)
 		return cplx_make(0, 0);
-	s16 in = k < HST_BC_TRN_SYMS ? bc_in : bc_bits();
-	bc_in = bc_scr.scramble(in, 3);
-	bc_ph = (bc_ph + hst_bc_step[bc_in]) & 7;
+	s16 s = bc_scr.scramble(k < HST_BC_TRN_SYMS ? 7 : bc_bits(), 3);
+	bc_ph = (bc_ph + hst_bc_step[s]) & 7;
 	float a = static_cast<float>(M_PI) * (bc_ph + 0.5f) / 4;
 	return cplx_make(cosf(a), sinf(a));
 }
@@ -652,22 +651,35 @@ void HstPump::rx_symbol()
 			DSP_DBG("hst: the forward channel's training\n");
 		}
 		if (rxp == RX_ALT) {
-			/* the scrambled part: its first 8 symbols */
-			HstFwd m;
+			/* the scrambled part: 8 symbols in a row from its
+			   first HST_TRN_FIND, one of them wrong at most (the
+			   equalizer still settles as the alternation ends) */
+			HstFwd m, at[HST_TRN_FIND + 1];
+			s16 seq[HST_TRN_FIND + 8];
 			m.init();
 			m.syms = HST_ALT_SYMS;
 			m.idx = 2;
-			m.in = 10;
 			m.trn();
-			bool match = true;
-			for (s16 i = 7; i >= 0 && match; i--)
-				match = m.next(0) == dec[i];
-			if (match) {
-				model = m;
+			for (s16 i = 0; i < HST_TRN_FIND + 8; i++) {
+				if (i <= HST_TRN_FIND)
+					at[i] = m;
+				seq[i] = m.next(0);
+			}
+			for (s16 p = 0; p <= HST_TRN_FIND; p++) {
+				s16 miss = 0;
+				for (s16 i = 0; i < 8; i++)
+					miss += seq[p + i] != dec[7 - i];
+				if (miss > 1)
+					continue;
+				model = at[p];
+				for (s16 i = 0; i < 8; i++)
+					model.next(0);
 				rxp = RX_TRN;
-				rx_syms = 0;
+				rx_syms = p;
 				nhist = 0;
-				DSP_DBG("hst: the scrambled training\n");
+				DSP_DBG("hst: the scrambled training, from its "
+					"symbol %d\n", p);
+				break;
 			}
 		}
 		break;
@@ -776,16 +788,24 @@ void HstPump::bc_rx_symbol()
 
 	if (!bc_on) {
 		bc_have_k = 0;
+		bc_last_zero = 1;
 		return;
 	}
-	if (cplx_pow(z) < 0.25f) {
-		bc_rx.adapt(cplx_make(0, 0), 0.01f, 0, 0);
+	/* a silent symbol: never one after another, and clearly weaker
+	   than the data symbol before it (the Courier's keeps some of its
+	   neighbours' energy) */
+	float p = cplx_pow(z);
+	bool zero = !bc_last_zero && (p < 0.25f || p < 0.8f * bc_last_p);
+	bc_last_p = p;
+	bc_last_zero = zero;
+	if (zero) {
+		bc_rx.adapt(cplx_make(0, 0), HST_BC_MU, 0, 0);
 		return;
 	}
 	float a = atan2f(z.im, z.re) / (static_cast<float>(M_PI) / 4) - 0.5f;
 	s16 k = static_cast<s16>(lrintf(a)) & 7;
 	float ad = static_cast<float>(M_PI) * (k + 0.5f) / 4;
-	bc_rx.adapt(cplx_make(cosf(ad), sinf(ad)), 0.01f, 0.1f, 0.001f);
+	bc_rx.adapt(cplx_make(cosf(ad), sinf(ad)), HST_BC_MU, 0.1f, 0.001f);
 	if (bc_have_k) {
 		s16 v = hst_bc_bits[(k - bc_last_k) & 7];
 		s16 d = bc_dscr.descramble(v, 3);
@@ -962,6 +982,8 @@ s16 HstPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 		bc_bp[1].bandpass(HST_BC_CARRIER, 2, srate_);
 		bc_carrier.init(60, 40);
 		bc_dscr.init(0, 17, 3);
+		bc_last_p = 0;
+		bc_last_zero = 1;
 		if (courier) {
 			state = H_GAP;
 		} else if (rt && rt->ans_sent) {
