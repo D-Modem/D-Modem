@@ -84,6 +84,9 @@ const std::map<std::string, const char *> &programs()
 #ifdef HALF_HDA
 		{ "hda", HALF_HDA },
 #endif
+#ifdef HALF_COURIER
+		{ "courier", HALF_COURIER },
+#endif
 	};
 	return p;
 }
@@ -1442,6 +1445,37 @@ std::vector<Call> calls()
 		add("ess", "ess_fax_" + s + "_open_sends", "open8", "ess",
 		    "ATX3")->fax = m;
 	}
+
+	/* --- the USRobotics Courier V.Everything, the whole modem emulated
+	   with its own firmware (half_courier, its line at 8000 Hz): two
+	   Couriers call each other in HST, V.32terbo and V.32bis, and a
+	   Courier calls the open modem (8000 Hz) in V.32bis and V.22bis.
+	   Its S registers choose its modulation: S27=4 no V.32, S34=128 no
+	   V.32terbo, S56=96 no V.34, 224 no V.FC either, S58=33 no x2 or
+	   V.90; &N3 its link at 2400 bit/s.  (Not yet: the open modem's
+	   calls to it, HST with the open modem, and V.FC and V.34, whose
+	   training two Couriers do not finish) */
+	const std::string usr_hst = "ATS27=4S56=224S58=33",
+		usr_v32t = "ATS56=224S58=33",
+		usr_v32 = "ATS34=128S56=224S58=33";
+	for (auto [n, p, r] :
+	     { std::make_tuple("hst", usr_hst, "16800"),
+	       std::make_tuple("v32t", usr_v32t, "21600"),
+	       std::make_tuple("v32", usr_v32, "14400") }) {
+		add("courier", std::string("courier_") + n + "_pair",
+		    "courier", "courier", p,
+		    { "STREAM=5", "COURIER_DEBUG=1",
+		      "EXPECT_A=CONNECT " + std::string(r) + "/ARQ",
+		      "EXPECT_B=CONNECT " + std::string(r) + "/ARQ" });
+	}
+	add("courier", "courier_v32_courier_calls", "courier", "open8",
+	    usr_v32, { "STREAM=5", "COURIER_DEBUG=1",
+		       "PROTO_B=ATX3;AT+MS=V32B",
+		       "EXPECT_A=CONNECT 14400/ARQ" });
+	add("courier", "courier_v22_courier_calls", "courier", "open8",
+	    usr_hst + "&N3", { "STREAM=5", "COURIER_DEBUG=1",
+			       "PROTO_B=ATX3;AT+MS=V22B",
+			       "EXPECT_A=CONNECT 2400/ARQ" });
 
 	/* --- Intel's 537EP soft modem, its line at 9600 Hz (its codec's
 	   rates are 7200 to 16000 Hz, 9600 by default, 72000 / 7 for V.34,

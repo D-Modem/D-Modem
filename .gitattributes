@@ -3,3 +3,5 @@
 # for byte.  The drivers' .inf files stay as they came (CRLF).
 * text=auto eol=lf
 *.inf -text
+# The Courier's firmware and NVRAM images (dsp/test/usr) are binary
+dsp/test/usr/* -text

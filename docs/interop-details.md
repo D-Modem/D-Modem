@@ -13,6 +13,8 @@ modems:
 - Broadcom's and ESS's Windows drivers, on a Windows kernel of our own
   and an emulation of their chips;
 - spandsp's modems;
+- a USRobotics Courier V.Everything, the whole modem emulated with its
+  own firmware;
 - the open modem itself, on an emulated HD-audio modem codec.
 
 [Building and testing](testing-details.md) describes the call driver
@@ -72,6 +74,9 @@ declared as:
 | `i537ep.hpp` | Intel's 537EP modem chip: its registers (plain memory) and DMA rings (`I537ep`) | Intel |
 | `es2838.hpp` | ESS's ES2838 modem chip: its ports, its codec's registers and its sample FIFO (`Es2838`) | ESS |
 | `hda.hpp` | an Intel HD Audio controller: its reset, the immediate command interface, and one input and one output stream on buffer descriptor lists (`HdaController`) | HDA |
+| `i80186.hpp` | an Intel 80186 core: the 8086's instructions and the 80186's, real mode; memory in 4 KiB pages, I/O and the integrated peripherals the harness's (`I80186`) | Courier |
+| `tms320c5x.hpp` | a TI TMS320C5x core, the C51's instruction set and memory map as the Courier has them (`C5x`) | Courier |
+| `courier.hpp` | the whole Courier: the 80C186EB's timers, interrupt controller and serial port, the ASIC (hook, lamps, ring, DIP switches, the DSP's mailbox and data lanes), the NVRAM, the DSP and its codec (`Courier`) | Courier |
 | `si3054_hda.hpp` | a Silicon Labs Si3054 HD-audio modem codec: its root node and modem function group, its registers as nodes 2 to 21, the hook and the line monitor (`Si3054Hda`) | HDA |
 
 Each mixin's members carry its name (`ich_sample()`, `pci_cfg`,
@@ -106,6 +111,7 @@ their owners and are licensed by them, not under this repository's terms
 | Broadcom | `broadcom/BCMSM.sys`, `broadcom/BCMSMwxp.inf` | BCM V.92 56K Modem 3.4.19, Dell's "V.92 Soft Modem (Data Fax) Driver" A05 | 26 Jul 2002, Microsoft linker 7.0 | the hashes in the package's catalog, signed by Microsoft (WHQL, 31 Jul 2002) |
 | ESS | `ess/es56hpi.sys`, `ess/mdmzn.inf` | ESS ES56H-PI modem driver 5.43.070 (`ess54370.exe`, for Windows 98 to XP) | 24 Mar 2003, Microsoft linker 5.12 | the hashes in the package's catalog, signed by Microsoft (WHQL, 2 Apr 2003) |
 | spandsp | (the system's libspandsp) | spandsp 0.0.6 (release 20110122) | | |
+| Courier | `usr/IDSDL302.ROM`, `usr/c51-mask.rom`, `usr/courier-nvram.bin` | ID_SDL v3.02 (USRobotics supervisor 7.3.14, DSP 3.0.13) | 13 Mar 1998 (USRobotics), 6 Jun 1998 (ID_SDL) | none to be had (below) |
 
 The files' SHA-256 hashes, and what each was compared with:
 
@@ -1396,6 +1402,74 @@ does the Agere answerer's at 6 alignments of 8). Our answerer now
 reverses 38 symbols after its detector's detection (which is 26 symbols
 late), as our caller does its CC. It also sends AC until the caller's
 tone drops (16 symbols of silence, then S), not for 256 symbols.
+
+## Against the USRobotics Courier (emulated)
+
+The Courier V.Everything is a desktop modem of the 1990s that does its
+work on its own processors, so there is no driver to run: `half_courier`
+emulates the whole board and runs USRobotics' firmware on it.
+
+- **The board.** An Intel 80C186EB at 20.16 MHz runs the supervisor
+  (the AT commands, V.42 and MNP, HST's link, the start-ups) out of a
+  512 KiB flash; a TI TMS320C51 runs the data pumps, downloaded by the
+  supervisor from the same flash (a resident image and overlays: V.34,
+  V.FC); an ASIC joins them (a mailbox and six data lanes) and drives
+  the hook, the lamps and the DTE's lines; a 93C66 holds the profile.
+  `hw/courier.hpp` models them as the firmware uses them;
+  `hw/i80186.hpp` and `hw/tms320c5x.hpp` are the two cores.
+- **Time.** The codec's samples drive everything: each sample the
+  80186 runs 3.4 M instructions a second's share, its timers 5.04 MHz's,
+  and the DSP up to 20.16 M instructions a second's, until its main loop
+  is through. The DSP sets the codec's rate (7200 to 10266.67 Hz);
+  `CodecLine` resamples to the line's 8000 Hz (`COURIER_RATE`).
+- **Short cuts.** The supervisor's downloads to the DSP (through the
+  C51's loader, in its mask ROM) are done by copying the image straight
+  into the DSP's memory.
+- **The files.** `IDSDL302.ROM` is ID_SDL v3.02, a widely circulated
+  patch of USRobotics' supervisor 7.3.14 and DSP 3.0.13 for the 20.16
+  MHz external Courier; `c51-mask.rom` the C51's on-chip ROM, read out
+  of such a board (its first 2 K words are used). Neither has a release
+  to compare against. `courier-nvram.bin` is the firmware's own `AT&F`
+  and `AT&W` (with `ATQ0 V1 X1 &H1 &R2`) on an erased part, plus the
+  six settings records (words 94 to 102) that enable V.FC, V.34, x2 and
+  V.90, which `ATI7` then lists.
+  - `IDSDL302.ROM`:
+    `49f4182cc961aef983ff43468b7b7e55c03205c9dba80e9689fe20aa6ff2ccc5`.
+  - `c51-mask.rom`:
+    `d57bc46e1bcd6d4dc8872b97bba2d98ba8fb6b8661440c566b534f0b3f82fac9`.
+  - `courier-nvram.bin`:
+    `4b21d145baffed2a686c3597845fd0eac1aa13ca7ec5b88391151940d5de63d9`.
+- **Settings.** The DIP switches are `COURIER_DIPS` (3, 5 and 8 on:
+  result codes, no auto answer, AT commands). The Courier's modulation
+  is chosen with its own S registers: S27=4 no V.32, S34=128 no
+  V.32terbo, S54=128 no V.8, S56=96 no V.34, 224 no V.FC either,
+  S58=33 no x2 or V.90; `&N3` fixes the link at 2400 bit/s.
+  `COURIER_DEBUG` (1 to 3) logs the DTE's traffic, the hook, the codec's
+  rate and the mailbox's messages; `COURIER_DUMP` writes the codec's
+  samples.
+
+The calls (label `courier`):
+
+| Test | Calls | Result |
+|---|---|---|
+| `courier_hst_pair` | Courier to Courier, HST | 16800/ARQ |
+| `courier_v32t_pair` | Courier to Courier, V.32terbo | 21600/ARQ |
+| `courier_v32_pair` | Courier to Courier, V.32bis | 14400/ARQ |
+| `courier_v32_courier_calls` | Courier to the open modem, V.32bis | 14400, V.42 |
+| `courier_v22_courier_calls` | Courier to the open modem, V.22bis | 2400, V.42 |
+
+Not yet:
+
+- **The open modem calling a Courier.** The open modem, calling, leaves
+  out V.42's detection phase and sends its flags at once; the Courier
+  answering waits for ODPs, and the call ends up without V.42.
+- **HST with the open modem.** Both switch from V.22bis to HST after
+  the XID, but the open modem does not receive the Courier's back
+  channel.
+- **V.FC and V.34.** Between two Couriers both start (the overlay
+  loaded, line probing at 10266.67 Hz), but training does not finish,
+  and they retrain over and over: the emulation is short of something
+  there.
 
 ## The open modem on an HD-audio modem codec
 
