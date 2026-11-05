@@ -15,10 +15,11 @@ channels are those of a real Courier, bit for bit as far as the firmware
 has been read. Its start-up follows a recorded call to a real Courier
 and the Courier's own firmware: the call connects at 2400 bit/s
 (V.22bis), both modems offer HST in V.42's set-up, and they then
-retrain in HST. Two D-Modems connect to each other this way. It has not
-been tried against a real Courier yet, and the HST training right after
-the switch is read from the firmware alone, since the recording stops
-there.
+retrain in HST. Two D-Modems connect to each other this way. The HST
+part, which the recording does not reach, was checked against the
+Courier's DSP firmware itself, run in an emulator: D-Modem connects to
+it as caller and as answerer at 4800 to 16800 bit/s. It has not been
+tried against a real Courier yet.
 
 ## Using it
 

@@ -46,11 +46,14 @@ Training, in symbols:
 
 1. 72 symbols alternating between 4800's points 0 and 2,
 2. 200 scrambled 4800 bit/s symbols (3096 for 12000 bit/s and up),
-   whose scrambler input is its own last output,
-3. 16 symbols (24 for 12000 and up) at the data rate, whose input is
-   the last point's index plus an offset (8 when a symbol carries 2
-   bits, 2 << n for n bits), cut to n bits,
+   whose scrambler input is ones,
+3. 16 symbols (24 for 12000 and up) of scrambled ones at the data rate,
 4. then data.
+
+The input is ones because the DSP's symbol engine sets it to 0x7f
+before each symbol (resident 0xca3f) and the training's handlers keep
+the n bits they need of it. (The point's table index, which the same
+handlers leave in that word, is overwritten before the next symbol.)
 
 The firmware's script starts with 180 symbols of silence, which D-Modem
 leaves out. The first rate symbol at 4800 is coded from the last
@@ -62,10 +65,16 @@ at 0.
 
 Differential 8-PSK on a 350 Hz carrier at 200 baud, points at 22.5 +
 45k degrees. The phase step for three bits 0 to 7 is 1 6 2 5 0 7 3 4
-(times 45 degrees). In data mode a data symbol and a step of zero
-alternate, so it carries 300 bit/s. Its scrambler is 1 + x^-14 + x^-17,
-seeded with 0x0001fd28. Its training is 17 symbols whose scrambler input
-is its own last output, ending with two data symbols in a row.
+(times 45 degrees). In data mode a data symbol and a silent one (I = Q
+= 0) alternate, so it carries 300 bit/s. Its scrambler is 1 + x^-14 +
+x^-17, seeded with 0x0001fd28. Its training is 17 symbols of scrambled
+ones, ending with two data symbols in a row.
+
+The Courier's silent symbols still carry about a fifth of a data
+symbol's energy at the receiver's sampling instant (its pulse is
+narrower in frequency than D-Modem's), so the receiver tells them apart
+by comparison: a silent symbol never follows another and is clearly
+weaker than the data symbol before it.
 
 The firmware also has a 450 bit/s back channel (375 Hz at 300 baud);
 D-Modem does not.
@@ -157,4 +166,26 @@ synchronous bits.
 - HST's own link layer (the Courier's error control when it is not
   using V.42 or MNP).
 - The 450 bit/s back channel.
-- A test against the Courier's firmware itself (courier-emu runs it).
+- 16800 bit/s from a Courier to a D-Modem caller has bursts of errors
+  in its first second of data (see below).
+
+## Checked against the Courier's firmware
+
+The Courier's DSP firmware (IDSDL302's resident bank and the C5x's mask
+ROM) was run in an emulator of my own, outside this repository, with
+the supervisor's DSP commands scripted the way the HST code at 0x4037
+and 0x10e70 sends them (tags 0x1e, 0x39, then 0x32 on the caller and
+0x33 on the answerer). Two emulated Couriers connect to each other;
+then each side was replaced by D-Modem's pump at 7200 Hz, the
+firmware's sample rate:
+
+| D-Modem | Rate | D-Modem receives | the Courier receives |
+|---|---|---|---|
+| caller | 4800, 9600 | no errors | no errors |
+| caller | 16800 | errors in bursts for about a second, then none | no errors |
+| answerer | 4800, 9600, 16800 | no errors | no errors |
+
+This found the trainings' scrambler input (ones, above) and the back
+channel's silent symbols, and that the caller has to tolerate a wrong
+decision as the alternation ends (it looks for 8 symbols of the
+scrambled part with one wrong at most, from its first 24).
