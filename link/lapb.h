@@ -30,6 +30,7 @@
 #define DMODEM_LINK_LAPB_H
 
 
+#include "backlog.h"
 #include "dm_types.h"
 #include "hdlc.h"
 
@@ -126,8 +127,7 @@ private:
 	Frame ctrl_frame_[CTRL_FRAMES];
 	u8 ctrl_buf_[CTRL_FRAMES][4];
 	/* received characters the DTE has not taken */
-	s16 rx_count_ = 0, rx_head_ = 0;
-	u8 rx_buf_[LAPB_RX_INFO];
+	DteBacklog<LAPB_RX_INFO> backlog_;
 };
 
 } // namespace dlink

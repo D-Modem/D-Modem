@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "dm_types.h"
+#include "fax_hdlc.h"
 #include "lsq.h"
 #include "pump.h"
 #include "v34.h"

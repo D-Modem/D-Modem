@@ -21,6 +21,7 @@
 #define DMODEM_LINK_MNP_H
 
 
+#include "backlog.h"
 #include "dm_types.h"
 #include "hdlc.h"
 
@@ -206,8 +207,7 @@ private:
 	bool lna_due_ = false;
 	u8 lna_nr_ = 0;
 	/* received characters the DTE has not taken */
-	s16 rx_count_ = 0, rx_head_ = 0;
-	u8 rx_buf_[MNP_MAX_INFO];
+	DteBacklog<MNP_MAX_INFO> backlog_;
 	/* the call's LTs: sent, sent again, received in sequence */
 	s32 lt_sent_ = 0, lt_again_ = 0, lt_rcvd_ = 0;
 	/* the control frame being sent, the LT frames */

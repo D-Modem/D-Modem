@@ -94,43 +94,85 @@ s16 fax_mod_from_code(u32 code, enum fax_mod *mod, s16 *short_train)
 	return 1;
 }
 
+/* what a modulation is: its family, rates, levels and constellation */
+enum fax_family { FF_NONE, FF_V21, FF_V27, FF_V26, FF_V29, FF_V17 };
+struct FaxModInfo {
+	enum fax_family family;
+	s32 bps;                /* the data rate, bit/s */
+	float rms;              /* the transmit level, rms (16 bit units) */
+	s16 bits;               /* data bits per symbol (V.17: those into
+				   the trellis encoder, which adds one) */
+	float power;            /* the data constellation's mean power */
+	float data_power;       /* the data symbols': V.17's at 14400 and
+				   12000 a little more than its training's
+				   (A, B, C and D, power) */
+	float baud;             /* the symbol rate */
+	float carrier;          /* Hz */
+	float alpha;            /* the raised cosine's roll-off */
+	const cplx *v17;        /* V.17's constellation (V.32's trellis
+				   coded ones) */
+	s16 v29;                /* where a V.29 rate's points are in
+				   v29_abab[] and v29_cdcd[] */
+};
+
+/* by enum fax_mod */
+static const FaxModInfo fax_mods[] = {
+	/* FM_NONE, FM_V21 */
+	{ FF_NONE, 0, 3920, 1, 9, 9, 2400, 1800, 0.5f, v32_points_14400, 4 },
+	{ FF_V21, 300, 4096, 1, 9, 9, 2400, 1800, 0.5f, v32_points_14400, 4 },
+	/* FM_V27_2400, FM_V27_4800 */
+	{ FF_V27, 2400, 3333, 2, 2, 2, 1200, 1800, 0.5f, v32_points_14400, 4 },
+	{ FF_V27, 4800, 3333, 3, 2, 2, 1600, 1800, 0.5f, v32_points_14400, 4 },
+	/* FM_V29_4800 .. FM_V29_9600 */
+	{ FF_V29, 4800, 3446, 2, 9, 9, 2400, 1700, 0.5f, v32_points_14400, 4 },
+	{ FF_V29, 7200, 3446, 3, 5.5f, 5.5f, 2400, 1700, 0.5f,
+	  v32_points_14400, 2 },
+	{ FF_V29, 9600, 3446, 4, 13.5f, 13.5f, 2400, 1700, 0.5f,
+	  v32_points_14400, 0 },
+	/* FM_V17_7200 .. FM_V17_14400 */
+	{ FF_V17, 7200, 3920, 3, 40, 40, 2400, 1800, 0.25f,
+	  v32_points_7200, 4 },
+	{ FF_V17, 9600, 3920, 4, 40, 40, 2400, 1800, 0.25f,
+	  v32_points_9600, 4 },
+	{ FF_V17, 12000, 3920, 5, 40, 42, 2400, 1800, 0.25f,
+	  v32_points_12000, 4 },
+	{ FF_V17, 14400, 3920, 6, 40, 41, 2400, 1800, 0.25f,
+	  v32_points_14400, 4 },
+	/* FM_V26_A, FM_V26_B */
+	{ FF_V26, 2400, 3333, 2, 2, 2, 1200, 1800, 0.5f, v32_points_14400, 4 },
+	{ FF_V26, 2400, 3333, 2, 2, 2, 1200, 1800, 0.5f, v32_points_14400, 4 },
+};
+static_assert(sizeof(fax_mods) / sizeof(fax_mods[0]) == FM_V26_B + 1,
+	      "a row for each fax_mod");
+
+/* modulation m's row */
+static const FaxModInfo &info(enum fax_mod m)
+{
+	return fax_mods[m];
+}
+
 /* the data rate of a modulation, bit/s */
 s32 fax_mod_bps(enum fax_mod mod)
 {
-	static const s32 bps[] = { 0, 300, 2400, 4800, 4800, 7200, 9600,
-				       7200, 9600, 12000, 14400, 2400, 2400 };
-	return bps[mod];
+	return info(mod).bps;
 }
 
 /* the transmit level of a modulation, rms in 16 bit sample units */
 float fax_tx_rms(enum fax_mod mod)
 {
-	switch (mod) {
-	case FM_V21:       return 4096;
-	case FM_V27_2400:
-	case FM_V27_4800:
-	case FM_V26_A:
-	case FM_V26_B:     return 3333;
-	case FM_V29_4800:
-	case FM_V29_7200:
-	case FM_V29_9600:  return 3446;
-	default:           return 3920;     /* V.17 */
-	}
+	return info(mod).rms;
 }
 
 /* the modulation families */
-static s16 is_v17(enum fax_mod m)
-{
-	return m >= FM_V17_7200 && m <= FM_V17_14400;
-}
+static s16 is_v17(enum fax_mod m) { return info(m).family == FF_V17; }
 /* (see is_v17()) */
-static s16 is_v29(enum fax_mod m) { return m >= FM_V29_4800 && m <= FM_V29_9600; }
+static s16 is_v29(enum fax_mod m) { return info(m).family == FF_V29; }
 /* (see is_v17()) */
-static s16 is_v26(enum fax_mod m) { return m == FM_V26_A || m == FM_V26_B; }
+static s16 is_v26(enum fax_mod m) { return info(m).family == FF_V26; }
 /* (see is_v17(); V.26 is V.27ter at 2400 with its data unscrambled) */
 static s16 is_v27(enum fax_mod m)
 {
-	return m == FM_V27_2400 || m == FM_V27_4800 || is_v26(m);
+	return info(m).family == FF_V27 || is_v26(m);
 }
 /* V.27ter 2400's dibits as phase steps (45 degree units); V.26's
    alternative B 45 degrees on */
@@ -138,91 +180,6 @@ static const s16 *dibit_steps(enum fax_mod m)
 {
 	static const s16 alt_b[4] = { 1, 3, 7, 5 };
 	return m == FM_V26_B ? alt_b : steps_4;
-}
-
-/* data bits per symbol (V.17: those into the trellis encoder, which
-   adds one) */
-static s16 data_bits(enum fax_mod m)
-{
-	switch (m) {
-	case FM_V27_2400: return 2;
-	case FM_V26_A: return 2;
-	case FM_V26_B: return 2;
-	case FM_V27_4800: return 3;
-	case FM_V29_4800: return 2;
-	case FM_V29_7200: return 3;
-	case FM_V29_9600: return 4;
-	case FM_V17_7200: return 3;
-	case FM_V17_9600: return 4;
-	case FM_V17_12000: return 5;
-	case FM_V17_14400: return 6;
-	default: return 1;
-	}
-}
-
-/* the V.17 constellation of a rate (the V.32 trellis coded ones) */
-static const cplx *v17_points(enum fax_mod m)
-{
-	switch (m) {
-	case FM_V17_7200: return v32_points_7200;
-	case FM_V17_9600: return v32_points_9600;
-	case FM_V17_12000: return v32_points_12000;
-	default: return v32_points_14400;
-	}
-}
-
-/* where the points of a V.29 rate are in v29_abab[] and v29_cdcd[] */
-static s16 v29_offset(enum fax_mod m)
-{
-	return m == FM_V29_9600 ? 0 : m == FM_V29_7200 ? 2 : 4;
-}
-
-/* mean power of the data constellation */
-static float mod_power(enum fax_mod m)
-{
-	if (is_v17(m))
-		return 40.0f;
-	if (is_v27(m))
-		return 2.0f;
-	switch (m) {
-	case FM_V29_9600: return 13.5f;
-	case FM_V29_7200: return 5.5f;
-	default: return 9.0f;
-	}
-}
-
-/* mean power of the data symbols: V.17's constellations at 14400 and
-   12000 are a little stronger than their training (A, B, C and D,
-   mod_power()) */
-static float data_mean_power(enum fax_mod m)
-{
-	switch (m) {
-	case FM_V17_14400: return 41.0f;
-	case FM_V17_12000: return 42.0f;
-	default: return mod_power(m);
-	}
-}
-
-/* the symbol rate, baud */
-static float mod_baud(enum fax_mod m)
-{
-	if (m == FM_V27_2400 || is_v26(m))
-		return 1200;
-	if (m == FM_V27_4800)
-		return 1600;
-	return 2400;
-}
-
-/* the carrier frequency, Hz */
-static float mod_carrier(enum fax_mod m)
-{
-	return is_v29(m) ? 1700 : 1800;
-}
-
-/* the roll-off of the raised cosine pulse */
-static float mod_alpha(enum fax_mod m)
-{
-	return is_v17(m) ? 0.25f : 0.5f;
 }
 
 /* training lengths in symbols */
@@ -314,12 +271,12 @@ s16 FaxTx::data_bit()
    the last state (V.29 9600: the first bit picks the amplitude) */
 cplx FaxTx::data_symbol()
 {
-	s16 n = data_bits(mod), q = 0, k, amp = 0, bits;
+	s16 n = info(mod).bits, q = 0, k, amp = 0, bits;
 
 	if (is_v17(mod)) {
 		for (k = 0; k < n; k++)
 			q |= scramble(&scr, SCR_GPC, data_bit()) << k;
-		return v17_points(mod)[trellis.encode(q, n)];
+		return info(mod).v17[trellis.encode(q, n)];
 	}
 	if (is_v29(mod)) {
 		if (mod == FM_V29_9600 && scramble(&scr, SCR_GPC, data_bit()))
@@ -402,7 +359,7 @@ static cplx fax_tx_symbol(FaxTx *t)
 		   14400.  100 ms of them cover that. */
 		if (t->seg_sym >= ((is_v17(t->mod) && t->short_train) ||
 				    is_v27(t->mod) ?
-				    static_cast<s16>(mod_baud(t->mod)) / 10 :
+				    static_cast<s16>(info(t->mod).baud) / 10 :
 				    ones_len(t->mod)))
 			t->next_segment(SEG_DATA);
 		break;
@@ -436,7 +393,7 @@ static cplx fax_tx_symbol(FaxTx *t)
 		if (is_v17(t->mod))
 			z = v32_abcd[t->seg_sym & 1];
 		else
-			z = v29_abab[v29_offset(t->mod) + !(t->seg_sym & 1)];
+			z = v29_abab[info(t->mod).v29 + !(t->seg_sym & 1)];
 		break;
 	case SEG_TRN:
 		if (is_v17(t->mod)) {
@@ -445,7 +402,7 @@ static cplx fax_tx_symbol(FaxTx *t)
 			t->state = cdba_to_abcd[b1 << 1 | b2];
 			z = v32_abcd[t->state];
 		} else if (is_v29(t->mod)) {
-			off = v29_offset(t->mod);
+			off = info(t->mod).v29;
 			z = v29_cdcd[off + v29_trn_bit(&t->tscr)];
 		} else {
 			b1 = scr7(&t->scr, &t->scr_count, 1);
@@ -492,8 +449,8 @@ void FaxTx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_get_bit_t 
 		seg = SEG_DATA;
 		return;
 	}
-	qam.init(srate_, mod_carrier(mod_), mod_baud(mod_),
-		    mod_alpha(mod_), 6, sqrtf(mod_power(mod_)),
+	qam.init(srate_, info(mod_).carrier, info(mod_).baud,
+		    info(mod_).alpha, 6, sqrtf(info(mod_).power),
 		    fax_tx_rms(mod_) * 1.41421f);
 	/* the receivers of the original library want the symbols at this
 	   phase of the sample clock (as with V.32) */
@@ -565,7 +522,7 @@ cplx FaxRx::ref_point(s16 k)
 		return v32_abcd[s];
 	if (is_v29(mod)) {
 		/* the C/D points of this rate */
-		s16 off = v29_offset(mod);
+		s16 off = info(mod).v29;
 		return s == point_state(v29_cdcd[off]) ?
 			v29_cdcd[off] : v29_cdcd[off + 1];
 	}
@@ -605,7 +562,7 @@ s16 FaxRx::make_reference()
 		}
 		scr = scr_;
 	} else if (is_v29(mod)) {
-		s16 off = v29_offset(mod);
+		s16 off = info(mod).v29;
 		for (k = 0; k < n; k++)
 			ref_[k] = point_state(v29_cdcd[off + v29_trn_bit(&tscr)]);
 		scr = 0;
@@ -642,8 +599,8 @@ s16 FaxRx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_put_bit_t p
 		fsk.init(1650, 1850, 300, srate_);
 		return 0;
 	}
-	if (qam.init(srate_, mod_carrier(mod_), mod_baud(mod_),
-			mod_alpha(mod_), 6, 32, mod_power(mod_)))
+	if (qam.init(srate_, info(mod_).carrier, info(mod_).baud,
+			info(mod_).alpha, 6, 32, info(mod_).power))
 		return -1;
 	det_alpha = 1.0f / (0.005f * srate_);
 	det_hold = srate_ / 25;       /* learn the noise floor first */
@@ -656,7 +613,7 @@ s16 FaxRx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_put_bit_t p
 		return -1;
 	}
 	if (is_v17(mod_))
-		vit.init(v17_points(mod_), data_bits(mod_));
+		vit.init(info(mod_).v17, info(mod_).bits);
 	/* a short train only touches up what the long one learned */
 	if (short_train_ && mem && mem->valid && is_v17(mem->mod)) {
 		copy_array(mem_eq, mem->eq);
@@ -731,7 +688,7 @@ void FaxRx::data_start()
 
 	if (!is_v17(mod))
 		return;
-	r = data_mean_power(mod) / mod_power(mod);
+	r = info(mod).data_power / info(mod).power;
 	qam.agc_target *= r;
 	qam.agc_pwr *= r;
 	qam.agc_alpha = agc_alpha / V17_DATA_AGC_SLOWER;
@@ -744,10 +701,10 @@ void FaxRx::data_start()
 void FaxRx::data_symbol()
 {
 	cplx z = qam.z, d;
-	s16 n = data_bits(mod), k, best, phase, dp, bits;
+	s16 n = info(mod).bits, k, best, phase, dp, bits;
 
 	if (is_v17(mod)) {
-		const cplx *pts = v17_points(mod);
+		const cplx *pts = info(mod).v17;
 		s16 q;
 		best = nearest_point(pts, 1 << (n + 1), z);
 		d = pts[best];
@@ -791,7 +748,7 @@ void FaxRx::data_symbol()
 				bits_out(bits, 3, 1);
 		}
 	}
-	mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / data_mean_power(mod) - mse);
+	mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / info(mod).data_power - mse);
 	zpow += 0.01f * (cplx_pow(z) - zpow);
 	/* V.17: the original library's data constellation comes some 1.4 dB
 	   below its training; decisions on the dense rates then miss and
@@ -803,11 +760,11 @@ void FaxRx::data_symbol()
 		zpow_slow = zpow;
 	zpow_slow += 0.002f * (cplx_pow(z) - zpow_slow);
 	if (is_v17(mod) && data_sym >= 600 && (data_sym & 255) == 0 &&
-	    zpow_slow > mse * data_mean_power(mod)) {
+	    zpow_slow > mse * info(mod).data_power) {
 		/* the signal's part of the power: less the noise around the
 		   decisions */
-		float f = sqrtf(data_mean_power(mod) /
-				(zpow_slow - mse * data_mean_power(mod)));
+		float f = sqrtf(info(mod).data_power /
+				(zpow_slow - mse * info(mod).data_power));
 		/* only a clear error */
 		if (fabsf(f - 1) > 0.06f) {
 			f = 1 + 0.5f * (f - 1);
@@ -826,7 +783,7 @@ void FaxRx::data_symbol()
 	if (data_sym % 2400 == 0)
 		DSP_DBG("fax rx: data mse %.5f (%.1f dB), power %.3f of the "
 			"constellation's\n", mse, -10 * log10f(mse + 1e-9f),
-			zpow / data_mean_power(mod));
+			zpow / info(mod).data_power);
 	/* the timing loop slows down once it has surely settled (a short
 	   train leaves it little time) */
 	if (data_sym == 1000) {
@@ -842,7 +799,7 @@ void FaxRx::data_symbol()
 			     data_sym < 300 ? 0.015f : 0.005f, 0.02f, 0.0002f);
 	/* keep a copy of a good equalizer for a later short train (the
 	   end of the signal would spoil the live one) */
-	mse_fast += 0.1f * (cplx_pow(cplx_sub(z, d)) / data_mean_power(mod) -
+	mse_fast += 0.1f * (cplx_pow(cplx_sub(z, d)) / info(mod).data_power -
 			       mse_fast);
 	if (data_sym == 1)
 		data_power = qam.power;
@@ -923,7 +880,7 @@ void FaxRx::symbol()
 			nsteps++;
 		/* hold the phase on the training grid */
 		qam.adapt(is_v17(mod) ? v32_abcd[s] :
-			     cplx_scale(v27_points[s], sqrtf(mod_power(mod) / 2)),
+			     cplx_scale(v27_points[s], sqrtf(info(mod).power / 2)),
 			     0, 0.05f, 0);
 		if (nsteps < 32 || !carrier)
 			break;
@@ -1043,7 +1000,7 @@ void FaxRx::symbol()
 		   carrier in the data (4-wire leased) */
 		track_alternations(z);
 		if (cplx_pow(cplx_sub(z, zh[1])) <
-		    0.04f * data_mean_power(mod))
+		    0.04f * info(mod).data_power)
 			const_run++;
 		else
 			const_run = 0;

@@ -43,6 +43,7 @@
 #include "bits.h"
 #include "pump.h"
 #include "qam.h"
+#include "rate_table.h"
 
 namespace dsp {
 
@@ -805,26 +806,17 @@ s16 V32Pump::fallback()
 static const float v32_min_snr[] = { 29.5f, 26.5f, 25, 22, 19, 16, 0 };
 
 /* the data mse (of V32_POWER) past which a receiver at rate r has
-   lost its equalization: 4 dB short of the SNR its rate was chosen at
-   (quality_caps(); 4800: 7 dB), so that a line that only just took the
-   rate does not retrain again and again */
+   lost its equalization (rate_lost_limit()) */
 float V32Pump::lost_limit(const struct v32_rate *r)
 {
-	s16 i = static_cast<s16>(r - v32_rates);
-	float snr = v32_min_snr[i] > 0 ? v32_min_snr[i] - 4 : 7;
-	return powf(10, -snr / 10);
+	return rate_lost_limit(v32_rates, v32_min_snr, r);
 }
 
 /* the rates our receiver can take, judged by the decision error on
    the training signal (4 points) */
 u16 V32Pump::quality_caps()
 {
-	float snr = -10 * log10f(rx_mse + 1e-6f);
-	u16 caps_ = 0;
-	s16 i;
-	for (i = 0; i < V32_NRATES; i++)
-		if (snr >= v32_min_snr[i])
-			caps_ |= v32_rates[i].bits;
+	u16 caps_ = rate_caps(v32_rates, v32_min_snr, rx_mse);
 	/* TCM is shared by the trellis rates */
 	if (caps_ & (RB_7200 | RB_9600 | RB_12000 | RB_14400 | RB_TERBO))
 		caps_ |= RB_TCM;

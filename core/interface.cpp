@@ -40,34 +40,46 @@ namespace dcore {
  */
 
 /* Every pump the core can name, in the order AT+MS=? lists those with a
-   code; a library fills in op as it registers.  Plain data with constant
-   initializers, so it is ready before any static constructor runs (a
-   test registers the pumps from one). */
+   code, and what the core knows of it (dcore.h); a library fills in op
+   as it registers.  Plain data with constant initializers, so it is
+   ready before any static constructor runs (a test registers the pumps
+   from one).  A row: the id, the name, AT+MS's code, op, then V.59's
+   name and high-level object, V.58's codes and the DPF_* flags. */
 static DpDriver pump_table[] = {
 	{ DP_CALLPROG, "CallProg", nullptr, nullptr },
 	{ DP_DUMMY, "Dummy", nullptr, nullptr },
 	{ DP_AUTOMODE, "Automode", nullptr, nullptr },
 	{ DP_V8, "V8", nullptr, nullptr },
-	{ DP_V17, "V17", nullptr, nullptr },
-	{ DP_V21, "V21", "21", nullptr },
-	{ DP_V22, "V22", "22", nullptr },
-	{ DP_V23, "V23", "23", nullptr },
-	{ DP_V26, "V26", "26", nullptr },
-	{ DP_V26TER, "V26ter", "126", nullptr },
-	{ DP_V26BIS, "V26bis", "226", nullptr },
-	{ DP_V27TER, "V27ter", "27", nullptr },
-	{ DP_V29, "V29", "29", nullptr },
-	{ DP_V29FP, "V29FastPOS", "229", nullptr },
-	{ DP_V22BIS, "V22bis", "122", nullptr },
-	{ DP_V32, "V32", "32", nullptr },
-	{ DP_V32BIS, "V32bis", "132", nullptr },
-	{ DP_V32TERBO, "V32terbo", "232", nullptr },
-	{ DP_HST, "HST", "168", nullptr },
+	{ DP_V17, "V17", nullptr, nullptr, "V.17", 0, 0x0, 0x0, 0 },
+	{ DP_V21, "V21", "21", nullptr,
+	  "V.21", 0x10, 0x1, 0x1, DPF_V59_OBJECT },
+	{ DP_V22, "V22", "22", nullptr, "V.22", 0x0E, 0x2, 0x2, 0 },
+	{ DP_V23, "V23", "23", nullptr,
+	  "V.23", 0x0F, 0x4, 0x4, DPF_V59_OBJECT },
+	{ DP_V26, "V26", "26", nullptr,
+	  "V.26", 0, -1, -1, DPF_LEASED | DPF_LOOP3 },
+	{ DP_V26TER, "V26ter", "126", nullptr, "V.26ter", 0, -1, -1, 0 },
+	{ DP_V26BIS, "V26bis", "226", nullptr, "V.26bis", 0, -1, -1, 0 },
+	{ DP_V27TER, "V27ter", "27", nullptr,
+	  "V.27ter", 0, 0x8, 0x8, DPF_LEASED | DPF_LOOP3 },
+	{ DP_V29, "V29", "29", nullptr,
+	  "V.29", 0, 0x9, 0x9, DPF_LEASED | DPF_LOOP3 },
+	{ DP_V29FP, "V29FastPOS", "229", nullptr, "V.29FastPOS", 0, -1, -1, 0 },
+	{ DP_V22BIS, "V22bis", "122", nullptr,
+	  "V.22bis", 0x0E, 0x3, 0x3, DPF_V59_OBJECT },
+	{ DP_V32, "V32", "32", nullptr, "V.32", 0x0D, 0xA, 0xA, 0 },
+	{ DP_V32BIS, "V32bis", "132", nullptr,
+	  "V.32bis", 0x0D, 0xB, 0xB, DPF_V59_OBJECT },
+	/* (V.58 has no V.32terbo: its V.32bis) */
+	{ DP_V32TERBO, "V32terbo", "232", nullptr, nullptr, 0, 0xB, 0xB, 0 },
+	{ DP_HST, "HST", "168", nullptr, "HST", 0, -1, -1, 0 },
 	{ DP_V61, "V61", "61", nullptr },
-	{ DP_V33, "V33", "33", nullptr },
-	{ DP_V34, "V34", "34", nullptr },
+	{ DP_V33, "V33", "33", nullptr,
+	  "V.33", 0, -1, -1, DPF_LEASED | DPF_LOOP3 },
+	{ DP_V34, "V34", "34", nullptr,
+	  "V.34", 0x0C, 0xC, 0xC, DPF_V59_OBJECT },
 	{ DP_B103, "Bell103", "103", nullptr },
-	{ DP_V18, "V18", "18", nullptr },
+	{ DP_V18, "V18", "18", nullptr, "V.18", 0x23, -1, -1, DPF_V59_OBJECT },
 	{ DP_BAUDOT, "Baudot", "45", nullptr },
 	{ DP_EDT, "EDT", "110", nullptr },
 	{ DP_DTMFTXT, "DTMF", "118", nullptr },
@@ -78,17 +90,23 @@ static DpDriver pump_table[] = {
 	{ DP_SMS, "SMS", "12", nullptr },
 	{ DP_RELAY, "Relay", nullptr, nullptr },
 	{ DP_B212, "Bell212", "212", nullptr },
-	{ DP_B201, "Bell201", "201", nullptr },
-	{ DP_B202, "Bell202", "202", nullptr },
-	{ DP_B208, "Bell208", "208", nullptr },
+	{ DP_B201, "Bell201", "201", nullptr,
+	  nullptr, 0, -1, -1, DPF_LEASED | DPF_LOOP3 },
+	{ DP_B202, "Bell202", "202", nullptr, nullptr, 0, -1, -1, DPF_LEASED },
+	{ DP_B208, "Bell208", "208", nullptr,
+	  nullptr, 0, -1, -1, DPF_LEASED | DPF_LOOP3 },
 	{ DP_FAX, "VFax", nullptr, nullptr },
-	{ DP_K56, "K56Flex", "56", nullptr },
+	{ DP_K56, "K56Flex", "56", nullptr, nullptr, 0, 0x81, 0x81, 0 },
 	{ DP_V8BIS, "V8bis", nullptr, nullptr },
-	{ DP_V90, "V90", "90", nullptr },
-	{ DP_V91, "V91", "91", nullptr },
-	{ DP_V92, "V92", "92", nullptr },
+	/* (V.58: V.90 Issue 1, PCM one way and V.34 the other) */
+	{ DP_V90, "V90", "90", nullptr,
+	  "V.90", 0x09, 0xC, 0xE, DPF_V59_OBJECT },
+	{ DP_V91, "V91", "91", nullptr,
+	  "V.91", 0x0A, 0xF, 0xF, DPF_V59_OBJECT },
+	{ DP_V92, "V92", "92", nullptr,
+	  "V.92", 0x0B, 0xC, 0xE, DPF_V59_OBJECT },
 	{ DP_VCVM, "VCVM", "150", nullptr },
-	{ DP_VWB, "VWB", "200", nullptr },
+	{ DP_VWB, "VWB", "200", nullptr, nullptr, 0, -1, -1, DPF_LEASED },
 	{ DP_CLEAR, "CLEAR", "64", nullptr },
 	{ DP_SINUS, "Sinus", nullptr, nullptr },
 	{},	/* the end: id 0 */
@@ -98,6 +116,22 @@ static DpDriver pump_table[] = {
 DpDriver *dp_drivers()
 {
 	return pump_table;
+}
+
+/* see dcore.h */
+const DpDriver *dp_driver(u32 id)
+{
+	for (const DpDriver *d = pump_table; d->id; d++)
+		if (static_cast<u32>(d->id) == id)
+			return d;
+	return nullptr;
+}
+
+/* see dcore.h */
+bool dp_registered(u32 id)
+{
+	const DpDriver *d = dp_driver(id);
+	return d && d->op;
 }
 
 /*

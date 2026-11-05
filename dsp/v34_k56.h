@@ -24,9 +24,12 @@
 /* V.8bis messages (7/V.8bis): the message type in octet 0's low 4 bits */
 enum { K8_MSG_MS = 1, K8_MSG_CL = 2, K8_MSG_ACK1 = 4 };
 
+/* the use of HdlcTx / HdlcRx (fax_hdlc.h): phase 1's V.8bis messages */
+struct HdlcK8 {};
+
 /* the K56flex part of the pump */
 template <class P>
-struct V34K56 {
+struct V34K56 : HdlcTx<V34K56<P>, 64, HdlcK8>, HdlcRx<V34K56<P>, 64, HdlcK8> {
 	s16 k56;                /* offer K56flex (V.8bis before V.8) */
 	s16 k56_on;             /* K56flex agreed (our ACK(1) to its MS) */
 	s16 k8_tried;           /* V.8bis done (or given up) this call */
@@ -40,13 +43,12 @@ struct V34K56 {
 	/* V.8bis messages in (the responder's, on V.21's channel 2):
 	   HDLC frames */
 	FskDemod k8_rx;
-	u32 k8_sr;              /* the last 8 bits, newest in bit 7 */
-	s16 k8_ones, k8_nbit, k8_in;
-	unsigned char k8_buf[64];
-	s16 k8_n;
 	unsigned char k8_msg[64];       /* the last good frame (no FCS) */
 	s16 k8_msg_n;
 	s16 k8_ev;              /* a good frame came */
+	/* the message k8_frame() is framing (HdlcTx's next frame) */
+	const unsigned char *k8_tx;
+	s16 k8_tx_n;
 
 	/* phases 3 and 4, and the data */
 	K56Train k56t;
@@ -77,8 +79,10 @@ struct V34K56 {
 	void k56_make_mp();
 	s16 k56_data_setup();
 	void k8_frame(BitQ *q, const unsigned char *o, s16 n);
+	s16 hdlc_tx_next(HdlcK8, unsigned char *buf, s16 max);
+	void hdlc_rx_frame(HdlcK8, const unsigned char *d, s16 len,
+			   bool whole);
 	float k8_tx_sample();
-	void k8_rx_bit(s16 bit);
 	void k8_rx_sample(float x);
 	bool k8_ms_k56() const;
 	bool k8_msg_k56(s16 type) const;
@@ -119,40 +123,50 @@ void V34K56<P>::k8_init()
 		k8_rx.init(1650, 1850, 300, self.srate);
 	}
 	k56c_on = k56_rx = 0;
-	k8_sr = 0;
-	k8_ones = k8_nbit = k8_in = k8_n = 0;
+	this->hdlc_rx_reset();
 	k8_msg_n = 0;
 	k8_ev = 0;
 }
 
-/* an HDLC frame of n octets into q (7.1/V.8bis): ones, flags, the
-   octets least significant bit first with zeros stuffed after five
-   ones, the FCS, flags */
+/* an HDLC frame of n octets into q (7.1/V.8bis): ones, three flags,
+   the frame (HdlcTx: its octets least significant bit first, a zero
+   stuffed after five ones, the FCS), two flags */
 template <class P>
 void V34K56<P>::k8_frame(BitQ *q, const unsigned char *o, s16 n)
 {
-	unsigned char f[66];
-	s16 i, k, ones = 0;
-	memcpy(f, o, n);
-	u16 crc = static_cast<u16>(hdlc_fcs(f, n) ^ 0xffff);
-	f[n] = crc & 0xff;
-	f[n + 1] = crc >> 8;
+	s16 bit;
 	q->reset();
 	q->put(0xFFFFFFFF, 32);
-	for (i = 0; i < 3; i++)
-		q->put(0x7e, 8);
-	for (i = 0; i < n + 2; i++)
-		for (k = 0; k < 8; k++) {
-			s16 b = (f[i] >> k) & 1;
-			q->put(b, 1);
-			ones = b ? ones + 1 : 0;
-			if (ones == 5) {
-				q->put(0, 1);
-				ones = 0;
-			}
-		}
-	q->put(0x7e, 8);
-	q->put(0x7e, 8);
+	k8_tx = o;
+	k8_tx_n = n;
+	this->hdlc_tx_start(3 * 8, 2 * 8);
+	while ((bit = this->hdlc_tx_bit()) != FAX_BIT_END)
+		q->put(static_cast<u32>(bit), 1);
+}
+
+/* (HdlcTx) k8_frame()'s message, once */
+template <class P>
+s16 V34K56<P>::hdlc_tx_next(HdlcK8, unsigned char *buf, s16 max)
+{
+	s16 n = k8_tx_n;
+	if (!k8_tx || n > max)
+		return -1;
+	memcpy(buf, k8_tx, n);
+	k8_tx = nullptr;
+	return n;
+}
+
+/* (HdlcRx) the octets before a flag on V.21's channel 2: a message, of
+   one octet at least, when its FCS is good */
+template <class P>
+void V34K56<P>::hdlc_rx_frame(HdlcK8, const unsigned char *d, s16 len,
+			      bool whole)
+{
+	if (!whole || len < 3 || hdlc_fcs(d, len) != HDLC_FCS_GOOD)
+		return;
+	k8_msg_n = static_cast<s16>(len - 2);
+	memcpy(k8_msg, d, k8_msg_n);
+	k8_ev = 1;
 }
 
 /* MRe's tones (and silence) */
@@ -162,51 +176,6 @@ float V34K56<P>::k8_tx_sample()
 	return k8_a1 * k8_o1.next() + k8_a2 * k8_o2.next();
 }
 
-/* a bit of V.21's channel 2: HDLC flags, stuffing and frames */
-template <class P>
-void V34K56<P>::k8_rx_bit(s16 bit)
-{
-	k8_sr = (k8_sr >> 1) | static_cast<u32>(bit << 7);
-	if ((k8_sr & 0xff) == 0x7e) {
-		/* a flag: the frame before it (its 7 bits of the flag
-		   gone) */
-		if (k8_in && k8_n >= 3 && k8_nbit == 7 &&
-		    hdlc_fcs(k8_buf, k8_n) == HDLC_FCS_GOOD) {
-			k8_msg_n = static_cast<s16>(k8_n - 2);
-			memcpy(k8_msg, k8_buf, k8_msg_n);
-			k8_ev = 1;
-		}
-		k8_in = 1;
-		k8_n = k8_nbit = k8_ones = 0;
-		return;
-	}
-	if (!k8_in)
-		return;
-	if (bit) {
-		if (++k8_ones > 6) {    /* an abort, or ones */
-			k8_in = 0;
-			return;
-		}
-	} else {
-		if (k8_ones == 5) {     /* a stuffed zero */
-			k8_ones = 0;
-			return;
-		}
-		k8_ones = 0;
-	}
-	if (k8_n >= static_cast<s16>(sizeof(k8_buf))) {
-		k8_in = 0;
-		return;
-	}
-	if (!k8_nbit)
-		k8_buf[k8_n] = 0;
-	k8_buf[k8_n] = static_cast<unsigned char>(k8_buf[k8_n] | bit << k8_nbit);
-	if (++k8_nbit == 8) {
-		k8_nbit = 0;
-		k8_n++;
-	}
-}
-
 /* a line sample in phase 1's V.8bis */
 template <class P>
 void V34K56<P>::k8_rx_sample(float x)
@@ -214,7 +183,7 @@ void V34K56<P>::k8_rx_sample(float x)
 	P &self = static_cast<P &>(*this);
 	s16 bit = k8_rx.run(x);
 	if (bit >= 0 && k8_rx.carrier)
-		k8_rx_bit(bit);
+		this->hdlc_rx_bit(bit);
 	k8_g[2].run(x);
 	k8_g[1].run(x);
 	if (!k8_g[0].run(x))

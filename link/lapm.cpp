@@ -216,7 +216,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	cmd_ud_.clear();
 	rsp_ud_.clear();
 	rtx_count_ = 0;
-	rx_count_ = rx_head_ = 0;
+	backlog_.clear();
 	cmd_addr_ = link->caller() ? ADDR_ORIG : ADDR_ANS;
 	rsp_addr_ = link->caller() ? ADDR_ANS : ADDR_ORIG;
 	tx_win_ = static_cast<u16>(
@@ -285,7 +285,7 @@ void Lapm::exit()
 {
 	sent_info_ = tx_info_frame_ = info_list_ = nullptr;
 	tx_ctrl_ = ctrl_list_ = nullptr;
-	rx_count_ = rx_head_ = 0;
+	backlog_.clear();
 	state_ = IDLE;
 	config_ = false;
 }
@@ -338,18 +338,10 @@ void Lapm::disconnect()
    command says */
 void Lapm::push_rest()
 {
-	if (state_ != DATA || !rx_count_)
-		return;
-	s16 taken = link_->write_chars(rx_buf_ + rx_head_, rx_count_);
-	if (taken > 0) {
-		rx_head_ += taken;
-		rx_count_ -= taken;
-	}
-	if (rx_count_)
+	if (state_ != DATA || backlog_.empty() || !backlog_.push(link_))
 		return;
 	busy_ = false;
 	tx_super(cmd_addr_, S_RR, 0);
-	link_->push_pending = false;
 }
 
 
@@ -847,17 +839,9 @@ s16 Lapm::rx_info(Frame *f)
 		return 0;
 	}
 	reject_ = false;
-	const s16 n = f->count - 3;
-	s16 taken = link_->write_chars(f->buf + 3, n);
-	if (taken < 0)
-		taken = 0;
-	if (taken < n) {
-		rx_head_ = 0;
-		rx_count_ = n - taken;
-		memcpy(rx_buf_, f->buf + 3 + taken, rx_count_);
+	if (backlog_.deliver(link_, f->buf + 3,
+			     static_cast<s16>(f->count - 3)))
 		busy_ = true;
-		link_->push_pending = true;
-	}
 	vr_ = static_cast<u8>((vr_ + 1) & SEQ_MASK);
 	if (busy_)
 		tx_super(f->buf[0], S_RNR, pf);

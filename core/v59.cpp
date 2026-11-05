@@ -284,56 +284,18 @@ const V59Obj v59_objs[] = {
 /* the pump a modulation's high-level object is for (0: none) */
 u32 v59_pump(u8 high)
 {
-	switch (high) {
-	case 0x09: return DP_V90;
-	case 0x0A: return DP_V91;
-	case 0x0B: return DP_V92;
-	case 0x0C: return DP_V34;
-	case 0x0D: return DP_V32BIS;
-	case 0x0E: return DP_V22BIS;
-	case 0x0F: return DP_V23;
-	case 0x10: return DP_V21;
-	case 0x23: return DP_V18;
-	default: return 0;
-	}
-}
-
-/* pump id is registered */
-bool v59_registered(u32 id)
-{
 	for (const DpDriver *d = dp_drivers(); d->id; d++)
-		if (static_cast<u32>(d->id) == id)
-			return d->op != nullptr;
-	return false;
+		if (d->v59_high == high && (d->flags & DPF_V59_OBJECT))
+			return d->id;
+	return 0;
 }
 
 /* a modulation's name as V.59's modulationHistory has it (the
    Recommendation's number) */
 const char *v59_rec(s16 dp)
 {
-	switch (dp) {
-	case DP_V17: return "V.17";
-	case DP_V21: return "V.21";
-	case DP_V22: return "V.22";
-	case DP_V22BIS: return "V.22bis";
-	case DP_V23: return "V.23";
-	case DP_V26: return "V.26";
-	case DP_V26TER: return "V.26ter";
-	case DP_V26BIS: return "V.26bis";
-	case DP_HST: return "HST";
-	case DP_V27TER: return "V.27ter";
-	case DP_V29: return "V.29";
-	case DP_V29FP: return "V.29FastPOS";
-	case DP_V32: return "V.32";
-	case DP_V32BIS: return "V.32bis";
-	case DP_V33: return "V.33";
-	case DP_V34: return "V.34";
-	case DP_V90: return "V.90";
-	case DP_V91: return "V.91";
-	case DP_V92: return "V.92";
-	case DP_V18: return "V.18";
-	default: return nullptr;
-	}
+	const DpDriver *d = dp_driver(static_cast<u16>(dp));
+	return d ? d->v59_name : nullptr;
 }
 
 /* Table 1/V.59's code for a symbol rate, -1 for one it has none for */
@@ -381,18 +343,8 @@ s16 Modem::v59_high_now() const
 {
 	if (!stats_.call || !stats_.connected || stats_.fax)
 		return -1;
-	switch (stats_.dp) {
-	case DP_V90: return 0x09;
-	case DP_V91: return 0x0A;
-	case DP_V92: return 0x0B;
-	case DP_V34: return 0x0C;
-	case DP_V32: case DP_V32BIS: return 0x0D;
-	case DP_V22: case DP_V22BIS: return 0x0E;
-	case DP_V23: return 0x0F;
-	case DP_V21: return 0x10;
-	case DP_V18: return 0x23;
-	default: return 0x26;
-	}
+	const DpDriver *d = dp_driver(static_cast<u16>(stats_.dp));
+	return d && d->v59_high ? d->v59_high : 0x26;
 }
 
 /* Table 5/V.59's code for a modulation's or protocol's mode object
@@ -416,7 +368,7 @@ u32 Modem::v59_mode(u16 tag) const
 	if (high >= 0x15 && high <= 0x18)
 		return 2;
 	u32 dp = v59_pump(high);
-	if (!dp || !v59_registered(dp))
+	if (!dp || !dp_registered(dp))
 		return 0;
 	/* V.18: there when +MV18S asks for it */
 	if (high == 0x23)
@@ -487,8 +439,8 @@ std::string Modem::v59_value(u16 tag) const
 		};
 		std::string s;
 		for (const auto &o : other)
-			if (v59_registered(o.dp) ||
-			    (o.dp == DP_K56 && v59_registered(DP_V90)))
+			if (dp_registered(o.dp) ||
+			    (o.dp == DP_K56 && dp_registered(DP_V90)))
 				s += (s.empty() ? "" : ";") +
 					std::string(o.name);
 		return s.empty() ? V59_NULL : s;
