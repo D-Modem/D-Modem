@@ -66,7 +66,7 @@ The tests are built but not registered with ctest, because nothing on Linux can 
 
 ## Running
 
-dmodemd takes the same options as on Linux (see the [README](../README.md)). The differences are these.
+dmodemd takes the same options as on Linux (see [Using dmodemd](usage.md)). The differences are these.
 
 **No users.** Every process on Haiku has uid 0, and there is no other user to run as. So dmodemd does not give up root's rights after start-up (`started_as_root()` in `frontend/dmodemd/main.cpp` is always false there), and it forks no keeper process for the pty's link.
 

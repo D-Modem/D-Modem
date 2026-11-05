@@ -292,8 +292,8 @@ follows.
   telephone-events, because their tones would be data.
 - **Turning it off:** `SIP_CLEARMODE=no` (also `0`, `off` or `false`)
   turns CLEARMODE off; it is then neither offered nor accepted.
-- **SRTP:** CLEARMODE goes over SRTP as well (`SIP_SRTP`, see the
-  [README](../README.md)).
+- **SRTP:** CLEARMODE goes over SRTP as well (`SIP_SRTP`, see
+  [Using dmodemd](usage.md#media-v152-and-srtp)).
 
 ### Peers
 
