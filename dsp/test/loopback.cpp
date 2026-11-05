@@ -268,7 +268,8 @@ static const LoopbackConfig *run_cfg;
 
 /* the S-registers the pumps read: the run's own (LoopbackConfig::sregs),
    else 50 s for the handshake, 1.4 s of carrier loss, 95 ms DTMF and the
-   dial timings; 0 for all others (blind dialling among them) */
+   dial timings, +MS's modulation for PEP (the call progress listens for
+   its tones); 0 for all others (blind dialling among them) */
 int modem_get_sreg(struct modem *, unsigned int num)
 {
 	if (run_cfg)
@@ -286,6 +287,11 @@ int modem_get_sreg(struct modem *, unsigned int num)
 		return 14;
 	case SREG_DTMF_DURATION:
 		return 95;
+	case SREG_DP:
+		if (run_cfg && (run_cfg->caller_dp ? run_cfg->caller_dp :
+				run_cfg->dp) == DP_PEP)
+			return DP_PEP;
+		return 0;
 	default:
 		return 0;
 	}

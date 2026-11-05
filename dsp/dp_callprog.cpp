@@ -85,6 +85,9 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 	/* K56flex (+MS=K56): V.8bis's MRe or CRe, 1375 + 2002 Hz, which a
 	   K56flex digital modem sends before its answer tone */
 	s16 k56;
+	/* PEP (+MS=PEP): its start-up's timing tones, 1437.5 + 1687.5 Hz,
+	   on the same detectors; 50 ms of them hand the call to its pump */
+	s16 pep;
 	Goertzel v8bis_g[2];
 	s16 v8bis_blocks;
 	/* 2225 Hz (Bell) and 2250 Hz (V.22 unscrambled ones) are too
@@ -161,8 +164,9 @@ s16 CallProgPump::start(struct modem *m, enum DP_ID id, s16 caller,
 	ans2225.g.init(2225, block_len, srate_);
 	usb1.g.init(2250, block_len, srate_);
 	k56 = modem_get_sreg(m, SREG_DP) == DP_K56;
-	v8bis_g[0].init(1375, block_len, srate_);
-	v8bis_g[1].init(2002, block_len, srate_);
+	pep = modem_get_sreg(m, SREG_DP) == DP_PEP;
+	v8bis_g[0].init(pep ? 1437.5f : 1375, block_len, srate_);
+	v8bis_g[1].init(pep ? 1687.5f : 2002, block_len, srate_);
 	v8bis_blocks = 0;
 	fine2225.init(2225, srate_ / 5, srate_);
 	fine2250.init(2250, srate_ / 5, srate_);
@@ -367,20 +371,23 @@ s16 CallProgPump::block()
 	}
 
 	/* K56flex: V.8bis's dual tone, 150 ms of it (its MRe lasts 400):
-	   the V.34 pump answers it */
-	if (k56) {
+	   the V.34 pump answers it; PEP: its timing tones, 50 ms of them
+	   (the start-up's epoch of them lasts 136) */
+	if (k56 || pep) {
 		float p0 = v8bis_g[0].power, p1 = v8bis_g[1].power;
 		v8bis_blocks = p0 > min && p1 > min && p0 > 0.2f * bp &&
 			p1 > 0.2f * bp && p0 + p1 > 0.6f * bp ?
 			static_cast<s16>(v8bis_blocks + 1) : 0;
-		if (v8bis_blocks >= 150 / BLOCK_MS) {
-			DSP_DBG("callprog: V.8bis initiating tone detected\n");
+		if (v8bis_blocks >= (pep ? 50 : 150) / BLOCK_MS) {
+			DSP_DBG("callprog: %s detected\n", pep ?
+				"PEP's timing tones" : "V.8bis initiating tone");
 			if (!rt)
 				rt = reinterpret_cast<struct dp_runtime *>(
 					modem_get_param(modem,
 							MDMPRM_DPRUNTIME));
 			if (rt) {
-				rt->answer_tone = ANSTONE_V8BIS;
+				rt->answer_tone = pep ? ANSTONE_PEP :
+					ANSTONE_V8BIS;
 				rt->answer_tone_end = total;
 			}
 			set_state(CP_DONE);
@@ -569,7 +576,7 @@ s16 CallProgPump::process(void *in, void *out, s32 cnt)
 		ans2100.g.run(x);
 		ans2225.g.run(x);
 		usb1.g.run(x);
-		if (k56) {
+		if (k56 || pep) {
 			v8bis_g[0].run(x);
 			v8bis_g[1].run(x);
 		}

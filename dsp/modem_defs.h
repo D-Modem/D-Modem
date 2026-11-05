@@ -215,6 +215,10 @@ enum DP_ID {
 	DP_V32TERBO = 232,      /* V.32terbo: V.32bis and 16800, 19200
 				   bit/s (dp_v32.cpp); not in V.250, the
 				   number is D-Modem's */
+	DP_PEP      = 255,      /* Telebit's PEP: 511 carriers, half duplex
+				   in packets (dsp/pep.h), D-Modem to
+				   D-Modem; not in V.250, the number is
+				   Telebit's S50=255 */
 	DP_VWB      = 200,      /* V.wb: wideband DMT on a bare pair, at
 				   48000 Hz or more (dsp/vwb.h) */
 	DP_RELAY    = 151,      /* the call's data relayed by the host, not

@@ -55,6 +55,7 @@ namespace dsp {
 #define ANSTONE_2100  1   /* ITU V.25 ANS / V.8 ANSam */
 #define ANSTONE_2225  2   /* Bell answer tone */
 #define ANSTONE_V8BIS 3   /* V.8bis's MRe or CRe (a K56flex digital modem) */
+#define ANSTONE_PEP   4   /* PEP's timing tones, 1437.5 + 1687.5 Hz (Telebit) */
 
 struct dp_runtime {
 	struct modem *modem;
@@ -504,6 +505,8 @@ s16  dp_vcvm_init(void);
 void dp_vcvm_exit(void);
 s16  dp_vwb_init(void);
 void dp_vwb_exit(void);
+s16  dp_pep_init(void);
+void dp_pep_exit(void);
 s16  dp_clear_init(void);
 void dp_clear_exit(void);
 s16  dp_4wire_init(void);
