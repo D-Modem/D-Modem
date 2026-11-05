@@ -108,6 +108,7 @@ static DpDriver pump_table[] = {
 	  "V.92", 0x0B, 0xC, 0xE, DPF_V59_OBJECT },
 	{ DP_VCVM, "VCVM", "150", nullptr },
 	{ DP_VWB, "VWB", "200", nullptr, nullptr, 0, -1, -1, DPF_LEASED },
+	{ DP_PEP, "PEP", "255", nullptr, "PEP", 0, -1, -1, 0 },
 	{ DP_CLEAR, "CLEAR", "64", nullptr },
 	{ DP_SINUS, "Sinus", nullptr, nullptr },
 	{},	/* the end: id 0 */
