@@ -25,9 +25,10 @@ namespace {
 const float TWO_PI_F = 6.283185307f;
 const double TWO_PI = 6.283185307179586;
 
-/* 0 dBR (the patent's -9 dBm), RMS of 32767: the comb's 511 carriers at
-   -27 dBR each come to about that */
-const float REF_RMS = 3000;
+/* 0 dBR, the patent's -9 dBm (-9 dBm0: a sine of 0 dBm0 has an RMS of
+   16055 of 32767): the comb's 511 carriers at -27 dBR each come to
+   about that */
+const float REF_RMS = 5700;
 /* the timing tones' level against a comb carrier's: -3 dBR against -27 */
 const float TONE_GAIN = 15.85f;
 /* the phase epochs': -28 dBR */
@@ -320,7 +321,7 @@ void PepModem::tx_start_tones_comb(s16 combs, s16 phases,
 {
 	tx_epoch_tones(EPOCH);
 	for (s16 i = 0; i < combs; i++)
-		tx_epoch_comb(i & 1 ? -1 : 1, 1, nullptr);
+		tx_epoch_comb(i & 1 ? 1 : -1, 1, nullptr);
 	for (s16 i = 0; i < phases; i++)
 		tx_epoch_comb(1, PHASE_GAIN, mask);
 }
@@ -457,7 +458,8 @@ void PepModem::rx_run()
 			} else if (ratio < TONES_OFF) {
 				/* the tones ended in this block: what
 				   follows them starts about at its middle */
-				at_ = static_cast<double>(rx_scan_ + BLK / 2);
+				at_ = static_cast<double>(rx_scan_ + BLK / 2 -
+							  37);
 				hits_ = 0;
 				if (rx_ == RX_TONES) {
 					rx_ = RX_COMB;
@@ -528,16 +530,22 @@ bool PepModem::tones_found(s64 at, float *ratio) const
    fraction of a sample taken out) */
 void PepModem::window(double at, cf *Y) const
 {
-	double w0 = at + W_OFF;
-	s64 w = static_cast<s64>(std::floor(w0));
-	double f = w0 - static_cast<double>(w);
+	window(at, Y, r_);
+}
+
+/* (see window()) on the far clock of r of our samples to its one: the
+   window's samples interpolated where its clock has them */
+void PepModem::window(double at, cf *Y, double r) const
+{
 	std::vector<cf> y(N);
+	auto x = [this](s64 i) { return in_(i); };
 	for (s32 n = 0; n < N; n++)
-		y[static_cast<size_t>(n)] = cf(in_(w + n), 0);
+		y[static_cast<size_t>(n)] = cf(interp_.at(x, at + (W_OFF + n) * r),
+					       0);
 	fft_.forward(y.data());
 	for (s16 k = 0; k <= CARRIERS; k++)
 		Y[k] = y[static_cast<size_t>(k)] * std::polar(1.0f,
-			static_cast<float>(TWO_PI * k * (f - W_OFF) / N));
+			static_cast<float>(-TWO_PI * k * W_OFF / N));
 }
 
 /* a comb epoch's lateness (samples): the slope of its phase over the
@@ -573,7 +581,7 @@ void PepModem::rx_comb_epochs()
 		double sj = 0, sd = 0, sjj = 0, sjd = 0;
 		s16 m = 0;
 		for (s16 j = pass ? 0 : 1; j < COMBS; j++) {
-			window(a0 + j * EPOCH * r, Y.data());
+			window(a0 + j * EPOCH * r, Y.data(), r);
 			double d = comb_fit(Y.data(), nullptr, nullptr);
 			sj += j;
 			sd += d;
@@ -588,14 +596,15 @@ void PepModem::rx_comb_epochs()
 	}
 	at_ = a0;
 	r_ = r;
-	/* the channel: the epochs' mean, their signs (+ - + -) taken out;
+	/* the channel: the epochs' mean, their signs (- + - +: the last
+	   one's echo in the next epoch on its side) taken out;
 	   what is left of them, the noise with the echoes of each epoch in
 	   the next (more than the guard takes) */
 	std::vector<std::vector<cf>> Cs(COMBS, std::vector<cf>(CARRIERS + 1));
 	std::fill(H_.begin(), H_.end(), cf(0, 0));
 	for (s16 j = 0; j < COMBS; j++) {
 		window(at_ + j * EPOCH * r_, Y.data());
-		float sg = j & 1 ? -1.0f : 1.0f;
+		float sg = j & 1 ? 1.0f : -1.0f;
 		for (s16 k = 1; k <= CARRIERS; k++) {
 			cf c = sg * Y[k] * std::conj(comb_[static_cast<size_t>(k)]);
 			Cs[static_cast<size_t>(j)][static_cast<size_t>(k)] = c;
@@ -721,17 +730,27 @@ void PepModem::rx_turn_sync()
 {
 	std::vector<cf> Y(CARRIERS + 1), C(CARRIERS + 1);
 	window(at_, Y.data());
-	double d0 = comb_fit(Y.data(), &H_, nullptr), d;
-	d = d0;
+	double d0 = comb_fit(Y.data(), &H_, nullptr), d = d0;
 	at_ -= d;
-	window(at_, Y.data());
-	d = comb_fit(Y.data(), &H_, C.data());
-	at_ -= d;
+	for (s16 i = 0; i < 4; i++) {
+		window(at_, Y.data());
+		d = comb_fit(Y.data(), &H_, C.data());
+		at_ -= d;
+		if (std::fabs(d) < 0.02)
+			break;
+	}
 	std::complex<double> s(0, 0);
 	for (s16 k = 1; k <= CARRIERS; k++)
 		s += std::complex<double>(C[k] *
 					  std::conj(H_[static_cast<size_t>(k)]));
 	float sign = s.real() < 0 ? -1.0f : 1.0f;
+	/* the round trip: from the end of our last turn to the start of
+	   this one, less its silence */
+	if (tx_end_ > 0) {
+		double rt = at_ - PRE_LEN - TURN_GAP - static_cast<double>(tx_end_);
+		if (rt > 0 && rt < 4 * FS)
+			rtd_ = rtd_ > 0 ? 0.8 * rtd_ + 0.2 * rt : rt;
+	}
 	logf("turn: comb at %.2f (%+.2f %+.2f), %s", at_, d0, d, sign < 0 ? "final" :
 	     "link");
 	rx_final_on_ = sign < 0;
@@ -800,11 +819,15 @@ void PepModem::rx_turn_epoch()
 					  H_[static_cast<size_t>(k)]);
 		at_ += EPOCH * r_;
 		if (--rx_left_ <= 0) {
+			/* the answerer's word is the link's: on every
+			   carrier we can tell its phase on (1 bit), not
+			   only on those we offered */
 			mask_both_.assign(CARRIERS + 1, 0);
+			std::vector<u8> bpsk = capable(1);
 			s32 n = 0;
 			for (s16 k = 1; k <= CARRIERS; k++) {
 				mask_both_[static_cast<size_t>(k)] =
-					mask_far_[static_cast<size_t>(k)] &&
+					bpsk[static_cast<size_t>(k)] &&
 					phase_bit(k);
 				n += mask_both_[static_cast<size_t>(k)];
 			}
@@ -816,11 +839,10 @@ void PepModem::rx_turn_epoch()
 	}
 	const PepLoading &l = rx_final_on_ ? rx_final_ : link_;
 
-	/* the pilots' timing and phase first, then the decisions' (twice) */
-	cf p1 = Y[TONE1] / (H_[TONE1] * comb_[TONE1]);
-	cf p2 = Y[TONE2] / (H_[TONE2] * comb_[TONE2]);
-	double dt = std::arg(p2 * std::conj(p1)) * N / (TWO_PI * (TONE2 - TONE1));
-	double ph = std::arg(p1) - TWO_PI * TONE1 * dt / N;
+	/* the timing and phase from the decisions (twice: first those of
+	   the carriers of 4 bits or fewer, then all); the epoch comes where
+	   the last one said, so they start at 0 */
+	double dt = 0, ph = 0;
 	std::vector<u8> oct;
 	for (s16 it = 0; it < 3; it++) {
 		for (s16 k = 1; k <= CARRIERS; k++)
@@ -835,7 +857,8 @@ void PepModem::rx_turn_epoch()
 		double sw = 0, sk = 0, skk = 0, se = 0, ske = 0;
 		for (s16 k = 1; k <= CARRIERS; k++) {
 			cf dk = dec[static_cast<size_t>(k)];
-			if (std::norm(dk) == 0)
+			u8 b = l.bits[static_cast<size_t>(k)];
+			if (std::norm(dk) == 0 || (!it && b > 4 && b != PILOT))
 				continue;
 			double er = std::arg(Z[k] * std::conj(dk));
 			if (std::fabs(er) > 0.6)
@@ -889,8 +912,8 @@ void PepModem::rx_turn_epoch()
 		     dt, ph, s.c_str());
 	}
 	/* late by dt: the next window earlier, the far clock faster */
-	r_ -= 0.1 * dt / EPOCH;
-	at_ -= dt;
+	r_ -= 0.05 * dt / EPOCH;
+	at_ -= 0.5 * dt;
 	rx_got_++;
 
 	scramble(oct.data(), oct.size());
@@ -1141,7 +1164,30 @@ bool PepModem::load_from(const u8 *b, s32 n, PepLoading &l) const
 void PepModem::start_link()
 {
 	link_.uniform(mask_both_, 2);
+	if (getenv("DSP_PEP_MASKS")) {
+		std::string s;
+		for (s16 k = 1; k <= CARRIERS; k++)
+			if (mask_both_[static_cast<size_t>(k)] &&
+			    !mask_both_[static_cast<size_t>(k - 1)])
+				s += " " + std::to_string(k);
+			else if (!mask_both_[static_cast<size_t>(k)] &&
+				 mask_both_[static_cast<size_t>(k - 1)])
+				s += "-" + std::to_string(k - 1);
+		logf("mask:%s", s.c_str());
+	}
 	rx_final_ = allocate();
+	{
+		double sn = 0, sd = 0;
+		s16 m = 0;
+		for (s16 k = 40; k < 400; k++) {
+			sn += 10 * std::log10(std::norm(H_[static_cast<size_t>(k)]) /
+					      nacc_[static_cast<size_t>(k)]);
+			sd += 10 * std::log10(std::norm(H_[static_cast<size_t>(k)]) /
+					      std::max(1e-9, dist_[static_cast<size_t>(k)]));
+			m++;
+		}
+		logf("SNR 40-400: silence %.1f dB, comb %.1f dB", sn / m, sd / m);
+	}
 	logf("link: %s; the far side's to us: %s", link_.str().c_str(),
 	     rx_final_.str().c_str());
 	std::vector<u8> b;
@@ -1195,7 +1241,7 @@ s32 PepModem::duplex_rate(bool rx) const
 	const PepLoading &l = rx ? rx_final_ : tx_final_;
 	s64 pay = s64{std::max(0, l.octets() - OVERHEAD)} * 8 * cfg_.turn_max;
 	s64 turn = TURN_GAP + PRE_LEN + EPOCH + s64{cfg_.turn_max} * EPOCH;
-	return static_cast<s32>(pay * FS / (2 * turn));
+	return static_cast<s32>(pay * FS / (2 * turn + static_cast<s64>(rtd_)));
 }
 
 } // namespace dsp

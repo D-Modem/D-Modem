@@ -167,6 +167,7 @@ s16 PepPump::process(void *in, void *out, s32 cnt)
 	if (!up_ && mdm_.connected()) {
 		up_ = true;
 		stat_snr(mdm_.snr_db());
+		stat_rtd(static_cast<s32>(mdm_.rtd() * srate / pep::FS));
 		stat_line(static_cast<float>(pep::FS) / pep::EPOCH, 0,
 			  static_cast<float>(pep::FS) / pep::EPOCH, 0);
 		ret = connect_at(mdm_.duplex_rate(false),

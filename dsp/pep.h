@@ -140,6 +140,8 @@ public:
 	double clock_ppm() const { return (r_ - 1) * 1e6; }
 	/* the mean SNR of the carriers received (dB) */
 	float snr_db() const { return snr_db_; }
+	/* the round trip's delay (samples at 8000 Hz) between the turns */
+	double rtd() const { return rtd_; }
 	/* the turns each way: ours sent, the far side's received */
 	s32 turns_tx() const { return turns_tx_; }
 	/* (see turns_tx()) */
@@ -191,6 +193,7 @@ private:
 	void rx_run();
 	bool tones_found(s64 at, float *ratio) const;
 	void window(double at, cf *Y) const;
+	void window(double at, cf *Y, double r) const;
 	double comb_fit(const cf *Y, const std::vector<cf> *H, cf *C) const;
 	void rx_comb_epochs();
 	void rx_noise();
@@ -228,6 +231,7 @@ private:
 	const char *why_ = "";
 	std::string log_;
 	VwbFft fft_;
+	VwbInterp interp_;
 	std::vector<cf> comb_;          /* the comb's points, by bin */
 	float scale_ = 0;               /* a unit point's amplitude */
 
@@ -259,6 +263,7 @@ private:
 	s64 heard_ = 0;                 /* the last good packet's sample */
 	s64 wait_until_ = 0;            /* no turn by then: ours again */
 	float snr_db_ = 0;
+	double rtd_ = 0;
 
 	/* loadings */
 	PepLoading link_;               /* 2 bits both ways */
