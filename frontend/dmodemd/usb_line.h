@@ -83,13 +83,14 @@
 #include <dcore.h>
 
 #include "dm_types.h"
+#include "analog_hook.h"
 #include "dte.h"
 #include "run_loop.h"
 #include "si3056.h"
 
 namespace dmd {
 
-class UsbLine final : public dcore::Host {
+class UsbLine final : public AnalogHook<UsbLine> {
 public:
 	/* the line of dte's modem (a pty, or on Windows any of its DTEs),
 	   not yet open */
@@ -207,8 +208,6 @@ public:
 	/* a hook flash it can make (hook_flash()): not on the WB stick,
 	   which has no hook */
 	bool can_flash(dcore::Modem &) override { return kind_ != Kind::Wb; }
-	void hook_flash(dcore::Modem &m, u16 ms) override;
-	s16 pulse_hook(dcore::Modem &m, bool broken) override;
 	/* (see set_international()) */
 	void pulse_dialling(dcore::Modem &m, bool on) override;
 	/* the playback's lead, in samples */
@@ -234,10 +233,6 @@ public:
 		}
 		return dte_.write(buf, n);
 	}
-	/* the clock: the device's samples so far, in ms */
-	u64 now_ms() override {
-		return samples_ * 1000 / rate_;
-	}
 
 	/* the rate the line dev (as open() takes it) will run at, asked
 	   for rate (given: by -r, else the default): an Agere modem's 8000
@@ -253,6 +248,15 @@ public:
 	static s16 list();
 
 private:
+	friend class AnalogHook<UsbLine>;
+	static constexpr const char *LOG_TAG = "usb";
+	/* (AnalogHook's) the device's hook switch; pulse dialling's break
+	   (broken) or make (-1 on the WB stick: no hook); a flash the
+	   stick times itself, or none on the WB stick */
+	void hw_hook(bool off);
+	s16 hw_pulse(bool broken);
+	bool hw_flash(u16 ms);
+
 	enum { ISO_TRANSFERS = 3, ISO_PACKETS = 5 };
 	/* the most transfers a stream has each way (the Agere's: agere_transfers_) */
 	enum { MAX_TRANSFERS = 32 };
@@ -478,7 +482,6 @@ private:
 	   last set (-1: not yet) */
 	double wb_tx_db_ = 0, wb_rx_db_ = 0;
 	s16 wb_carrier_ = -1;
-	u32 rate_ = 9600;
 	s16 frame_ = 192;               /* 20 ms */
 	s16 delay_ = 0;
 	std::vector<s16> frame_in_, frame_out_;
@@ -501,7 +504,6 @@ private:
 	   the microphone's samples for it (8000 a second) */
 	bool dsvd_ = false;
 	std::deque<s16> dsvd_mic_;
-	u64 samples_ = 0;
 	/* DMODEM_USB_REC: the line recorded while off hook (rec_start()) */
 	FILE *rec_ = nullptr;
 	u64 rec_frames_ = 0;
@@ -535,7 +537,6 @@ private:
 	void tx_auto_frame(bool online);
 	bool running_ = false;
 	bool dead_ = false;
-	s16 hook_ = MODEM_HOOK_ON;
 	u16 gpio_ = 0;
 	bool st75951_ = false;          /* the ST7554's codec an ST75951/2 */
 	bool leds_ = false;             /* set_leds() */
@@ -556,7 +557,6 @@ private:
 	std::vector<libusb_transfer *> parked_;
 	u64 parked_since_ = 0, resume_tried_ = 0;
 	enum { RESUME_MS = 1000, RESUME_GIVE_UP_MS = 30000 };
-	u64 flash_end_ = 0;
 	u16 rings_ = 0;                 /* ring detector changes not given */
 	/* the Agere modem: its ROM's version (0xffff unknown); the samples
 	   sent (OUT transfers done) less those come (IN), which sets each OUT

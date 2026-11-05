@@ -41,6 +41,7 @@
 
 #include "dm_types.h"
 #include "ac97_ports.h"
+#include "analog_hook.h"
 #include "cx_country.h"
 #include "cx_daa.h"
 #include "hda_codec.h"
@@ -50,7 +51,7 @@
 
 namespace dmd {
 
-class AlsaLine final : public dcore::Host {
+class AlsaLine final : public AnalogHook<AlsaLine> {
 public:
 	/* the line of pty's modem, not yet open */
 	explicit AlsaLine(Pty &pty) : pty_(pty) {}
@@ -78,10 +79,6 @@ public:
 	bool analog_line(dcore::Modem &) override { return true; }
 	/* a hook flash it can make (hook_flash()) */
 	bool can_flash(dcore::Modem &) override { return true; }
-	void hook_flash(dcore::Modem &m, u16 ms) override;
-	/* pulse dialling: the hook switch off (broken) or on, while off
-	   hook */
-	s16 pulse_hook(dcore::Modem &m, bool broken) override;
 	/* the playback's lead, in samples */
 	s32 io_delay(dcore::Modem &) override { return delay_; }
 	/* the country: an Si3054's line settings, written now on hook,
@@ -93,16 +90,19 @@ public:
 	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
 		return pty_.write(buf, n);
 	}
-	/* the clock: the codec's samples so far, in ms */
-	u64 now_ms() override {
-		return samples_ * 1000 / rate_;
-	}
 
 	/* the control's name for PCM pcm: hw:<card> for hw:<card>,<dev> or
 	   plughw:..., else pcm's own */
 	static std::string ctl_of(const char *pcm);
 
 private:
+	friend class AnalogHook<AlsaLine>;
+	static constexpr const char *LOG_TAG = "alsa";
+	/* (AnalogHook's) the hook switch (hook_switch()); pulse dialling's
+	   break (broken) or make */
+	void hw_hook(bool off) { hook_switch(off); }
+	s16 hw_pulse(bool broken);
+
 	/* a switch of the codec's, if it has it */
 	struct Switch {
 		snd_ctl_elem_id_t *id = nullptr;
@@ -134,15 +134,11 @@ private:
 	snd_pcm_t *cap_ = nullptr, *play_ = nullptr;
 	snd_ctl_t *ctl_ = nullptr;
 	Switch off_hook_, caller_id_;
-	u32 rate_ = 9600;
 	s16 frame_ = 192;               /* 20 ms */
 	s32 delay_ = 0;                 /* the playback's lead (samples) */
 	std::vector<s16> in_, out_;
 	s16 have_ = 0;                  /* of in_ */
-	u64 samples_ = 0;
 	bool running_ = false;
-	s16 hook_ = MODEM_HOOK_ON;
-	u64 flash_end_ = 0;
 	dsp::RingDetect ring_;
 	/* the codec's registers, if they take the country's settings; the
 	   country, its name, still to be written */

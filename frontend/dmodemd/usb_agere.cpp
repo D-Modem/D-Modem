@@ -692,7 +692,7 @@ void UsbLine::agere_in(libusb_transfer *t)
 			if (agere_status_said_ < 20) {
 				agere_status_said_++;
 				DBG("Agere: status %04x (%s hook)\n", status,
-				    hook_ == MODEM_HOOK_OFF ? "off" : "on");
+				    off_hook() ? "off" : "on");
 			} else {
 				TRACE("Agere: status %04x\n", status);
 			}
@@ -727,7 +727,7 @@ void UsbLine::agere_in(libusb_transfer *t)
 		    " longer and %" PRIu64 " shorter, %" PRIu64 " packets of silence, %zu to play; IN "
 		    "packets %" PRIu64 " failed, %" PRIu64 " short, %u odd\n",
 		    agere_in_n_, agere_out_n_, agere_lead_, agere_lead_lo_, agere_lead_hi_,
-		    agere_win_lo_, agere_win_hi_, hook_ == MODEM_HOOK_OFF ? "off" : "on",
+		    agere_win_lo_, agere_win_hi_, off_hook() ? "off" : "on",
 		    agere_drift_, agere_longer_,
 		    agere_shorter_, agere_short_, iso_.out_buf.size(), agere_in_bad_,
 		    agere_in_short_, agere_odd_);
@@ -848,7 +848,7 @@ void UsbLine::agere_leds(dcore::Modem &m)
 	u64 now = now_ms();
 	online_seen_ = online_seen_ ||
 		m.link_state() == dcore::LinkState::Online;
-	bool oh = hook_ == MODEM_HOOK_OFF;
+	bool oh = off_hook();
 	if (!oh && agere_ring_ms_ && now - agere_ring_ms_ < LED_RING_MS)
 		oh = now / LED_FAST_MS % 2 == 0;
 	u16 v = static_cast<u16>((agere_gpio_ & ~GPIO_LED_OH) |

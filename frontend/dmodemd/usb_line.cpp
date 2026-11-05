@@ -1188,10 +1188,10 @@ void UsbLine::country(dcore::Modem &, const char *name)
 	intl_dc_ = same_name(n, "FRANCE") || same_name(n, "ALGERIA") ||
 		same_name(n, "TUNISIA");
 	intl_aus_ = same_name(n, "AUSTRALIA");
-	if (h_ && kind_ == Kind::Stick && claimed_ && hook_ != MODEM_HOOK_OFF)
+	if (h_ && kind_ == Kind::Stick && claimed_ && !off_hook())
 		stick_country();
 	if (h_ && kind_ == Kind::Apple && claimed_ && apple_regs_read_ &&
-	    hook_ != MODEM_HOOK_OFF)
+	    !off_hook())
 		apple_country();
 }
 
@@ -1414,9 +1414,9 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 {
 	bool off = state == MODEM_HOOK_OFF;
 
-	bool was_off = hook_ == MODEM_HOOK_OFF;
+	bool was_off = off_hook();
 	DBG("%s\n", off ? "off hook" : "on hook");
-	hook_ = state;
+	hook_state(state);
 	if (off)
 		rec_start();
 	else
@@ -1428,7 +1428,6 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 	/* (after a call: not caller ID's listening between rings) */
 	if (!off && was_off && kind_ == Kind::Agere)
 		agere_onhook_ms_ = clock_ms();
-	flash_end_ = 0;
 	if (kind_ == Kind::Agere)   /* (it hears the line on hook) */
 		return agere_hook(off) && agere_caller_id(!off) ? 0 : -1;
 	if (kind_ == Kind::Wb)      /* (no hook: a bare pair's) */
@@ -1492,7 +1491,7 @@ void UsbLine::update_leds(dcore::Modem &m)
 		wb_carrier(m);
 		return;
 	}
-	if (!leds_ || kind_ != Kind::St7554 || hook_ != MODEM_HOOK_OFF)
+	if (!leds_ || kind_ != Kind::St7554 || !off_hook())
 		return;
 	bool online = m.link_state() == dcore::LinkState::Online;
 	if (online && m.tx_pending())
@@ -1508,37 +1507,36 @@ void UsbLine::update_leds(dcore::Modem &m)
 		set_gpio(v);
 }
 
-/* see dcore.h: on hook for ms, then off again (if it still is; not on the
-   WB stick, which has no hook) */
-void UsbLine::hook_flash(dcore::Modem &, u16 ms)
+/* see usb_line.h: the stick times a flash (1 to 2000 ms); the WB stick
+   has no hook */
+bool UsbLine::hw_flash(u16 ms)
 {
-	if (hook_ != MODEM_HOOK_OFF || kind_ == Kind::Wb)
-		return;
-	DBG("hook flash, %u ms\n", ms);
-	if (kind_ == Kind::Stick) {   /* the stick times it */
+	if (kind_ == Kind::Stick)
 		stick_out(LP_HOOK_FLASH,
 			  static_cast<u16>(ms < 1	  ? 1 :
 						ms > 2000 ? 2000 :
 							    ms));
-		return;
-	}
-	if (kind_ == Kind::Agere)
-		agere_hook(false);
-	else if (kind_ == Kind::Apple)
-		apple_hook(false);
-	else
-		set_gpio(static_cast<u16>(gpio_ & ~GPIO_HOOK1));
-	flash_end_ =
-		samples_ + static_cast<u64>(ms) * rate_ / 1000;
+	return kind_ == Kind::Stick || kind_ == Kind::Wb;
 }
 
-/* see dcore.h: the hook GPIO cleared (broken) or set again (-1 on the
-   WB stick: no hook) */
-s16 UsbLine::pulse_hook(dcore::Modem &, bool broken)
+/* see usb_line.h: the ST7554's hook GPIO */
+void UsbLine::hw_hook(bool off)
 {
-	if (hook_ != MODEM_HOOK_OFF || kind_ == Kind::Wb)
+	if (kind_ == Kind::Agere)
+		agere_hook(off);
+	else if (kind_ == Kind::Apple)
+		apple_hook(off);
+	else
+		set_gpio(off ? static_cast<u16>(gpio_ | GPIO_HOOK1) :
+			 static_cast<u16>(gpio_ & ~GPIO_HOOK1));
+}
+
+/* see usb_line.h: on the ST7554 the hook GPIO cleared (broken) or set
+   again */
+s16 UsbLine::hw_pulse(bool broken)
+{
+	if (kind_ == Kind::Wb)
 		return -1;
-	flash_end_ = 0;
 	if (kind_ == Kind::Stick)
 		return stick_out(LP_SET_HOOK, broken ? 0 : 1) ? 0 : -1;
 	if (kind_ == Kind::Agere)
@@ -1637,7 +1635,7 @@ s16 UsbLine::pump(dcore::Modem &m)
 	}
 	while (rings_) {
 		rings_--;
-		if (hook_ != MODEM_HOOK_OFF)
+		if (!off_hook())
 			m.ring();
 	}
 	if (viso_.ep_in && dsvd_) {
@@ -1661,16 +1659,7 @@ s16 UsbLine::pump(dcore::Modem &m)
 			DBG("Australian timer over: RFC off\n");
 			set_gpio(static_cast<u16>(gpio_ & ~GPIO_RFC));
 		}
-		if (flash_end_ && samples_ >= flash_end_) {
-			flash_end_ = 0;
-			if (hook_ == MODEM_HOOK_OFF && kind_ == Kind::Agere)
-				agere_hook(true);
-			else if (hook_ == MODEM_HOOK_OFF && kind_ == Kind::Apple)
-				apple_hook(true);
-			else if (hook_ == MODEM_HOOK_OFF)
-				set_gpio(static_cast<u16>(gpio_ |
-							       GPIO_HOOK1));
-		}
+		flash_expire();
 		samples_ += frame_;
 		if (viso_.ep_in)
 			voice_frame(m);
@@ -1679,12 +1668,12 @@ s16 UsbLine::pump(dcore::Modem &m)
 		else {
 			/* caller ID sent before the ring, on a line that
 			   hears the line on hook */
-			if (hook_ != MODEM_HOOK_OFF)
+			if (!off_hook())
 				m.idle_audio(frame_in_.data(), frame_);
 			std::fill_n(frame_out_.data(), frame_, 0);
 		}
 		/* (DMODEM_USB_TX_GAIN: louder or softer to the line) */
-		if (tx_auto_ && hook_ == MODEM_HOOK_OFF)
+		if (tx_auto_ && off_hook())
 			tx_auto_frame(m.link_state() == dcore::LinkState::Online ||
 				      m.link_state() == dcore::LinkState::HangingUp);
 		if (tx_gain_ != 4096)
@@ -1712,9 +1701,9 @@ s16 UsbLine::pump(dcore::Modem &m)
 		iso_.idle_out.pop_front();
 		agere_send(t);
 	}
-	if (kind_ == Kind::Agere && hook_ != MODEM_HOOK_OFF)
+	if (kind_ == Kind::Agere && !off_hook())
 		agere_ring_poll();
-	if (kind_ == Kind::Apple && hook_ != MODEM_HOOK_OFF)
+	if (kind_ == Kind::Apple && !off_hook())
 		apple_ring_tick();
 	update_leds(m);
 	/* (a playback that has drifted ahead: dropped back to its lead;
