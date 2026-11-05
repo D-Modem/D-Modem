@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <queue>
 
+#include "modem_defs.h"
 #include "pep.h"
 
 namespace dsp {
@@ -188,6 +189,7 @@ void PepModem::init(const Config &c, Source src, Sink sink)
 	} else {
 		ph_ = PH_A_SEND;
 		tx_start_tones_comb(COMBS, 0, nullptr);
+		first_end_ = tx_end_;
 		logf("answerer: tones and comb");
 	}
 }
@@ -479,6 +481,7 @@ void PepModem::rx_run()
 				hits_ = 0;
 				if (rx_ == RX_TONES) {
 					rx_ = RX_COMB;
+					far_heard_ = true;
 				} else {
 					rx_ = RX_SYNC;
 				}
@@ -1038,6 +1041,17 @@ void PepModem::rx_turn_end()
 /*
  *    the start-up's decisions
  */
+
+/* see pep.h: a tone of amplitude a is a bin of a N / 2, its power
+   a^2 / 2, so a bin's power p is the line's 2 p / N^2 */
+float PepModem::noise_dbm0(s16 k) const
+{
+	if (nacc_.empty() || k < 1 || k > CARRIERS)
+		return 0;
+	return static_cast<float>(10 * std::log10(
+		2 * noise(k) / (static_cast<double>(N) * N) / DP_DBM0_POWER +
+		1e-12));
+}
 
 /* carrier k's noise: the silence's, or the comb's own unsteadiness if
    more */

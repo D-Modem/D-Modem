@@ -264,6 +264,7 @@ struct dp_coding {
 };
 
 #define DP_STATS_V8_MAX 32
+#define DP_STATS_PEP_BINS 512
 
 struct dp_stats {
 	int dp;                         /* the DP_ID the call came up with;
@@ -312,6 +313,16 @@ struct dp_stats {
 	int robbed_bits;
 	int cleardown;                  /* the remote ended the call with
 					   V.34's cleardown (11.7/V.34) */
+	/* DP_STATS_PEP: Telebit's PEP, its S70 to S76 (ATI11, ATI12):
+	   the line's rate each way (S70, S72, bit/s); by carrier (bins 1
+	   to 511, 7.8125 Hz apart) its bits each way (S71, S73) and the
+	   line's noise there, dBm0 in a carrier's band (S76); packets
+	   received bad, to be sent again (S74), and taken (S75) */
+	int pep_tx_rate, pep_rx_rate;
+	unsigned char pep_tx_bits[DP_STATS_PEP_BINS];
+	unsigned char pep_rx_bits[DP_STATS_PEP_BINS];
+	float pep_noise[DP_STATS_PEP_BINS];
+	unsigned long pep_bad, pep_good;
 };
 
 /*
@@ -408,6 +419,7 @@ struct dp_vcvm {
 #define DP_STATS_FAR_DELAY      0x800
 #define DP_STATS_NMSE           0x1000
 #define DP_STATS_INFO           0x2000
+#define DP_STATS_PEP            0x4000
 
 /* the mean square of 16 bit linear samples at 0 dBm0: a sine of peak
    22300, G.711's digital milliwatt */

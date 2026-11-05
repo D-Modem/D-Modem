@@ -1,0 +1,40 @@
+# PEP in automode (+MS=PEP, as Telebit's S50=0): a PEP caller and a
+# V.34 answerer meet in V.34, a V.32bis caller and a PEP answerer in
+# V.32bis; then two PEP modems, and the PEP carriers' table (ATI12)
+A ATE0X3W2+MS=PEP\r
+B ATE0+MS=34\r
+B ATA\r
+A ATD\r
+until A CONNECT 40000
+until B CONNECT 5000
+state
+send A 600
+send B 600
+run 4000
+hangup A
+until B NO CARRIER 20000
+run 500
+A ATE0X3W2+MS=132\r
+B ATE0+MS=PEP\r
+B ATA\r
+A ATD\r
+until A CONNECT 40000
+until B CONNECT 5000
+state
+send A 600
+send B 600
+run 4000
+hangup B
+until A NO CARRIER 20000
+run 500
+A ATE0+MS=PEP\r
+B ATE0+MS=PEP\r
+B ATA\r
+A ATD\r
+until A CONNECT 40000
+until B CONNECT 5000
+run 2000
+A +++
+run 1500
+A ATI12\r
+run 500

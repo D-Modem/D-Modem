@@ -952,7 +952,7 @@ s16 Modem::at_H(char *p, s16 *len)
 }
 
 /* ATI<n>: what the modem is, its S-registers, its country, the last
-   call's statistics (ATI6 and ATI11) */
+   call's statistics (ATI6 and ATI11), its PEP carriers (ATI12) */
 s16 Modem::at_I(char *p, s16 *len)
 {
 	const char *e;
@@ -995,6 +995,9 @@ s16 Modem::at_I(char *p, s16 *len)
 	case 11:
 		/* (ATI6: USRobotics' link diagnostics) */
 		call_stats();
+		break;
+	case 12:
+		pep_stats();
 		break;
 	case 7:
 		puts("Country: ");

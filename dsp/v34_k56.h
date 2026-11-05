@@ -418,6 +418,7 @@ s16 V34K56<P>::k8_step(s32 c)
 		if (k8_ans >= ms2samples(200, self.srate)) {
 			self.ans_peak = 0;
 			self.env_sum = self.env15_re = self.env15_im = 0;
+			self.env_cos = self.env_sin = 0;
 			self.env_n = 0;
 			self.set_state(V8C_LISTEN);
 		} else if (c >= ms2samples(5000, self.srate)) {

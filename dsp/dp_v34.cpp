@@ -627,6 +627,7 @@ struct V34V8 {
 	Osc ans_lo;
 	cplx ans_lp1, ans_lp2;
 	double env_sum, env15_re, env15_im;
+	double env_cos, env_sin;  /* the 15 Hz reference's own sums */
 	float ans_peak;          /* the answer tone's envelope at most */
 	s32 ans_gone;            /* samples of it below a third of that */
 	s32 env_n;
@@ -1768,17 +1769,22 @@ void V34V8<P>::ans_analyse(float x)
 	env_sum += e;
 	env15_re += e * cosf(w);
 	env15_im += e * sinf(w);
+	env_cos += cosf(w);
+	env_sin += sinf(w);
 	env_n++;
 }
 
-/* the depth of the 15 Hz modulation, 0.2 for ANSam */
+/* the depth of the 15 Hz modulation, 0.2 for ANSam: of the envelope
+   less its mean (else the mean leaks in over a window that is not a
+   whole number of periods, and a plain tone reads up to 0.09) */
 template <class P>
 float V34V8<P>::ans_am_depth()
 {
-	if (env_sum <= 0)
+	if (env_sum <= 0 || env_n <= 0)
 		return 0;
-	return 2 * sqrt(env15_re * env15_re + env15_im * env15_im) /
-		env_sum;
+	double m = env_sum / env_n;
+	double re = env15_re - m * env_cos, im = env15_im - m * env_sin;
+	return static_cast<float>(2 * sqrt(re * re + im * im) / env_sum);
 }
 
 /*
@@ -5134,6 +5140,7 @@ s16 V34Moh<P>::moh_step(s32 c)
 				"modem\n");
 			self.ans_peak = 0;
 			self.env_sum = self.env15_re = self.env15_im = 0;
+			self.env_cos = self.env_sin = 0;
 			self.env_n = 0;
 			self.set_state(V8C_LISTEN);
 		} else if (c >= ms2samples(5000, self.srate)) {

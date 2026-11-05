@@ -63,6 +63,14 @@ static LoopbackConfig automode(int caller, int answerer, float secs)
 	return c;
 }
 
+/* (see automode()) both in automode (S31=1, +MS=PEP's default) */
+static LoopbackConfig pep_auto(int caller, int answerer, float secs)
+{
+	LoopbackConfig c = automode(caller, answerer, secs);
+	c.sregs.push_back({ SREG_AUTOMODE, 1 });
+	return c;
+}
+
 class PumpLoopback : public testing::TestWithParam<Pumps> {};
 
 /* one loopback run: no pump failed, both sides connected with a BER
@@ -530,7 +538,31 @@ INSTANTIATE_TEST_SUITE_P(Automode, PumpLoopback, testing::Values(
 	Pumps{ "v34_to_bell212", automode(8, 212, 25) },
 	Pumps{ "v21_to_v34", automode(21, 8, 45) },
 	Pumps{ "v23_to_v34", automode(23, 8, 60) },
-	Pumps{ "bell103_to_v34", automode(103, 8, 45) }), name);
+	Pumps{ "bell103_to_v34", automode(103, 8, 45) },
+	/* PEP in automode (+MS=PEP,1): an answerer that hears no PEP
+	   caller goes on with V.8 and its chain; a caller that hears
+	   ANSam goes to V.34, one that hears another modem's answer to
+	   V.32bis's chain */
+	Pumps{ "v34_to_pep", pep_auto(8, 255, 30) },
+	Pumps{ "v32bis_to_pep", pep_auto(132, 255, 30) },
+	Pumps{ "v22bis_to_pep", pep_auto(122, 255, 30) },
+	Pumps{ "pep_to_v34", pep_auto(255, 8, 30) },
+	Pumps{ "pep_to_v32bis", pep_auto(255, 132, 30) },
+	Pumps{ "pep_to_v22bis", pep_auto(255, 122, 30) },
+	Pumps{ "pep_to_pep", pep_auto(255, 255, 25) }), name);
+
+/* a Telebit T2000's answer (DSP_PEP_ANS=1: 3.1 s of V.25's answer tone
+   before PEP): the PEP caller in automode waits for PEP after it */
+TEST(PepAnswer, AfterAnswerTone)
+{
+	setenv("DSP_PEP_ANS", "1", 1);
+	LoopbackResult r = loopback_run(pep_auto(255, 255, 30));
+	unsetenv("DSP_PEP_ANS");
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_TRUE(r.side[0].ok()) << r.side[0].text("caller");
+	EXPECT_TRUE(r.side[1].ok()) << r.side[1].text("answerer");
+	EXPECT_GT(r.side[0].rx_rate, 4800);
+}
 
 #include <cmath>
 

@@ -2697,6 +2697,13 @@ void Modem::call_stats()
 			number("Receive Frame Count", l.rx_frames);
 			number("Receive Frame Error Count", l.rx_errors);
 		}
+		if (d.have & DP_STATS_PEP) {
+			/* Telebit's S70 and S72, S74 and S75 */
+			row("PEP Line Rate (Tx/Rx)", dec(d.pep_tx_rate) +
+			    "/" + dec(d.pep_rx_rate));
+			number("PEP Packets Accepted", d.pep_good);
+			number("PEP Packets Received Bad", d.pep_bad);
+		}
 		number("Retrains by Local Modem", d.retrains_local);
 		number("Retrains Requested by Remote Modem",
 		       d.retrains_remote);
@@ -2713,6 +2720,39 @@ void Modem::call_stats()
 	if (stats_.ended)
 		row("Call Termination Cause",
 		    cause_text[static_cast<s16>(stats_.cause)]);
+}
+
+/* ATI12: the last PEP call's carriers (Telebit's S71, S73 and S76), a
+   row each that is used either way or measured: its bin, its frequency,
+   its bits each way and the line's noise there; "No PEP Call" without
+   one */
+void Modem::pep_stats()
+{
+	const struct dp_stats &d = dp_stats_;
+	if (!stats_.call || !(d.have & DP_STATS_PEP)) {
+		puts("No PEP Call");
+		crlf();
+		return;
+	}
+	puts("Bin   Hz      Tx  Rx  Noise (dBm0)");
+	crlf();
+	for (s16 k = 1; k < DP_STATS_PEP_BINS; k++) {
+		if (!d.pep_tx_bits[k] && !d.pep_rx_bits[k] &&
+		    d.pep_noise[k] == 0)
+			continue;
+		std::string line = dec(k);
+		line.append(6 - line.size(), ' ');
+		std::string hz = fixed(k * 7.8125, 1);
+		line += hz;
+		line.append(14 - line.size(), ' ');
+		line += dec(d.pep_tx_bits[k]);
+		line.append(18 - line.size(), ' ');
+		line += dec(d.pep_rx_bits[k]);
+		line.append(22 - line.size(), ' ');
+		line += fixed(d.pep_noise[k], 1);
+		puts(line);
+		crlf();
+	}
 }
 
 /* a call's rates now (V.59's txDataHistory and rxDataHistory): kept

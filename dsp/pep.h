@@ -130,7 +130,9 @@ public:
 	const PepLoading &tx_loading() const { return tx_final_; }
 	/* (see tx_loading()) */
 	const PepLoading &rx_loading() const { return rx_final_; }
-	/* the line's noise by bin, dB against the comb's carrier (S76) */
+	/* carrier k's noise, dBm0 in its bin's band (S76) */
+	float noise_dbm0(s16 k) const;
+	/* the line's noise by bin, dB against the comb's carrier */
 	const std::vector<float> &noise_db() const { return noise_db_; }
 	/* packets received again (S74) and taken (S75) */
 	s64 packets_bad() const { return pk_bad_; }
@@ -148,6 +150,12 @@ public:
 	s32 turns_tx() const { return turns_tx_; }
 	/* (see turns_tx()) */
 	s32 turns_rx() const { return turns_rx_; }
+	/* the far side's start-up tones heard: it is a PEP modem */
+	bool far_heard() const { return far_heard_; }
+	/* the samples (8000 Hz) run so far */
+	s64 now() const { return t_; }
+	/* the answerer: when its first tones and comb end (samples) */
+	s64 first_end() const { return first_end_; }
 	/* the log since the last call */
 	std::string take_log();
 
@@ -242,6 +250,8 @@ private:
 	VwbHistory in_;
 	std::deque<float> out_;         /* to send */
 	s64 tx_end_ = 0;                /* when what was queued ends */
+	s64 first_end_ = 0;             /* (see first_end()) */
+	bool far_heard_ = false;        /* (see far_heard()) */
 
 	/* the receiver */
 	Rx rx_ = RX_OFF;
