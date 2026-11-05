@@ -67,6 +67,7 @@
 #include "dm_types.h"
 #include "pump.h"
 #include "qam.h"
+#include "qam_rx_core.h"
 
 namespace dsp {
 
@@ -290,7 +291,7 @@ enum hst_rxp {
 /* received symbols kept to find the rate in */
 #define HST_HIST 48
 
-struct HstPump : PumpBase<HstPump, hst_state> {
+struct HstPump : PumpBase<HstPump, hst_state>, QamRxCore<HstPump> {
 	static constexpr const char *name = "HST data pump";
 
 	/* frees the two receivers */
@@ -314,8 +315,6 @@ struct HstPump : PumpBase<HstPump, hst_state> {
 	s16 req;                /* the caller's request: index, -1 none */
 
 	/* the caller's receiver */
-	QamRx rx;
-	CarrierDetect carrier;
 	hst_rxp rxp;
 	HstFwd model;           /* what the answerer sends */
 	cplx last_z;
@@ -371,6 +370,9 @@ struct HstPump : PumpBase<HstPump, hst_state> {
 	cplx bc_symbol();
 	s16 bc_bits();
 	void rx_symbol();
+	/* (QamRxCore's) the far end's carrier come, gone */
+	void carrier_came();
+	void carrier_went();
 	void rx_change();
 	void rx_data(cplx z);
 	void bc_rx_symbol();
@@ -880,25 +882,28 @@ s16 HstPump::sample(float x, float *y)
 	if (courier || rxp >= RX_ALT)
 		*y = bc_tx.sample([this] { return bc_symbol(); });
 
-	if (rx.sample(x))
-		rx_symbol();
-	switch (carrier.run(rx.power)) {
-	case 1:
-		if (rxp != RX_DATA) {
-			rx.reset();
-			rxp = RX_IDLE;
-			alt_run = 0;
-		}
-		break;
-	case -1:
-		if (rxp != RX_DATA && rxp != RX_RATE) {
-			rxp = RX_IDLE;
-			alt_run = 0;
-		}
-		break;
-	}
-	carrier_tick(carrier.on);
+	qam_rx(x);
 	return r;
+}
+
+/* the far end's carrier come (QamRxCore): but in data, the receiver from
+   its start, waiting */
+void HstPump::carrier_came()
+{
+	if (rxp != RX_DATA) {
+		rx.reset();
+		rxp = RX_IDLE;
+		alt_run = 0;
+	}
+}
+
+/* and gone: but in data or the rate sequence, waiting again */
+void HstPump::carrier_went()
+{
+	if (rxp != RX_DATA && rxp != RX_RATE) {
+		rxp = RX_IDLE;
+		alt_run = 0;
+	}
 }
 
 /* HST: the answerer sends the forward channel, at the rate XID chose

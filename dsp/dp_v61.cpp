@@ -61,6 +61,7 @@
 #include "bits.h"
 #include "pump.h"
 #include "qam.h"
+#include "qam_rx_core.h"
 #include "rate_table.h"
 #include "v61_audio.h"
 
@@ -216,7 +217,7 @@ enum v61_rxp {
 	RX_DATA,
 };
 
-struct V61Pump : PumpBase<V61Pump, v61_state> {
+struct V61Pump : PumpBase<V61Pump, v61_state>, QamRxCore<V61Pump> {
 	static constexpr const char *name = "V.61 data pump";
 
 	/* frees the receiver's and echo canceller's buffers */
@@ -273,10 +274,8 @@ struct V61Pump : PumpBase<V61Pump, v61_state> {
 	/* receiver */
 	EchoCanceller ec;
 	float ec_mu;
-	QamRx rx;
 	ToneTrk t1800, t3300, t300, t1050, ans2100;
 	ToneTrk g1500, g1400, f2100, f1960;
-	CarrierDetect carrier;
 	enum v61_rxp rxp;
 	s32 run_s;
 	s16 last_sgn, s_miss;
@@ -339,6 +338,9 @@ struct V61Pump : PumpBase<V61Pump, v61_state> {
 	void rx_control_end();
 	void ear_put(cplx a);
 	void rx_sample(float x);
+	/* (QamRxCore's) the far end's carrier come, gone */
+	void carrier_came();
+	void carrier_went();
 	/* its name in the log */
 	const char *tag() const { return "v61"; }
 	/* connected (PumpBase's statistics) */
@@ -743,11 +745,10 @@ cplx V61Pump::tx_symbol()
 /* back to waiting for S */
 void V61Pump::rx_reset()
 {
-	rx.reset();
+	qam_rx_reset();
 	/* the timing loop as fast as before data (QamRx::init()'s) */
 	rx.kt_p = 0.03f * rx.sps;
 	rx.kt_gi = 0.03f;
-	rx.agc_hold = 0;
 	agc_free = 0;
 	rxp = RX_IDLE;
 	run_s = 0;
@@ -1109,20 +1110,22 @@ void V61Pump::rx_sample(float x)
 			ev_grev = 1;
 	}
 
-	if (rx.sample(x))
-		rx_symbol();
+	qam_rx(x);
+}
 
-	switch (carrier.run(rx.power)) {
-	case 1:
-		if (rxp == RX_IDLE)
-			rx.reset();
-		break;
-	case -1:
-		if (rxp != RX_DATA)
-			rx_reset();
-		break;
-	}
-	carrier_tick(carrier.on);
+/* the far end's carrier come (QamRxCore): the receiver from its start if
+   it waits for S */
+void V61Pump::carrier_came()
+{
+	if (rxp == RX_IDLE)
+		rx.reset();
+}
+
+/* and gone: back to waiting for S, but in data (S10 times the loss) */
+void V61Pump::carrier_went()
+{
+	if (rxp != RX_DATA)
+		rx_reset();
 }
 
 /*
