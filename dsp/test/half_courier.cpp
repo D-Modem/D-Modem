@@ -64,6 +64,7 @@ using namespace half;
 
 class CourierPeer : public HalfModem, public CodecLine<CourierPeer> {
 public:
+	/* the peer is "courier", its variables COURIER_* */
 	CourierPeer() : HalfModem("courier", "COURIER") {}
 
 protected:

@@ -113,8 +113,11 @@ public:
 
 	static constexpr double RATES[6] = { 7200.0, 8210.53, 8400.0,
 		8968.42, 9600.0, 10266.67 };
+	/* the codec's sample rate now, Hz */
 	double rate() const { return RATES[rate_]; }
 
+	/* the flash, the C51's mask ROM and the NVRAM read, the modem reset;
+	   false and err if a file is missing or the wrong size */
 	bool load(const char *rom, const char *mask, const char *nvram,
 		  std::string &err)
 	{
@@ -151,6 +154,7 @@ public:
 		return true;
 	}
 
+	/* the power-on state: the CPU, the PCB, the ASIC and the DSP */
 	void reset()
 	{
 		cpu.reset();
@@ -213,6 +217,8 @@ public:
 		return dac;
 	}
 
+	/* the NVRAM written back to its file, if it changed (only when a path
+	   was given) */
 	void save_nvram()
 	{
 		if (nvram_path_.empty() || !nvram_dirty_)
@@ -225,6 +231,7 @@ public:
 		nvram_dirty_ = false;
 	}
 
+	/* a printf-style line to log */
 	void msg(const char *fmt, ...) const __attribute__((format(printf, 2, 3)))
 	{
 		char b[512];
@@ -261,12 +268,15 @@ private:
 	u8 ser_pending_ = 0;    /* bit 0 RX, bit 1 TX */
 	bool pins_[8] = {};
 
+	/* an interrupt source's control register (0xf, masked, for source
+	   1, which has none) */
 	int con_of(int src) const
 	{
 		static const int off[8] = { 0x12, -1, 0x14, 0x16, 0x18, 0x1a,
 			0x1c, 0x1e };
 		return off[src] < 0 ? 0xf : pcb_[off[src] / 2];
 	}
+	/* whether an external pin source is level triggered */
 	bool level(int src) const { return src >= 3 && (con_of(src) & 0x10); }
 	/* an external pin's level (INT0 4, INT1 5, INT2 6, INT3 7, INT4 3) */
 	void pin(int src, bool v)
@@ -278,6 +288,7 @@ private:
 			if (v) req_ |= 1 << src; else req_ &= ~(1 << src);
 		}
 	}
+	/* IMASK as read: each source's mask bit from its control register */
 	u16 imask() const
 	{
 		u16 m = 0;
@@ -286,6 +297,7 @@ private:
 				m |= 1 << s;
 		return m;
 	}
+	/* IMASK written: the mask bits into each source's control register */
 	void set_imask(u16 v)
 	{
 		static const int off[8] = { 0x12, -1, 0x14, 0x16, 0x18, 0x1a,
@@ -296,6 +308,9 @@ private:
 				c = (u16)((c & ~8) | ((v >> s) & 1 ? 8 : 0));
 			}
 	}
+	/* the interrupt controller: the best unmasked pending request, if its
+	   priority beats those in service, to the CPU (cleared only once it
+	   takes it) */
 	void icu()
 	{
 		if ((dbg & 64) && (req_ & 0x20)) {
@@ -351,6 +366,8 @@ private:
 			msg("interrupt %02x to %04x:%04x", type, cpu.sr[I80186::CS], cpu.ip);
 		insrv_ |= 1 << best;
 	}
+	/* an EOI: the highest priority in service ended (non-specific), or
+	   the one named */
 	void eoi(u16 v)
 	{
 		if (v & 0x8000) {
@@ -373,6 +390,7 @@ private:
 			insrv_ &= ~(1 << s);
 	}
 
+	/* n CPU instructions, the interrupt controller between them */
 	void run_cpu(long n)
 	{
 		for (long i = 0; i < n; i++) {
@@ -394,6 +412,7 @@ private:
 
 	/* ---- the timers ---- */
 	double t_frac_[3] = {};
+	/* the three timers and the serial port advanced n timer clocks */
 	void timers(long n)
 	{
 		/* timer 2 first: it may prescale the others */
@@ -463,6 +482,8 @@ private:
 	long tx_busy_ = 0;      /* counts until the byte has gone */
 	long rx_gap_ = 0;
 
+	/* the UART advanced n timer clocks: the DTE's octets bit by bit onto
+	   RXD, a transmission's time */
 	void serial(long n)
 	{
 		double bit = TIMER_HZ / DTE_BAUD;
@@ -510,6 +531,8 @@ private:
 			}
 		}
 	}
+	/* an octet from the DTE into the receiver, its interrupt raised if
+	   enabled */
 	void received(u8 b)
 	{
 		u16 con = pcb_[0x64 / 2];
@@ -529,6 +552,7 @@ private:
 		ser_pending_ |= 1;
 		req_ |= 4;
 	}
+	/* an octet from the transmitter to the DTE */
 	void transmit(u8 b)
 	{
 		u16 con = pcb_[0x64 / 2];
@@ -563,6 +587,7 @@ private:
 		}
 		return v;
 	}
+	/* a word written to the peripheral control block at off */
 	void pcb_write(unsigned off, u16 v)
 	{
 		off &= 0xfe;
@@ -593,9 +618,13 @@ private:
 		}
 		pcb_[off / 2] = v;
 	}
+	/* whether the PCB is in memory space (else I/O space) */
 	bool pcb_mem() const { return pcb_[0xa8 / 2] & 0x1000; }
+	/* the PCB's base address */
 	u32 pcb_base() const { return (u32)(pcb_[0xa8 / 2] & 0xff) << 8; }
 
+	/* a memory byte read that no page maps: the PCB if mapped there, else
+	   the RAM, else 0xff */
 	u8 mem_rd(u32 a)
 	{
 		if (pcb_mem() && a >= pcb_base() && a < pcb_base() + 0x100) {
@@ -610,6 +639,8 @@ private:
 			return ram_[a];
 		return 0xff;
 	}
+	/* a memory byte written that no page maps: the PCB if mapped there,
+	   else the RAM */
 	void mem_wr(u32 a, u8 v)
 	{
 		if (pcb_mem() && a >= pcb_base() && a < pcb_base() + 0x100) {
@@ -629,6 +660,7 @@ private:
 	{
 		return pcb_[0x56 / 2] & 0xff;
 	}
+	/* port 2's pins: the latch, RXD, DIP switch 1 and the NVRAM's DO */
 	u16 p2pin()
 	{
 		u16 v = pcb_[0x5e / 2] & 0xff;
@@ -640,6 +672,8 @@ private:
 		return v;
 	}
 	bool p1_dsp_ = false;
+	/* port 1 written: the DSP's reset line and the NVRAM's chip select
+	   and clock */
 	void p1_changed()
 	{
 		u8 l = pcb_[0x56 / 2] & 0xff;
@@ -651,6 +685,7 @@ private:
 		}
 		ee_clock(l & 0x20, l & 4, (pcb_[0x5e / 2] & 0x80) != 0);
 	}
+	/* port 2 written: the NVRAM's data in */
 	void p2_changed()
 	{
 		u8 l = pcb_[0x56 / 2] & 0xff;
@@ -666,6 +701,8 @@ private:
 	u16 ee_word_ = 0;
 	int ee_wr_ = -1;        /* the address of a write in progress */
 	int ee_op_ = 0;
+	/* the 93C66's pins: an SK rising edge with CS high shifts DI in and
+	   DO out */
 	void ee_clock(bool cs, bool sk, bool di)
 	{
 		if (!cs) {
@@ -753,20 +790,24 @@ private:
 	u8 lane_in_ = 0;                /* lanes holding a word for the DSP */
 	u8 lane_out_ = 0;               /* lanes holding the DSP's word */
 
+	/* the DSP's port key for a lane's ASIC port */
 	static int lane_key(unsigned p) { return (int)((0xff58 + ((p - 0x40) >> 2)) & 0x2f); }
 
+	/* an I/O read, a byte or a word */
 	u16 io_rd(u16 port, bool word)
 	{
 		if (word)
 			return (u16)(io_rd8(port) | io_rd8((u16)(port + 1)) << 8);
 		return io_rd8(port);
 	}
+	/* an I/O write, a byte or a word */
 	void io_wr(u16 port, u16 v, bool word)
 	{
 		io_wr8(port, (u8)v);
 		if (word)
 			io_wr8((u16)(port + 1), (u8)(v >> 8));
 	}
+	/* an I/O byte read, logged if asked (dbg 128) */
 	u8 io_rd8(u16 p)
 	{
 		u8 v = io_rd8_(p);
@@ -774,6 +815,8 @@ private:
 			msg("in %02x = %02x at %04x:%04x", p, v, cpu.sr[1], cpu.ip);
 		return v;
 	}
+	/* an I/O byte read: the PCB if in I/O space, the DIP switches, the
+	   mailbox lanes, the ASIC */
 	u8 io_rd8_(u16 p)
 	{
 		if (!pcb_mem() && p >= pcb_base() && p < pcb_base() + 0x100) {
@@ -829,6 +872,8 @@ private:
 		}
 		return asic_[p];
 	}
+	/* an I/O byte written: the PCB if in I/O space, the mailbox lanes,
+	   the ASIC */
 	void io_wr8(u16 p, u8 v)
 	{
 		if (!pcb_mem() && p >= pcb_base() && p < pcb_base() + 0x100) {
@@ -886,6 +931,7 @@ private:
 		}
 		return to_dsp_[k];
 	}
+	/* the DSP's write to a port of the ASIC (by its key) */
 	void dsp_wr(unsigned k, u16 v)
 	{
 		if (dbg & 16)
@@ -932,8 +978,11 @@ private:
 		if (dbg & 1)
 			msg("dsp image %d: %u words at %04x", id, n, dst);
 	}
+	/* a little-endian word of the flash */
 	u16 rd16rom(u32 o) { return (u16)(rom_[o] | rom_[o + 1] << 8); }
 
+	/* the DSP out of reset: its registers cleared and its boot code
+	   started */
 	void dsp_boot()
 	{
 		C5x &c = dsp;
@@ -1013,11 +1062,14 @@ private:
 		cpu.r[I80186::SP] += 2;
 		if (cf) cpu.flags |= I80186::CF; else cpu.flags &= ~I80186::CF;
 	}
+	/* a word pushed on the supervisor's stack */
 	void push16(u16 v)
 	{
 		cpu.r[I80186::SP] -= 2;
 		cpu.wr16(((u32)cpu.sr[I80186::SS] << 4) + cpu.r[I80186::SP], v);
 	}
+	/* hooks on the supervisor's code where it would go wrong as emulated
+	   */
 	void shortcuts()
 	{
 		/* timer 1's handler while the supervisor waits for the DTE's
@@ -1055,6 +1107,7 @@ private:
 		});
 	}
 
+	/* a whole file read into v; false if it cannot be opened */
 	static bool slurp(const char *path, std::vector<u8> &v)
 	{
 		FILE *f = fopen(path, "rb");

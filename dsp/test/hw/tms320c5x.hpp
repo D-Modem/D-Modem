@@ -54,6 +54,7 @@ public:
 	bool stopped = false;
 	unsigned stop_op = 0, stop_pc = 0;
 
+	/* memory cleared, no hooks */
 	C5x() { memset(P, 0, sizeof(P)); hooks_.resize(0x10000); }
 
 	/* fn before the instruction at a runs (it can move pc) */
@@ -61,11 +62,14 @@ public:
 	{
 		hooks_[a & 0xffff] = std::move(fn);
 	}
+	/* the hook at a removed */
 	void unhook(unsigned a) { hooks_[a & 0xffff] = nullptr; }
 
 	/* the hardware stack, 8 deep */
 	w16 top() const { return sp_ ? stack_[sp_ - 1] : 0; }
+	/* the number of words on the stack */
 	int depth() const { return sp_; }
+	/* a word pushed (the bottom one lost when full) */
 	void push(u32 v)
 	{
 		if (sp_ == 8) {
@@ -74,6 +78,7 @@ public:
 		}
 		stack_[sp_++] = (w16)v;
 	}
+	/* a word popped (0 if empty) */
 	w16 pop() { return sp_ ? stack_[--sp_] : 0; }
 
 	/* program memory */
@@ -88,6 +93,7 @@ public:
 			a += 0x8000;
 		return D[a];
 	}
+	/* a program memory word written (the ROM not) */
 	void pw(u32 a, u32 v)
 	{
 		a &= 0xffff;
@@ -102,6 +108,7 @@ public:
 	   decodes A0-A3 and A5: key = address & 0x2f, data 0x5n key n) */
 	std::function<w16(unsigned key)> io_rd;
 	std::function<void(unsigned key, w16 v)> io_wr;
+	/* a data address's port key for io_rd and io_wr, or -1 */
 	static int io_key(u32 a)
 	{
 		if (a >= 0x50 && a < 0x60)
@@ -110,6 +117,7 @@ public:
 			return a & 0x2f;
 		return -1;
 	}
+	/* a data memory word read (the ports through io_rd) */
 	w16 rdm(u32 a)
 	{
 		a &= 0xffff;
@@ -125,6 +133,8 @@ public:
 	long watch = -1;
 	std::function<void(C5x &, w16 v)> watch_fn;
 
+	/* a data memory word written (the ports through io_wr, watch noted)
+	   */
 	void wr(u32 a, u32 v)
 	{
 		a &= 0xffff;
@@ -141,8 +151,11 @@ public:
 		if (a == 0x10)          /* NDX = 0: AR0 is INDX and ARCR too */
 			D[0x18] = D[0x19] = (w16)v;
 	}
+	/* auxiliary register n */
 	w16 ar(int n) const { return D[0x10 + n]; }
+	/* auxiliary register n written */
 	void setar(int n, u32 v) { wr(0x10 + n, v); }
+	/* TREG0 */
 	w16 T() const { return D[0x0c]; }
 
 	/* an interrupt (the codec's): the registers saved for RETE, the
@@ -199,16 +212,19 @@ public:
 		return (w16)((arp << 13) | (ov << 12) | (ovm << 11) | (intm << 9) |
 			     (dp & 0x1ff));
 	}
+	/* ST1 as stored */
 	w16 st1() const
 	{
 		return (w16)((arb << 13) | (cnf << 12) | (tc << 11) |
 			     (sxm << 10) | (c << 9) | 0x1f0 | pm);
 	}
+	/* ST0 loaded */
 	void lst0(w16 v)
 	{
 		arp = v >> 13; ov = (v >> 12) & 1; ovm = (v >> 11) & 1;
 		dp = v & 0x1ff;
 	}
+	/* ST1 loaded (ARB into ARP too) */
 	void lst1(w16 v)
 	{
 		arb = v >> 13; arp = arb; cnf = (v >> 12) & 1;
@@ -234,9 +250,12 @@ private:
 	Shadow shadow_[8];
 	int nshadow_ = 0;
 
+	/* a 32 bit value as signed */
 	static int32_t s32(u32 v) { return (int32_t)v; }
+	/* a 16 bit value as signed */
 	static int s16(u32 v) { return (int16_t)(w16)v; }
 
+	/* TREG0 written, and TREG1 and TREG2 with it unless TRM */
 	void setT(u32 v)
 	{
 		D[0x0c] = (w16)v;
@@ -246,6 +265,7 @@ private:
 		}
 	}
 
+	/* the registers an interrupt saves, onto the shadow stack */
 	void shadow_save()
 	{
 		if (nshadow_ == 8) {
@@ -256,6 +276,7 @@ private:
 		s = { acc, accb, p, st0(), st1(), D[0x07], D[0x0c], D[0x0d],
 		      D[0x0e], D[0x18], D[0x19], D[0x09] };
 	}
+	/* RETE's restore of the shadow registers */
 	void shadow_restore()
 	{
 		Shadow &s = shadow_[--nshadow_];
@@ -266,6 +287,7 @@ private:
 		lst0(s.st0); lst1(s.st1); arp = s.st0 >> 13;
 	}
 
+	/* a word's bits reversed */
 	static w16 rev16(w16 x)
 	{
 		w16 r = 0;
@@ -274,11 +296,13 @@ private:
 				r |= (w16)(0x8000 >> i);
 		return r;
 	}
+	/* a bit-reversed (*BR0+ or *BR0-) step of a by INDX */
 	w16 brev(w16 a, int d) const
 	{
 		w16 i = D[0x18];
 		return rev16((w16)(rev16(a) + d * rev16(i)));
 	}
+	/* the end of circular buffer n's AR, or -1 if it is in none */
 	int circ_end(int n) const
 	{
 		w16 r = D[0x1e];
@@ -314,6 +338,7 @@ private:
 		}
 		return a;
 	}
+	/* an indirect operand's side effect on the ARs (none for direct) */
 	void mod(w16 op)
 	{
 		if (op & 0x80)
@@ -322,6 +347,7 @@ private:
 	/* a memory-mapped register's address: direct, page 0 */
 	u32 mmr(w16 op) { return (op & 0x80) ? (ea(op) & 0x7f) : (op & 0x7f); }
 
+	/* PREG shifted by PM */
 	u32 pshift() const
 	{
 		int32_t v = s32(p);
@@ -332,11 +358,14 @@ private:
 		}
 		return (u32)v;
 	}
+	/* a data word to the accumulator's width, sign-extended by SXM,
+	   shifted */
 	u32 ld(u32 v, int sh) const
 	{
 		u32 x = sxm ? (u32)s16(v) : (v & 0xffff);
 		return x << sh;
 	}
+	/* x (and a carry) added to ACC: C, OV, saturated by OVM */
 	void addacc(u32 x, u32 cin = 0)
 	{
 		u32 a = acc;
@@ -351,6 +380,7 @@ private:
 		}
 		acc = res;
 	}
+	/* x (and a borrow) subtracted from ACC: C, OV, saturated by OVM */
 	void subacc(u32 x, u32 bin = 0)
 	{
 		u32 a = acc;
@@ -366,6 +396,7 @@ private:
 		acc = res;
 	}
 
+	/* a conditional instruction's conditions (its low byte) all true */
 	bool cond(w16 op)
 	{
 		int m = op & 15, v = (op >> 4) & 15;
@@ -397,6 +428,7 @@ private:
 		return ok;
 	}
 
+	/* an instruction's length in words */
 	static int size(w16 op)
 	{
 		int b = op >> 8, lo = op & 0xff;
@@ -423,6 +455,7 @@ private:
 		return 1;
 	}
 
+	/* the DSP stopped at an instruction it does not know */
 	void stop(w16 op)
 	{
 		if (!stopped) {
@@ -432,6 +465,8 @@ private:
 		}
 	}
 
+	/* one instruction at at, repeated by RPT: the next pc, or -1 for the
+	   one after */
 	int exe(w16 op, w16 at)
 	{
 		int b = op >> 8, lo = op & 0xff;
@@ -450,6 +485,8 @@ private:
 		return -1;
 	}
 
+	/* one execution of an instruction: the next pc, or -1 for the one
+	   after */
 	int exe1(w16 op, w16 at, int b, int lo, w16 imm, int it)
 	{
 		std::vector<w16> &d = D;
@@ -675,6 +712,7 @@ private:
 		return -1;
 	}
 
+	/* the 0xbe group (accumulator and control instructions) */
 	int be(w16 op, w16 at, int lo, w16 imm)
 	{
 		u32 a = acc;

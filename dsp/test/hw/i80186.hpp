@@ -50,6 +50,7 @@ public:
 			ro_[((a + o) >> 12) & 0xff] = ro;
 		}
 	}
+	/* n bytes at a no longer mapped (to mem_rd and mem_wr) */
 	void unmap(u32 a, u32 n)
 	{
 		for (u32 o = 0; o < n; o += 0x1000)
@@ -80,6 +81,7 @@ public:
 
 	/* a hook on a physical address: before the instruction there */
 	std::function<void(I80186 &)> *hooks[256] = {};
+	/* fn called before the instruction at a physical address runs */
 	void hook(u32 phys, std::function<void(I80186 &)> fn)
 	{
 		u32 pg = (phys >> 12) & 0xff;
@@ -90,13 +92,16 @@ public:
 		hooked_[pg] = true;
 	}
 
+	/* no memory mapped, no hooks */
 	I80186() { memset(pages_, 0, sizeof(pages_)); memset(ro_, 0, sizeof(ro_)); memset(hooked_, 0, sizeof(hooked_)); }
+	/* the hooks' pages freed */
 	~I80186()
 	{
 		for (auto &h : hooks)
 			delete[] h;
 	}
 
+	/* the reset state: CS:IP at ffff:0000, interrupts off */
 	void reset()
 	{
 		memset(r, 0, sizeof(r));
@@ -107,6 +112,7 @@ public:
 		halted = false;
 	}
 
+	/* CS:IP's physical address */
 	u32 cs_ip() const { return ((u32)sr[CS] << 4) + ip; }
 
 	/* memory, physical */
@@ -118,6 +124,8 @@ public:
 			return p[a & 0xfff];
 		return mem_rd ? mem_rd(a) : 0xff;
 	}
+	/* a byte written, physical: to its page unless read-only, else mem_wr
+	   */
 	void wr8(u32 a, u8 v)
 	{
 		a &= 0xfffff;
@@ -130,7 +138,9 @@ public:
 		if (mem_wr)
 			mem_wr(a, v);
 	}
+	/* a word read, physical, little-endian */
 	u16 rd16(u32 a) { return (u16)(rd8(a) | rd8(a + 1) << 8); }
+	/* a word written, physical, little-endian */
 	void wr16(u32 a, u16 v) { wr8(a, (u8)v); wr8(a + 1, (u8)(v >> 8)); }
 
 	/* a hardware or software interrupt of this type */
@@ -153,6 +163,7 @@ public:
 		interrupt(type);
 		return true;
 	}
+	/* the non-maskable interrupt */
 	void nmi() { interrupt(2); }
 
 	/* one instruction (its prefixes and repeats with it) */
@@ -202,17 +213,26 @@ private:
 	u32 ea_;                        /* physical, for memory operands */
 	u16 eoff_;                      /* its offset */
 
+	/* the next byte of the instruction stream */
 	u8 fetch8() { u8 v = rd8(cs_ip()); ip++; return v; }
+	/* the next word of the instruction stream */
 	u16 fetch16() { u16 v = rd16(cs_ip()); ip += 2; return v; }
 
+	/* a word pushed on SS:SP */
 	void push(u16 v) { r[SP] -= 2; wr16(((u32)sr[SS] << 4) + r[SP], v); }
+	/* a word popped from SS:SP */
 	u16 pop() { u16 v = rd16(((u32)sr[SS] << 4) + r[SP]); r[SP] += 2; return v; }
 
+	/* a segment register's and an offset's physical address */
 	u32 lin(int s, u16 off) { return ((u32)sr[s] << 4) + off; }
+	/* an offset in the data segment (or the prefix's) */
 	u32 dseg(u16 off) { return lin(seg_ >= 0 ? seg_ : DS, off); }
 
+	/* an 8 bit register by its number (AL CL DL BL AH CH DH BH) */
 	u8 &reg8(int n) { return ((u8 *)&r[n & 3])[n >> 2]; }
 
+	/* a ModRM byte and its displacement decoded: the register, and the
+	   operand register or address */
 	void modrm()
 	{
 		u8 m = fetch8();
@@ -247,18 +267,24 @@ private:
 		eoff_ = off;
 		ea_ = lin(seg_ >= 0 ? seg_ : ds, off);
 	}
+	/* the ModRM operand's byte */
 	u8 rm8() { return mod_ == 3 ? reg8(rm_) : rd8(ea_); }
+	/* the ModRM operand's word */
 	u16 rm16() { return mod_ == 3 ? r[rm_] : rd16(ea_); }
+	/* the ModRM operand's byte written */
 	void setrm8(u8 v) { if (mod_ == 3) reg8(rm_) = v; else wr8(ea_, v); }
+	/* the ModRM operand's word written */
 	void setrm16(u16 v) { if (mod_ == 3) r[rm_] = v; else wr16(ea_, v); }
 	/* the word after the ModRM's word: for LES, LDS, BOUND, CALL far */
 	u16 rm16b() { return rd16(ea_ + 2); }
 
+	/* whether a byte has even parity (PF) */
 	static bool parity(u8 v)
 	{
 		v ^= v >> 4; v ^= v >> 2; v ^= v >> 1;
 		return !(v & 1);
 	}
+	/* SF, ZF and PF from a byte */
 	void szp8(u8 v)
 	{
 		flags &= ~(SF | ZF | PF);
@@ -266,6 +292,7 @@ private:
 		if (!v) flags |= ZF;
 		if (parity(v)) flags |= PF;
 	}
+	/* SF, ZF and PF from a word */
 	void szp16(u16 v)
 	{
 		flags &= ~(SF | ZF | PF);
@@ -273,6 +300,7 @@ private:
 		if (!v) flags |= ZF;
 		if (parity((u8)v)) flags |= PF;
 	}
+	/* flag bits f set or cleared */
 	void setf(u16 f, bool on) { if (on) flags |= f; else flags &= ~f; }
 
 	/* the ALU: op 0 ADD 1 OR 2 ADC 3 SBB 4 AND 5 SUB 6 XOR 7 CMP */
@@ -303,6 +331,7 @@ private:
 		if (w) szp16((u16)res); else szp8((u8)res);
 		return res;
 	}
+	/* INC or DEC: the ALU's ADD or SUB of 1, CF kept */
 	u32 incdec(u32 a, bool dec, bool w)
 	{
 		u16 cf = flags & CF;
@@ -343,8 +372,10 @@ private:
 		(void)bits;
 		return res;
 	}
+	/* SF, ZF and PF from a byte or a word */
 	void szpw(u32 v, bool w) { if (w) szp16((u16)v); else szp8((u8)v); }
 
+	/* a condition code (Jcc's low nibble) true */
 	bool cc(int c)
 	{
 		bool cf = flags & CF, zf = flags & ZF, sf = (flags & SF) != 0,
@@ -363,6 +394,7 @@ private:
 		return (c & 1) ? !v : v;
 	}
 
+	/* the CPU stopped at an instruction it does not know */
 	void stop(u8 op, u32 at)
 	{
 		stopped = true;
@@ -370,6 +402,8 @@ private:
 		stop_op = op;
 	}
 
+	/* DIV or IDIV of AX by a byte: AL the quotient, AH the remainder,
+	   interrupt 0 on overflow */
 	void div8(bool sgn, u32 at)
 	{
 		u8 d = rm8();
@@ -384,6 +418,8 @@ private:
 			r[AX] = (u16)(q | rem << 8);
 		}
 	}
+	/* DIV or IDIV of DX:AX by a word: AX the quotient, DX the remainder,
+	   interrupt 0 on overflow */
 	void div16(bool sgn)
 	{
 		u16 d = rm16();
@@ -414,11 +450,14 @@ private:
 			}
 		}
 	}
+	/* a string instruction's step, by DF */
 	int dstep(int n) { return (flags & DF) ? -n : n; }
 
 	void exec(u8 op, u32 at);
 };
 
+/* one instruction, its prefixes already taken (op its first byte, at its
+   address) */
 inline void I80186::exec(u8 op, u32 at)
 {
 	u32 a, b;
