@@ -56,6 +56,7 @@
 #include "bits.h"
 #include "pump.h"
 #include "qam.h"
+#include "qam_rx_core.h"
 
 namespace dsp {
 
@@ -141,7 +142,7 @@ enum v26_state {
 	V26_DATA,
 };
 
-struct V26Pump : PumpBase<V26Pump, v26_state> {
+struct V26Pump : PumpBase<V26Pump, v26_state>, QamRxCore<V26Pump> {
 	static constexpr const char *name = "V.26 ter data pump";
 
 	/* frees the receiver's and the echo canceller's buffers */
@@ -169,8 +170,6 @@ struct V26Pump : PumpBase<V26Pump, v26_state> {
 	/* receiver */
 	EchoCanceller ec;
 	float ec_mu;
-	QamRx rx;
-	CarrierDetect carrier;
 	s16 rx_on;              /* decoding (the far end's carrier) */
 	s16 rx_k;               /* the last point decided */
 	cplx rx_last;           /* and the symbol */
@@ -198,6 +197,9 @@ struct V26Pump : PumpBase<V26Pump, v26_state> {
 	void rx_bit(s16 bit);
 	void rx_symbol();
 	void rx_sample(float x);
+	/* (QamRxCore's) the far end's carrier come, gone */
+	void carrier_came();
+	void carrier_went();
 	/* its name in the log */
 	const char *tag() const { return "v26"; }
 	/* in data mode (the carrier watched, no handshake timeout) */
@@ -345,8 +347,7 @@ cplx V26Pump::tx_symbol()
 /* the receiver back to waiting for the far end's carrier */
 void V26Pump::rx_reset()
 {
-	rx.reset();
-	rx.agc_hold = 0;
+	qam_rx_reset();
 	rx_zpow = V26_POWER;
 	rx_good = rx_gap = 0;
 	rx_on = 0;
@@ -463,21 +464,24 @@ void V26Pump::rx_sample(float x)
 {
 	x = ec.run(last_tx, x, ec_mu);
 
-	if (rx.sample(x))
-		rx_symbol();
+	qam_rx(x);
+}
 
-	switch (carrier.run(rx.power)) {
-	case 1:
-		if (state != V26_DATA)
-			rx_reset();
-		rx_on = 1;
-		break;
-	case -1:
-		if (state != V26_DATA)
-			rx_reset();
-		break;
-	}
-	carrier_tick(carrier.on);
+/* the far end's carrier come (QamRxCore): decoding, the receiver from
+   its start before data */
+void V26Pump::carrier_came()
+{
+	if (state != V26_DATA)
+		rx_reset();
+	rx_on = 1;
+}
+
+/* and gone: the receiver from its start before data (S10 times a loss in
+   data) */
+void V26Pump::carrier_went()
+{
+	if (state != V26_DATA)
+		rx_reset();
 }
 
 /*

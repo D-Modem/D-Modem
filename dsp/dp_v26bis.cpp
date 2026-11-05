@@ -52,6 +52,7 @@
 #include "dm_types.h"
 #include "pump.h"
 #include "qam.h"
+#include "qam_rx_core.h"
 
 namespace dsp {
 
@@ -99,7 +100,7 @@ enum v26b_state {
 	B_DATA,
 };
 
-struct V26bisPump : PumpBase<V26bisPump, v26b_state> {
+struct V26bisPump : PumpBase<V26bisPump, v26b_state>, QamRxCore<V26bisPump> {
 	static constexpr const char *name = "V.26 bis data pump";
 
 	/* frees the receiver's buffers */
@@ -113,8 +114,6 @@ struct V26bisPump : PumpBase<V26bisPump, v26b_state> {
 	Osc tone;
 
 	/* its receiver (the caller's) */
-	QamRx rx;
-	CarrierDetect carrier;
 	s16 rx_on;              /* the far end's carrier */
 	s16 rx_k;               /* the last point decided */
 	cplx rx_last;           /* and the symbol */
@@ -134,6 +133,9 @@ struct V26bisPump : PumpBase<V26bisPump, v26b_state> {
 	cplx tx_symbol();
 	s16 link_bit();
 	void rx_symbol();
+	/* (QamRxCore's) the far end's carrier come, gone */
+	void carrier_came();
+	void carrier_went();
 	/* its name in the log */
 	const char *tag() const { return "v26bis"; }
 	/* in data mode (the carrier watched, no handshake timeout) */
@@ -315,25 +317,29 @@ s16 V26bisPump::sample(float x, float *y)
 	if (state == B_MARK || state == B_DATA)
 		*y = bc_tx.sample([this] { return link_bit(); });
 
-	if (rx.sample(x))
-		rx_symbol();
-	switch (carrier.run(rx.power)) {
-	case 1:
-		if (state != B_DATA) {
-			rx.reset();
-			run225 = run270 = 0;
-		}
-		rx_on = 1;
-		break;
-	case -1:
-		if (state != B_DATA) {
-			rx_on = 0;
-			run225 = run270 = 0;
-		}
-		break;
-	}
-	carrier_tick(carrier.on);
+	qam_rx(x);
 	return r;
+}
+
+/* the far end's carrier come (QamRxCore): decoding; before data, the
+   receiver and the tone runs from their start */
+void V26bisPump::carrier_came()
+{
+	if (state != B_DATA) {
+		rx.reset();
+		run225 = run270 = 0;
+	}
+	rx_on = 1;
+}
+
+/* and gone: before data, not decoding, the tone runs from their start
+   (S10 times a loss in data) */
+void V26bisPump::carrier_went()
+{
+	if (state != B_DATA) {
+		rx_on = 0;
+		run225 = run270 = 0;
+	}
 }
 
 /* V.26 bis: the answerer sends the forward channel at +MS's highest rate

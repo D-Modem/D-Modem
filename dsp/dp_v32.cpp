@@ -43,6 +43,7 @@
 #include "bits.h"
 #include "pump.h"
 #include "qam.h"
+#include "qam_rx_core.h"
 #include "rate_table.h"
 
 namespace dsp {
@@ -153,7 +154,7 @@ enum v32_rxp {
 	RX_DATA,
 };
 
-struct V32Pump : PumpBase<V32Pump, v32_state> {
+struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	static constexpr const char *name = "V.32/V.32bis data pump";
 
 	/* frees the receiver's and echo canceller's buffers */
@@ -185,10 +186,8 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	/* receiver */
 	EchoCanceller ec;
 	float ec_mu;
-	QamRx rx;
 	ToneTrk aa, ac, usb1, ans2100;
 	ToneTrk v21m, v23m;     /* FSK answerers' marks */
-	CarrierDetect carrier;
 	enum v32_rxp rxp;
 	s32 run_s;
 	s16 last_sgn, s_miss;
@@ -240,6 +239,9 @@ struct V32Pump : PumpBase<V32Pump, v32_state> {
 	void rx_word_bit(s16 bit);
 	void rx_symbol();
 	void rx_sample(float x);
+	/* (QamRxCore's) the far end's carrier come, gone */
+	void carrier_came();
+	void carrier_went();
 	/* its name in the log */
 	const char *tag() const { return "v32"; }
 	/* in data mode (the carrier watched, no handshake timeout) */
@@ -417,8 +419,7 @@ cplx V32Pump::tx_symbol()
 /* the receiver back to waiting for S (equalizer, PLL and word state) */
 void V32Pump::rx_reset()
 {
-	rx.reset();
-	rx.agc_hold = 0;
+	qam_rx_reset();
 	agc_free = 0;
 	rxp = RX_IDLE;
 	run_s = 0;
@@ -713,20 +714,22 @@ void V32Pump::rx_sample(float x)
 	ev_usb1 = usb1.on && !ac.on &&
 		cplx_pow(usb1.lp2) > 4 * cplx_pow(ans2100.lp2);
 
-	if (rx.sample(x))
-		rx_symbol();
+	qam_rx(x);
+}
 
-	switch (carrier.run(rx.power)) {
-	case 1:
-		if (rxp == RX_IDLE)
-			rx.reset();
-		break;
-	case -1:
-		if (rxp != RX_DATA)
-			rx_reset();
-		break;
-	}
-	carrier_tick(carrier.on);
+/* the far end's carrier come (QamRxCore): the receiver from its start if
+   it waits for S */
+void V32Pump::carrier_came()
+{
+	if (rxp == RX_IDLE)
+		rx.reset();
+}
+
+/* and gone: back to waiting for S, but in data (S10 times the loss) */
+void V32Pump::carrier_went()
+{
+	if (rxp != RX_DATA)
+		rx_reset();
 }
 
 /*
