@@ -73,7 +73,7 @@ Homebrew's GoogleTest is built for one architecture only. With it disabled, the 
 
 ## Running
 
-dmodemd takes the same options as on Linux (see the [README](../README.md)). The differences are these.
+dmodemd takes the same options as on Linux (see [Using dmodemd](usage.md)). The differences are these.
 
 **The pty.** The pty is one of macOS's (`/dev/ttys<n>`).
 - Started as root, dmodemd also makes the link `/dev/ttyDM<n>` to it, then goes on as the user `nobody`, as on Linux.

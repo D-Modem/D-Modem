@@ -40,8 +40,8 @@ one program that runs on both kinds of Mac:
 
 ## Running
 
-`dmodemd` takes the same options as on Linux (see the main
-[README](../README.md)). A few things differ:
+`dmodemd` takes the same options as on Linux (see
+[Using dmodemd](usage.md)). A few things differ:
 
 - **The serial device.** Run as root, `dmodemd` creates `/dev/ttyDM0`
   for you. If macOS refuses, use the device path it prints at start-up.

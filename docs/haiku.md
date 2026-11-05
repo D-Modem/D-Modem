@@ -46,8 +46,8 @@ Copy the result to a Haiku machine to run it.
 
 ## Running
 
-`dmodemd` takes the same options as on Linux (see the main
-[README](../README.md)). A few things differ:
+`dmodemd` takes the same options as on Linux (see
+[Using dmodemd](usage.md)). A few things differ:
 
 - **No separate users.** Everything on Haiku runs with full rights, so
   `dmodemd` does not switch to a less privileged user.

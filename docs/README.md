@@ -1,7 +1,10 @@
 # D-Modem documentation
 
-The project's overview, how to build it and how to use it are in the
-main [README](../README.md). This folder explains how each part works.
+The project's overview is the main [README](../README.md); how to build
+D-Modem is in [Building](building.md), how to use it in
+[Using dmodemd](usage.md), and every standard it implements in
+[What the modem does](features.md). This folder explains how each part
+works.
 
 Each page is written in plain English and covers what the part does, how
 to use it, and its current status. Each one links to a **technical

@@ -147,7 +147,7 @@ Tests:
   audio. The `Class1T38Packets` cases check the packets' fields and
   times.
 - `frontend/asterisk/test/efax.sh` runs efax on dmodemd against Asterisk's fax
-  over T.38 (dmodemd's `SIP_T38`; see the [README](../../README.md)).
+  over T.38 (dmodemd's `SIP_T38`; see [Using dmodemd](../usage.md)).
 
 ### Class 1.0: V.34 half-duplex
 

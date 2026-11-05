@@ -230,7 +230,7 @@ add_subdirectory(core)
 
 # the programs and modules built on libdmodem are in frontend/, the
 # support for one system alone in platforms/<system>/.  Each builds in
-# build/<its name>: build/dmodemd/dmodemd, build/asterisk/... (README.md)
+# build/<its name>: build/dmodemd/dmodemd, build/asterisk/... (docs/layout.md)
 add_subdirectory(platforms/windows/winmodem winmodem)
 add_subdirectory(frontend/dmodemd dmodemd)
 # dmodem-capid: CAPI 2.0 on a D-Modem (POSIX)

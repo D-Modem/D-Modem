@@ -1,0 +1,3 @@
+# Acknowledgements
+
+D-Modem was created by Aon's Cyber Labs in 2021, who published it with the article [Introducing D-Modem: A Software SIP Modem](https://www.aon.com/cyber-solutions/aon_cyber_labs/introducing-d-modem-a-software-sip-modem/).  This project grew from their idea and their code: slmodemd's audio on a socket, and their d-modem program, a SIP user agent beside it.  Their code has since been replaced; the SIP user agent, `frontend/dmodemd/sip.cpp`, was written anew from a specification of what it does.  The modem daemon began as Smart Link's `slmodemd` (from Debian's sl-modem-daemon package); its code has been replaced too, written anew from specifications of what it does.  SIP is handled by [libre](https://github.com/baresip/re).
