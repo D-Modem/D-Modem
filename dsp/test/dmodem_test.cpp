@@ -410,10 +410,13 @@ INSTANTIATE_TEST_SUITE_P(Modulations, DmodemPair, testing::Values(
 	   takes 31 s that way); and 1200 */
 	pair("v26bis", "+MS=V26B", 1, 60),
 	pair("v26bis_1200", "+MS=V26B,0,1200,1200", 1, 60),
-	/* HST: the forward channel from the answerer at the rate the
-	   line allows, 300 bit/s back, with V.42 across them */
+	/* HST as two Couriers start it: V.22bis, both offering HST in
+	   V.42's XID, then the forward channel from the answerer (9600
+	   bit/s, else the nearest both allow), 300 bit/s back, V.42
+	   across them */
 	pair("hst", "+MS=HST", 2, 30),
-	pair("hst_9600", "+MS=HST,0,4800,9600", 1, 30),
+	pair("hst_7200", "+MS=HST,0,4800,7200", 1, 30),
+	pair("hst_12000", "+MS=HST,0,12000,16800", 1, 30),
 	v8_to_122("v8_to_122_d0", 0), v8_to_122("v8_to_122_d5", 5)), name);
 
 /* point of sale fast connect through the whole modem: V.22, Bell 212A

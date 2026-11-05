@@ -110,6 +110,12 @@ struct Config {
 	bool zstd = false;
 	u32 zstd_dict = ZSTD_DICT_ID;
 	s16 zstd_window = ZSTD_WINDOW_LOG;
+	/* USRobotics HST offered as a Courier offers it in XID's user data
+	   subfield (docs/dsp/hst.md): the forward channel's rates, bit 2
+	   4800 bit/s up to bit 7 16800, 0 none; in the remote's XID, the
+	   rates it offered.  Both offering it, LAPM goes no further at
+	   this pump's rate: the owner changes to HST (Owner::hst()) */
+	u8 hst = 0;
 	/* V.80 Synchronous Access Mode (+ES=6, or 8 answering), with its
 	   settings, rather than any of the above */
 	bool sync = false;
@@ -156,6 +162,12 @@ public:
 	virtual s32 tx_rate() { return 0; }
 	/* parameters agreed in an XID exchange */
 	virtual void negotiated(const Config &cfg) { (void)cfg; }
+	/* both offered HST in XID (Config::hst), and LAPM is done at
+	   this pump's rate (Link::hst_switch()): the owner changes to
+	   HST's pump,
+	   its forward channel at bps to start with, and calls start()
+	   again once it connects */
+	virtual void hst(s32 bps) { (void)bps; }
 	/* the DTE's in-band command in Synchronous Access Mode (<EM><rate>:
 	   tx and rx are its rate codes) */
 	virtual void sync_command(SyncCommand c, u8 tx, u8 rx) {
@@ -329,6 +341,15 @@ public:
 	s16 write_chars(const u8 *buf, s16 n);
 	/* LAPM's XID: what the remote wants (Config's V.42bis part) */
 	void update_config(const Config &remote);
+	/* the rate (bit/s) HST is to start at, both having offered it in
+	   XID; 0 if not */
+	s32 hst_rate() const { return hst_bps_; }
+	/* HST agreed in XID, the originator's DM sent (or, at the
+	   answerer, received): the owner changes to its HST pump
+	   (Owner::hst()), the link's flags going on until then; start()
+	   then goes on with LAPM, its XID done, without the detection
+	   phase */
+	void hst_switch();
 	/* what MNP's LRs agreed (cfg()) to the owner */
 	void negotiated() { owner_->negotiated(cfg_); }
 	/* LAPM keeps characters the DTE did not take; push them on */
@@ -359,6 +380,8 @@ private:
 	Mode mode_ = Mode::Idle;
 	Protocol proto_ = Protocol::None;
 	bool mnp_tried_ = false;
+	s32 hst_bps_ = 0;
+	bool hst_resume_ = false;       /* start(): LAPM after HST's switch */
 	s32 timer_ = 0;
 	Timer timer_what_ = Timer::None;
 

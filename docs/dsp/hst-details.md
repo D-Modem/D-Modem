@@ -17,8 +17,12 @@ Every figure below that is not marked as D-Modem's own is the
 firmware's.
 
 The Courier's 80186 supervisor runs the start-up, the choice of speed,
-the turning around of the channels and HST's own link layer; none of
-that firmware has been read yet.
+the turning around of the channels and HST's own link layer. Its
+start-up comes from two sources: a recording of a Courier answering a
+call (both directions demodulated, every HDLC frame's FCS good), and
+the supervisor's code in the same firmware image (IDSDL302, file
+offsets below). Its speed changes, channel reversal and own link layer
+have not been read.
 
 ## Forward channel
 
@@ -66,10 +70,61 @@ is its own last output, ending with two data symbols in a row.
 The firmware also has a 450 bit/s back channel (375 Hz at 300 baud);
 D-Modem does not.
 
+## The Courier's start-up
+
+What the recording shows, in order:
+
+1. The answerer's 2100 Hz answer tone, then V.8 (this Courier, a
+   V.34-era model, answers the caller's CM with a JM; the caller offered
+   V.22bis alone).
+2. V.22bis at 2400 bit/s both ways.
+3. V.42's detection phase: the caller's ODP (DC1 with even and odd
+   parity), the answerer's ADP ("EC"), then flags.
+4. The caller's XID command and the answerer's XID response. Both end
+   with V.42's user data subfield, in which a Courier puts:
+
+   | Octets | Meaning |
+   |---|---|
+   | `ff 03 'HST'` | PI 0xFF, the set's name |
+   | `c0 02 07 fc` | PI 0xC0: options (bit 0 HST, bit 1 online fallback, bit 2 the 450 bit/s back channel; the bits are cleared by S15's "disable" bits 1 and 2), then the forward rates (bit 2 4800 to bit 7 16800) |
+   | `f1 01 06` | always there; meaning unknown |
+
+5. Instead of an SABME the caller sends a DM with F = 0 (`01 0f`), and
+   both carriers stop. That is where the recording ends.
+
+The supervisor's code agrees and fills in the rest:
+
+- The XID is built at 0xc479 (command) and 0xc4de (response), the
+  capability at 0x5f70; the parser at 0xd28c stores the remote's in
+  0x4ed/0x4ee. The same PI 0xC0 goes into an MNP LR (builder at
+  0x5b9e) when the call uses MNP's synchronous service class instead of
+  V.42.
+- When both offered HST, the caller (0xd125, on the XID response) and
+  the answerer (0xcfbe, on the caller's DM, which would otherwise ask
+  it for an SABME) leave V.42 for HST.
+- The starting rate (0x60d0) is the first of 9600, 7200, 4800, 12000,
+  14400 and 16800 that both offered. Afterwards a Courier moves up or
+  down by retraining ("Adaptive Speed Leveling", DSP tag 0x36).
+- The caller (0x4037) waits 30 ms, configures its DSP and starts the
+  back channel at once (DSP tag 0x32). The answerer (0x40fb, then
+  0x10e70) waits about 105 ms (ticks of 5 ms and of 1/2400 s) before
+  it starts the forward channel's script (DSP tag 0x33), whose first
+  180 symbols are silent; it goes online once its back channel receiver
+  has trained.
+
+D-Modem's start-up for `+MS=HST` does the same (`link/lapm.cpp`,
+`Modem::hst_switch()`, and `HstPump` with `MDMPRM_HST_START`): V.22bis
+first, the same XID field (options 01: no online fallback or 450 bit/s
+back channel), the DM, 50 ms of flags, then the HST pump at the agreed
+rate with no answer tone and no rate request: the answerer's training
+after 180 ms of silence, the caller's back channel at once. After the
+switch LAPM goes on without a second detection phase or XID, the
+caller's SABME first. That the Courier does the same there is a guess.
+
 ## D-Modem's own start-up
 
-Since the Courier's start-up is unknown, D-Modem's is simple and
-should be replaced once it is read:
+Without V.42 there is no XID to agree on HST in, so the pump falls back
+to a start-up of its own, which a Courier does not understand:
 
 - The answering modem sends 2100 Hz answer tone, a gap, then the
   forward channel's training at 4800 bit/s, and keeps sending scrambled
@@ -94,7 +149,11 @@ synchronous bits.
 
 ## Not done
 
-- The Courier's real start-up, rate negotiation and channel reversal.
+- A call to a real Courier.
+- The Courier's speed changes during the call (Adaptive Speed Leveling)
+  and channel reversal.
+- HST negotiated in MNP's LR (PI 0xC0) instead of V.42's XID, as older
+  Couriers without V.42 would.
 - HST's own link layer (the Courier's error control when it is not
   using V.42 or MNP).
 - The 450 bit/s back channel.

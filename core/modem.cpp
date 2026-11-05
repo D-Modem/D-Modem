@@ -242,6 +242,8 @@ struct LinkOwner final : public dlink::Owner {
 		m_.negotiated(c.comp, c.v44, c.zstd, c.dict_size,
 			      c.max_string, c.mnp5);
 	}
+	/* HST agreed in XID: the call changes to it */
+	void hst(s32 bps) override { m_.hst_switch(bps); }
 	/* the DTE's in-band command (V.80) */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx) override {
 		m_.sync_command(c, tx, rx);
@@ -875,6 +877,7 @@ void Modem::setup_config()
 	c.zstd = false;
 	c.mnp_on = false;
 	cfg_ = c;
+	hst_bps_ = 0;
 	dsp_info_.qc_lapm = c.ec && c.ec_detector;
 }
 
@@ -944,6 +947,7 @@ s16 Modem::link_init()
 	c.zstd = c.ec && c.comp && dsz[0];
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
+	c.hst = hst_offer();
 	v110_ = false;
 	/* +B2: on a clear channel (an ISDN B-channel) X.75 or PPP in place
 	   of the modem's link layer */
@@ -969,6 +973,36 @@ s16 Modem::link_init()
 		c.sync_cfg.shield_dc = ifc[1] == 1;
 	}
 	return link_->init(link_owner_, caller_, c);
+}
+
+/* HST's offer in XID (dlink::Config::hst) for +MS=HST with V.42: the
+   forward rates +MS allows (bit 2 4800 bit/s up to bit 7 16800), else
+   0 (the HST pump at once, with its own start-up) */
+u8 Modem::hst_offer() const
+{
+	static const s32 rates[] = { 4800, 7200, 9600, 12000, 14400, 16800 };
+	u8 m = 0;
+
+	if (sregs_[SREG_DP] != DP_HST || !cfg_.ec || cfg_.sync ||
+	    clear_channel() || relay_channel())
+		return 0;
+	for (s16 i = 0; i < 6; i++)
+		if (rates[i] >= static_cast<s32>(min_rate_) &&
+		    (!max_rate_ || rates[i] <= static_cast<s32>(max_rate_)))
+			m = static_cast<u8>(m | 4 << i);
+	return m;
+}
+
+/* (see dcore.h): the HST pump in V.22bis's place after 50 ms of the
+   link's flags (the Courier's own pause after its DM, and room for
+   the line's delay); its connect starts the link again */
+void Modem::hst_switch(s32 bps)
+{
+	logf("HST: offered both ways in XID, %" PRId32 " bit/s to start\n",
+	     bps);
+	hst_bps_ = bps;
+	dp_requested_ = DP_HST;
+	later(Later::ChangeDp, static_cast<u32>(srate_) * 50 / 1000);
 }
 
 /* what XID or MNP's LRs agreed: the call's compression */
@@ -1742,7 +1776,10 @@ void Modem::dp_process(s16 *in, s16 *out, s32 n)
 		case DPSTAT_OK:
 			break;
 		case DPSTAT_CONNECT:
-			if (state_ == IDLE || state_ == DP_ESTAB)
+			/* (HST after V.22bis: the link waits in EC_ESTAB) */
+			if (state_ == IDLE || state_ == DP_ESTAB ||
+			    (hst_bps_ && dp_->id == DP_HST &&
+			     state_ == EC_ESTAB))
 				update_status(ST_DP_LINK);
 			break;
 		case DPSTAT_CHANGEDP:
@@ -1850,6 +1887,10 @@ void Modem::change_dp()
 		/* the answerer's V.8 bis first (+A8E), then this again */
 		if (!caller_ && !dp_ && v8bis_call())
 			id = drv = DP_V8BIS;
+		/* HST as a Courier starts it: V.22bis, then HST if both
+		   offer it in XID (hst_switch()) */
+		if (id == DP_HST && hst_offer())
+			id = drv = DP_V22BIS;
 	}
 	logf("pump %u (driver %u), %s\n", id, drv,
 	     caller_ ? "caller" : "answerer");

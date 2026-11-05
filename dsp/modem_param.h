@@ -152,6 +152,11 @@ enum MODEM_PARAMETER_NAMES {
 				      voice path (V.61's speech), 0 when
 				      it has none; -1 from a core that has
 				      none */
+	MDMPRM_HST_START    = 78,  /* HST's forward rate (bit/s) that the
+				      link agreed in XID at 2400 bit/s
+				      before the call changed to DP_HST,
+				      else 0; -1 from a core that has
+				      none */
 };
 
 /*

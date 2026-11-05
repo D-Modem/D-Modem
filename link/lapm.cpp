@@ -61,6 +61,13 @@ static const u8 PI_V44_SET = 0x40, PI_V44_C0 = 0x41, PI_V44_P0 = 0x42,
    dictionary's ID (0: none) */
 static const u8 PI_ZSTD_SET = 0x60, PI_ZSTD_P0 = 0x61, PI_ZSTD_WIN = 0x62,
 	PI_ZSTD_DICT = 0x63;
+/* USRobotics HST, in the user data subfield after V.44's (a Courier's
+   XID; docs/dsp/hst.md): "HST" (PI 0xff), its capability (PI 0xc0: the
+   options, bit 0 HST, bit 1 its online fallback, bit 2 the 450 bit/s
+   back channel, then the forward rates, Config::hst; low octet first),
+   and a PI 0xf1 of 6 that the Courier always sends, meaning unknown */
+static const u8 PI_HST_SET = 0xff, PI_HST_CAP = 0xc0, PI_HST_F1 = 0xf1;
+static const u8 HST_OPTS = 0x01, HST_F1 = 6;
 
 /* the HDLC optional functions we send (PL 3; Note 1 of Table 11a: bit
    position 1 is the low-order bit of the first octet): the ISO bit
@@ -81,7 +88,7 @@ enum {
 					   not limit */
 	V42BIS_DFLT_N2 = 512,           /* V.42bis's defaults (5.1) */
 	V42BIS_DFLT_N7 = 6,
-	XID_MAX = 77,                   /* our longest XID frame (V.42bis
+	XID_MAX = 90,                   /* our longest XID frame (V.42bis
 					   and V.44 both offered) */
 };
 
@@ -203,6 +210,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	link_ = link;
 	state_ = IDLE;
 	config_ = was_up_ = reject_ = busy_ = peer_busy_ = false;
+	hst_pending_ = resume_ = false;
 	v76_ = false;
 	fcs32_asked_ = fcs32_ = false;
 	cmd_ud_.clear();
@@ -294,6 +302,12 @@ void Lapm::start()
 	if (caller)
 		link_->set_timer(XID_DELAY, Link::Timer::Negotiate);
 	link_->push_pending = false;
+	/* after HST's switch: the FCS that XID agreed, as after it */
+	if (resume_ && fcs32_) {
+		if (caller)
+			link_->hdlc().set_tx_fcs32(true);
+		link_->hdlc().set_rx_fcs(RX_FCS16 | RX_FCS32);
+	}
 }
 
 /* the originator's flags are out: its frames go from now on, the first
@@ -301,6 +315,11 @@ void Lapm::start()
 void Lapm::negotiate()
 {
 	link_->hdlc().enable_tx(true);
+	if (resume_) {
+		resume_ = false;
+		open();
+		return;
+	}
 	configure();
 }
 
@@ -602,6 +621,16 @@ s16 Lapm::tx_xid(u8 addr)
 		p = put_param(p, PI_V44_P3T, c.v44_history, 2);
 		p = put_param(p, PI_V44_P3R, c.v44_history, 2);
 	}
+	if (c.hst && state_ == IDLE && !was_up_) {
+		if (!v44)
+			*p++ = GI_USER;
+		p = put_id(p, PI_HST_SET, "HST");
+		*p++ = PI_HST_CAP;
+		*p++ = 2;
+		*p++ = HST_OPTS;
+		*p++ = c.hst;
+		p = put_param(p, PI_HST_F1, HST_F1, 1);
+	}
 	f->size = static_cast<s16>(p - f->buf);
 	return 0;
 }
@@ -656,11 +685,16 @@ Frame *Lapm::next_tx_frame()
 	return f;
 }
 
-/* a frame is out: nothing to do (I frames are freed by their
-   acknowledgement, control slots by the order of their ring) */
+/* a frame is out: I frames are freed by their acknowledgement, control
+   slots by the order of their ring; the last before HST's switch hands
+   the call to it */
 void Lapm::tx_complete(Frame *f)
 {
 	(void)f;
+	if (hst_pending_ && tx_ctrl_ == ctrl_list_) {
+		hst_pending_ = false;
+		link_->hst_switch();
+	}
 }
 
 
@@ -1020,7 +1054,12 @@ void Lapm::rx_unnum_rsp(Frame *f)
 				release(true);
 			else if (state_ == DATA && rtx_count_)
 				release(false);
-		} else if (state_ == IDLE && !was_up_) {
+		} else if (state_ == IDLE && !was_up_ && link_->hst_rate() &&
+			   !link_->caller()) {
+			/* HST both ways: the originator's DM, where LAPM
+			   would establish, is the Courier's turn to HST */
+			link_->hst_switch();
+		} else if (state_ == IDLE && !was_up_ && !hst_pending_) {
 			config_ = false;
 			establish();
 		} else if (state_ == DATA)
@@ -1032,7 +1071,15 @@ void Lapm::rx_unnum_rsp(Frame *f)
 		rx_xid(f, true);
 		config_ = false;
 		timer_stop();
-		if (state_ == IDLE)
+		/* HST both ways: a DM (F 0) as the Courier sends, then HST,
+		   where the SABME goes */
+		if (state_ == IDLE && !was_up_ && link_->hst_rate()) {
+			/* (with the 16-bit FCS: the 32-bit one is from the
+			   SABME on) */
+			link_->hdlc().set_tx_fcs32(false);
+			tx_unnum(rsp_addr_, U_DM);
+			hst_pending_ = true;
+		} else if (state_ == IDLE)
 			establish();
 		else if (state_ == DATA) {
 			busy_ = false;
@@ -1068,7 +1115,8 @@ void Lapm::rx_xid(Frame *f, bool response)
 	bool hdlc32 = false;
 	s16 p0 = 0;
 	s32 v44_p0 = 0, zstd_p0 = 0;
-	bool v44_set = false, zstd_set = false;
+	bool v44_set = false, zstd_set = false, hst_set = false;
+	u8 hst_opts = 0, hst_rates = 0;
 	r.zstd_dict = 0;
 	r.zstd_window = ZSTD_WINDOW_LOG;
 	r.dict_size = V42BIS_DFLT_N2;
@@ -1149,6 +1197,15 @@ void Lapm::rx_xid(Frame *f, bool response)
 		case PI_V44_P3R:
 			r.v44_history = std::min(r.v44_history, v);
 			break;
+		case PI_HST_SET:
+			hst_set = pl == 3 && !memcmp(pv, "HST", 3);
+			break;
+		case PI_HST_CAP:
+			if (pl == 2) {
+				hst_opts = pv[0];
+				hst_rates = pv[1];
+			}
+			break;
 		}
 	};
 
@@ -1181,6 +1238,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 	if (r.zstd)
 		p0 = zstd_p0 & 3;
 	r.comp = response ? swap_dirs(p0) : p0;
+	r.hst = hst_set && (hst_opts & 1) ? hst_rates : 0;
 	r.tx_win = static_cast<s16>(tx_win_);
 	r.rx_win = static_cast<s16>(rx_win_);
 	r.tx_info = static_cast<s16>(tx_info_);

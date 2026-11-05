@@ -12,28 +12,47 @@ never published it.
 D-Modem's HST is built from what is known of the Courier's DSP firmware
 (see [the technical details](hst-details.md)). Its forward and back
 channels are those of a real Courier, bit for bit as far as the firmware
-has been read. How a Courier starts a call and picks a speed has not
-been read yet, so D-Modem has its own start-up for that, and two
-D-Modems connect to each other with HST; a call to a real Courier HST is
-not expected to work yet.
+has been read. Its start-up follows a recorded call to a real Courier
+and the Courier's own firmware: the call connects at 2400 bit/s
+(V.22bis), both modems offer HST in V.42's set-up, and they then
+retrain in HST. Two D-Modems connect to each other this way. It has not
+been tried against a real Courier yet, and the HST training right after
+the switch is read from the firmware alone, since the recording stops
+there.
 
 ## Using it
 
     AT+MS=HST        (or AT+MS=168)
 
-The calling modem measures the line during the answerer's training and
-asks for the fastest speed the line takes: 16800, 14400, 12000, 9600,
-7200 or 4800 bit/s. A top speed can be set the usual way,
-`AT+MS=HST,0,4800,9600`. The answering modem always sends the forward
-channel; the caller sends the 300 bit/s back channel. D-Modem does not
-turn the channels around, so the calling side's sending stays at 300
-bit/s for the whole call. V.42 (or MNP) runs on top as on any other
-modem. V.8 has no code for HST, so it is used only when chosen with
-`AT+MS`.
+A call starts the way a Courier's does:
+
+1. The modems connect at 2400 bit/s (V.22bis) and begin V.42.
+2. In V.42's set-up (XID) each one offers HST and its speeds, in the
+   same field a Courier uses.
+3. If both offer it, they skip the rest of V.42 at 2400, drop the
+   carrier and train in HST: 9600 bit/s if both allow it, else 7200,
+   4800, 12000, 14400 or 16800, whichever both have first. V.42 then
+   starts over HST.
+4. If the other modem does not offer HST, the call stays at 2400 bit/s
+   with V.42, as with a Courier.
+
+The speeds offered follow `+MS`, for example `AT+MS=HST,0,4800,7200`.
+The answering modem sends the forward channel; the caller sends the 300
+bit/s back channel. D-Modem does not change speed during the call (a
+Courier moves up from 9600 when the line allows) and does not turn the
+channels around, so the calling side's sending stays at 300 bit/s for
+the whole call.
+
+With V.42 off (`AT\N0`), there is no set-up to offer HST in, so the
+modems start HST at once with D-Modem's own start-up, in which the
+caller measures the line and asks for the fastest speed it takes (up to
+16800). A Courier does not understand that start-up. V.8 has no code
+for HST, so it is used only when chosen with `AT+MS`.
 
 ## Speeds in simulation
 
-Two D-Modems back to back on a simulated phone line (`pump_test`):
+Two D-Modems back to back on a simulated phone line (`pump_test`, with
+D-Modem's own start-up, which picks the speed from the line):
 
 | Line's signal to noise | Forward channel |
 |---|---|
