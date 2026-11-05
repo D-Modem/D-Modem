@@ -14,6 +14,11 @@ D-Modem's own programs and libraries (dmodemd, libdmodem, the Asterisk and
 FreeSWITCH modules) neither contain nor link any of them; only the test
 programs in this directory load them.
 
+`usr/courier-nvram.bin` is not a copy of anyone's part: it was made with
+the emulated Courier (`half_courier`), by the firmware's own `AT&F` and
+`AT&W` on an erased part, with the settings records that enable the
+Courier's options written in.
+
 | File | Owner | From |
 |---|---|---|
 | `smartlink/dsplibs.o` | Smart Link Ltd. | Debian's `sl-modem` 2.9.11~20110321 |
@@ -24,6 +29,8 @@ programs in this directory load them.
 | `intel/537core.lib`, `intel/wwh_dflt.c` | Intel Corporation | Intel537EP 2.37.50.1 for Fedora Core 1 (Intel's licence, `intel/license.txt`) |
 | `broadcom/BCMSM.sys`, `broadcom/BCMSMwxp.inf` | Broadcom Corporation | Dell's "V.92 Soft Modem (Data Fax) Driver" A05 (BCM V.92 56K Modem 3.4.19) |
 | `ess/es56hpi.sys`, `ess/mdmzn.inf` | ESS Technology, Inc. | ESS's ES56H-PI modem driver 5.43.070 (`ess54370.exe`) |
+| `usr/IDSDL302.ROM` | U.S. Robotics (later 3Com); modified by Igor Diagilev (ID_SDL) | the flash image of a Courier V.Everything: ID_SDL v3.02 of 06/06/98, supervisor 7.3.14 and DSP 3.0.13 of 03/13/98 |
+| `usr/c51-mask.rom` | Texas Instruments and U.S. Robotics | the on-chip ROM of a Courier's TMS320C51, read out of a 20.16 MHz board |
 
 ## The ITU's list of national tones
 

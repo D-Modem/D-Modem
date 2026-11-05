@@ -521,6 +521,22 @@ if(EXISTS "${DMODEM_ESS_DIR}/es56hpi.sys")
 	message(STATUS "tests: the ESS soft modem: ${DMODEM_ESS_DIR}")
 endif()
 
+# USRobotics' Courier V.Everything as a peer (half_courier.cpp): the whole
+# modem emulated (hw/courier.hpp), its supervisor and DSP firmware from
+# the flash image, the C51's own ROM, the NVRAM
+set(DMODEM_USR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/usr" CACHE
+	PATH "IDSDL302.ROM, c51-mask.rom and courier-nvram.bin of the Courier (interop tests)")
+if(EXISTS "${DMODEM_USR_DIR}/IDSDL302.ROM")
+	add_executable(half_courier half_courier.cpp modem_half.cpp)
+	target_compile_definitions(half_courier PRIVATE
+		COURIER_ROM="${DMODEM_USR_DIR}/IDSDL302.ROM"
+		COURIER_MASK="${DMODEM_USR_DIR}/c51-mask.rom"
+		COURIER_NVRAM="${DMODEM_USR_DIR}/courier-nvram.bin")
+	target_compile_options(half_courier PRIVATE -O2)
+	target_link_libraries(half_courier PRIVATE ${DMODEM_LIBM})
+	message(STATUS "tests: the USRobotics Courier: ${DMODEM_USR_DIR}")
+endif()
+
 # Intel's 537EP soft modem as a peer (half_intel.cpp): the core of Intel's
 # Intel537EP 2.37.50.1 driver for Fedora Core 1 (537core.lib) with its
 # country tables (wwh_dflt.c); its own exit, index and pow renamed, and
@@ -569,7 +585,7 @@ target_link_libraries(interop_call PRIVATE interop_driver)
 set(_progs "HALF_SMARTLINK=\"$<TARGET_FILE:half_smartlink>\""
 	"HALF_OPEN=\"$<TARGET_FILE:half_open>\""
 	"HALF_OPEN8=\"$<TARGET_FILE:half_open8>\"")
-foreach(_p agere sm56 spandsp pctel hsf broadcom intel ess hda)
+foreach(_p agere sm56 spandsp pctel hsf broadcom intel ess hda courier)
 	if(TARGET half_${_p})
 		string(TOUPPER ${_p} _u)
 		list(APPEND _progs "HALF_${_u}=\"$<TARGET_FILE:half_${_p}>\"")
@@ -612,6 +628,10 @@ if(TARGET half_intel)
 endif()
 if(TARGET half_ess)
 	interop_tests(ess)
+endif()
+# the emulated Courier (HST, V.FC, V.34 against the open modem)
+if(TARGET half_courier)
+	interop_tests(courier)
 endif()
 # the open modem on the emulated HD-audio modem codec (half_hda)
 interop_tests(hda)

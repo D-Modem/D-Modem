@@ -4,7 +4,8 @@
  *
  *    modem_half.hpp - what the test peers' harnesses share (half_agere,
  *                     half_sm56, half_pctel, half_hsf, half_broadcom,
- *                     half_ess, half_intel, half_spandsp, half_hda): a
+ *                     half_ess, half_intel, half_spandsp, half_hda,
+ *                     half_courier): a
  *                     modem whose line's audio comes in on fd 3 and
  *                     goes out on fd 4 (16 bit samples), its DTE a pty
  *                     whose name it prints ("created <name>: <pty>"),
@@ -38,6 +39,9 @@
  *    hw/es2838.hpp       ESS's ES2838 modem chip
  *    hw/hda.hpp          an Intel HD Audio controller
  *    hw/si3054_hda.hpp   Silicon Labs' Si3054 HD-audio modem codec (HDA)
+ *    hw/i80186.hpp       an Intel 80186 core (the Courier's 80C186EB)
+ *    hw/tms320c5x.hpp    a TI TMS320C5x core (the Courier's C51)
+ *    hw/courier.hpp      a whole USRobotics Courier V.Everything
  *
  *    interop_windows.h is a Windows kernel for a WDM driver on such a
  *    harness.
