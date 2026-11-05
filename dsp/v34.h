@@ -122,6 +122,8 @@ struct V34Mp {
 	s16 aux, trellis, nonlinear, expanded, ack;
 	s16 rate_mask;          /* bit 0: 2400 .. bit 13: 33600 */
 	s16 asym;
+	s16 vfc;                /* bit 34 (reserved in V.34): V.FC's data
+				   mode, D-Modem's own */
 	s16 h[6];               /* precoding coefficients (type 1) */
 
 	s16 build(unsigned char *b) const;
@@ -159,11 +161,26 @@ struct V34Params {
 	float nl_gain;          /* after it: the power without it */
 	double pw_;             /* mean power of the points (integers) */
 	u64 g2[V34_G2_LEN], g4[V34_G4_LEN], z8[V34_Z8_LEN];
+	/* V.FC's data mode instead (vfc_data.cpp): b bits in a long
+	   frame, K = 16 + vfc_k of them shell mapped, the short frames'
+	   pattern (bit 1: one bit short; vfc_pat, then each cycle of it
+	   from the low bit), states 8 or 32 */
+	s16 vfc, vfc_k, vfc_pat;
 
 	s16 shell_tables();
 	u64 g2p(s16 i) const;
 	u64 g4p(s16 i) const;
 	double frame_power(s16 k, double theta = 0, double e0 = 1) const;
+	/* the mean power of a frame of k shell mapping bits whose ring m
+	   has the mean power ringp[m] */
+	double shell_power(const double *ringp, s16 k) const;
+	/* V.FC's data mode at symbol rate baud and n * 2400 bit/s (6 to
+	   12), its 8 or 32 state code; -1 when not allowed */
+	s16 vfc_init(s16 baud, s16 n, s16 states_);
+	/* V.FC: the nearest point of each subset to (u, v), in the
+	   constellation's units: its distance squared and index << 3 |
+	   subset (or -1) */
+	void vfc_subsets(float u, float v, float dist[8], s16 pt[8]) const;
 	void set_nonlinear(double theta_);
 	/* n: the primary channel's rate in units of 2400 bit/s, aux: the
 	   auxiliary channel's 200 bit/s on top; returns -1 when not
@@ -201,8 +218,11 @@ struct V34DataTx {
 	cplx sym[8];
 	s16 pos;
 
+	s16 vfc_sh;             /* V.FC: the short frame pattern's state */
+
 	void init(const V34Params *p_);
 	void encode_frame(u32 *scr, s16 tap);
+	void vfc_frame(u32 *scr, s16 tap);
 	cplx symbol(u32 *scr, s16 tap);
 };
 
@@ -338,6 +358,80 @@ struct Viterbi4d {
 	}
 };
 
+/* V.FC's 2D trellis code (vfc_data.cpp): the subset of a symbol from
+   the encoder state's low bit and the quadrant z, and the next state
+   (states 8 or 32; the state has 5 bits either way) */
+s16 vfc_subset(s16 st, s16 z);
+/* the most V.FC sends at symbol rate baud, in 2400 bit/s */
+s16 vfc_max_n(s16 baud);
+s16 vfc_next(s16 states, s16 st, s16 z);
+
+/* its Viterbi decoder, TB symbols behind: in, each subset's best point
+   (index << 3 | subset, or -1) and its metric; out, z << 9 | index of
+   the symbol TB - 1 back on the best path */
+template <s16 TB>
+struct VfcViterbi {
+	float metric[32];
+	unsigned char prev[TB][32];
+	s16 got[TB][32];
+	s16 t;
+	s32 n;
+
+	/* from any state: a receiver turned by a quarter turn sees another
+	   start state's code sequence */
+	void init()
+	{
+		for (float &m : metric)
+			m = 0;
+		t = n = 0;
+	}
+
+	/* 1 with *out the symbol TB - 1 back, 0 while the paths fill */
+	s16 step(s16 states, const float d[8], const s16 pt[8], s16 *out)
+	{
+		float m2[32], best;
+		s16 s, z, bs, k, tt = t;
+
+		for (s = 0; s < 32; s++)
+			m2[s] = 1e30f;
+		for (s = 0; s < 32; s++) {
+			if (metric[s] >= 1e29f)
+				continue;
+			for (z = 0; z < 4; z++) {
+				s16 c = vfc_subset(s, z),
+				    ns = vfc_next(states, s, z);
+				float m = metric[s] + d[c];
+				if (pt[c] >= 0 && m < m2[ns]) {
+					m2[ns] = m;
+					prev[tt][ns] =
+						static_cast<unsigned char>(s);
+					got[tt][ns] = static_cast<s16>(
+						z << 9 | pt[c] >> 3);
+				}
+			}
+		}
+		best = m2[0];
+		bs = 0;
+		for (s = 1; s < 32; s++)
+			if (m2[s] < best) {
+				best = m2[s];
+				bs = s;
+			}
+		for (s = 0; s < 32; s++)
+			metric[s] = m2[s] - best;
+		t = (tt + 1) % TB;
+		if (++n < TB)
+			return 0;
+		s = bs;
+		for (k = 0; k < TB - 1; k++) {
+			s = prev[tt][s];
+			tt = (tt + TB - 1) % TB;
+		}
+		*out = got[tt][s];
+		return 1;
+	}
+};
+
 struct V34DataRx {
 	V34Params p;
 	CoreBits link;          /* the data */
@@ -352,10 +446,14 @@ struct V34DataRx {
 	float da[8];
 	s32 ca[8];
 	V34Precoder pc; /* the receiver's copy of the precoder */
+	VfcViterbi<V34_TB> vvit; /* V.FC: its decoder, the short frame */
+	s16 vfc_sh;             /* pattern's state; e[]: z << 9 | index */
 
 	void viterbi_init();
 	void init(const V34Params *p_);
 	void decode_frame(u32 *scr, s16 tap);
+	void vfc_decode(u32 *scr, s16 tap);
+	cplx vfc_symbol(cplx z_, u32 *scr, s16 tap);
 	void point(s32 pt, u32 *scr, s16 tap);
 	cplx symbol(cplx z_, u32 *scr, s16 tap);
 };

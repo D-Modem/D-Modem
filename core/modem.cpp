@@ -1858,7 +1858,8 @@ void Modem::change_dp()
 		} else if (host_.analog_line(*this) && id == DP_CLEAR)
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
-				      id == DP_V92 || id == DP_VCVM ?
+				      id == DP_V92 || id == DP_VCVM ||
+				      id == DP_VFC ?
 			      static_cast<u32>(DP_V8) :
 			      id;
 		/* the answerer's V.8 bis first (+A8E), then this again */
@@ -2041,7 +2042,8 @@ bool Modem::v8bis_call() const
 	if (host_.analog_line(self) && id == DP_CLEAR)
 		id = DP_V34;
 	return id == DP_V8 || id == DP_V34 || id == DP_V90 ||
-	       id == DP_V91 || id == DP_V92 || id == DP_VCVM || id == DP_K56;
+	       id == DP_V91 || id == DP_V92 || id == DP_VCVM || id == DP_K56 ||
+	       id == DP_VFC;
 }
 
 /* see dcore.h */

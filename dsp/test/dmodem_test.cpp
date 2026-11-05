@@ -391,6 +391,13 @@ static PairCase alaw(PairCase c)
 	return c;
 }
 
+/* the case with the answerer on its own AT commands ms_b */
+static PairCase answerer_ms(PairCase c, const char *ms_b)
+{
+	c.ms_b = ms_b;
+	return c;
+}
+
 /* the case with bytes of bulk data from the caller after the text */
 static PairCase bulk(PairCase c, long bytes)
 {
@@ -417,6 +424,12 @@ INSTANTIATE_TEST_SUITE_P(Modulations, DmodemPair, testing::Values(
 	pair("hst", "+MS=HST", 2, 30),
 	pair("hst_7200", "+MS=HST,0,4800,7200", 1, 30),
 	pair("hst_12000", "+MS=HST,0,12000,16800", 1, 30),
+	/* V.FC's data mode (from the Courier's firmware) after V.34's
+	   start-up, both MPs asking for it; and at 19200 bit/s at most */
+	pair("vfc", "+MS=VFC", 2, 30),
+	pair("vfc_19200", "+MS=VFC,0,14400,19200", 1, 30),
+	/* and against a V.34 answerer: V.34's data mode */
+	answerer_ms(pair("vfc_to_v34", "+MS=VFC", 1, 30), "+MS=34"),
 	v8_to_122("v8_to_122_d0", 0), v8_to_122("v8_to_122_d5", 5)), name);
 
 /* point of sale fast connect through the whole modem: V.22, Bell 212A

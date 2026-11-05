@@ -298,7 +298,7 @@ const struct {
 	{ "VCVM", DP_VCVM }, { "V_CVM", DP_VCVM }, { "VWB", DP_VWB },
 	{ "V26", DP_V26 }, { "V26T", DP_V26TER }, { "V26TER", DP_V26TER },
 	{ "V26B", DP_V26BIS }, { "V26BIS", DP_V26BIS },
-	{ "HST", DP_HST },
+	{ "HST", DP_HST }, { "VFC", DP_VFC },
 	{ "B201", DP_B201 }, { "BELL201", DP_B201 },
 	{ "B202", DP_B202 }, { "BELL202", DP_B202 }, { "B208", DP_B208 },
 	{ "BELL208", DP_B208 },
@@ -312,12 +312,13 @@ const struct {
 };
 
 /* +MS may choose pump id: it has a code and is registered (K56flex
-   while V.90 is, which runs for it) */
+   while V.90 is, V.FC while V.8's pump is, which run for them) */
 bool ms_choosable(u32 id)
 {
 	const DpDriver *d = dp_driver(id);
 	return d && d->code &&
-		(d->op || (id == DP_K56 && dp_registered(DP_V90)));
+		(d->op || (id == DP_K56 && dp_registered(DP_V90)) ||
+		 (id == DP_VFC && dp_registered(DP_V8)));
 }
 
 /* +GMI, +GMM, +GMR (and +FMx) by their last letter: the author, the

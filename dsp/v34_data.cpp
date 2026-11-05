@@ -157,9 +157,8 @@ u64 V34Params::g4p(s16 i) const
    for points of mean power e0 */
 double V34Params::frame_power(s16 k, double theta, double e0) const
 {
-	s16 M_ = M, a, m, i;
-	double ringp[V34_MAX_RINGS], left = ldexp(1, k), e = 0;
-	double g7[8 * V34_MAX_RINGS];
+	s16 M_ = M, m, i;
+	double ringp[V34_MAX_RINGS];
 
 	for (m = 0; m < M_; m++) {
 		double s = 0;
@@ -174,6 +173,16 @@ double V34Params::frame_power(s16 k, double theta, double e0) const
 	}
 	if (k == 0)
 		return ringp[0];
+	return shell_power(ringp, k);
+}
+
+/* (see v34.h) */
+double V34Params::shell_power(const double *ringp, s16 k) const
+{
+	s16 M_ = M, a, m, i;
+	double left = ldexp(1, k), e = 0;
+	double g7[8 * V34_MAX_RINGS];
+
 	/* 7-tuples of rings by their sum */
 	for (a = 0; a <= 7 * (M_ - 1); a++) {
 		g7[a] = 0;
@@ -422,6 +431,8 @@ void V34DataTx::init(const V34Params *p_)
 	pat = 2 * p_->J - 2;
 	v0 = v34_sync_pattern[pat];
 	pos = 8;
+	/* V.FC: its first frame is a short one */
+	vfc_sh = p_->vfc_pat ? 1 : 0;
 }
 
 /* 9.7/V.34: x'(n) = (1 + z/6 + z^2/120) x(n), z = theta |x(n)|^2 over the
@@ -570,7 +581,10 @@ void V34DataTx::encode_frame(u32 *scr, s16 tap)
 cplx V34DataTx::symbol(u32 *scr, s16 tap)
 {
 	if (pos >= 8) {
-		encode_frame(scr, tap);
+		if (p.vfc)
+			vfc_frame(scr, tap);
+		else
+			encode_frame(scr, tap);
 		pos = 0;
 	}
 	return sym[pos++];
@@ -612,6 +626,8 @@ void V34DataRx::init(const V34Params *p_)
 		std::call_once(once, make_lookup);
 	}
 	viterbi_init();
+	vfc_sh = p.vfc_pat ? 1 : 0;
+	vvit.init();
 }
 
 /* the nearest point of the constellation in use to z (in units of the
@@ -798,6 +814,9 @@ cplx V34DataRx::symbol(cplx z_, u32 *scr, s16 tap)
 	float u = z_.re / p_->g, v = z_.im / p_->g;
 	cplx ret;
 	s32 out[2];
+
+	if (p_->vfc)
+		return vfc_symbol(z_, scr, tap);
 
 	if (p_->precode) {
 		/* z is y(n) + noise (the receiver's equalizer includes

@@ -87,7 +87,7 @@ s16 V34Mp::build(unsigned char *b) const
 	put_bits(b, &n, nonlinear, 1);
 	put_bits(b, &n, expanded, 1);
 	put_bits(b, &n, ack, 1);
-	put_bits(b, &n, 0, 1);
+	put_bits(b, &n, vfc, 1);
 	put_bits(b, &n, rate_mask, 15);
 	put_bits(b, &n, asym, 1);
 	if (type)
@@ -120,6 +120,7 @@ s16 V34Mp::parse(const unsigned char *b, s16 len)
 	nonlinear = b[31];
 	expanded = b[32];
 	ack = b[33];
+	vfc = b[34];
 	rate_mask = field(b, 35, 14);
 	asym = b[50];
 	for (i = 0; i < 6; i++)
