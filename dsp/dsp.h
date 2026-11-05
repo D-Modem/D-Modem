@@ -492,6 +492,8 @@ s16 dp_v26_init(void);
 void dp_v26_exit(void);
 s16 dp_v26bis_init(void);
 void dp_v26bis_exit(void);
+s16 dp_hst_init(void);
+void dp_hst_exit(void);
 s16 dp_v29fp_init(void);
 void dp_v29fp_exit(void);
 s16 dp_v61_init(void);

@@ -51,6 +51,7 @@ int prop_dp_init(void)
 	dp_v32_init();
 	dp_v26_init();
 	dp_v26bis_init();
+	dp_hst_init();
 	dp_v29fp_init();
 	dp_v61_init();
 	dp_v34_init();
@@ -77,6 +78,7 @@ void prop_dp_exit(void)
 	dp_v32_exit();
 	dp_v26_exit();
 	dp_v26bis_exit();
+	dp_hst_exit();
 	dp_v29fp_exit();
 	dp_v61_exit();
 	dp_v34_exit();
