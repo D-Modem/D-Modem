@@ -270,6 +270,9 @@ public:
 	bool ec() const { return cfg_.ec; }
 	/* the error correction (once detected) */
 	Protocol protocol() const { return proto_; }
+	/* V.42 found by the detection phase (the remote's ADP or flags),
+	   not taken for granted */
+	bool phase_v42() const { return phase_v42_; }
 	/* LAPM's or MNP's frames not sent yet or not acknowledged */
 	bool tx_pending() const {
 		const LinkProto *p = active();
@@ -385,6 +388,7 @@ private:
 	Mode mode_ = Mode::Idle;
 	Protocol proto_ = Protocol::None;
 	bool mnp_tried_ = false;
+	bool phase_v42_ = false;
 	s32 hst_bps_ = 0;
 	bool hst_resume_ = false;       /* start(): LAPM after HST's switch */
 	s32 timer_ = 0;

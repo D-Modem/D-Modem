@@ -445,8 +445,9 @@ spandsp's modem has no error correction, which found two faults in ours:
 - Our V.42 detection phase counted T400 (750 ms) in bits at a nominal
   28800 bit/s: that made it 9 s at 2400 bit/s, 18 s at 1200 and 72 s at
   300. It now counts at the pump's rate (`link/hdlc.cpp`).
-- Our caller goes to LAPM without the detection phase (V.42 allows
-  this). When the answerer had no V.42, it sent XID N400 times and then
+- Our caller went to LAPM without the detection phase (V.42 allows
+  this; it now has the phase, as the Courier's calls below found). When
+  the answerer had no V.42, it sent XID N400 times and then
   waited for nothing. It now goes on in asynchronous mode (the
   `link_test` test `LapmCallerAsyncRemote`).
 
@@ -1457,12 +1458,24 @@ The calls (label `courier`):
 | `courier_v32_pair` | Courier to Courier, V.32bis | 14400/ARQ |
 | `courier_v32_courier_calls` | Courier to the open modem, V.32bis | 14400, V.42 |
 | `courier_v22_courier_calls` | Courier to the open modem, V.22bis | 2400, V.42 |
+| `courier_v32_open_calls` | the open modem to a Courier, V.32bis | 14400/ARQ |
+| `courier_v22_open_calls` | the open modem to a Courier, V.22bis | 2400/ARQ |
+
+The open modem's calls to a Courier found two faults in ours:
+
+- Calling, it left out V.42's detection phase (its V.92 quick connect's
+  LAPM, taken for every call), and the Courier answering waits for the
+  ODPs. The caller now has the phase on the modulations older than V.8
+  (an answerer without it sends flags, which end the phase); after
+  V.8, on a leased line and on a clear channel it goes straight to
+  LAPM as before.
+- The Courier ignores an XID command whose private parameter group has
+  our zstd set ("ZST") after V.42bis's: it answers nothing, and the
+  link went on without V.42. When our first XID goes unanswered, the
+  next offers no zstd (`link/lapm.cpp`).
 
 Not yet:
 
-- **The open modem calling a Courier.** The open modem, calling, leaves
-  out V.42's detection phase and sends its flags at once; the Courier
-  answering waits for ODPs, and the call ends up without V.42.
 - **HST with the open modem.** Both switch from V.22bis to HST after
   the XID, but the open modem does not receive the Courier's back
   channel.

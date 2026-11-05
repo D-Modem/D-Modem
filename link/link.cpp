@@ -120,6 +120,7 @@ void Link::status(Status s)
 void Link::start(bool on, bool detect)
 {
 	mnp_tried_ = false;
+	phase_v42_ = false;
 	proto_ = Protocol::None;
 	if (asked_.b2 != B2::Modem) {
 		start_b2();
@@ -215,6 +216,7 @@ void Link::start_b2()
 void Link::detected(bool ec, bool mnp)
 {
 	if (ec && asked_.ec) {
+		phase_v42_ = mode_ == Mode::Detect;
 		cfg_.ec = true;
 		proto_ = Protocol::Lapm;
 		owner_->status(Status::Detected);
