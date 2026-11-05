@@ -242,11 +242,12 @@ This core goes beyond the old one where the old one fell short:
   stored number; there are none) is ERROR.
 - **`+FAA=1`** answers adaptively: FAX or DATA, then the call goes on as
   a fax or a data call. The old core took only `+FAA=0`.
-- **V.42's detection phase.** Calling, the core sends its ODPs and waits
-  for the answerer's ADP before LAPM (but for V.92, V.cvm and a pump
-  that starts at once on a leased line), so a Courier answering takes
-  V.42. The old core went to LAPM straight away; its calls connect
-  about 120 ms later now.
+- **V.42's detection phase.** Calling on a modulation older than V.8
+  (V.32bis, V.22bis, ...), the core sends its ODPs and waits for the
+  answerer's ADP before LAPM, so a Courier answering takes V.42. The old
+  core went to LAPM straight away; those calls connect about 120 ms
+  later now. After V.8, on a leased line and on a clear channel it
+  still goes straight to LAPM.
 
 ## Tests
 
@@ -281,7 +282,7 @@ this core's transcript instead.
 
 The scripts whose `.expect` is this core's own are `at`, `setup`,
 `fax_dte`, `data_drop`, `call_v22`, `call_v32bis`, `dial`, `call_v34`,
-`stats`, `rings`, `v59`, `adaptive` and `voice`.
+`stats`, `rings`, `adaptive` and `voice`.
 
 **Script commands** (see the header of `test/script.cpp`): `A <text>`,
 `run`, `until`, `send`, `ring`, `signal`/`cancel`, `hangup`, `state`,

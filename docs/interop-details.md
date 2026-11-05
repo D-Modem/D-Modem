@@ -1465,8 +1465,10 @@ The open modem's calls to a Courier found two faults in ours:
 
 - Calling, it left out V.42's detection phase (its V.92 quick connect's
   LAPM, taken for every call), and the Courier answering waits for the
-  ODPs. The caller now has the phase on all but V.92 and V.cvm calls;
-  an answerer without it sends flags, which end the phase.
+  ODPs. The caller now has the phase on the modulations older than V.8
+  (an answerer without it sends flags, which end the phase); after
+  V.8, on a leased line and on a clear channel it goes straight to
+  LAPM as before.
 - The Courier ignores an XID command whose private parameter group has
   our zstd set ("ZST") after V.42bis's: it answers nothing, and the
   link went on without V.42. When our first XID goes unanswered, the
