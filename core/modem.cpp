@@ -168,15 +168,6 @@ static u16 connect_code(u32 rate)
 	return 1;
 }
 
-/* the driver table's entry for pump id, NULL if there is none */
-static const DpDriver *find_driver(u32 id)
-{
-	for (const DpDriver *d = dp_drivers(); d->id; d++)
-		if (static_cast<u32>(d->id) == id)
-			return d;
-	return nullptr;
-}
-
 /* the modulation a call has: the one the pumps reported in its
    statistics, else the pump's own id, else 0 */
 static s16 modulation(const struct dp_stats &st, const struct dp *dp)
@@ -1310,17 +1301,9 @@ s16 Modem::loop3_start(bool self_test)
 	if (state_ != IDLE || started_ || dp_ || mode_ != MODEM_MODE_DATA ||
 	    !sregs_[SREG_LEASED] || wideband())
 		return -1;
-	switch (sregs_[SREG_DP]) {
-	case DP_V26:
-	case DP_V27TER:
-	case DP_B201:
-	case DP_B208:
-	case DP_V29:
-	case DP_V33:
-		break;
-	default:
+	const DpDriver *d = dp_driver(sregs_[SREG_DP]);
+	if (!d || !(d->flags & DPF_LOOP3))
 		return -1;
-	}
 	leased_stop();
 	caller_ = true;
 	dp_requested_ = 0;
@@ -1795,7 +1778,7 @@ void Modem::dp_process(s16 *in, s16 *out, s32 n)
 const char *Modem::dp_name(s16 id) const
 {
 	const DpDriver *d =
-		id > 0 ? find_driver(static_cast<u32>(id)) : nullptr;
+		id > 0 ? dp_driver(static_cast<u32>(id)) : nullptr;
 	return d ? d->name : nullptr;
 }
 
@@ -1820,14 +1803,8 @@ void Modem::change_dp()
 		id = sregs_[SREG_DP];
 		/* K56flex: its own pump where one is registered (the V.34
 		   pump, the digital modem's side), else V.90 */
-		if (id == DP_K56) {
-			bool k56 = false;
-			for (const DpDriver *d = dp_drivers(); d->id; d++)
-				if (d->id == DP_K56)
-					k56 = d->op != nullptr;
-			if (!k56)
-				id = DP_V90;
-		}
+		if (id == DP_K56 && !dp_registered(DP_K56))
+			id = DP_V90;
 		/* an analogue line has no V.91 (that is between two
 		   digital modems); V.90 and V.92 run as the analogue modem
 		   (dp_runtime_set_analog()) */
@@ -1865,7 +1842,7 @@ void Modem::change_dp()
 	if (!caller_ && !dp_)
 		answer_tone_at_ =
 			count_ + static_cast<u32>(srate_) / 5;
-	d = find_driver(drv);
+	d = dp_driver(drv);
 	if (d && d->op)
 		dp = d->op->create(handle(), static_cast<enum DP_ID>(id),
 				   caller_, srate_, frag_, d->op);
@@ -1905,7 +1882,7 @@ s16 Modem::dial_start()
 	   once (dial()) */
 	if (leased_direct())
 		return 0;
-	d = find_driver(DP_CALLPROG);
+	d = dp_driver(DP_CALLPROG);
 	first = dialing_[0];
 	/* (a leased line has nothing to dial: call progress only listens
 	   for the answer tone) */
@@ -1966,24 +1943,14 @@ bool Modem::leased_direct() const
 		return true;
 	if (!sregs_[SREG_LEASED])
 		return false;
-	switch (sregs_[SREG_DP]) {
-	case DP_VWB:            /* (refused below 48000 Hz at once) */
-	case DP_V26:
-	case DP_V27TER:
-	case DP_B201:
-	case DP_B202:
-	case DP_B208:
-	case DP_V29:
-	case DP_V33:
+	/* (V.wb's is refused below 48000 Hz at once) */
+	const DpDriver *d = dp_driver(sregs_[SREG_DP]);
+	if (d && (d->flags & DPF_LEASED))
 		return true;
-	case DP_V91:
-		/* V.91 on a 4-wire digital circuit: from INFO on, with no
-		   V.8 (8.8/V.91); a G.711 line at 8000 Hz alone */
-		return four_wire() && srate_ == 8000 &&
-			!host_.analog_line(const_cast<Modem &>(*this));
-	default:
-		return false;
-	}
+	/* V.91 on a 4-wire digital circuit: from INFO on, with no V.8
+	   (8.8/V.91); a G.711 line at 8000 Hz alone */
+	return sregs_[SREG_DP] == DP_V91 && four_wire() && srate_ == 8000 &&
+		!host_.analog_line(const_cast<Modem &>(*this));
 }
 
 /* +CBST's <speed> as a V.110 user rate (27.007 6.7), 0 for none */
@@ -2733,24 +2700,8 @@ void Modem::unimodem_diag()
 	   the call, pcm: that direction is PCM; -1 for one it has none
 	   for */
 	auto v58_modulation = [](s16 dp, bool pcm) -> s32 {
-		switch (dp) {
-		case DP_V17: return 0x0;
-		case DP_V21: return 0x1;
-		case DP_V22: return 0x2;
-		case DP_V22BIS: return 0x3;
-		case DP_V23: return 0x4;
-		case DP_V27TER: return 0x8;
-		case DP_V29: return 0x9;
-		case DP_V32: return 0xA;
-		/* V.58 has no V.32terbo: its V.32bis */
-		case DP_V32BIS: case DP_V32TERBO: return 0xB;
-		case DP_V34: return 0xC;
-		/* V.90 Issue 1: PCM one way, V.34 the other */
-		case DP_V90: case DP_V92: return pcm ? 0xE : 0xC;
-		case DP_V91: return 0xF;
-		case DP_K56: return 0x81;
-		default: return -1;
-		}
+		const DpDriver *d = dp_driver(static_cast<u16>(dp));
+		return !d ? -1 : pcm ? d->v58_pcm : d->v58;
 	};
 
 	put(0, "10");

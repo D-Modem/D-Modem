@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -2831,4 +2832,39 @@ TEST(Core, V8bisCallerAlone)
 						"AT+A8E=1,1,,0\r", 24000);
 	EXPECT_FALSE(logged(l, "pump 108"));
 	EXPECT_TRUE(logged(l, "V.8 CM received"));
+}
+
+/* the pump table (dcore.h): each id once; V.59's high-level objects each
+   named by one pump, which has V.59's name; the codes the switches it
+   replaced gave */
+TEST(Core, PumpTable)
+{
+	using dcore::DpDriver;
+	using dcore::dp_driver;
+	std::vector<int> ids;
+	for (const DpDriver *d = dcore::dp_drivers(); d->id; d++) {
+		EXPECT_EQ(std::count(ids.begin(), ids.end(), d->id), 0) << d->id;
+		ids.push_back(d->id);
+		EXPECT_EQ(dp_driver(d->id), d);
+		if (d->flags & dcore::DPF_LOOP3)
+			EXPECT_TRUE(d->flags & dcore::DPF_LEASED) << d->id;
+		if (!(d->flags & dcore::DPF_V59_OBJECT))
+			continue;
+		EXPECT_NE(d->v59_high, 0) << d->id;
+		EXPECT_NE(d->v59_name, nullptr) << d->id;
+		for (const DpDriver *e = d + 1; e->id; e++)
+			if (e->flags & dcore::DPF_V59_OBJECT)
+				EXPECT_NE(e->v59_high, d->v59_high) << e->id;
+	}
+	EXPECT_EQ(dp_driver(0), nullptr);
+	EXPECT_EQ(dp_driver(9999), nullptr);
+	EXPECT_EQ(dp_driver(DP_V32)->v59_high, dp_driver(DP_V32BIS)->v59_high);
+	EXPECT_FALSE(dp_driver(DP_V32)->flags & dcore::DPF_V59_OBJECT);
+	EXPECT_EQ(dp_driver(DP_V90)->v58, 0xC);
+	EXPECT_EQ(dp_driver(DP_V90)->v58_pcm, 0xE);
+	EXPECT_EQ(dp_driver(DP_V32TERBO)->v58, dp_driver(DP_V32BIS)->v58);
+	EXPECT_STREQ(dp_driver(DP_V29FP)->v59_name, "V.29FastPOS");
+	EXPECT_TRUE(dp_driver(DP_B202)->flags & dcore::DPF_LEASED);
+	EXPECT_FALSE(dp_driver(DP_B202)->flags & dcore::DPF_LOOP3);
+	EXPECT_FALSE(dp_driver(DP_V91)->flags & dcore::DPF_LEASED);
 }

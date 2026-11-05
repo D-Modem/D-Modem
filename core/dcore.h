@@ -910,15 +910,39 @@ private:
 	friend struct LinkOwner;
 };
 
-/* the data pumps register themselves (modem_dp_register()); for AT+MS */
+/* what a pump's DpDriver says of it (flags) */
+enum {
+	DPF_LEASED = 1,         /* on a leased line (S-register LEASED), it
+				   runs at once, with no call progress */
+	DPF_LOOP3 = 2,          /* a 4-wire leased line's pump, which AT&T1
+				   and AT&T8 loop (loop 3) */
+	DPF_V59_OBJECT = 4,     /* V.59's high-level object v59_high is
+				   this pump's (V.32bis's for V.32 too) */
+};
+
+/* every pump the core can name, and what it knows of it: the data
+   pumps register themselves (modem_dp_register()) */
 struct DpDriver {
 	enum DP_ID id;
 	const char *name;
 	const char *code;       /* AT+MS shows it */
 	struct dp_operations *op;
+	/* V.59's name in modulationHistory, NULL for none */
+	const char *v59_name = nullptr;
+	/* V.59's high-level object of a call with it, 0 for none (the
+	   NSMDiag one) */
+	u8 v59_high = 0;
+	/* V.58's gstnModulationSchemeActive (Table 6) for a direction of
+	   a call with it, and for a PCM direction; -1 for none */
+	s16 v58 = -1, v58_pcm = -1;
+	u8 flags = 0;           /* DPF_* */
 };
 /* the table, ended by an id of 0 */
 DpDriver *dp_drivers();
+/* pump id's entry in it, NULL for none */
+const DpDriver *dp_driver(u32 id);
+/* pump id is registered */
+bool dp_registered(u32 id);
 
 } // namespace dcore
 

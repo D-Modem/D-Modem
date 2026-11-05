@@ -311,24 +311,13 @@ const struct {
 	{ "CONTACTID", DP_CONTACTID }, { "SMS", DP_SMS },
 };
 
-/* pump id is registered */
-bool registered(u32 id)
-{
-	for (const DpDriver *d = dp_drivers(); d->id; d++)
-		if (static_cast<u32>(d->id) == id)
-			return d->op != nullptr;
-	return false;
-}
-
 /* +MS may choose pump id: it has a code and is registered (K56flex
    while V.90 is, which runs for it) */
 bool ms_choosable(u32 id)
 {
-	for (const DpDriver *d = dp_drivers(); d->id; d++)
-		if (static_cast<u32>(d->id) == id)
-			return d->code && (d->op || (id == DP_K56 &&
-						     registered(DP_V90)));
-	return false;
+	const DpDriver *d = dp_driver(id);
+	return d && d->code &&
+		(d->op || (id == DP_K56 && dp_registered(DP_V90)));
 }
 
 /* +GMI, +GMM, +GMR (and +FMx) by their last letter: the author, the
