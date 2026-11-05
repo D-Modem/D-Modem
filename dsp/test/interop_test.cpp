@@ -478,7 +478,7 @@ std::vector<Call> calls()
 	      "B1d: 0 bit errors in 48 frames",
 	      "EXPECT_B=V.90 connect [0-9]+/" });
 	/* the call's statistics on both modems in the middle of V.90 data
-	   (ATI11, the same AT&V1; AT#UD Unimodem's): each direction's
+	   (ATI11; AT&V1 Rockwell's; AT#UD Unimodem's): each direction's
 	   symbol rate and carrier, V.34 upstream's coding, the analogue
 	   modem's codec 100 ppm fast seen by each, the network's pad and
 	   robbed bit as the DIL found them; AT#UD's keys 20/21 per
@@ -486,7 +486,7 @@ std::vector<Call> calls()
 	add("open", "open_v90a_stats", "open", "open8", "ATX3;AT+MS=90",
 	    { "NET=9600:8000:ulaw", "NET_PAD=3", "NET_RBS=0x01",
 	      "NET_PPM=100", "NET_PHASE=0.3", "STREAM=20",
-	      "MIDCALL_A=8:AT&V1;AT#UD", "MIDCALL_B=10:ATI11;AT#UD",
+	      "MIDCALL_A=8:ATI11;AT&V1;AT#UD", "MIDCALL_B=10:ATI11;AT#UD",
 	      "EXPECT_MIDCALL_A=(?s)Last Connection +V90.*"
 	      "Symbol Rate \\(Tx/Rx\\) +3429/8000.*"
 	      "Carrier Frequency \\(Hz, Tx/Rx\\) +1959/PCM.*"
@@ -494,6 +494,10 @@ std::vector<Call> calls()
 	      "Timing Offset \\(ppm\\) +-(99|100|101)\r.*"
 	      "PCM Encoding +u-law.*Digital Loss \\(dB\\) +3.0.*"
 	      "Robbed Bit Frames +[1-6]\r.*"
+	      "TERMINATION REASON\\.+ NONE\r.*"
+	      "LAST RX rate\\.+ [0-9]+ BPS\r.*"
+	      "RBS Pattern\\.+ (01|02|04|08|10|20)\r.*"
+	      "Digital Pad\\.+ 3dB\r.*"
 	      "DIAG <2A4D3263 20=C>.*DIAG <2A4D3263 21=E>.*"
 	      "DIAG <2A4D3263 22=0D65>.*"
 	      "DIAG <2A4D3263 23=1F40>.*DIAG <2A4D3263 60=2>",
