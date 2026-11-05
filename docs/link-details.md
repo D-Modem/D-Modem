@@ -37,6 +37,16 @@ port or pty.) It is C++, in `namespace dlink`.
     polls) before it gives up;
   - parameter negotiation in XID, with V.42bis's private parameters
     (and zstd's set after them) and V.44's user data subfield;
+  - USRobotics HST in XID's user data subfield, as a Courier sends it
+    (`Config::hst`, for `AT+MS=HST`): the set `HST` (PI 0xFF), the
+    capability (PI 0xC0: options, then the forward rates as bits 2 to
+    7 for 4800 to 16800 bit/s) and a PI 0xF1 of 6. When both offer it,
+    the originator answers the XID response with a DM (F = 0, with an
+    FCS-16) instead of an SABME, the answerer takes that DM as the
+    turn, and both leave the 2400 bit/s pump for HST at 9600 (else the
+    nearest rate both have: `Owner::hst()`). Once HST connects, LAPM
+    goes on without the detection phase or a second XID: the
+    originator's SABME first ([HST](dsp/hst.md));
   - the 32-bit FCS (10 c and 8.10.2/V.42), on unless `Config::fcs32`
     is off. The originator asks for it with bit position 17 of the HDLC
     optional functions in its XID. An answerer that agrees sets 17 and
@@ -158,6 +168,7 @@ modem. Most cases connect two `Link`s back to back, bit by bit.
 | Compression | `V44`, `V44Preset`, `Zstd`, `ZstdDict`, `V42bis`, `V42bisStepup` | V.42bis, V.44 and zstd round trips (text, noise, escape characters, repeats, small dictionaries, flushes); V.44's transparent mode; V.cvm's preset dictionary and zstd dictionary; two V.42bis STEPUPs taken and a third a C-ERROR |
 | HDLC | `Hdlc`, `HdlcFcs32`, `BitsMasked` | 200 frames through a bit error; CRC-32's check value, frames with an FCS-32 (runs of 1s among them) to receivers that take FCS-32, FCS-16 or both, and one with a bit error dropped; every item to the pump `nbits` wide with nothing above it, in every mode |
 | LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmFcs32`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; the 32-bit FCS (the caller's XID with and without it, the answerer's response, a SABME with each FCS, FCS-16 when either side has it off, and the data with bit errors); no compression; one direction only; each V.42bis parameter the smaller of the two |
+| HST | `LapmHst` | a recorded Courier's XID command and response: the answerer's response with HST and its turn on the DM; the caller's DM (FCS-16) and its SABME first once HST is up; the starting rate between two Links; without HST, LAPM as before |
 | LAPM faults | `LapmBadFrames`, `LapmNrPastVs`, `LapmUnsolicitedDm`, `LapmBitErrors`, `LapmSlowDte`, `LapmCompressedSlowDte`, `LapmN400` | frames LAPM must drop; an N(R) past V(S) ignored; an unsolicited DM (F = 0) while idle, which asks for the link (8.8/V.42: an SABME, not the link up; ignored after a release); REJ and T401 recovery; a slow DTE (RNR); five retransmissions of an unanswered XID and five polls with the line cut, no more |
 | Detection and async | `DetectHangup`, `AdpCellular`, `Async`, `V14`, `OdpUnanswered`, `LapmCallerAsyncRemote` | a hangup during T400; an originator against a cellular answerer's ADPs, "EM" then "EC" (LAPM) or "EM" alone (async after T400); async; an answerer or caller falling back to async after T400; a LAPM answerer with an async caller |
 | MNP | `MnpLr`, `MnpResponder`, `MnpResponderNoLr`, `Mnp`, `MnpAfterOdp`, `MnpOctets`, `MnpBitErrors`, `MnpSlowDte`, `MnpRequired`, `MnpN400` | our LR octet for octet as the Agere modem's, FCS and all, three of them unanswered, then async; our responder against the Agere modem's LR, then an LA, an LT, an LN (LNA) and an LD as HDLC frames; against SYN DLE STX with no LR after it (async after its wait, nothing sent); MNP first, and after ODPs a V.42 answerer did not answer; framing mode 2 and no optimizations; bit errors in both modes; a slow DTE (no credit); MNP required against a modem without it; N400 with the line cut |

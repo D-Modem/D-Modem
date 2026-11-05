@@ -28,9 +28,17 @@
  *    data.  The back channel's is 17 symbols of the same kind.  Both are
  *    known sequences: the receivers train on them.
  *
- *    How two Couriers choose who sends the forward channel, and at
- *    which rate, is in their supervisor's firmware and not yet read.
- *    D-Modem's start-up, its own until then (docs/dsp/hst.md):
+ *    A Courier's call starts at 2400 bit/s (V.22bis): both offer HST and
+ *    its rates in V.42's XID, and then leave V.22bis for HST at the rate
+ *    the XID chose (MDMPRM_HST_START, from the link; docs/dsp/hst.md):
+ *
+ *    answerer: 180 ms of silence, the forward channel's training (its
+ *              scrambled part 200 symbols, 3096 for 12000 and up), the
+ *              rate's training and the data
+ *    caller:   the back channel at once, and the forward channel's
+ *              rate found from the symbols after the training as below
+ *
+ *    Without a rate from XID the pump has a start-up of its own:
  *
  *    answerer: the answer tone, then the forward channel's training,
  *              its scrambled part until the caller's rate request has
@@ -93,6 +101,10 @@ namespace dsp {
 
 /* the back channel's training (symbols, the silent ones counted) */
 #define HST_BC_TRN_SYMS 17
+/* after V.22bis, the answerer's silence before its training: the
+   Courier's supervisor waits about 105 ms before it starts its DSP's
+   script, whose first 180 symbols are silent */
+#define HST_COURIER_GAP_MS 180
 
 /* the scramblers' seeds (the Courier's) */
 #define HST_SEED        0x001f7310u
@@ -290,6 +302,10 @@ struct HstPump : PumpBase<HstPump, hst_state> {
 
 	s16 max_rate;           /* hst_rates index: +MS's limit */
 	s16 rate;               /* the forward channel's, hst_rates index */
+	bool courier;           /* the rate agreed in XID: a Courier's
+				   start-up after V.22bis */
+	s32 gap;                /* the answerer's silence before its
+				   training, in samples */
 	Osc tone;
 
 	/* the forward channel: the answerer's transmitter */
@@ -428,7 +444,7 @@ s16 HstPump::bc_bits()
 		modem_get_bits(modem, 1, b, 3);
 		return (b[0] & 1) | (b[1] & 1) << 1 | (b[2] & 1) << 2;
 	}
-	if (asked < 0 || rxp >= RX_RATE)
+	if (asked < 0 || courier || rxp >= RX_RATE)
 		return 7;
 	for (s16 k = 0; k < 3; k++) {
 		v |= ((req_word >> req_bit) & 1) << k;
@@ -795,7 +811,7 @@ s16 HstPump::handshake()
 			set_state(H_GAP);
 		break;
 	case H_GAP:
-		if (count >= ms2samples(ANS_GAP_MS, srate)) {
+		if (count >= gap) {
 			fwd.init();
 			set_state(H_TRAIN);
 		}
@@ -861,7 +877,7 @@ s16 HstPump::sample(float x, float *y)
 		return r;
 	}
 
-	if (rxp >= RX_ALT)
+	if (courier || rxp >= RX_ALT)
 		*y = bc_tx.sample([this] { return bc_symbol(); });
 
 	if (rx.sample(x))
@@ -885,9 +901,10 @@ s16 HstPump::sample(float x, float *y)
 	return r;
 }
 
-/* HST: the answerer sends the forward channel at the caller's request
-   (+MS's highest rate at most), the caller the back channel; timeouts
-   from S7 and S10.  0, or -1 when out of memory. */
+/* HST: the answerer sends the forward channel, at the rate XID chose
+   (MDMPRM_HST_START) or else at the caller's request (+MS's highest
+   rate at most either way), the caller the back channel; timeouts from
+   S7 and S10.  0, or -1 when out of memory. */
 s16 HstPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 		   s32 srate_, s32 max_frag)
 {
@@ -904,6 +921,19 @@ s16 HstPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	req = asked = -1;
 	change_at = -1;
 	data_at = 0x7fffffff;
+	gap = ms2samples(ANS_GAP_MS, srate_);
+	/* the rate XID chose: both know it (no request), the highest of
+	   ours not above it */
+	intptr_t start_bps = modem_get_param(m, MDMPRM_HST_START);
+	courier = start_bps > 0;
+	if (courier) {
+		s16 r;
+		for (r = max_rate; r > 0; r--)
+			if (hst_rates[r].bps <= start_bps)
+				break;
+		req = asked = r;
+		gap = ms2samples(HST_COURIER_GAP_MS, srate_);
+	}
 
 	if (caller_) {
 		carrier.init(150, 90);
@@ -927,15 +957,18 @@ s16 HstPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 		bc_bp[1].bandpass(HST_BC_CARRIER, 2, srate_);
 		bc_carrier.init(60, 40);
 		bc_dscr.init(0, 17, 3);
-		if (rt && rt->ans_sent) {
+		if (courier) {
+			state = H_GAP;
+		} else if (rt && rt->ans_sent) {
 			rt->ans_sent = 0;
 			state = H_GAP;
 		} else
 			state = H_SILENCE;
 	}
-	DSP_DBG("hst: create %s, up to %" PRId32 " bit/s, srate %" PRId32
+	DSP_DBG("hst: create %s, up to %" PRId32 " bit/s%s, srate %" PRId32
 		"\n", caller_ ? "caller" : "answerer",
-		hst_rates[max_rate].bps, srate_);
+		hst_rates[max_rate].bps, courier ? " (rate from XID)" : "",
+		srate_);
 	return 0;
 }
 

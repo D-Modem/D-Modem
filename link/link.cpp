@@ -39,6 +39,8 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 	mode_ = Mode::Idle;
 	proto_ = Protocol::None;
 	mnp_tried_ = false;
+	hst_bps_ = 0;
+	hst_resume_ = false;
 	timer_ = 0;
 	timer_what_ = Timer::None;
 	push_pending = false;
@@ -138,6 +140,12 @@ void Link::start(bool on, bool detect)
 	}
 	if (!on || (!asked_.ec && !asked_.mnp)) {
 		no_ec();
+		return;
+	}
+	if (hst_resume_ && asked_.ec) {
+		hst_resume_ = false;
+		lapm_.resume();
+		detected(true);
 		return;
 	}
 	if (caller_ && asked_.mnp && (asked_.mnp_first || !asked_.ec)) {
@@ -293,6 +301,15 @@ void Link::stop()
 {
 	end_detect();
 	mode_ = Mode::Idle;
+}
+
+/* (see link.h) */
+void Link::hst_switch()
+{
+	timer_ = 0;
+	timer_what_ = Timer::None;
+	hst_resume_ = true;
+	owner_->hst(hst_bps_);
 }
 
 /* we hang up: LAPM sends DISC, MNP LD; the detection phase ends;
@@ -459,6 +476,23 @@ void Link::sync_indicate(u8 code, const u8 *par, s16 n)
 void Link::update_config(const Config &remote)
 {
 	s16 dir = remote.comp & cfg_.comp;
+
+	/* HST: the rate a Courier starts at of those both offered (its
+	   supervisor's choice): 9600, else 7200, 4800, 12000, 14400 and
+	   16800 */
+	static const u8 hst_order[] = { 4, 3, 2, 5, 6, 7 };
+	static const s32 hst_bps[] = { 0, 0, 4800, 7200, 9600, 12000, 14400,
+				       16800 };
+	const u8 both = static_cast<u8>(remote.hst & asked_.hst);
+	hst_bps_ = 0;
+	for (u8 b : hst_order)
+		if (both & 1 << b) {
+			hst_bps_ = hst_bps[b];
+			break;
+		}
+	if (hst_bps_)
+		logf("hst: offered both ways, %" PRId32 " bit/s to start",
+		     hst_bps_);
 
 	if (dir && cfg_.zstd && remote.zstd && start_zstd(dir, remote)) {
 		owner_->negotiated(cfg_);

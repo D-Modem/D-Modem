@@ -444,6 +444,11 @@ public:
 	/* what XID (or MNP's LRs) agreed */
 	void negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
 			s32 max_string, bool mnp5);
+	/* HST (+MS=HST): the link agreed it in XID at 2400 bit/s, the
+	   forward channel at bps; the call changes to DP_HST */
+	void hst_switch(s32 bps);
+	/* HST's rates for XID, 0 none */
+	u8 hst_offer() const;
 	/* the DTE's in-band command in V.80's Synchronous Access Mode */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx);
 	/* a debug line with the modem's name */
@@ -777,6 +782,9 @@ private:
 
 	/* the data pumps */
 	u32 dp_requested_ = 0;
+	/* HST's forward rate (bit/s) from XID once the call has left
+	   V.22bis for DP_HST, else 0 (MDMPRM_HST_START) */
+	s32 hst_bps_ = 0;
 	s16 line_law_ = 0;
 	Run run_ = Run::None;
 	struct dp *dp_ = nullptr;

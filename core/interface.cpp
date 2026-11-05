@@ -186,6 +186,8 @@ intptr_t Modem::get_param(u32 name)
 		return param_address(&asvd_voice_);
 	case MDMPRM_MAX_RX_RATE:
 		return max_rx_rate_ ? max_rx_rate_ : max_rate_;
+	case MDMPRM_HST_START:
+		return hst_bps_;
 
 	/* the settings the S-registers hold */
 	case GetDTMFDialSpeed:

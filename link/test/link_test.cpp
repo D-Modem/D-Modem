@@ -690,6 +690,10 @@ struct Dte : Owner {
 	int32_t tx_rate() override { return 9600; }
 	/* what XID agreed */
 	void negotiated(const Config &c) override { agreed = c; }
+	/* the rate HST was agreed to start at, 0 none */
+	int32_t hst_bps = 0;
+	/* HST agreed: its rate kept */
+	void hst(int32_t bps) override { hst_bps = bps; }
 	/* the link's lines (LINK_DEBUG) */
 	void log(const char *line) override {
 		if (verbose)
@@ -1068,6 +1072,108 @@ TEST(Link, LapmUnsolicitedDm)
 	CHECK(!p.da.up, "up again on a DM after the release");
 	CHECK(std::find(out.begin(), out.end(), sabme) == out.end(),
 	      "an SABME after the release");
+}
+
+/* USRobotics HST in XID as a Courier sends it: the XID command and
+   response of a recorded Courier call (docs/dsp/hst.md), whose user data
+   subfield has "HST", its capability (options 07, rates fc) and f1 06.
+   An answerer offering HST answers with its own and goes to HST on the
+   caller's DM; a caller answered with HST sends that DM, with an
+   FCS-16, and no SABME, which comes once HST is up; without HST the
+   same XID is LAPM's as before */
+TEST(Link, LapmHst)
+{
+	const std::vector<uint8_t> courier_cmd = { 0x03, 0xaf, 0x82, 0x80,
+		0x00, 0x13, 0x03, 0x03, 0x8e, 0x89, 0x00, 0x05, 0x02, 0x07,
+		0xa0, 0x06, 0x02, 0x07, 0xa0, 0x07, 0x01, 0x0f, 0x08, 0x01,
+		0x0f, 0xf0, 0x00, 0x0f, 0x00, 0x03, 0x56, 0x34, 0x32, 0x01,
+		0x01, 0x03, 0x02, 0x02, 0x08, 0x00, 0x03, 0x01, 0x20, 0xff,
+		0xff, 0x03, 0x48, 0x53, 0x54, 0xc0, 0x02, 0x07, 0xfc, 0xf1,
+		0x01, 0x06 };
+	std::vector<uint8_t> courier_rsp = courier_cmd;
+	courier_rsp[13] = courier_rsp[17] = 0x04;     /* N401 1024 bits */
+	courier_rsp[14] = courier_rsp[18] = 0x00;
+	const std::vector<uint8_t> dm = { 0x01, 0x0f };
+	const std::vector<uint8_t> hst = { 0xff, 0xff, 0x03, 0x48, 0x53, 0x54,
+		0xc0, 0x02, 0x01, 0x1c, 0xf1, 0x01, 0x06 };
+	auto has = [](const std::vector<uint8_t> &f,
+		      const std::vector<uint8_t> &part) {
+		return std::search(f.begin(), f.end(), part.begin(),
+				   part.end()) != f.end();
+	};
+	auto is_sabme = [](const std::vector<uint8_t> &f) {
+		return f.size() == 2 && (f[1] & 0xef) == 0x6f;
+	};
+
+	/* the answerer: its response with HST, 9600 to start; the DM */
+	for (int on = 0; on < 2; on++) {
+		Dte d("answerer");
+		Link l;
+		Config c = lapm_config(3, false);
+		c.hst = on ? 0x1c : 0;          /* 4800, 7200, 9600 */
+		l.init(&d, false, c);
+		l.start(true, false);
+		std::vector<std::vector<uint8_t>> out =
+			exchange(l, { courier_cmd }, 4);
+		CHECK(out.size() == 1 && has(out[0], hst) == (on == 1),
+		      "the answerer's XID response, HST %d", on);
+		CHECK(l.hst_rate() == (on ? 9600 : 0), "HST at %d",
+		      l.hst_rate());
+		out = exchange(l, { dm }, 4);
+		CHECK(d.hst_bps == (on ? 9600 : 0), "to HST at %d",
+		      d.hst_bps);
+		CHECK(std::any_of(out.begin(), out.end(), is_sabme) ==
+		      (on == 0), "an SABME after the DM (HST %d)", on);
+	}
+
+	/* the caller: its XID with HST; the response: a DM (FCS-16) and
+	   HST; then, started again, an SABME first */
+	for (int on = 0; on < 2; on++) {
+		Dte d("caller");
+		Link l;
+		Config c = lapm_config(3, false);
+		c.hst = on ? 0x1c : 0;
+		l.init(&d, true, c);
+		l.start(true, false);
+		std::vector<std::vector<uint8_t>> out = exchange(l, {}, 4);
+		CHECK(out.size() == 1 && has(out[0], hst) == (on == 1),
+		      "the caller's XID, HST %d", on);
+		out = exchange(l, { courier_rsp }, 4);
+		CHECK(!out.empty() && (on ? out[0] == dm : is_sabme(out[0])),
+		      "after the response (HST %d): %zu frames", on,
+		      out.size());
+		CHECK(!l.hdlc().tx_fcs32(), "FCS-16 out");
+		CHECK(d.hst_bps == (on ? 9600 : 0), "to HST at %d",
+		      d.hst_bps);
+		if (!on)
+			continue;
+		l.start(true, true);
+		out = exchange(l, {}, 4);
+		CHECK(!out.empty() && is_sabme(out[0]),
+		      "an SABME first once HST is up (%zu frames)",
+		      out.size());
+	}
+
+	/* two Links: 9600 when both offer it, else the lowest both have */
+	const u8 offers[][3] = { { 0xfc, 0xfc, 9 }, { 0x0c, 0xfc, 7 },
+				 { 0xe0, 0xfc, 12 }, { 0xfc, 0, 0 } };
+	for (const auto &o : offers) {
+		rnd_state = 12345;
+		Config cc = lapm_config(0), ca = lapm_config(0);
+		cc.hst = o[0];
+		ca.hst = o[1];
+		Pair p(cc, ca);
+		p.start(true, true);
+		p.run(9600 * 3);
+		const int32_t want = o[2] == 9 ? 9600 : o[2] == 7 ? 7200 :
+			o[2] == 12 ? 12000 : 0;
+		CHECK(p.dc.hst_bps == want && p.da.hst_bps == want,
+		      "HST %02x/%02x: %d and %d", o[0], o[1], p.dc.hst_bps,
+		      p.da.hst_bps);
+		CHECK((p.dc.up && p.da.up) == (want == 0),
+		      "LAPM up at this rate only without HST (%02x/%02x)",
+		      o[0], o[1]);
+	}
 }
 
 /* the FCS-32 (8.1.1.6.2/V.42): CRC-32's check value over "123456789",
