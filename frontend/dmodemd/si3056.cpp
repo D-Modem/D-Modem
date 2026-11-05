@@ -109,12 +109,7 @@ const Si3056Country countries[] = {
 /* see si3056.h */
 const Si3056Country *si3056_country(const char *name)
 {
-	if (!name)
-		return nullptr;
-	for (const Si3056Country &c : countries)
-		if (daa_same_name(c.name, name))
-			return &c;
-	return nullptr;
+	return daa_find(countries, name);
 }
 
 /* see si3056.h */

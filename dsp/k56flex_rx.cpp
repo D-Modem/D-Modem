@@ -26,7 +26,6 @@
 
 namespace dsp {
 
-#define R_WIN           16
 #define R_MIN_RUN       64
 #define R_MIN_RMS       30.0
 #define EQ_D            K56RX_EQ_D
@@ -38,12 +37,6 @@ namespace dsp {
 #define SIL2_MIN        12288
 #define REFINE_N        96
 #define REFINE_D        20
-#define EQ_MU           0.005f
-#define TIM_KP          0.02
-#define TIM_KI          2e-5
-#define TIM_LOCK        6000
-#define TIM_KP2         0.004
-#define TIM_KI2         2e-7
 
 /* see k56flex_rx.h */
 void K56Rx::init(s16 alaw_, s16 rate)
@@ -74,30 +67,10 @@ float K56Rx::value(unsigned char code) const
 void K56Rx::r_detect(float v)
 {
 	s32 i = n8 - 1;
-	e16 += static_cast<double>(v) * v;
-	e4 += static_cast<double>(v) * v;
-	if (i >= 4) {
-		a4_16 += static_cast<double>(v) * at8(i - 4);
-		a4_4 += static_cast<double>(v) * at8(i - 4);
-	}
-	if (i >= 2)
-		a2_16 += static_cast<double>(v) * at8(i - 2);
-	if (i >= R_WIN + 4) {
-		float o = at8(i - R_WIN);
-		e16 -= static_cast<double>(o) * o;
-		a4_16 -= static_cast<double>(o) * at8(i - R_WIN - 4);
-		a2_16 -= static_cast<double>(o) * at8(i - R_WIN - 2);
-	}
-	if (i >= 8) {
-		float o = at8(i - 4);
-		e4 -= static_cast<double>(o) * o;
-		a4_4 -= static_cast<double>(o) * at8(i - 8);
-	}
-	if (i < R_WIN + 4)
+	if (!rev.add(v, i, [this](s32 j) { return at8(j); }))
 		return;
-	bool there = e16 > R_WIN * R_MIN_RMS * R_MIN_RMS &&
-		a4_16 > 0.7 * e16 && a2_16 < -0.5 * e16;
-	double r = e4 > 0 ? a4_4 / e4 : 0, q = e16 > 0 ? a4_16 / e16 : 1;
+	bool there = rev.there(R_MIN_RMS);
+	double r = rev.r(), q = rev.q();
 	if (r_run < R_MIN_RUN) {
 		r_run = there ? static_cast<s16>(r_run + 1) : 0;
 		if (r_run == R_MIN_RUN)
@@ -139,82 +112,10 @@ void K56Rx::r_detect(float v)
 	}
 }
 
-/* the equaliser's output for symbol kk, its input d samples later */
-float K56Rx::equalize(s32 kk, s16 d) const
+/* the clock's offset fitted (PcmEqualizer::timing_step()) */
+void K56Rx::timing_locked(double) const
 {
-	float y = 0;
-	for (s16 i = 0; i < K56RX_TAPS; i++)
-		y += c[i] * xin(kk, i, d);
-	return y;
-}
-
-/* NLMS on symbol kk's error e */
-void K56Rx::adapt(s32 kk, float e)
-{
-	float pw = 0;
-	s16 i;
-	for (i = 0; i < K56RX_TAPS; i++) {
-		float xi = xin(kk, i);
-		pw += xi * xi;
-	}
-	if (pw > 0)
-		for (i = 0; i < K56RX_TAPS; i++)
-			c[i] += EQ_MU * e / pw * xin(kk, i);
-}
-
-/* the timing loop on symbol kk's output y against a (V90Rx's) */
-void K56Rx::timing(s32 kk, float y, float a)
-{
-	double e, dt;
-	if (!t_on)
-		return;
-	t_pow += 0.05 * (static_cast<double>(a) * a - t_pow);
-	e = static_cast<double>(a - y) *
-		(equalize(kk, 1) - equalize(kk, -1)) /
-		(t_pow + 1e-3 * static_cast<double>(level) * level);
-	if (e > 0.05)
-		e = 0.05;
-	if (e < -0.05)
-		e = -0.05;
-	if (t_n < TIM_LOCK) {
-		t_freq += TIM_KI * e;
-		dt = TIM_KP * e + t_freq;
-	} else {
-		t_freq += TIM_KI2 * e;
-		dt = TIM_KP2 * e + t_freq;
-	}
-	timing_step(dt);
-}
-
-/* a symbol on the timing's frequency alone */
-void K56Rx::timing_free()
-{
-	if (t_on)
-		timing_step(t_freq);
-}
-
-/* the interpolator dt samples (16 kHz) on; the phase fitted to a line
-   from TIM_LOCK / 3 to TIM_LOCK symbols, its slope the clock's
-   offset */
-void K56Rx::timing_step(double dt)
-{
-	ip.shift(ip.step * dt);
-	t_phase += dt;
-	t_n++;
-	if (t_n > TIM_LOCK / 3 && t_n <= TIM_LOCK) {
-		double xx = static_cast<double>(t_n);
-		t_sx += xx;
-		t_sy += t_phase;
-		t_sxx += xx * xx;
-		t_sxy += xx * t_phase;
-		t_sn++;
-	}
-	if (t_n == TIM_LOCK && t_sn > 1) {
-		double d = t_sn * t_sxx - t_sx * t_sx;
-		if (d > 0)
-			t_freq = (t_sn * t_sxy - t_sx * t_sy) / d;
-		DSP_DBG("k56rx: timing %+.2f ppm\n", ppm());
-	}
+	DSP_DBG("k56rx: timing %+.2f ppm\n", ppm());
 }
 
 /* the delay centred: the shift of b that correlates best with TRN1A's
@@ -235,54 +136,6 @@ void K56Rx::refine()
 	b += bd;
 	refined = 1;
 	DSP_DBG("k56rx: TRN1A's delay %+d samples\n", bd);
-}
-
-/* symbol k's input and its target a into the normal equations */
-void K56Rx::ls_add(float a)
-{
-	float xv[K56RX_TAPS];
-	s16 i, j;
-	for (i = 0; i < K56RX_TAPS; i++)
-		xv[i] = xin(k, i);
-	for (i = 0; i < K56RX_TAPS; i++) {
-		p[i] += static_cast<double>(a) * xv[i];
-		for (j = i; j < K56RX_TAPS; j++)
-			R[i][j] += static_cast<double>(xv[i]) * xv[j];
-	}
-}
-
-/* the equaliser from R c = p (Cholesky, a little on R's diagonal) */
-void K56Rx::solve()
-{
-	double z[K56RX_TAPS], tr = 0, lam;
-	s16 i, j, m;
-	for (i = 0; i < K56RX_TAPS; i++)
-		tr += R[i][i];
-	lam = 1e-4 * tr / K56RX_TAPS + 1e-9;
-	for (i = 0; i < K56RX_TAPS; i++)
-		for (j = 0; j <= i; j++) {
-			double s = j < i ? R[j][i] : R[i][i] + lam;
-			for (m = 0; m < j; m++)
-				s -= L[i][m] * L[j][m];
-			if (i == j)
-				L[i][i] = sqrt(s > 1e-12 ? s : 1e-12);
-			else
-				L[i][j] = s / L[j][j];
-		}
-	for (i = 0; i < K56RX_TAPS; i++) {
-		double s = p[i];
-		for (m = 0; m < i; m++)
-			s -= L[i][m] * z[m];
-		z[i] = s / L[i][i];
-	}
-	for (i = K56RX_TAPS - 1; i >= 0; i--) {
-		double s = z[i];
-		for (m = i + 1; m < K56RX_TAPS; m++)
-			s -= L[m][i] * z[m];
-		z[i] = s / L[i][i];
-	}
-	for (i = 0; i < K56RX_TAPS; i++)
-		c[i] = static_cast<float>(z[i]);
 }
 
 /* a descrambled bit of TRN2B on: the last 88 an MP frame (V.34's type
@@ -419,7 +272,7 @@ void K56Rx::sample(float v)
 			refine();
 		if (stage == TRAIN) {
 			if (k > K_TRN1A + REFINE_N) {
-				ls_add(a);
+				ls_add(k, a);
 				if (++ls2_n == K56RX_LS) {
 					solve();
 					ls2_n = 0;
@@ -442,7 +295,7 @@ void K56Rx::sample(float v)
 					zero(R);
 					zero(p);
 				}
-				ls_add(a);
+				ls_add(k, a);
 				if (++ls2_n == K56RX_LS) {
 					solve();
 					y = equalize(k);

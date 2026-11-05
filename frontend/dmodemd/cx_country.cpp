@@ -327,12 +327,7 @@ const CxBoard boards[2] = {
 /* see cx_country.h */
 const CxCountry *cx_country(const char *name)
 {
-	if (!name)
-		return nullptr;
-	for (const CxCountry &c : countries)
-		if (daa_same_name(c.name, name))
-			return &c;
-	return nullptr;
+	return daa_find(countries, name);
 }
 
 /* see cx_country.h */

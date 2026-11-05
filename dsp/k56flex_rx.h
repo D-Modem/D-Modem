@@ -35,7 +35,7 @@ namespace dsp {
 #define K56RX_LS        1020    /* symbols the equaliser is solved on */
 #define K56RX_Q         1024    /* data bits held for the caller */
 
-struct K56Rx {
+struct K56Rx : PcmEqualizer<K56Rx, K56RX_TAPS> {
 	enum Stage {
 		WAIT_R,         /* until R and its reversal */
 		TRAIN,          /* R-bar, TRN1A: the equaliser's solution */
@@ -52,10 +52,8 @@ struct K56Rx {
 	float x8[K56RX_HIST8];
 	s32 n8;
 
-	/* R (+ + - -, 2000 Hz): over the last R_WIN 8 kHz samples x(n)^2,
-	   x(n) x(n - 4), x(n) x(n - 2); over the last 4, the first two
-	   (the reversal) */
-	double e16, a4_16, a2_16, e4, a4_4;
+	/* R (+ + - -, 2000 Hz): its sums over 16 samples at lag 4 */
+	ReversalSums<4, 16> rev;
 	s16 r_run, r_dip;
 	double dip;
 	s32 dip_at;
@@ -64,9 +62,6 @@ struct K56Rx {
 	   b + 2 k */
 	s32 b, k;
 	s16 refined;
-	float c[K56RX_TAPS];
-	double R[K56RX_TAPS][K56RX_TAPS], p[K56RX_TAPS];
-	double L[K56RX_TAPS][K56RX_TAPS];
 	/* the digital modem's training as it sends it, from R's 265th
 	   symbol to Js; its first TRN1A values (refine()) */
 	K56Train ref;
@@ -75,12 +70,7 @@ struct K56Rx {
 	double err_sum;
 	s32 err_n;
 	float mse;              /* of late, to level's power */
-	/* the timing loop (as V90Rx's) */
-	s16 t_on;
-	s32 t_n;
-	double t_freq, t_pow, t_phase;
-	double t_sx, t_sy, t_sxx, t_sxy;
-	s32 t_sn;
+	/* (the equaliser and the timing loop: PcmEqualizer) */
 	s16 ls2_n;
 
 	/* where the segments start (symbols); -1 not yet known */
@@ -130,10 +120,9 @@ struct K56Rx {
 	void line(float v);
 	/* data mode: up to n of its bits into b, oldest first (how many) */
 	s16 take(unsigned char *b, s16 n);
-	/* the codec's clock against the network's, parts per million */
-	double ppm() const { return t_freq / 2 * 1e6; }
 
 private:
+	friend struct PcmEqualizer<K56Rx, K56RX_TAPS>;
 	/* the sample i of the history */
 	float at(s32 i) const { return x[i & (K56RX_HIST - 1)]; }
 	/* the sample i of the 8 kHz history */
@@ -146,17 +135,11 @@ private:
 	void sample(float v);
 	void r_detect(float v);
 	void refine();
-	void solve();
-	float equalize(s32 kk, s16 d = 0) const;
-	void adapt(s32 kk, float e);
-	void timing(s32 kk, float y, float a);
-	void timing_free();
-	void timing_step(double dt);
+	void timing_locked(double loop_ppm) const;
 	float value(unsigned char code) const;
 	void symbol(float y);
 	void mp_bit(s16 bit);
 	void data(float y);
-	void ls_add(float a);
 };
 
 } // namespace dsp

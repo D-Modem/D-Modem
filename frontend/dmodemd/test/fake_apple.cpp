@@ -50,19 +50,7 @@
 #include <deque>
 #include <vector>
 
-#include <libusb.h>
-
-struct libusb_context {
-	int dummy;
-};
-
-struct libusb_device {
-	int dummy;
-};
-
-struct libusb_device_handle {
-	libusb_device *dev;
-};
+#include "fake_libusb.h"
 
 namespace {
 
@@ -94,10 +82,7 @@ const uint8_t SET_CUR = 0x01;
 
 const unsigned RATES[] = { 7200, 8000, 8229, 8400, 9000, 9600, 10286 };
 
-libusb_device the_device;
-
 struct Fake {
-	libusb_context *ctx = nullptr;
 	bool open = false;
 	int cap = -1, play = -1, ctl = -1;
 	unsigned rate = 9600;
@@ -407,409 +392,243 @@ int daa_command(const unsigned char *b)
 	return 0;
 }
 
-} // namespace
+/* the device on libusb's bus (fake_libusb.h) */
+struct Apple final : fake_usb::Device {
+	/* its log on stderr with FAKE_APPLE_LOG */
+	Apple() : Device("FAKE_APPLE_LOG") {}
 
-extern "C" {
-
-#define FAKE_USB_INTERRUPT_TRANSFER
-#include "fake_usb_backend.h"
-
-/* the context (FAKE_APPLE_LOG read) */
-int LIBUSB_CALL libusb_init(libusb_context **ctx)
-{
-	fake.ctx = new libusb_context();
-	fake.log = getenv("FAKE_APPLE_LOG") != nullptr;
-	if (ctx)
-		*ctx = fake.ctx;
-	return 0;
-}
-
-/* the context freed */
-void LIBUSB_CALL libusb_exit(libusb_context *ctx)
-{
-	if (ctx == fake.ctx) {
-		delete fake.ctx;
-		fake.ctx = nullptr;
+	/* the settings from the environment: the log's, the only one */
+	void init() override
+	{
+		fake.log = log;
 	}
-}
 
-/* libusb's text for the codes usb_line.cpp sees */
-const char *LIBUSB_CALL libusb_strerror(int code)
-{
-	switch (code) {
-	case LIBUSB_SUCCESS: return "Success";
-	case LIBUSB_ERROR_IO: return "Input/Output Error";
-	case LIBUSB_ERROR_ACCESS: return "Access denied (insufficient permissions)";
-	case LIBUSB_ERROR_NO_DEVICE: return "No such device (it may have been disconnected)";
-	case LIBUSB_ERROR_NOT_FOUND: return "Entity not found";
-	case LIBUSB_ERROR_BUSY: return "Resource busy";
-	case LIBUSB_ERROR_TIMEOUT: return "Operation timed out";
-	case LIBUSB_ERROR_PIPE: return "Pipe error";
-	case LIBUSB_ERROR_INVALID_PARAM: return "Invalid parameter";
-	case LIBUSB_ERROR_NOT_SUPPORTED: return "Operation not supported or unimplemented on this platform";
+	/* the modem's descriptor (05ac:1401, USB 1.1) */
+	void descriptor(libusb_device_descriptor *d) override
+	{
+		d->bLength = LIBUSB_DT_DEVICE_SIZE;
+		d->bDescriptorType = LIBUSB_DT_DEVICE;
+		d->bcdUSB = 0x0110;
+		d->idVendor = 0x05ac;
+		d->idProduct = 0x1401;
+		d->bNumConfigurations = 1;
 	}
-	return "Other error";
-}
 
-/* the bus: the one device */
-ssize_t LIBUSB_CALL libusb_get_device_list(libusb_context *,
-					   libusb_device ***list)
-{
-	libusb_device **l = (libusb_device **)calloc(2, sizeof(*l));
-	if (!l)
-		return LIBUSB_ERROR_NO_MEM;
-	l[0] = &the_device;
-	*list = l;
-	return 1;
-}
+	/* address 8 */
+	uint8_t address() const override
+	{
+		return 8;
+	}
 
-/* the list freed */
-void LIBUSB_CALL libusb_free_device_list(libusb_device **list, int)
-{
-	free(list);
-}
+	/* the device opened: its connections to the exchange at
+	   FAKE_APPLE_SOCKET (LIBUSB_ERROR_BUSY if open, _ACCESS if no socket,
+	   _IO if no exchange); the phone cord said plugged in */
+	int open() override
+	{
+		const char *path = getenv("FAKE_APPLE_SOCKET");
 
-/* the modem's descriptor (05ac:1401, USB 1.1) */
-int LIBUSB_CALL libusb_get_device_descriptor(libusb_device *,
-					     libusb_device_descriptor *d)
-{
-	memset(d, 0, sizeof(*d));
-	d->bLength = LIBUSB_DT_DEVICE_SIZE;
-	d->bDescriptorType = LIBUSB_DT_DEVICE;
-	d->bcdUSB = 0x0110;
-	d->idVendor = 0x05ac;
-	d->idProduct = 0x1401;
-	d->bNumConfigurations = 1;
-	return 0;
-}
+		if (fake.open)
+			return LIBUSB_ERROR_BUSY;
+		if (!path)
+			return LIBUSB_ERROR_ACCESS;
+		fake.cap = fake_net::connect_exchange(path, 'C');
+		fake.play = fake_net::connect_exchange(path, 'P');
+		fake.ctl = fake_net::connect_exchange(path, 'K');
+		if (fake.cap < 0 || fake.play < 0 || fake.ctl < 0) {
+			fprintf(stderr, "fake Apple USB Modem: no exchange at %s\n", path);
+			for (int fd : { fake.cap, fake.play, fake.ctl })
+				fake_net::close_fd(fd);
+			fake.cap = fake.play = fake.ctl = -1;
+			return LIBUSB_ERROR_IO;
+		}
+		fake.nolink = getenv("FAKE_APPLE_NOLINK") != nullptr;
+		fake.hook_stall = getenv("FAKE_APPLE_HOOK_STALL") != nullptr;
+		/* the Si3056 rev E, a Si3018 line side; DAA1's ONHM clear */
+		memset(fake.regs, 0, sizeof(fake.regs));
+		fake.regs[11] = 0x15;
+		fake.notes.clear();
+		notify(N_LINE, 5);
+		notify(N_RING, 0);
+		fake.open = true;
+		return 0;
+	}
 
-/* bus 1 */
-uint8_t LIBUSB_CALL libusb_get_bus_number(libusb_device *)
-{
-	return 1;
-}
-
-/* its one port on the bus */
-int LIBUSB_CALL libusb_get_port_numbers(libusb_device *, uint8_t *ports,
-					int len)
-{
-	if (len < 1)
-		return LIBUSB_ERROR_OVERFLOW;
-	ports[0] = 250;
-	return 1;
-}
-
-/* full speed */
-int LIBUSB_CALL libusb_get_device_speed(libusb_device *)
-{
-	return LIBUSB_SPEED_FULL;
-}
-
-/* address 8 */
-uint8_t LIBUSB_CALL libusb_get_device_address(libusb_device *)
-{
-	return 8;
-}
-
-/* the device opened: its connections to the exchange at
-   FAKE_APPLE_SOCKET (LIBUSB_ERROR_BUSY if open, _ACCESS if no socket,
-   _IO if no exchange); the phone cord said plugged in */
-int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **h)
-{
-	const char *path = getenv("FAKE_APPLE_SOCKET");
-
-	if (fake.open)
-		return LIBUSB_ERROR_BUSY;
-	if (!path)
-		return LIBUSB_ERROR_ACCESS;
-	fake.cap = fake_net::connect_exchange(path, 'C');
-	fake.play = fake_net::connect_exchange(path, 'P');
-	fake.ctl = fake_net::connect_exchange(path, 'K');
-	if (fake.cap < 0 || fake.play < 0 || fake.ctl < 0) {
-		fprintf(stderr, "fake Apple USB Modem: no exchange at %s\n", path);
+	/* the connections closed, the device free again */
+	void close() override
+	{
 		for (int fd : { fake.cap, fake.play, fake.ctl })
 			fake_net::close_fd(fd);
 		fake.cap = fake.play = fake.ctl = -1;
-		return LIBUSB_ERROR_IO;
+		fake.open = false;
 	}
-	fake.nolink = getenv("FAKE_APPLE_NOLINK") != nullptr;
-	fake.hook_stall = getenv("FAKE_APPLE_HOOK_STALL") != nullptr;
-	/* the Si3056 rev E, a Si3018 line side; DAA1's ONHM clear */
-	memset(fake.regs, 0, sizeof(fake.regs));
-	fake.regs[11] = 0x15;
-	fake.notes.clear();
-	notify(N_LINE, 5);
-	notify(N_RING, 0);
-	fake.open = true;
-	*h = new libusb_device_handle{ dev };
-	return 0;
-}
 
-/* the connections closed, the device free again */
-void LIBUSB_CALL libusb_close(libusb_device_handle *h)
-{
-	for (int fd : { fake.cap, fake.play, fake.ctl })
-		fake_net::close_fd(fd);
-	fake.cap = fake.play = fake.ctl = -1;
-	fake.open = false;
-	delete h;
-}
-
-/* h's device */
-libusb_device *LIBUSB_CALL libusb_get_device(libusb_device_handle *h)
-{
-	return h->dev;
-}
-
-/* no kernel driver to detach: 0 */
-int LIBUSB_CALL libusb_set_auto_detach_kernel_driver(libusb_device_handle *,
-						     int)
-{
-	return 0;
-}
-
-/* interface n claimed (LIBUSB_ERROR_BUSY if it is) */
-int LIBUSB_CALL libusb_claim_interface(libusb_device_handle *, int n)
-{
-	if (n < 0 || n >= N_IF)
-		return LIBUSB_ERROR_NOT_FOUND;
-	if (fake.claimed[n])
-		return LIBUSB_ERROR_BUSY;
-	fake.claimed[n] = true;
-	if (fake.log)
-		fprintf(stderr, "fake Apple USB Modem: interface %d claimed\n", n);
-	return 0;
-}
-
-/* interface n released */
-int LIBUSB_CALL libusb_release_interface(libusb_device_handle *, int n)
-{
-	if (n < 0 || n >= N_IF || !fake.claimed[n])
-		return LIBUSB_ERROR_NOT_FOUND;
-	fake.claimed[n] = false;
-	fake.alt[n] = 0;
-	return 0;
-}
-
-/* a streaming interface's (3, 4) setting alt, 0 or 1 (claimed): 4's 1
-   starts the IN samples */
-int LIBUSB_CALL libusb_set_interface_alt_setting(libusb_device_handle *,
-						 int n, int alt)
-{
-	if (fake.log)
-		fprintf(stderr, "fake Apple USB Modem: interface %d's alternate setting %d\n",
-			n, alt);
-	if (n < 0 || n >= N_IF || !fake.claimed[n] ||
-	    (alt != 0 && (alt != 1 || (n != IF_OUT && n != IF_IN))))
-		return LIBUSB_ERROR_NOT_FOUND;
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	fake.alt[n] = alt;
-	if (n == IF_IN) {
-		fake.in.clear();
-		fake.ms = 0;
+	/* interface n claimed (LIBUSB_ERROR_BUSY if it is) */
+	int claim(int n) override
+	{
+		if (n < 0 || n >= N_IF)
+			return LIBUSB_ERROR_NOT_FOUND;
+		if (fake.claimed[n])
+			return LIBUSB_ERROR_BUSY;
+		fake.claimed[n] = true;
+		if (fake.log)
+			fprintf(stderr, "fake Apple USB Modem: interface %d claimed\n", n);
+		return 0;
 	}
-	return 0;
-}
 
-/* nothing to clear: 0 */
-int LIBUSB_CALL libusb_clear_halt(libusb_device_handle *, unsigned char)
-{
-	return 0;
-}
+	/* interface n released */
+	int release(int n) override
+	{
+		if (n < 0 || n >= N_IF || !fake.claimed[n])
+			return LIBUSB_ERROR_NOT_FOUND;
+		fake.claimed[n] = false;
+		fake.alt[n] = 0;
+		return 0;
+	}
 
-/* the configuration (make_config()), static */
-int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device *,
-						    libusb_config_descriptor **c)
-{
-	make_config();
-	*c = &config;
-	return 0;
-}
-
-/* the configuration by its index (the one: 0) */
-int LIBUSB_CALL libusb_get_config_descriptor(libusb_device *, uint8_t index,
-					     libusb_config_descriptor **c)
-{
-	if (index != 0)
-		return LIBUSB_ERROR_NOT_FOUND;
-	make_config();
-	*c = &config;
-	return 0;
-}
-
-/* nothing to free (static) */
-void LIBUSB_CALL libusb_free_config_descriptor(libusb_config_descriptor *)
-{
-}
-
-/* the class requests: CDC's to interfaces 0 and 1 (the DAA's commands,
-   their responses, the hook, the country), the audio class's SET_CUR
-   of a streaming endpoint's rate; LIBUSB_ERROR_PIPE for the rest,
-   LIBUSB_ERROR_NO_DEVICE once gone */
-int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *,
-					uint8_t type, uint8_t request,
-					uint16_t value, uint16_t index,
-					unsigned char *data, uint16_t length,
-					unsigned int)
-{
-	int r = LIBUSB_ERROR_PIPE;
-	bool in = type & LIBUSB_ENDPOINT_IN;
-	uint8_t recipient = type & 0x1f;
-
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	if ((type & 0x60) != LIBUSB_REQUEST_TYPE_CLASS)
-		;
-	else if (recipient == LIBUSB_RECIPIENT_ENDPOINT && !in &&
-		 request == SET_CUR && value == 0x0100 &&
-		 (index == EP_OUT || index == EP_IN) && length == 3) {
-		unsigned rate = data[0] | data[1] << 8 | data[2] << 16;
-		for (unsigned x : RATES)
-			if (x == rate) {
-				if (index == EP_IN) {
-					fake.rate = rate;
-					fake.ms = 0;
-				}
-				r = 0;
-			}
-	} else if (recipient == LIBUSB_RECIPIENT_INTERFACE && index == IF_MGMT &&
-		   fake.claimed[IF_MGMT]) {
-		if (!in && request == SEND_ENCAPSULATED_COMMAND && length == 3)
-			r = daa_command(data);
-		else if (in && request == GET_ENCAPSULATED_RESPONSE && length >= 1) {
-			data[0] = fake.response;
-			if (length >= 2)
-				data[1] = 0;
-			fake.response_due = false;
-			r = length >= 2 ? 2 : 1;
+	/* a streaming interface's (3, 4) setting alt, 0 or 1 (claimed): 4's 1
+	   starts the IN samples */
+	int set_alt(int n, int alt) override
+	{
+		if (fake.log)
+			fprintf(stderr, "fake Apple USB Modem: interface %d's alternate setting %d\n",
+				n, alt);
+		if (n < 0 || n >= N_IF || !fake.claimed[n] ||
+		    (alt != 0 && (alt != 1 || (n != IF_OUT && n != IF_IN))))
+			return LIBUSB_ERROR_NOT_FOUND;
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		fake.alt[n] = alt;
+		if (n == IF_IN) {
+			fake.in.clear();
+			fake.ms = 0;
 		}
-	} else if (recipient == LIBUSB_RECIPIENT_INTERFACE && index == IF_DLC &&
-		   !in && request == SET_HOOK_STATE && value <= 1 && !fake.hook_stall) {
-		set_hook(value);
-		r = 0;
+		return 0;
 	}
-	if (fake.log)
-		fprintf(stderr, "fake Apple USB Modem: request %02x %02x %s %04x %u: %d\n",
-			type, request, in ? "in" : "out", value, index, r);
-	if (fake.log && !in && request == SEND_ENCAPSULATED_COMMAND && length == 3)
-		fprintf(stderr, "fake Apple USB Modem: DAA %02x %u %02x\n",
-			data[0], data[1], data[2]);
-	return r;
-}
 
-/* a notification (the oldest queued), at once: LIBUSB_ERROR_TIMEOUT if
-   none (the time not waited), LIBUSB_ERROR_OVERFLOW if less than a
-   packet is asked for */
-int LIBUSB_CALL libusb_interrupt_transfer(libusb_device_handle *,
-					  unsigned char endpoint,
-					  unsigned char *data, int length,
-					  int *transferred, unsigned int)
-{
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	if (endpoint != EP_NOTIFY)
-		return LIBUSB_ERROR_PIPE;
-	take();
-	if (fake.notes.empty())
-		return LIBUSB_ERROR_TIMEOUT;
-	auto b = fake.notes.front();
-	fake.notes.pop_front();
-	/* (a whole packet: less asked for overflows, the notification
-	   lost, as a real device's would be) */
-	int n = length < NOTIFY_PACKET ? length : NOTIFY_PACKET;
-	memset(data, 0, (size_t)n);
-	memcpy(data, b.data(), (size_t)(n < 8 ? n : 8));
-	if (transferred)
-		*transferred = n;
-	return length < NOTIFY_PACKET ? LIBUSB_ERROR_OVERFLOW : 0;
-}
+	/* the configuration (make_config()), static */
+	libusb_config_descriptor *config() override
+	{
+		make_config();
+		return &::config;
+	}
 
-/* a transfer of iso_packets packets, zeroed */
-libusb_transfer *LIBUSB_CALL libusb_alloc_transfer(int iso_packets)
-{
-	size_t n = sizeof(libusb_transfer) +
-		sizeof(libusb_iso_packet_descriptor) * (size_t)iso_packets;
-	libusb_transfer *t = (libusb_transfer *)calloc(1, n);
-	if (t)
-		t->num_iso_packets = iso_packets;
-	return t;
-}
+	/* the class requests: CDC's to interfaces 0 and 1 (the DAA's commands,
+	   their responses, the hook, the country), the audio class's SET_CUR
+	   of a streaming endpoint's rate; LIBUSB_ERROR_PIPE for the rest,
+	   LIBUSB_ERROR_NO_DEVICE once gone */
+	int control(uint8_t type, uint8_t request, uint16_t value,
+		    uint16_t index, unsigned char *data,
+		    uint16_t length) override
+	{
+		int r = LIBUSB_ERROR_PIPE;
+		bool in = type & LIBUSB_ENDPOINT_IN;
+		uint8_t recipient = type & 0x1f;
 
-/* t freed (its buffer too if it has
-   LIBUSB_TRANSFER_FREE_BUFFER) */
-void LIBUSB_CALL libusb_free_transfer(libusb_transfer *t)
-{
-	if (!t)
-		return;
-	if (t->flags & LIBUSB_TRANSFER_FREE_BUFFER)
-		free(t->buffer);
-	free(t);
-}
-
-/* t queued at its endpoint, done in run(); an audio endpoint only in its
-   interface's alternate setting 1 */
-int LIBUSB_CALL libusb_submit_transfer(libusb_transfer *t)
-{
-	if (fake.gone)
-		return LIBUSB_ERROR_NO_DEVICE;
-	if (fake_usb_refused(t))
-		return LIBUSB_ERROR_NOT_SUPPORTED;
-	if (t->endpoint == EP_NOTIFY)
-		fake.intr_q.push_back(t);
-	else if (t->endpoint == EP_IN && fake.alt[IF_IN] == 1)
-		fake.in_q.push_back(t);
-	else if (t->endpoint == EP_OUT && fake.alt[IF_OUT] == 1)
-		fake.out_q.push_back(t);
-	else
-		return LIBUSB_ERROR_NOT_FOUND;
-	return 0;
-}
-
-/* t off its queue, done as cancelled in run();
-   LIBUSB_ERROR_NOT_FOUND if not queued */
-int LIBUSB_CALL libusb_cancel_transfer(libusb_transfer *t)
-{
-	for (auto *q : { &fake.in_q, &fake.out_q, &fake.intr_q })
-		for (auto i = q->begin(); i != q->end(); ++i)
-			if (*i == t) {
-				q->erase(i);
-				fake.cancelled.push_back(t);
-				return 0;
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		if ((type & 0x60) != LIBUSB_REQUEST_TYPE_CLASS)
+			;
+		else if (recipient == LIBUSB_RECIPIENT_ENDPOINT && !in &&
+			 request == SET_CUR && value == 0x0100 &&
+			 (index == EP_OUT || index == EP_IN) && length == 3) {
+			unsigned rate = data[0] | data[1] << 8 | data[2] << 16;
+			for (unsigned x : RATES)
+				if (x == rate) {
+					if (index == EP_IN) {
+						fake.rate = rate;
+						fake.ms = 0;
+					}
+					r = 0;
+				}
+		} else if (recipient == LIBUSB_RECIPIENT_INTERFACE && index == IF_MGMT &&
+			   fake.claimed[IF_MGMT]) {
+			if (!in && request == SEND_ENCAPSULATED_COMMAND && length == 3)
+				r = daa_command(data);
+			else if (in && request == GET_ENCAPSULATED_RESPONSE && length >= 1) {
+				data[0] = fake.response;
+				if (length >= 2)
+					data[1] = 0;
+				fake.response_due = false;
+				r = length >= 2 ? 2 : 1;
 			}
-	return LIBUSB_ERROR_NOT_FOUND;
-}
-
-/* the descriptors to poll: the capture socket (if open) */
-const libusb_pollfd **LIBUSB_CALL libusb_get_pollfds(libusb_context *)
-{
-	const libusb_pollfd **l =
-		(const libusb_pollfd **)calloc(2, sizeof(*l));
-	static libusb_pollfd p;
-	if (!l)
-		return nullptr;
-	if (fake.cap >= 0) {
-		p.fd = fake.cap;
-		p.events = POLLIN;
-		l[0] = &p;
+		} else if (recipient == LIBUSB_RECIPIENT_INTERFACE && index == IF_DLC &&
+			   !in && request == SET_HOOK_STATE && value <= 1 && !fake.hook_stall) {
+			set_hook(value);
+			r = 0;
+		}
+		if (fake.log)
+			fprintf(stderr, "fake Apple USB Modem: request %02x %02x %s %04x %u: %d\n",
+				type, request, in ? "in" : "out", value, index, r);
+		if (fake.log && !in && request == SEND_ENCAPSULATED_COMMAND && length == 3)
+			fprintf(stderr, "fake Apple USB Modem: DAA %02x %u %02x\n",
+				data[0], data[1], data[2]);
+		return r;
 	}
-	return l;
-}
 
-/* the list freed */
-void LIBUSB_CALL libusb_free_pollfds(const libusb_pollfd **l)
+	/* a notification (the oldest queued), at once: LIBUSB_ERROR_TIMEOUT if
+	   none (the time not waited), LIBUSB_ERROR_OVERFLOW if less than a
+	   packet is asked for */
+	int interrupt(unsigned char endpoint, unsigned char *data,
+		      int length, int *transferred) override
+	{
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		if (endpoint != EP_NOTIFY)
+			return LIBUSB_ERROR_PIPE;
+		take();
+		if (fake.notes.empty())
+			return LIBUSB_ERROR_TIMEOUT;
+		auto b = fake.notes.front();
+		fake.notes.pop_front();
+		/* (a whole packet: less asked for overflows, the notification
+		   lost, as a real device's would be) */
+		int n = length < NOTIFY_PACKET ? length : NOTIFY_PACKET;
+		memset(data, 0, (size_t)n);
+		memcpy(data, b.data(), (size_t)(n < 8 ? n : 8));
+		if (transferred)
+			*transferred = n;
+		return length < NOTIFY_PACKET ? LIBUSB_ERROR_OVERFLOW : 0;
+	}
+
+	/* t queued at its endpoint, done in run(); an audio endpoint only in its
+	   interface's alternate setting 1 */
+	int submit(libusb_transfer *t) override
+	{
+		if (fake.gone)
+			return LIBUSB_ERROR_NO_DEVICE;
+		if (fake_usb::refused(t))
+			return LIBUSB_ERROR_NOT_SUPPORTED;
+		if (t->endpoint == EP_NOTIFY)
+			fake.intr_q.push_back(t);
+		else if (t->endpoint == EP_IN && fake.alt[IF_IN] == 1)
+			fake.in_q.push_back(t);
+		else if (t->endpoint == EP_OUT && fake.alt[IF_OUT] == 1)
+			fake.out_q.push_back(t);
+		else
+			return LIBUSB_ERROR_NOT_FOUND;
+		return 0;
+	}
+
+	/* t off its queue, done as cancelled in run();
+	   LIBUSB_ERROR_NOT_FOUND if not queued */
+	int cancel(libusb_transfer *t) override
+	{
+		return fake_usb::cancel_from(t, { &fake.in_q, &fake.out_q,
+						  &fake.intr_q }, fake.cancelled);
+	}
+
+	/* the descriptor to poll: the capture socket (-1 if not open) */
+	int poll_fd() const override { return fake.cap; }
+
+	/* what the device has done (run()) */
+	void run() override { ::run(); }
+};
+
+} // namespace
+
+/* see fake_libusb.h */
+fake_usb::Device &fake_usb::device()
 {
-	free(l);
+	static Apple d;
+	return d;
 }
-
-/* what the device has done (run()), without waiting */
-int LIBUSB_CALL libusb_handle_events_timeout_completed(libusb_context *,
-						       struct timeval *tv,
-						       int *)
-{
-	run();
-	(void)tv;
-	return 0;
-}
-
-} // extern "C"

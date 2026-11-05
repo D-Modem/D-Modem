@@ -35,6 +35,7 @@
 #include <vector>
 
 #include "dm_types.h"
+#include "lsq.h"
 #include "pump.h"
 #include "v34.h"
 #include "k56flex.h"
@@ -2735,11 +2736,11 @@ float V34Echo::ls_solve()
 {
 	const s16 L = EC_NEAR_LEN, T = EC_NEAR_LEN - 1;
 	std::vector<double> R_, ch_;
-	double *R, *ch, p[EC_NEAR_LEN], w[EC_NEAR_LEN], z[EC_NEAR_LEN];
-	double ryy = 0, rest, tr = 0, lam;
+	double *R, *ch, p[EC_NEAR_LEN], w[EC_NEAR_LEN];
+	double ryy = 0, rest;
 	const float *t = ls_tx.data(), *y = ls_rx.data();
 	s32 n, N = ls_n;
-	s16 i, j, m;
+	s16 i, j;
 	float gain = 0;
 
 	if (ls_tx.empty() || ls_rx.empty() || N < 4 * L || far_on)
@@ -2769,33 +2770,9 @@ float V34Echo::ls_solve()
 					t[T - 1 - j] -
 				static_cast<double>(t[T + N - 1 - i]) *
 					t[T + N - 1 - j];
-	for (i = 0; i < L; i++)
-		tr += R[i * L + i];
 	/* a little on the diagonal: our signal leaves the band's edges
 	   empty */
-	lam = 1e-7 * tr / L + 1e-6;
-	for (i = 0; i < L; i++)
-		for (j = 0; j <= i; j++) {
-			double v = j < i ? R[j * L + i] : R[i * L + i] + lam;
-			for (m = 0; m < j; m++)
-				v -= ch[i * L + m] * ch[j * L + m];
-			if (i == j)
-				ch[i * L + i] = sqrt(v > 1e-12 ? v : 1e-12);
-			else
-				ch[i * L + j] = v / ch[j * L + j];
-		}
-	for (i = 0; i < L; i++) {
-		double v = p[i];
-		for (m = 0; m < i; m++)
-			v -= ch[i * L + m] * z[m];
-		z[i] = v / ch[i * L + i];
-	}
-	for (i = L - 1; i >= 0; i--) {
-		double v = z[i];
-		for (m = i + 1; m < L; m++)
-			v -= ch[m * L + i] * w[m];
-		w[i] = v / ch[i * L + i];
-	}
+	lsq_solve(R, p, L, 1e-7, 1e-6, ch, w);
 	rest = ryy;
 	for (i = 0; i < L; i++)
 		rest -= w[i] * p[i];
