@@ -3,7 +3,7 @@
  * Copyright (C) 2026 D-Modem Authors
  *
  *    usb_wb.cpp - the pico-serial WB stick (USB 1209:0003) as the modem's
- *                 line: UsbLine's Kind::Wb (usb_line.h)
+ *                 line: UsbLine's Wb chip (usb_line.h)
  *
  *    The stick's protocol is its firmware's (pico-serial's
  *    firmware/PROTOCOL.md "WB stick", src/core/wb_proto.h): the Line
@@ -216,6 +216,38 @@ void UsbLine::wb_close()
 				LIBUSB_ENDPOINT_OUT, WP_SET_CARRIER,
 				WP_CARRIER_AUTO, 0, nullptr, 0, 1000);
 	libusb_set_interface_alt_setting(h_, 0, 0);
+}
+
+/* the pico-serial WB: a bare pair, no hook (no flashes, no pulse
+   dialling), its LINK LED the carrier's, its samples running since its
+   alternate setting 1 */
+struct UsbLine::Wb final : UsbLine::Chip {
+	using Chip::Chip;
+	const char *name() const override { return "pico-serial WB"; }
+	const char *model() const override
+	{
+		return "pico-serial WB (TLV320AIC3204)";
+	}
+	const char *a_name() const override { return "a pico-serial WB"; }
+	bool open(u32 rate) override { return l.open_wb(rate); }
+	void event(const u8 *b, s16 len) override { l.wb_event(b, len); }
+	s16 set_hook(s16, bool) override { return 0; }
+	void hook(bool) override {}
+	s16 pulse(bool) override { return -1; }
+	bool flash(u16) override { return true; }
+	bool can_flash() const override { return false; }
+	void leds(dcore::Modem &m) override { l.wb_carrier(m); }
+	/* its LINK LED its own again, the samples stopped */
+	void close() override
+	{
+		if (l.claimed_)
+			l.wb_close();
+	}
+};
+
+std::unique_ptr<UsbLine::Chip> UsbLine::wb_chip(UsbLine &l)
+{
+	return std::make_unique<Wb>(l);
 }
 
 } // namespace dmd

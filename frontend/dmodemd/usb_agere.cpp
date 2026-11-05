@@ -3,7 +3,7 @@
  * Copyright (C) 2026 D-Modem Authors
  *
  *    usb_agere.cpp - the Agere USB 2.0 soft modem (USB 047E:2892, 047E:2828)
- *                    as the modem's line: UsbLine's Kind::Agere (usb_line.h)
+ *                    as the modem's line: UsbLine's Agere chip (usb_line.h)
  *
  *    The device streams on its ROM's own isochronous endpoints, as Agere's
  *    Windows driver has it (docs/agere-usb.md: read from the device's ROM
@@ -1172,6 +1172,136 @@ void UsbLine::agere_rate_check()
 	if (hz < AGERE_RATE * 95 / 100 || hz > AGERE_RATE * 105 / 100)
 		ERR("Agere USB modem: %" PRIu64 " samples a second, not %" PRIu32
 		    ": tell D-Modem (docs/agere-usb.md)\n", hz, AGERE_RATE);
+}
+
+/* the Agere modem: its ROM's stream (its own transfers, paced as its
+   samples come), its hook, ring and LED through its codec and GPIOs */
+struct UsbLine::Agere final : UsbLine::Chip {
+	using Chip::Chip;
+	const char *name() const override { return "Agere USB modem"; }
+	const char *model() const override { return "Agere USB 2.0 (Mercury)"; }
+	const char *a_name() const override { return "an Agere USB modem"; }
+	/* its samples are at 8000 Hz */
+	u32 rate(u32 asked) override
+	{
+		if (asked != 8000)
+			DBG("Agere USB modem: 8000 Hz, its rate (not %" PRIu32
+			    ")\n", asked);
+		return 8000;
+	}
+	bool open(u32) override { return l.open_agere(); }
+	bool start_streams() override { return l.agere_streams(); }
+	/* (no interrupt endpoint) */
+	void event(const u8 *, s16) override {}
+	/* it hears the line on hook: caller ID's listening on, not
+	   between rings after a call; its ring registers' changes said
+	   again */
+	s16 set_hook(s16 state, bool was_off) override
+	{
+		bool off = state == MODEM_HOOK_OFF;
+		l.agere_poll_said_ = 0;
+		if (!off && was_off)
+			l.agere_onhook_ms_ = sys_ms();
+		return l.agere_hook(off) && l.agere_caller_id(!off) ? 0 : -1;
+	}
+	void hook(bool off) override { l.agere_hook(off); }
+	s16 pulse(bool broken) override
+	{
+		return l.agere_hook(!broken) ? 0 : -1;
+	}
+	void leds(dcore::Modem &m) override { l.agere_leds(m); }
+	/* its stream may have gone with a reset */
+	bool resume() override { return l.agere_table() && l.agere_start(); }
+	bool fill_out(libusb_transfer *t) override
+	{
+		l.agere_fill(t);
+		return true;
+	}
+	/* sent again at once, paced as its samples come: its ROM answers
+	   each OUT packet with an IN one.  Short of a transfer's samples:
+	   held until pump() has made the modem's from the line's come with
+	   it, all but 4 of them at most, so that the device always has OUT
+	   packets queued: past that, sent as they are, the held ones
+	   first */
+	bool out_sent(Iso &s, libusb_transfer *t) override
+	{
+		if (t->status == LIBUSB_TRANSFER_COMPLETED)
+			l.agere_sent(t);
+		if (!l.agere_out_ready() &&
+		    s.idle_out.size() < static_cast<size_t>(
+			    std::max<s16>(1, l.agere_transfers_ - 4))) {
+			s.idle_out.push_back(t);
+			return true;
+		}
+		while (!s.idle_out.empty()) {
+			libusb_transfer *h = s.idle_out.front();
+			s.idle_out.pop_front();
+			l.agere_send(h);
+		}
+		l.agere_send(t);
+		return true;
+	}
+	bool in_come(libusb_transfer *t) override
+	{
+		l.agere_in(t);
+		int err = libusb_submit_transfer(t);
+		if (err == 0)
+			l.in_flight_++;
+		else
+			l.park(t, err);
+		return true;
+	}
+	/* its rate checked; the OUT transfers held by out_sent(): their
+	   samples now, silence past them; its ring registers polled on
+	   hook */
+	void pumped(size_t used) override
+	{
+		if (used)
+			l.agere_rate_check();
+		while (!l.iso_.idle_out.empty() && !l.dead_) {
+			libusb_transfer *t = l.iso_.idle_out.front();
+			l.iso_.idle_out.pop_front();
+			l.agere_send(t);
+		}
+		if (!l.off_hook())
+			l.agere_ring_poll();
+	}
+	/* its playback catches up after a burst of its samples */
+	size_t ahead() const override
+	{
+		return static_cast<size_t>(l.agere_ahead_);
+	}
+	/* the Hiro H50113 on its first line: +6 and +10 connected */
+	const TxCal &tx_cal() const override
+	{
+		static const TxCal cal = { 8.0, 0.0, 12.0, 6.0 };
+		return cal;
+	}
+	/* the stream stopped, on hook, GPIOs 2 and 3 as CUsbStop leaves
+	   them, the OH LED (GPIO 4) out (not before its codec is known: a
+	   Polaris's hook is the other way round) */
+	void stop() override
+	{
+		if (!l.claimed_ || !l.agere_codec_)
+			return;
+		u16 v;
+		l.agere_stop();
+		l.agere_hook(false);
+		if (l.agere_read16(0x30000008, &v))
+			l.agere_write16(0x30000008, static_cast<u16>(
+				((v & 0xfff3) | 0x000c) & ~0x0010));
+	}
+	/* no stream to the next open */
+	void close() override
+	{
+		if (l.claimed_)
+			libusb_set_interface_alt_setting(l.h_, 0, 0);
+	}
+};
+
+std::unique_ptr<UsbLine::Chip> UsbLine::agere_chip(UsbLine &l)
+{
+	return std::make_unique<Agere>(l);
 }
 
 } // namespace dmd

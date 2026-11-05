@@ -3,7 +3,7 @@
  * Copyright (C) 2026 D-Modem Authors
  *
  *    usb_apple.cpp - the Apple USB Modem (USB 05AC:1401, and 05AC:8220)
- *                    as the modem's line: UsbLine's Kind::Apple
+ *                    as the modem's line: UsbLine's Apple chip
  *                    (usb_line.h)
  *
  *    The Apple USB Modem (MA034Z/A, A1101) is Motorola's SM56 USB soft
@@ -617,6 +617,51 @@ void UsbLine::apple_close()
 		libusb_release_interface(h_, n);
 	apple_claimed_.clear();
 	apple_regs_read_ = false;
+}
+
+/* the Apple USB Modem: its hook a CDC request, its ring a CDC
+   notification, its Si3056's registers vendor commands, its samples
+   running since its streams' alternate settings */
+struct UsbLine::Apple final : UsbLine::Chip {
+	using Chip::Chip;
+	const char *name() const override { return "Apple USB Modem"; }
+	const char *model() const override { return "Apple USB Modem (Si3056)"; }
+	const char *a_name() const override { return "an Apple USB Modem"; }
+	bool open(u32 rate) override { return l.open_apple(rate); }
+	void event(const u8 *b, s16 len) override { l.apple_event(b, len); }
+	/* the line monitor on, on hook, and the country's settings if
+	   due */
+	s16 set_hook(s16 state, bool) override
+	{
+		return state == MODEM_HOOK_OFF ?
+			(l.apple_hook(true) && l.apple_monitor(false) ? 0 : -1) :
+			(l.apple_hook(false) && l.apple_monitor(true) &&
+			 (!l.daa_due_ || l.apple_country()) ? 0 : -1);
+	}
+	void hook(bool off) override { l.apple_hook(off); }
+	s16 pulse(bool broken) override
+	{
+		return l.apple_hook(!broken) ? 0 : -1;
+	}
+	/* (once its registers have been read) */
+	void country() override
+	{
+		if (l.apple_regs_read_)
+			l.apple_country();
+	}
+	/* its ring timed on hook */
+	void pumped(size_t) override
+	{
+		if (!l.off_hook())
+			l.apple_ring_tick();
+	}
+	/* on hook, the streams stopped, its interfaces released */
+	void close() override { l.apple_close(); }
+};
+
+std::unique_ptr<UsbLine::Chip> UsbLine::apple_chip(UsbLine &l)
+{
+	return std::make_unique<Apple>(l);
 }
 
 } // namespace dmd
