@@ -1,0 +1,59 @@
+INHERIT: .site/mkdocs-base.yml
+# D-Modem's site, https://d-modem.github.io/D-Modem/: docs/ and the README
+# with brand's shared theme and workflow (brand's docs/sites.md: the site is
+# built from a copy of docs/, .site/docs).  docs/reference/ is made from the
+# source (tools/site_reference.py).
+site_name: D-Modem
+site_description: An open V.92 softmodem
+site_url: https://d-modem.github.io/D-Modem/
+repo_url: https://github.com/D-Modem/D-Modem
+repo_name: D-Modem/D-Modem
+docs_dir: .site/docs
+exclude_docs: |
+  at/
+  cellular/
+  specs/*.sh
+extra:
+  repo: D-Modem
+nav:
+  - Home: index.md
+  - Getting started:
+    - Building: building.md
+    - Using dmodemd: usage.md
+    - What the modem does: features.md
+    - How it works: how-it-works.md
+    - Known issues: known-issues.md
+    - Documentation index: README.md
+  - Reference:
+    - dmodemd's command line: reference/dmodemd.md
+    - Environment variables: reference/environment.md
+    - CMake options: reference/cmake.md
+    - ITU-T Recommendations: specs/README.md
+  - The modem:
+    - The modem core: core.md
+    - The data pumps: dsp/README.md
+    - The data link layer: link.md
+    - ISDN: isdn.md
+    - Voice and data together (V.70): v70.md
+    - Modem relay (V.150.1): v150.md
+    - Leased lines and dry pairs: leased.md
+  - Phone systems:
+    - Modules: modules.md
+    - "Asterisk: app_dmodem": asterisk.md
+    - dmodem-ari: ari.md
+    - FreePBX: freepbx.md
+    - "FreeSWITCH: mod_dmodem": freeswitch.md
+  - Hardware and systems:
+    - Softmodem hardware: hardware.md
+    - The Agere USB 2.0 soft modem: agere-usb.md
+    - The Apple USB Modem: apple-usb-modem.md
+    - The SmartUSB56 under Windows: smartusb56-windows.md
+    - Windows: windows.md
+    - macOS: macos.md
+    - Haiku: haiku.md
+  - Development:
+    - Building and testing: testing.md
+    - Interop against other soft modems: interop.md
+    - Source layout: layout.md
+    - Code review (October 2026): review.md
+    - Acknowledgements: acknowledgements.md

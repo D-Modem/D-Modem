@@ -1,0 +1,23 @@
+# D-Modem's site, https://d-modem.github.io/D-Modem/: docs/ with brand's
+# shared theme and workflow (brand's docs/sites.md).  A pull request builds
+# it, main deploys it.  It fails if docs/reference/ isn't what the source
+# makes now, or if an environment variable is in no page of docs/
+# (tools/site_reference.py).
+name: Pages
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  site:
+    uses: D-Modem/brand/.github/workflows/site.yml@main
+    with:
+      prepare: python3 tools/site_reference.py --check
