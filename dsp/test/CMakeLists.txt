@@ -279,10 +279,14 @@ target_include_directories(dmodem_test PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dm
 target_link_libraries(dmodem_test PRIVATE dmodem)
 dmodem_gtest(dmodem_test LABELS quick)
 # libdmodem as the far end of courier-emu's closed loop: the original
-# USRobotics Courier firmware calls it (docs/dsp/x2-details.md)
-dmodem_test_exe(courier_peer courier_peer.cpp)
-target_include_directories(courier_peer PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
-target_link_libraries(courier_peer PRIVATE dmodem)
+# USRobotics Courier firmware calls it (docs/dsp/x2-details.md); on
+# POSIX's socketpair
+if(NOT WIN32)
+	dmodem_test_exe(courier_peer courier_peer.cpp)
+	target_include_directories(courier_peer PRIVATE
+		${PROJECT_SOURCE_DIR}/frontend/dmodemd)
+	target_link_libraries(courier_peer PRIVATE dmodem)
+endif()
 # a point of sale transaction (SDLC frames through V.80) over V.29
 # FastPOS and V.22 fast connect
 dmodem_test_exe(pos_test pos_test.cpp)
