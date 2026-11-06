@@ -24,7 +24,7 @@ What `cmake -B build -D<NAME>=<value>` takes, from the `option()`s and cache set
 | setting | default | type | what it is | set in |
 |---|---|---|---|---|
 | `DMODEM_LIBRE` | `auto` | string | libre: auto, system or fetch | `CMakeLists.txt` |
-| `DMODEM_CRYPTO` | `(depends on the system)` | string | libre's crypto: openssl or mbedtls | `CMakeLists.txt` |
+| `DMODEM_CRYPTO` | `mbedtls` | string | libre's crypto: mbedtls or openssl | `CMakeLists.txt` |
 | `DMODEM_WINNT` | `0x0601` | string | _WIN32_WINNT: the oldest Windows to run on (0x0601: Windows 7) | `CMakeLists.txt` |
 | `DMODEM_LIBRE_REPO` | `https://github.com/baresip/re.git` | string | libre repository to fetch | `cmake/libre.cmake` |
 | `DMODEM_LIBRE_TAG` | `v4.12.0` | string | libre release to fetch | `cmake/libre.cmake` |

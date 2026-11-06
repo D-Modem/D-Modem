@@ -9,7 +9,7 @@ from Haiku's and HaikuPorts' package repositories, on Linux.
 Each package is downloaded (once, into CACHE: DIR/../haiku-packages by
 default), checked against its repository's SHA-256 and extracted under
 DIR/boot/system, as Haiku installs it.  The packages are those haiku.cmake
-names (haiku, haiku_devel, gcc and its libraries, libusb, openssl3), or
+names (haiku, haiku_devel, gcc and its libraries, libusb), or
 the ones given.  Their pkg-config files name the packages' own mount
 points (/packages/<package>/.self); here those are /boot/system, where
 the files are.
@@ -34,7 +34,7 @@ import zlib
 HAIKU_REPO = 'https://eu.hpkg.haiku-os.org/haiku/r1beta5/x86_64/current'
 PORTS_REPO = 'https://eu.hpkg.haiku-os.org/haikuports/master/x86_64/current'
 PACKAGES = ['haiku', 'haiku_devel', 'gcc', 'gcc_syslibs', 'gcc_syslibs_devel',
-            'libusb', 'libusb_devel', 'openssl3', 'openssl3_devel']
+            'libusb', 'libusb_devel']
 
 # attribute ids (Haiku's PackageAttributes.h)
 A_ENTRY, A_TYPE, A_PERMS, A_DATA, A_LINK = 0, 1, 2, 13, 14

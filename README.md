@@ -21,7 +21,7 @@ sticks. On a PBX it answers calls through Asterisk, FreeSWITCH or FreePBX.
 
 ## Quick start
 
-On Linux, with CMake, a C++17 compiler and OpenSSL's headers:
+On Linux, with CMake, git and a C++17 compiler:
 
     cmake -B build && cmake --build build
     export SIP_LOGIN=username:password@sip.example.com

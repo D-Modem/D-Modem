@@ -32,12 +32,12 @@ Nothing has run on Haiku itself yet: neither the tests nor a call.
 
 Haiku already has GCC and its headers (`haiku_devel`). The rest comes from HaikuPorts:
 
-    pkgman install cmake ninja git pkgconfig openssl3_devel libusb_devel
+    pkgman install cmake ninja git pkgconfig libusb_devel
     cmake -B build -G Ninja
     cmake --build build
     ctest --test-dir build -L quick
 
-libre (the SIP library) is fetched and built while configuring, with a small patch for Haiku (`platforms/haiku/libre-haiku.patch`). Without `libusb_devel`, dmodemd builds without `--usb`.
+libre (the SIP library) and Mbed TLS (its crypto) are fetched and built while configuring, libre with a small patch for Haiku (`platforms/haiku/libre-haiku.patch`). Without `libusb_devel`, dmodemd builds without `--usb`.
 
 `cmake --install build` puts the programs in `/boot/system/non-packaged/bin`, which is on the `PATH`. `/boot/system` itself belongs to Haiku's packages and is read-only.
 
@@ -59,8 +59,7 @@ The script reads Haiku's package format itself. Its zstd-compressed packages nee
 The sysroot is about 500 MB. It holds:
 - the base system: `haiku`, `haiku_devel`;
 - GCC's headers and libraries: `gcc`, `gcc_syslibs`, `gcc_syslibs_devel` (Clang uses GCC's libstdc++);
-- `libusb` and `libusb_devel`;
-- `openssl3` and `openssl3_devel`.
+- `libusb` and `libusb_devel`.
 
 The tests are built but not registered with ctest, because nothing on Linux can run Haiku's programs (`cmake/test_logs.cmake`). Copy the build to Haiku to run them.
 

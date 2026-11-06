@@ -64,11 +64,11 @@ the system:
   copyright notice and licence go with a dmodemd that is shipped). It
   combines with D-Modem under the AGPL and under the commercial licence
   alike; libdmodem and the Asterisk and FreeSWITCH modules do not use it.
-  The OpenSSL it links (its digests) is under the Apache License 2.0.
-- **Mbed TLS**, libre's digests in OpenSSL's place when built with
-  `-DDMODEM_CRYPTO=mbedtls` (the default for Android, Windows and Apple's
-  systems): Apache-2.0 or
-  GPL-2.0-or-later, at the shipper's choice.
+- **Mbed TLS**, libre's crypto (its digests, and its AES through
+  `cmake/libre-mbedtls-aes.patch`, D-Modem's patch to libre, which is
+  BSD-3-Clause like libre so that it can go upstream): Apache-2.0 or
+  GPL-2.0-or-later, at the shipper's choice.  With
+  `-DDMODEM_CRYPTO=openssl`, the system's OpenSSL in its place: Apache-2.0.
 - **libusb** (dmodemd's `--usb`): LGPL-2.1-or-later. Linux's dmodemd
   links the system's libusb-1.0 dynamically. Windows' dmodemd.exe and
   macOS's dmodemd link the fetched release statically

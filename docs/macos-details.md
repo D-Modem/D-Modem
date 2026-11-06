@@ -56,7 +56,7 @@ Then:
 
 Three libraries are fetched and built while configuring, for every architecture of the build, so nothing else is needed from Homebrew:
 - libre, for SIP;
-- Mbed TLS, for libre's digests (macOS has no OpenSSL that programs may link; `DMODEM_CRYPTO` defaults to `mbedtls` on Apple's systems);
+- Mbed TLS, for libre's digests (`DMODEM_CRYPTO`'s default, `mbedtls`, on every system; macOS has no OpenSSL that programs may link anyway);
 - libusb, for `--usb`.
 
 `-DDMODEM_USB=OFF` builds dmodemd without `--usb` and without libusb.

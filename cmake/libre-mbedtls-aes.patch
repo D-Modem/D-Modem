@@ -1,0 +1,292 @@
+# libre v4.12.0 on Mbed TLS (cmake/libre.cmake applies it when
+# DMODEM_CRYPTO is mbedtls): AES, CTR and GCM, on Mbed TLS's AES and
+# GCM (src/aes/mbedtls/aes.c), so that SRTP works there.  libre has
+# AES only on OpenSSL and Apple's CommonCrypto, and its stub (ENOSYS)
+# elsewhere.  Its tests (retest test_aes, test_aes_gcm, test_srtp,
+# test_srtp_gcm, test_srtcp, test_srtcp_gcm) pass with it, OOM ones too.
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 85bc3a1..2488830 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -534,6 +534,12 @@ elseif(APPLE)
+     src/aes/apple/aes.c
+     src/hmac/apple/hmac.c
+   )
++elseif(USE_MBEDTLS)
++  list(APPEND SRCS
++    src/aes/mbedtls/aes.c
++    src/hmac/hmac.c
++    src/tls/stub.c
++  )
+ else()
+   list(APPEND SRCS
+     src/aes/stub.c
+diff --git a/src/aes/mbedtls/aes.c b/src/aes/mbedtls/aes.c
+new file mode 100644
+index 0000000..e67b525
+--- /dev/null
++++ b/src/aes/mbedtls/aes.c
+@@ -0,0 +1,263 @@
++/**
++ * @file mbedtls/aes.c  AES (CTR and GCM) using Mbed TLS
++ *
++ * Copyright (C) 2026 D-Modem Authors
++ */
++
++#include <string.h>
++#include <mbedtls/aes.h>
++#include <mbedtls/gcm.h>
++#include <re_types.h>
++#include <re_mem.h>
++#include <re_aes.h>
++
++
++enum { GCM_IV_LEN = 12 };
++
++
++struct aes {
++	enum aes_mode mode;
++
++	/* CTR */
++	mbedtls_aes_context ctr;
++	uint8_t nonce[AES_BLOCK_SIZE];
++	uint8_t stream[AES_BLOCK_SIZE];
++	size_t nc_off;
++
++	/* GCM: started on the first call after an IV, in that call's
++	   direction */
++	mbedtls_gcm_context gcm;
++	uint8_t iv[GCM_IV_LEN];
++	bool started;
++	bool encr;
++};
++
++
++static void destructor(void *arg)
++{
++	struct aes *st = arg;
++
++	if (st->mode == AES_MODE_CTR)
++		mbedtls_aes_free(&st->ctr);
++	else
++		mbedtls_gcm_free(&st->gcm);
++
++	memset(st->nonce, 0, sizeof(st->nonce));
++	memset(st->stream, 0, sizeof(st->stream));
++}
++
++
++int aes_alloc(struct aes **aesp, enum aes_mode mode,
++	      const uint8_t *key, size_t key_bits,
++	      const uint8_t *iv)
++{
++	struct aes *st;
++	int err = 0;
++
++	if (!aesp || !key)
++		return EINVAL;
++
++	if (key_bits != 128 && key_bits != 256)
++		return ENOTSUP;
++
++	if (mode != AES_MODE_CTR && mode != AES_MODE_GCM)
++		return ENOTSUP;
++
++	st = mem_zalloc(sizeof(*st), NULL);
++	if (!st)
++		return ENOMEM;
++
++	st->mode = mode;
++
++	if (mode == AES_MODE_CTR) {
++		mbedtls_aes_init(&st->ctr);
++		mem_destructor(st, destructor);
++
++		if (mbedtls_aes_setkey_enc(&st->ctr, key,
++					   (unsigned)key_bits))
++			err = EPROTO;
++	}
++	else {
++		mbedtls_gcm_init(&st->gcm);
++		mem_destructor(st, destructor);
++
++		if (mbedtls_gcm_setkey(&st->gcm, MBEDTLS_CIPHER_ID_AES, key,
++				       (unsigned)key_bits))
++			err = EPROTO;
++	}
++
++	if (err) {
++		mem_deref(st);
++		return err;
++	}
++
++	aes_set_iv(st, iv);
++
++	*aesp = st;
++
++	return 0;
++}
++
++
++void aes_set_iv(struct aes *aes, const uint8_t *iv)
++{
++	if (!aes || !iv)
++		return;
++
++	if (aes->mode == AES_MODE_CTR) {
++		memcpy(aes->nonce, iv, sizeof(aes->nonce));
++		aes->nc_off = 0;
++	}
++	else {
++		memcpy(aes->iv, iv, sizeof(aes->iv));
++		aes->started = false;
++	}
++}
++
++
++/* GCM: started in direction encr; out NULL: in is associated data */
++static int gcm_update(struct aes *aes, bool encr, uint8_t *out,
++		      const uint8_t *in, size_t len)
++{
++	size_t olen;
++
++	if (!aes->started) {
++		if (mbedtls_gcm_starts(&aes->gcm, encr ? MBEDTLS_GCM_ENCRYPT :
++				       MBEDTLS_GCM_DECRYPT, aes->iv,
++				       sizeof(aes->iv)))
++			return EPROTO;
++
++		aes->started = true;
++		aes->encr = encr;
++	}
++	else if (aes->encr != encr) {
++		return EPROTO;
++	}
++
++	if (!out)
++		return mbedtls_gcm_update_ad(&aes->gcm, in, len) ? EPROTO : 0;
++
++	if (mbedtls_gcm_update(&aes->gcm, in, len, out, len, &olen) ||
++	    olen != len)
++		return EPROTO;
++
++	return 0;
++}
++
++
++int aes_encr(struct aes *aes, uint8_t *out, const uint8_t *in, size_t len)
++{
++	if (!aes || !in)
++		return EINVAL;
++
++	if (aes->mode == AES_MODE_GCM)
++		return gcm_update(aes, true, out, in, len);
++
++	if (!out)
++		return EINVAL;
++
++	if (mbedtls_aes_crypt_ctr(&aes->ctr, len, &aes->nc_off, aes->nonce,
++				  aes->stream, in, out))
++		return EPROTO;
++
++	return 0;
++}
++
++
++int aes_decr(struct aes *aes, uint8_t *out, const uint8_t *in, size_t len)
++{
++	if (!aes || !in)
++		return EINVAL;
++
++	if (aes->mode == AES_MODE_GCM)
++		return gcm_update(aes, false, out, in, len);
++
++	return aes_encr(aes, out, in, len);
++}
++
++
++/**
++ * Get the authentication tag of an encryption (GCM only)
++ *
++ * @param aes    AES Context
++ * @param tag    Authentication tag
++ * @param taglen Length of the tag
++ *
++ * @return 0 if success, otherwise errorcode
++ */
++int aes_get_authtag(struct aes *aes, uint8_t *tag, size_t taglen)
++{
++	size_t olen;
++	int err;
++
++	if (!aes || !tag || !taglen)
++		return EINVAL;
++
++	if (aes->mode != AES_MODE_GCM)
++		return ENOTSUP;
++
++	if (!aes->started) {
++		err = gcm_update(aes, true, NULL, tag, 0);
++		if (err)
++			return err;
++	}
++
++	if (!aes->encr)
++		return EPROTO;
++
++	aes->started = false;
++
++	if (mbedtls_gcm_finish(&aes->gcm, NULL, 0, &olen, tag, taglen))
++		return EPROTO;
++
++	return 0;
++}
++
++
++/**
++ * Check the authentication tag of a decryption (GCM only)
++ *
++ * @param aes    AES Context
++ * @param tag    Authentication tag
++ * @param taglen Length of the tag
++ *
++ * @return 0 if success, otherwise errorcode
++ */
++int aes_authenticate(struct aes *aes, const uint8_t *tag, size_t taglen)
++{
++	uint8_t calc[AES_BLOCK_SIZE];
++	uint8_t diff = 0;
++	size_t olen, i;
++	int err;
++
++	if (!aes || !tag || !taglen)
++		return EINVAL;
++
++	if (aes->mode != AES_MODE_GCM)
++		return ENOTSUP;
++
++	if (taglen > sizeof(calc))
++		return EINVAL;
++
++	if (!aes->started) {
++		err = gcm_update(aes, false, NULL, tag, 0);
++		if (err)
++			return err;
++	}
++
++	if (aes->encr)
++		return EPROTO;
++
++	aes->started = false;
++
++	if (mbedtls_gcm_finish(&aes->gcm, NULL, 0, &olen, calc, taglen))
++		return EPROTO;
++
++	/* (in constant time) */
++	for (i = 0; i < taglen; i++)
++		diff |= calc[i] ^ tag[i];
++
++	memset(calc, 0, sizeof(calc));
++
++	return diff ? EAUTH : 0;
++}

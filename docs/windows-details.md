@@ -58,7 +58,7 @@ The usual build is a cross build from Linux. On Debian or Ubuntu:
 - `-femulated-tls`: thread-local variables are emulated, as GCC's are (libstdc++'s `std::call_once` uses them);
 - `-pthread` on the link, for winpthreads.
 
-**The libraries.** libre and Mbed TLS are fetched and built with the same toolchain. Mbed TLS provides libre's crypto, since Windows has no OpenSSL. It is built without its `-Werror` (`MBEDTLS_FATAL_WARNINGS=OFF`), because Clang warns about its `gnu_printf` format attribute on MinGW-w64.
+**The libraries.** libre and Mbed TLS are fetched and built with the same toolchain. Mbed TLS provides libre's crypto (as on every system), its AES too through `cmake/libre-mbedtls-aes.patch`, so SRTP works on Windows. It is built without its `-Werror` (`MBEDTLS_FATAL_WARNINGS=OFF`), because Clang warns about its `gnu_printf` format attribute on MinGW-w64.
 
 **One file.** Everything links statically. `build-win/dmodemd/dmodemd.exe` is a single file that needs no DLLs beyond Windows' own. CI keeps each build's `dmodemd.exe` as an artifact (`dmodemd-windows-x86_64`).
 

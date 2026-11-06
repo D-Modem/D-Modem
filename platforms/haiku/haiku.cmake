@@ -9,7 +9,8 @@
 # HAIKU_SYSROOT (or the environment's HAIKU_SYSROOT) is a directory with
 # Haiku's packages extracted under boot/system: haiku, haiku_devel, gcc,
 # gcc_syslibs, gcc_syslibs_devel (libstdc++), and for --usb libusb and
-# libusb_devel, for libre's digests openssl3 and openssl3_devel.
+# libusb_devel (with -DDMODEM_CRYPTO=openssl, openssl3 and openssl3_devel
+# too: haiku_sysroot.py ... PACKAGE...).
 # platforms/haiku/haiku_sysroot.py makes one from Haiku's package
 # repositories.
 #
