@@ -11,10 +11,10 @@
 #   DMODEM_LIBRE       auto: an installed libre (pkg-config libre), else
 #                      fetched; system: installed only; fetch: always
 #                      build the pinned release
-#   DMODEM_CRYPTO      the fetched libre's digests: openssl (the system's),
-#                      or mbedtls (fetched and built with it; the default
-#                      for Android, Windows and Apple's systems, which have
-#                      no OpenSSL of their own)
+#   DMODEM_CRYPTO      the fetched libre's digests and AES (SRTP): mbedtls
+#                      (Mbed TLS's crypto library, fetched and built with
+#                      it, linked statically: the default), or openssl
+#                      (the system's)
 #   DMODEM_DMODEMD     build dmodemd (its SIP on libre)
 #   DMODEM_ASTERISK    build codec_clearmode when Asterisk's headers are found
 #   DMODEM_APP_DMODEM  also build app_dmodem (off: libdmodem, AGPL, inside
@@ -78,15 +78,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(DMODEM_LIBRE "auto" CACHE STRING "libre: auto, system or fetch")
 set_property(CACHE DMODEM_LIBRE PROPERTY STRINGS auto system fetch)
-if(ANDROID OR APPLE OR WIN32)
-	# (no system OpenSSL to link: Mbed TLS's, built with the modem;
-	# macOS's own libcrypto is not for programs to link)
-	set(_crypto mbedtls)
-else()
-	set(_crypto openssl)
-endif()
-set(DMODEM_CRYPTO ${_crypto} CACHE STRING "libre's crypto: openssl or mbedtls")
-set_property(CACHE DMODEM_CRYPTO PROPERTY STRINGS openssl mbedtls)
+# (Mbed TLS everywhere: libre needs a few digests and AES, not TLS, and
+# only those parts of it are linked in; no OpenSSL to install or ship)
+set(DMODEM_CRYPTO mbedtls CACHE STRING "libre's crypto: mbedtls or openssl")
+set_property(CACHE DMODEM_CRYPTO PROPERTY STRINGS mbedtls openssl)
 option(DMODEM_DMODEMD "Build dmodemd (SIP, needs libre)" ON)
 # (the PBX parts are POSIX's alone: off on Windows unless asked for)
 if(WIN32)

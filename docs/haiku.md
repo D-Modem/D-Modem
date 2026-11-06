@@ -23,7 +23,7 @@ For the full technical description, see
 
 Install the tools and libraries from HaikuPorts, then build:
 
-    pkgman install cmake ninja git pkgconfig openssl3_devel libusb_devel
+    pkgman install cmake ninja git pkgconfig libusb_devel
     cmake -B build -G Ninja
     cmake --build build
     ctest --test-dir build -L quick

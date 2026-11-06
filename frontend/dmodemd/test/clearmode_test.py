@@ -51,7 +51,7 @@ def fail(why):
         log.flush()
         with open(log.name, "rb") as f:
             all = f.read()
-        # (libre built with no AES has no SRTP: skipped)
+        # (libre built with no AES, an installed one, has no SRTP: skipped)
         if SRTP and b"SRTP: not in this build" in all:
             print("SKIP: no SRTP in this build", flush=True)
             sys.exit(77)

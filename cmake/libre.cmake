@@ -9,8 +9,10 @@
 # built once while configuring, into the build tree, with this build's
 # compiler and toolchain file: its SIP and the parts that it needs, a
 # static library, linked by its path (no pkg-config needed then).  Its
-# digests (SIP's authentication) are DMODEM_CRYPTO's: the system's
-# OpenSSL, or Mbed TLS, fetched and built the same way (Android).
+# digests (SIP's authentication) and AES (SRTP) are DMODEM_CRYPTO's:
+# Mbed TLS's crypto library, fetched and built the same way (the
+# default), or the system's OpenSSL.  libre has no AES of its own on
+# Mbed TLS: cmake/libre-mbedtls-aes.patch adds it.
 set(DMODEM_LIBRE_REPO "https://github.com/baresip/re.git"
 	CACHE STRING "libre repository to fetch")
 set(DMODEM_LIBRE_TAG "v4.12.0" CACHE STRING "libre release to fetch")
@@ -127,21 +129,21 @@ function(dmodem_fetch_build name repo tag src build log)
 			message(FATAL_ERROR "${name}: git clone failed")
 		endif()
 	endif()
-	# (<name>_PATCH: a patch for this system, applied once)
-	if(${name}_PATCH)
+	# (<name>_PATCHES: patches for this build, each applied once)
+	foreach(_patch ${${name}_PATCHES})
 		execute_process(COMMAND ${GIT_EXECUTABLE} apply --reverse --check
-			${${name}_PATCH} WORKING_DIRECTORY ${src}
+			${_patch} WORKING_DIRECTORY ${src}
 			RESULT_VARIABLE _applied OUTPUT_QUIET ERROR_QUIET)
 		if(_applied)
 			execute_process(COMMAND ${GIT_EXECUTABLE} apply
-				${${name}_PATCH} WORKING_DIRECTORY ${src}
+				${_patch} WORKING_DIRECTORY ${src}
 				RESULT_VARIABLE _r)
 			if(_r)
-				message(FATAL_ERROR "${name}: ${${name}_PATCH} "
+				message(FATAL_ERROR "${name}: ${_patch} "
 					"does not apply")
 			endif()
 		endif()
-	endif()
+	endforeach()
 	file(REMOVE_RECURSE ${build})
 	set(_configure ${CMAKE_COMMAND} -S ${src} -B ${build} ${ARGN})
 	# (--config: a multi-config generator's, Visual Studio's, Release)
@@ -189,7 +191,7 @@ if(MSVC)
 else()
 	set(_re_lib ${_re_prefix}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}re${CMAKE_STATIC_LIBRARY_SUFFIX})
 endif()
-# (built with other options before: again)
+# (built with other options or patches before: again)
 set(_re_stamp ${_re_prefix}/dmodem-${DMODEM_LIBRE_TAG}-${DMODEM_CRYPTO})
 # libre's C flags: this build's (a toolchain's system headers among
 # them), Mbed TLS's headers (libre doesn't add them to its own), and
@@ -204,10 +206,19 @@ if(MSVC)
 endif()
 # (Haiku: platforms/haiku/libre-haiku.patch, for its interface ioctls
 # and its lack of a routing table listing)
-if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
-	set(libre_PATCH ${CMAKE_CURRENT_LIST_DIR}/../platforms/haiku/libre-haiku.patch)
-	set(_re_stamp ${_re_stamp}-haiku)
+# (Mbed TLS: cmake/libre-mbedtls-aes.patch, its AES for SRTP)
+set(libre_PATCHES)
+if(DMODEM_CRYPTO STREQUAL "mbedtls")
+	list(APPEND libre_PATCHES ${CMAKE_CURRENT_LIST_DIR}/libre-mbedtls-aes.patch)
 endif()
+if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
+	list(APPEND libre_PATCHES ${CMAKE_CURRENT_LIST_DIR}/../platforms/haiku/libre-haiku.patch)
+endif()
+foreach(_patch ${libre_PATCHES})
+	file(MD5 ${_patch} _sum)
+	string(SUBSTRING ${_sum} 0 8 _sum)
+	set(_re_stamp ${_re_stamp}-${_sum})
+endforeach()
 if(NOT EXISTS ${_re_lib} OR NOT EXISTS ${_re_stamp})
 	dmodem_fetch_build(libre ${DMODEM_LIBRE_REPO} ${DMODEM_LIBRE_TAG}
 		${_re_src} ${_re_build} ${_re_log} ${_cross} ${_re_crypto}

@@ -67,9 +67,10 @@ tags) is answered in SRTP; dmodemd's own offers are plain RTP.
 `SIP_SRTP=require` offers SRTP and declines a plain RTP line;
 `SIP_SRTP=no` declines SRTP. The keys go in the SDP, and dmodemd's SIP
 is plain UDP: SRTP keeps the media from those who see only the RTP, not
-from those who see the SIP. SRTP needs libre's
-AES (OpenSSL, or Apple's on macOS): builds without it (Windows,
-Android) have it off.
+from those who see the SIP. SRTP works in every build: libre's AES
+is Mbed TLS's (D-Modem's patch, `cmake/libre-mbedtls-aes.patch`),
+OpenSSL's with `-DDMODEM_CRYPTO=openssl`, or Apple's on Apple's
+systems.
 
 ## Voice
 In voice mode (`AT+FCLASS=8`), `AT+VLS=1` answers a ringing call,

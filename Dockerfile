@@ -4,8 +4,9 @@
 # D-Modem on Alpine Linux (musl), in two stages:
 #
 #   build    the whole tree with CMake and Ninja (the packages of CI's
-#            musl job); libre, dmodemd's SIP stack, is cloned and built
-#            while configuring.  Installed into /out.
+#            musl job); libre, dmodemd's SIP stack, and Mbed TLS, its
+#            crypto, are cloned and built while configuring.  Installed
+#            into /out.
 #   runtime  dmodemd and hda-modem-setup, dmodem-ari, libdmodem.a and its
 #            headers, on a plain Alpine with the libraries they link.
 #
@@ -27,12 +28,12 @@ ARG ALPINE_VERSION=3.22
 
 FROM alpine:${ALPINE_VERSION} AS build
 
-# (git: libre is cloned while configuring; python3, bash, coreutils,
+# (git: libre and Mbed TLS are cloned while configuring; python3, bash, coreutils,
 # spandsp and the TIFF tools: the tests)
 # (clang: the build takes it where it is there, GCC's libstdc++ with it)
 RUN apk add --no-cache \
 	build-base clang cmake samurai git pkgconf linux-headers \
-	openssl-dev alsa-lib-dev libusb-dev \
+	alsa-lib-dev libusb-dev \
 	gtest-dev spandsp-dev tiff-dev tiff-tools python3 bash coreutils
 
 WORKDIR /src
@@ -53,9 +54,9 @@ RUN cmake -B build -G Ninja \
 
 FROM alpine:${ALPINE_VERSION} AS runtime
 
-# dmodemd's libraries (libre is linked in statically); the dialout
+# dmodemd's libraries (libre and Mbed TLS are linked in statically); the dialout
 # group, its pty's (Alpine has it)
-RUN apk add --no-cache libstdc++ libgcc libssl3 libcrypto3 alsa-lib libusb \
+RUN apk add --no-cache libstdc++ libgcc alsa-lib libusb \
 	&& mkdir -p /var/lib/dmodem
 
 COPY --from=build /out/ /
