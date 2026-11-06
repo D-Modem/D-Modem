@@ -1,0 +1,50 @@
+# The AT command reference's PDFs (docs/at_commands.pdf, -booklet, -cover
+# and -a3), made from docs/at/*.tex by docs/at/build.sh.  A pull request
+# that changes the LaTeX builds them, to show it still compiles; on main
+# the PDFs are rebuilt and committed whenever the LaTeX changes, so they
+# never fall behind it.
+name: AT manual
+on:
+  push:
+    branches: [main]
+    paths: ['docs/at/**', '.github/workflows/at-manual.yml']
+  pull_request:
+    paths: ['docs/at/**', '.github/workflows/at-manual.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: at-manual-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # build.sh dates the manual by the last commit to its source
+          fetch-depth: 0
+      - name: Install LaTeX
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            texlive-latex-recommended texlive-latex-extra \
+            texlive-fonts-recommended texlive-pictures lmodern latexmk
+      - name: Build the PDFs
+        run: sh docs/at/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: at-manual
+          path: docs/at_commands*.pdf
+      - name: Commit the PDFs
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          git add docs/at_commands*.pdf
+          if git diff --cached --quiet; then
+            echo "The PDFs are up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "AT manual: rebuild the PDFs from docs/at"
+          git push origin HEAD:main

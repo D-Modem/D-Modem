@@ -109,7 +109,9 @@ measurements, and test lists.
   sheet, and the [A3 sections](at_commands-a3.pdf) print the inside
   pages eight to an A3 sheet (both sides, flip on the long edge, fold
   twice and cut at the top). `docs/at/build.sh` builds them all from
-  [the LaTeX source](at/at_commands.tex).
+  [the LaTeX source](at/at_commands.tex), and the
+  [AT manual](../.github/workflows/at-manual.yml) workflow rebuilds and
+  commits them whenever the LaTeX changes on main.
 - [Data over mobile telephony's speech paths](v_cvm.pdf): D-Modem's
   proposed V.cvm standard, written as an ITU-T Recommendation, with
   measurements of what mobile codecs do to modem signals. Its source is

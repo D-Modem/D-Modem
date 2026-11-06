@@ -658,62 +658,57 @@ rarer ones.
 \begin{vtable}{4}{|T{0.15\textwidth}|L{0.27\textwidth}|T{0.15\textwidth}|L{0.27\textwidth}|}
   {AT command summary\label{tab:summary}}
   {\thd{Command} & \thd{Description} & \thd{Command} & \thd{Description}}
-\cmdl[Aslash]{A/} & Repeat last command. & \cmdl[bsA]{\bs A\p{n}} & \std{MNP} block size. \\ \hline
-\cmdl[A]{A} & Answer. & \cmdl[bsG]{\bs G\p{n}} & \std{XON}/XOFF pass through (accepted). \\ \hline
-\cmdl[B]{B\p{n}} & Communication standard. & \cmdl[bsJ]{\bs J\p{n}} & Rate adjust (accepted). \\ \hline
-\cmdl[C]{C\p{n}} & Carrier control (accepted). & \cmdl[bsK]{\bs K\p{n}} & Break control (accepted). \\ \hline
-\cmdl[D]{D\p{s}} & Dial. & \cmdl[bsN]{\bs N\p{n}} & Error control mode. \\ \hline
-\cmdl[E]{E\p{n}} & Command echo. & \cmdl[bsQ]{\bs Q\p{n}} & Flow control (accepted). \\ \hline
-\cmdl[F]{F\p{n}} & On-line data echo (accepted). & \cmdl[bsR]{\bs R\p{n}} & Ring indicator (accepted). \\ \hline
-\cmdl[H]{H\p{n}} & Hook control. & \cmdl[bsT]{\bs T\p{n}} & Inactivity timer (accepted). \\ \hline
-\cmdl[I]{I\p{n}} & Identification, call statistics. & \cmdl[bsV]{\bs V\p{n}} & Protocol in \rc{CONNECT}. \\ \hline
-\cmdl[L]{L\p{n}} & Speaker volume. & \cmdl[pctB]{\%B, *B} & Blacklisted numbers. \\ \hline
-\cmdl[M]{M\p{n}} & Speaker control. & \cmdl[pctC]{\%C\p{n}} & Data compression. \\ \hline
-\cmdl[N]{N\p{n}} & Automode. & \cmdl[pctE]{\%E\p{n}} & Line quality monitor (kept). \\ \hline
-\cmdl[O]{O\p{n}} & Return to on-line data mode. & \cmdl[hashCID]{\#CID} & Caller ID. \\ \hline
-\cmdl[P]{P} & Pulse dialing. & \cmdl[hashUD]{\#UD} & Unimodem diagnostics. \\ \hline
-\cmdl[Q]{Q\p{n}} & Result codes on or off. & \cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10} (accepted). \\ \hline
-\cmdl[S]{S\p{n}} & Read or set an S-register. & \cmdl[mnp10]{)M, @M, *H} & \std{MNP~10} (accepted). \\ \hline
-\cmdl[T]{T} & Tone dialing. & \cmdl[plusMS]{+MS} & Modulation. \\ \hline
-\cmdl[V]{V\p{n}} & Result code form. & \cmdl[plusGMI]{+GMI, +GMM, +GMR} & Identification. \\ \hline
-\cmdl[W]{W\p{n}} & Connect message (accepted). & \cmdl[plusGCAP]{+GCAP} & Capabilities. \\ \hline
-\cmdl[X]{X\p{n}} & Result codes and call progress. & \cmdl[plusGCI]{+GCI} & Country. \\ \hline
-\cmdl[Y]{Y\p{n}} & Long space disconnect (kept). & \cmdl[plusES]{+ES} & Error control. \\ \hline
-\cmdl[Z]{Z\p{n}} & Reset. & \cmdl[plusESA]{+ESA} & \std{V.80} synchronous access. \\ \hline
-\cmdl[ampA]{\&A\p{n}} & Connection lines before \rc{CONNECT}. & \cmdl[plusITF]{+ITF} & \std{V.80} transmit buffer. \\ \hline
-\cmdl[ampB]{\&B\p{n}} & \std{V.32} retrain (accepted). & \cmdl[plusDS]{+DS} & \std{V.42bis}. \\ \hline
-\cmdl[ampC]{\&C\p{n}} & Data carrier detect (kept). & \cmdl[plusDS44]{+DS44} & \std{V.44}. \\ \hline
-\cmdl[ampD]{\&D\p{n}} & Data terminal ready (accepted). & \cmdl[plusDSZ]{+DSZ} & zstd compression. \\ \hline
-\cmdl[ampE]{\&E\p{n}} & Rate in \rc{CONNECT} (kept). & \cmdl[plusB2]{+B2, +CBST, +CRC} & B-channel protocol, \std{V.110}, ring type. \\ \hline
-\cmdl[ampF]{\&F\p{n}} & Factory \emph{defaults} (accepted). & \cmdl[plusIFC]{+IFC, +ICF, +IPR} & \std{DTE} interface. \\ \hline
-\cmdl[ampG]{\&G\p{n}} & Guard tone (accepted). & \cmdl[plusILRR]{+ILRR, +IDSR, +ILSD} & \std{DTE} interface (kept). \\ \hline
-\cmdl[ampH]{\&H\p{n}} & Flow control (kept). & \cmdl[plusMR]{+MR, +ER, +DR} & Reports (kept). \\ \hline
-\cmdl[ampI]{\&I\p{n}} & \std{XON}/XOFF flow control (accepted). & \cmdl[plusPCW]{+PCW, +PIG} & \std{V.92} options (kept). \\ \hline
-\cmdl[ampJ]{\&J\p{n}} & Auxiliary relay (accepted). & \cmdl[plusPMH]{+PMH, +PMHT} & Modem-on-hold. \\ \hline
-\cmdl[ampK]{\&K\p{n}} & Data compression. & \cmdl[plusPMHR]{+PMHR} & Ask for modem-on-hold. \\ \hline
-\cmdl[ampL]{\&L\p{n}} & Leased line. & \cmdl[plusCVM]{+CVM} & \std{V.cvm}. \\ \hline
-\cmdl[ampM]{\&M\p{n}} & Asynchronous mode (accepted). & \cmdl[minusSEC]{-SEC} & \std{MNP~10EC} (kept). \\ \hline
-\cmdl[ampN]{\&N\p{n}} & Line rate (accepted). & \cmdl[plusFCLASS]{+FCLASS} & Data, fax or voice. \\ \hline
-\cmdl[ampP]{\&P\p{n}} & Pulse dial ratio (kept). & \cmdl[plusFAA]{+FAA} & Adaptive answer. \\ \hline
-\cmdl[ampQ]{\&Q\p{n}} & Error control mode. & \cmdl[plusFMI]{+FMI, +FMM, +FMR} & Fax identification. \\ \hline
-\cmdl[ampD]{\&R\p{n}} & \std{RTS}/CTS (accepted). & \cmdl[plusFTS]{+FTS, +FRS} & Fax silence. \\ \hline
-\cmdl[ampD]{\&S\p{n}} & Data set ready (accepted). & \cmdl[plusFTM]{+FTM, +FRM} & Fax data. \\ \hline
-\cmdl[ampT]{\&T\p{n}} & Loop tests. & \cmdl[plusFTH]{+FTH, +FRH} & Fax \std{HDLC} frames. \\ \hline
-\cmdl[ampV]{\&V\p{n}} & View active configuration, call statistics. & \cmdl[plusFPR]{+FPR} & Fax \std{DTE} rate (kept). \\ \hline
-\cmdl[ampW]{\&W\p{n}} & Store profile (accepted). & \cmdl[vcmds]{+V\ldots} & Voice (\hyperref[sec:voice]{Section~\ref*{sec:voice}}). \\ \hline
-\cmdl[ampY]{\&Y\p{n}} & Profile at power on (accepted). & \cmdl[plusFLI]{+FLI, +FPI} & Fax \std{Class 2} identity. \\ \hline
-\cmdl[bangC]{!C, !CF, !CT} & Configurators. & \cmdl[plusFLP]{+FLP, +FSP} & Fax \std{Class 2} polling. \\ \hline
-\cmdl[bangR]{!R} & Init string of the settings. & \cmdl[plusFCC]{+FCC, +FIS, +FCS} & Fax \std{Class 2} capabilities. \\ \hline
- &  & \cmdl[plusFBO]{+FBO, +FHS, \ldots} & Fax \std{Class 2} settings. \\ \hline
- &  & \cmdl[plusFDT]{+FDT, +FDR, +FET, +FKS} & Fax \std{Class 2} pages. \\ \hline
- &  & \cmdl[plusMV18S]{+MV18S, +MV18R} & \std{V.18} text telephone. \\ \hline
- &  & \cmdl[plusMV18AM]{+MV18AM, +MV18P} & \std{V.18} answer message. \\ \hline
- &  & \cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (\std{TTY}, telex) settings. \\ \hline
- &  & \cmdl[plusA8E]{+A8E} & \std{V.8} and \std{V.8 bis}. \\ \hline
- &  & \cmdl[plusDSVD]{+DSVD} & \std{V.70} voice and data (\std{DSVD}). \\ \hline
- &  & \cmdl[plusASVD]{+ASVD} & \std{V.61} voice and data (\std{ASVD}). \\ \hline
- &  & \cmdl[plusTMO]{+TMO} & \std{V.59} diagnostics. \\ \hline
- &  & \cmdl[plusT]{+TRDL, +TAL, +TTER, \ldots} & Loop and error rate tests (\std{V.58}). \\ \hline
+\cmdl[Aslash]{A/} & Repeat last command. & \cmdl[A]{A} & Answer. \\ \hline
+\cmdl[B]{B\p{n}} & Communication standard. & \cmdl[C]{C\p{n}} & Carrier control (accepted). \\ \hline
+\cmdl[D]{D\p{s}} & Dial. & \cmdl[E]{E\p{n}} & Command echo. \\ \hline
+\cmdl[F]{F\p{n}} & On-line data echo (accepted). & \cmdl[H]{H\p{n}} & Hook control. \\ \hline
+\cmdl[I]{I\p{n}} & Identification, call statistics. & \cmdl[L]{L\p{n}} & Speaker volume. \\ \hline
+\cmdl[M]{M\p{n}} & Speaker control. & \cmdl[N]{N\p{n}} & Automode. \\ \hline
+\cmdl[O]{O\p{n}} & Return to on-line data mode. & \cmdl[P]{P} & Pulse dialing. \\ \hline
+\cmdl[Q]{Q\p{n}} & Result codes on or off. & \cmdl[S]{S\p{n}} & Read or set an S-register. \\ \hline
+\cmdl[T]{T} & Tone dialing. & \cmdl[V]{V\p{n}} & Result code form. \\ \hline
+\cmdl[W]{W\p{n}} & Connect message (accepted). & \cmdl[X]{X\p{n}} & Result codes and call progress. \\ \hline
+\cmdl[Y]{Y\p{n}} & Long space disconnect (kept). & \cmdl[Z]{Z\p{n}} & Reset. \\ \hline
+\cmdl[ampA]{\&A\p{n}} & Connection lines before \rc{CONNECT}. & \cmdl[ampB]{\&B\p{n}} & \std{V.32} retrain (accepted). \\ \hline
+\cmdl[ampC]{\&C\p{n}} & Data carrier detect (kept). & \cmdl[ampD]{\&D\p{n}} & Data terminal ready (accepted). \\ \hline
+\cmdl[ampE]{\&E\p{n}} & Rate in \rc{CONNECT} (kept). & \cmdl[ampF]{\&F\p{n}} & Factory \emph{defaults} (accepted). \\ \hline
+\cmdl[ampG]{\&G\p{n}} & Guard tone (accepted). & \cmdl[ampH]{\&H\p{n}} & Flow control (kept). \\ \hline
+\cmdl[ampI]{\&I\p{n}} & \std{XON}/XOFF flow control (accepted). & \cmdl[ampJ]{\&J\p{n}} & Auxiliary relay (accepted). \\ \hline
+\cmdl[ampK]{\&K\p{n}} & Data compression. & \cmdl[ampL]{\&L\p{n}} & Leased line. \\ \hline
+\cmdl[ampM]{\&M\p{n}} & Asynchronous mode (accepted). & \cmdl[ampN]{\&N\p{n}} & Line rate (accepted). \\ \hline
+\cmdl[ampP]{\&P\p{n}} & Pulse dial ratio (kept). & \cmdl[ampQ]{\&Q\p{n}} & Error control mode. \\ \hline
+\cmdl[ampD]{\&R\p{n}} & \std{RTS}/CTS (accepted). & \cmdl[ampD]{\&S\p{n}} & Data set ready (accepted). \\ \hline
+\cmdl[ampT]{\&T\p{n}} & Loop tests. & \cmdl[ampV]{\&V\p{n}} & View active configuration, call statistics. \\ \hline
+\cmdl[ampW]{\&W\p{n}} & Store profile (accepted). & \cmdl[ampY]{\&Y\p{n}} & Profile at power on (accepted). \\ \hline
+\cmdl[bangC]{!C, !CF, !CT} & Configurators. & \cmdl[bangR]{!R} & Init string of the settings. \\ \hline
+\cmdl[bsA]{\bs A\p{n}} & \std{MNP} block size. & \cmdl[bsG]{\bs G\p{n}} & \std{XON}/XOFF pass through (accepted). \\ \hline
+\cmdl[bsJ]{\bs J\p{n}} & Rate adjust (accepted). & \cmdl[bsK]{\bs K\p{n}} & Break control (accepted). \\ \hline
+\cmdl[bsN]{\bs N\p{n}} & Error control mode. & \cmdl[bsQ]{\bs Q\p{n}} & Flow control (accepted). \\ \hline
+\cmdl[bsR]{\bs R\p{n}} & Ring indicator (accepted). & \cmdl[bsT]{\bs T\p{n}} & Inactivity timer (accepted). \\ \hline
+\cmdl[bsV]{\bs V\p{n}} & Protocol in \rc{CONNECT}. & \cmdl[pctB]{\%B, *B} & Blacklisted numbers. \\ \hline
+\cmdl[pctC]{\%C\p{n}} & Data compression. & \cmdl[pctE]{\%E\p{n}} & Line quality monitor (kept). \\ \hline
+\cmdl[hashCID]{\#CID} & Caller ID. & \cmdl[hashUD]{\#UD} & Unimodem diagnostics. \\ \hline
+\cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10} (accepted). & \cmdl[mnp10]{)M, @M, *H} & \std{MNP~10} (accepted). \\ \hline
+\cmdl[plusMS]{+MS} & Modulation. & \cmdl[plusGMI]{+GMI, +GMM, +GMR} & Identification. \\ \hline
+\cmdl[plusGCAP]{+GCAP} & Capabilities. & \cmdl[plusGCI]{+GCI} & Country. \\ \hline
+\cmdl[plusES]{+ES} & Error control. & \cmdl[plusESA]{+ESA} & \std{V.80} synchronous access. \\ \hline
+\cmdl[plusITF]{+ITF} & \std{V.80} transmit buffer. & \cmdl[plusDS]{+DS} & \std{V.42bis}. \\ \hline
+\cmdl[plusDS44]{+DS44} & \std{V.44}. & \cmdl[plusDSZ]{+DSZ} & zstd compression. \\ \hline
+\cmdl[plusB2]{+B2, +CBST, +CRC} & B-channel protocol, \std{V.110}, ring type. & \cmdl[plusIFC]{+IFC, +ICF, +IPR} & \std{DTE} interface. \\ \hline
+\cmdl[plusILRR]{+ILRR, +IDSR, +ILSD} & \std{DTE} interface (kept). & \cmdl[plusMR]{+MR, +ER, +DR} & Reports (kept). \\ \hline
+\cmdl[plusPCW]{+PCW, +PIG} & \std{V.92} options (kept). & \cmdl[plusPMH]{+PMH, +PMHT} & Modem-on-hold. \\ \hline
+\cmdl[plusPMHR]{+PMHR} & Ask for modem-on-hold. & \cmdl[plusCVM]{+CVM} & \std{V.cvm}. \\ \hline
+\cmdl[minusSEC]{-SEC} & \std{MNP~10EC} (kept). & \cmdl[plusFCLASS]{+FCLASS} & Data, fax or voice. \\ \hline
+\cmdl[plusFAA]{+FAA} & Adaptive answer. & \cmdl[plusFMI]{+FMI, +FMM, +FMR} & Fax identification. \\ \hline
+\cmdl[plusFTS]{+FTS, +FRS} & Fax silence. & \cmdl[plusFTM]{+FTM, +FRM} & Fax data. \\ \hline
+\cmdl[plusFTH]{+FTH, +FRH} & Fax \std{HDLC} frames. & \cmdl[plusFPR]{+FPR} & Fax \std{DTE} rate (kept). \\ \hline
+\cmdl[vcmds]{+V\ldots} & Voice (\hyperref[sec:voice]{Section~\ref*{sec:voice}}). & \cmdl[plusFLI]{+FLI, +FPI} & Fax \std{Class 2} identity. \\ \hline
+\cmdl[plusFLP]{+FLP, +FSP} & Fax \std{Class 2} polling. & \cmdl[plusFCC]{+FCC, +FIS, +FCS} & Fax \std{Class 2} capabilities. \\ \hline
+\cmdl[plusFBO]{+FBO, +FHS, \ldots} & Fax \std{Class 2} settings. & \cmdl[plusFDT]{+FDT, +FDR, +FET, +FKS} & Fax \std{Class 2} pages. \\ \hline
+\cmdl[plusMV18S]{+MV18S, +MV18R} & \std{V.18} text telephone. & \cmdl[plusMV18AM]{+MV18AM, +MV18P} & \std{V.18} answer message. \\ \hline
+\cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (\std{TTY}, telex) settings. & \cmdl[plusA8E]{+A8E} & \std{V.8} and \std{V.8 bis}. \\ \hline
+\cmdl[plusDSVD]{+DSVD} & \std{V.70} voice and data (\std{DSVD}). & \cmdl[plusASVD]{+ASVD} & \std{V.61} voice and data (\std{ASVD}). \\ \hline
+\cmdl[plusTMO]{+TMO} & \std{V.59} diagnostics. & \cmdl[plusT]{+TRDL, +TAL, +TTER, \ldots} & Loop and error rate tests (\std{V.58}). \\ \hline
 \end{vtable}}
 
 \mainmatter
@@ -1115,7 +1110,7 @@ end
 This command reports what the modem is, its settings and the last
 call's statistics.
 \begin{results}
-\res{\rc{OK}}{If \p{n} = 0--7 or 11.}
+\res{\rc{OK}}{If \p{n} = 0--7, 11 or 12.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{I\p{n} Commands}
@@ -1742,9 +1737,9 @@ directions' rates (sent in its \std{MP} sequences).
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
 \item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
-\item +MS=? (gives \rc{(21,22,23,26,126,226,27,29,229,122,32,132,232,61,}\allowbreak
-\rc{33,34,103,18,45,110,5,12,212,201,202,208,}\allowbreak
-\rc{56,90,91,92,150,200,64),(0,1),}\allowbreak
+\item +MS=? (gives \rc{(21,22,23,26,126,226,27,29,229,122,32,132,232,168,}\allowbreak
+\rc{128,61,33,34,103,18,45,110,5,12,212,201,202,208,}\allowbreak
+\rc{56,90,91,92,150,200,255,64),(0,1),}\allowbreak
 \rc{(300-56000),}\allowbreak
 \rc{(300-56000)}, the
   modulations the program has)
@@ -1765,6 +1760,13 @@ directions' rates (sent in its \std{MP} sequences).
 132 & V32B & \std{ITU} \std{V.32bis} & \std{4800} to \std{14400} bit/s. \\ \hline
 232 & V32T, V32TERBO & \std{V.32terbo} & \std{V.32bis} and \std{16800}, \std{19200} bit/s
   (AT\&T's; D-Modem's number). \\ \hline
+168 & HST & USRobotics HST & \std{4800} to \std{16800} bit/s one way, \std{300} bit/s
+  back, the channels turning with the data; a Courier's start-up at \std{2400}
+  bit/s (\std{V.22bis} and \std{V.42}), and \std{HST}'s own link layer (D-Modem's
+  number). \\ \hline
+128 & VFC & Rockwell \std{V.FC} & \std{14400} to \std{28800} bit/s: \std{V.34}'s start-up, then
+  \std{V.FC}'s data mode when both ends ask for it, else \std{V.34} (D-Modem's
+  number). \\ \hline
 61 & V61 & \std{ITU} \std{V.61} & \std{4800} bit/s with speech, \std{4800} to \std{14400} bit/s
   without (\cmdl[plusASVD]{+ASVD}; D-Modem's number). \\ \hline
 29 & V29 & \std{ITU} \std{V.29} & \std{4800} to \std{9600} bit/s, 4-wire leased. \\ \hline
@@ -1790,6 +1792,9 @@ directions' rates (sent in its \std{MP} sequences).
   bit/s, after \std{V.8} (\cmdl[plusCVM]{+CVM}). \\ \hline
 200 & VWB & \std{V.wb} & Wideband \std{DMT} on a dry pair, at 48000 Hz and more,
   up to \std{148656} bit/s each way. \\ \hline
+255 & PEP & Telebit \std{PEP} & Up to 511 carriers, half duplex with turns, up to about
+  \std{20000} bit/s; \rc{CONNECT FAST}.  In automode it calls and answers
+  other modems with \std{V.34} and \std{V.32bis} (Telebit's number, as its \cmdr{S50}=255). \\ \hline
 64 & CLEAR & Clear channel & \std{64000} bit/s on a clear digital channel
   (an \std{ISDN} data call), no modulation (\cmdl[plusB2]{+B2}). \\ \hline
 18 & V18 & \std{ITU} \std{V.18} & Text telephone automoding
@@ -2709,8 +2714,9 @@ A data call's \rc{CONNECT} gives the rate the modem receives at, in bit/s
 With \cmdl[X]{X0}, in fax and in voice mode it is \rc{CONNECT} (1) alone.
 \cmdl[bsV]{\bs V1} adds the error correction and the compression
 (\rc{CONNECT 33600/LAPM/V42bis}), and \cmdl[ampA]{\&A} adds lines on
-the connection before it.  Each rate's number is in the table below;
-a rate not in it is 1.
+the connection before it.  A \std{PEP} call's is \rc{CONNECT FAST}, as a
+Telebit's, and its number is that of the rate it receives at.  Each
+rate's number is in the table below; a rate not in it is 1.
 
 \begin{vtable}{8}{|R{0.07\textwidth}|R{0.04\textwidth}|R{0.07\textwidth}|R{0.04\textwidth}|R{0.07\textwidth}|R{0.04\textwidth}|R{0.07\textwidth}|R{0.04\textwidth}|}{CONNECT Rates and Their Numbers}
   {\thd{Rate} & \thd{n} & \thd{Rate} & \thd{n} & \thd{Rate} & \thd{n} & \thd{Rate} & \thd{n}}
@@ -3858,7 +3864,8 @@ HUPCL set on the pty, closes it; it then makes a new pty
   \cmdl[D]{ATDS=}\p{n} are \rc{ERROR}, \cmdl[ampW]{\&W} stores nothing.
 \item \cmdl[I]{ATI}'s numbers are the modem's own (\cmdl[I]{I0} to
   \cmdl[I]{I7}), but for the call statistics: \cmdl[I]{I6} as USRobotics',
-  \cmdl[I]{I11} as Conexant's, \cmdl[ampV]{\&V1} as Rockwell's.
+  \cmdl[I]{I11} as Conexant's, \cmdl[I]{I12} as Telebit's \cmdr{S71},
+  \cmdr{S72} and \cmdr{S73} (a \std{PEP} call's carriers), \cmdl[ampV]{\&V1} as Rockwell's.
 \item The numeric results (\cmdl[V]{V0}) and \rc{CONNECT}'s number for
   each rate are D-Modem's own; those of USRobotics' and Conexant's
   modems differ.
@@ -3873,7 +3880,7 @@ HUPCL set on the pty, closes it; it then makes a new pty
 
 These are \rc{ERROR}: \cmdl[ampV]{\&V2} and up, \cmdr{\&Z} (no stored numbers),
 \cmdl[ampT]{\&T2} and \cmdl[ampT]{\&T9} and up, \cmdr{\bs B} (a break), \cmdl[X]{X5} and
-up, \cmdl[I]{ATI8} to \cmdl[I]{ATI10} and \cmdl[I]{ATI12} and up, \cmd{-V90}
+up, \cmdl[I]{ATI8} to \cmdl[I]{ATI10} and \cmdl[I]{ATI13} and up, \cmd{-V90}
 (\cmdl[plusMS]{+MS} chooses), \cmdr{+MA}, \cmdr{+MSC}, \cmdr{+EB},
 \cmdr{+ESR}, \cmdr{+ETBM}, \cmdr{+EWIND}, \cmdr{+EFRAM}, \cmdr{+A8M},
 \cmdr{+A8T}, \cmdr{+PMHF}, \cmdr{+GSN} and \cmdr{+GOI}; \cmdl[plusMS]{+MS}'s names of
