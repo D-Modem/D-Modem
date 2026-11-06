@@ -12,6 +12,7 @@
  */
 
 #include <cstring>
+#include <initializer_list>
 
 #include "dcore.h"
 #include "config.h"
@@ -889,8 +890,9 @@ std::string Config::product()
  *    the modem's side (dcore.h)
  */
 
-/* AT!R: the init string; AT!C, AT!CF, AT!CT: a configurator, with the
-   modem idle and on hook (the rest of the line not read) */
+/* AT!R: the init string; AT!M: the settings model (model_listing());
+   AT!C, AT!CF, AT!CT: a configurator, with the modem idle and on hook
+   (the rest of the line not read) */
 s16 Modem::at_bang(char *p, s16 *len)
 {
 	char c = upper_ascii(p[1]);
@@ -905,6 +907,11 @@ s16 Modem::at_bang(char *p, s16 *len)
 			puts(l);
 			crlf();
 		}
+		*len = 2;
+		return 0;
+	}
+	if (c == 'M') {
+		model_listing();
 		*len = 2;
 		return 0;
 	}
@@ -925,6 +932,48 @@ s16 Modem::at_bang(char *p, s16 *len)
 	conf_ = Config::make(*this, k);
 	conf_->start();
 	return 1;
+}
+
+/* AT!M: the settings model for programs (a GUI's settings page), in
+   lines of fields apart by tabs: "model", its format (1) and how many
+   settings; then each setting, "setting", its key, kind (pick, number
+   or text), value, default, lowest and highest (a number's, else
+   empty), its AT command ("%s" the value), group, label and help,
+   followed by its choices (a pick's), "choice", the value, its name
+   and label.  In any state, like AT!R */
+void Modem::model_listing()
+{
+	const std::vector<Setting> s = Config::model(*this);
+	const std::vector<std::string> vals = Config::values(*this, s);
+	const std::vector<std::string> defs = Config::defaults(*this, s);
+	/* a field: no tabs or line ends in it */
+	auto field = [](const std::string &f) {
+		std::string t = f;
+		for (char &c : t)
+			if (c == '\t' || c == '\r' || c == '\n')
+				c = ' ';
+		return t;
+	};
+	auto line = [this, &field](std::initializer_list<std::string> f) {
+		std::string l;
+		for (const auto &x : f)
+			l += (l.empty() ? "" : "\t") + field(x);
+		puts(l);
+		crlf();
+	};
+	line({ "model", "1", dec(s.size()) });
+	for (size_t i = 0; i < s.size(); i++) {
+		const Setting &x = s[i];
+		bool num = x.kind == Setting::Number;
+		line({ "setting", x.key,
+		       x.kind == Setting::Pick ? "pick" : num ? "number" :
+		       "text", vals[i], defs[i],
+		       num ? dec(x.lo) : "",
+		       num ? dec(x.hi) : "", x.form, x.group,
+		       x.label, x.help });
+		for (const auto &c : x.choices)
+			line({ "choice", c.value, c.name, c.label });
+	}
 }
 
 /* idle and on hook: no call, no line, nothing running */

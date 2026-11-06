@@ -24,7 +24,7 @@ the reference for every command.
 | Identity and country | `+GCI +GCAP +GMI +GMM +GMR` |
 | Fax and voice | `+FCLASS`; class 1 fax (`+FTS +FRS +FTM +FRM +FTH +FRH +FMI +FMM +FMR`); class 2 and 2.0 fax (`+FCLASS=2` and `2.0`: `+FLI +FPI +FCC +FIS +FCS +FBO +FCR +FPS +FLP +FSP +FHS +FDT +FDR +FET +FKS`, and class 2's names, in `at_fax2()`); voice (`+V...` in `+FCLASS=8`, `+VCID`) |
 | V.92 | modem-on-hold (`+PMH +PMHT +PMHR`) |
-| Configurators | `!C !CF !CT` (idle and on hook), `!R` (the init string) |
+| Configurators | `!C !CF !CT` (idle and on hook), `!R` (the init string), `!M` (the settings model, for programs) |
 
 **Other modems' setup strings.** The interpreter also accepts the
 commands that other modems' setup strings send (V.250's, Rockwell's and
@@ -80,6 +80,14 @@ values as four settings, `ms` 0 to 3), `+FCLASS`, `#CID`, `+PMH`,
   four values), an extended command followed by `;` when another comes
   after it on the line, in lines of 63 characters (`LINE_CHARS`) at most.
   It runs in any state.
+
+- **`AT!M`** (`Modem::model_listing()`) gives the model itself, for a
+  program's own settings page (the desktop apps in D-Modem/gui): a
+  line `model`, its format (1) and the number of settings, then for each
+  setting a line `setting`, key, kind (`pick`, `number`, `text`),
+  value, default, lowest, highest (a number's), form, group, label and
+  help, each pick followed by its `choice` lines (value, name, label);
+  the fields apart by tabs. It runs in any state.
 
 **Running one.** `AT!C`, `AT!CF` and `AT!CT` are ERROR unless the modem
 is idle and on hook (`conf_idle()`: no call, the line not started, on
