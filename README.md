@@ -32,6 +32,8 @@ then open `/dev/ttyDM0` in a terminal program at 115200 bit/s, type
 
 ## Documentation
 
+The documentation is also a website, [d-modem.github.io/D-Modem](https://d-modem.github.io/D-Modem/), with reference pages made from the code.
+
 - [Building](docs/building.md): Linux, Windows, macOS, Haiku, the tests
 - [Using dmodemd](docs/usage.md): the SIP account, dialing, answering, fax, voice, SRTP, hardware
 - [What the modem does](docs/features.md): every standard, in one place
