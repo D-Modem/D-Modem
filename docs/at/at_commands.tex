@@ -681,6 +681,7 @@ rarer ones.
 \cmdl[ampT]{\&T\p{n}} & Loop tests. & \cmdl[ampV]{\&V\p{n}} & View active configuration, call statistics. \\ \hline
 \cmdl[ampW]{\&W\p{n}} & Store profile (accepted). & \cmdl[ampY]{\&Y\p{n}} & Profile at power on (accepted). \\ \hline
 \cmdl[bangC]{!C, !CF, !CT} & Configurators. & \cmdl[bangR]{!R} & Init string of the settings. \\ \hline
+\cmdl[bangM]{!M} & Settings model, for programs. & & \\ \hline
 \cmdl[bsA]{\bs A\p{n}} & \std{MNP} block size. & \cmdl[bsG]{\bs G\p{n}} & \std{XON}/XOFF pass through (accepted). \\ \hline
 \cmdl[bsJ]{\bs J\p{n}} & Rate adjust (accepted). & \cmdl[bsK]{\bs K\p{n}} & Break control (accepted). \\ \hline
 \cmdl[bsN]{\bs N\p{n}} & Error control mode. & \cmdl[bsQ]{\bs Q\p{n}} & Flow control (accepted). \\ \hline
@@ -1042,6 +1043,36 @@ too.
 \example{Example output: AT!R}
 \begin{verbatim}
 AT+GCI=B4;+MS=34,1,1200,28800;\N0L1S0=2+ES=1,0,1
+OK
+\end{verbatim}
+\end{command}
+
+\begin{command}{bangM}{!M}{Settings Model, for Programs}
+\cmdl[bangM]{!M} lists the settings the configurators (\cmdl[bangC]{!C})
+show, for a program to build its own settings page from (D-Modem's
+desktop apps do): one line for each setting and one for each of its
+choices, the fields apart by tabs.  The first line is \cmd{model}, the
+format (\textbf{1}) and how many settings follow.  A setting's line is
+\cmd{setting}, its key, its kind (\cmd{pick}, \cmd{number} or
+\cmd{text}, the last a list of numbers), its value now, its default,
+the lowest and highest values (a number's; empty for the others), its
+command (\cmd{\%s} where the value goes), its group, its label and a line
+of help.  A pick's choices follow it, each a line of \cmd{choice}, the
+value the command takes, its name in the command line configurator and
+its label.  Like \cmdl[bangR]{!R}, it works in any state, and the rest
+of the line is read as further commands.
+\begin{results}
+\res{\rc{OK}}{Always.}
+\end{results}
+\example{Example output: AT!M (in part; the gaps are tabs)}
+\begin{verbatim}
+model    1         73
+setting  country   pick  B5  B5        +GCI=%s  Line  Country  ...
+choice   B5        usa   USA
+...
+setting  echo      pick  1   1         E%s  Terminal  Command echo ...
+choice   0         off   Off
+choice   1         on    On
 OK
 \end{verbatim}
 \end{command}

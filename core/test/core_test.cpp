@@ -2869,6 +2869,80 @@ TEST(Core, PumpTable)
 	EXPECT_FALSE(dp_driver(DP_V91)->flags & dcore::DPF_LEASED);
 }
 
+/* AT!M: the settings model for programs, a line of tab-separated
+   fields for each setting and each of its choices, in any state */
+TEST(Core, ModelListing)
+{
+	Line l;
+	Modem *m = make(l, "model");
+	cmd(m, l, "ATE0S0=2+GCI=B4\r");
+	std::string r = cmd(m, l, "AT!M\r");
+	ASSERT_GE(r.size(), 4u);
+	EXPECT_EQ(r.substr(r.size() - 4), "OK\r\n");
+	std::vector<std::vector<std::string>> rows;
+	size_t from = 0;
+	while (from < r.size()) {
+		size_t e = r.find("\r\n", from);
+		std::string line = r.substr(from, e - from);
+		from = e + 2;
+		if (line.empty() || line == "OK")
+			continue;
+		std::vector<std::string> f;
+		size_t a = 0, t;
+		while ((t = line.find('\t', a)) != std::string::npos) {
+			f.push_back(line.substr(a, t - a));
+			a = t + 1;
+		}
+		f.push_back(line.substr(a));
+		rows.push_back(f);
+	}
+	ASSERT_FALSE(rows.empty());
+	ASSERT_EQ(rows[0].size(), 3u);
+	EXPECT_EQ(rows[0][0], "model");
+	EXPECT_EQ(rows[0][1], "1");
+	size_t settings = 0;
+	bool country = false, echo = false, s0 = false;
+	for (const auto &f : rows) {
+		if (f[0] == "setting") {
+			ASSERT_EQ(f.size(), 11u) << f[1];
+			settings++;
+			if (f[1] == "country") {
+				country = true;
+				EXPECT_EQ(f[2], "pick");
+				EXPECT_EQ(f[3], "B4");
+				EXPECT_EQ(f[4], "B5");
+				EXPECT_EQ(f[7], "+GCI=%s");
+			}
+			if (f[1] == "echo") {
+				echo = true;
+				EXPECT_EQ(f[3], "0");
+				EXPECT_EQ(f[4], "1");
+			}
+			if (f[2] == "number") {
+				EXPECT_FALSE(f[5].empty());
+				EXPECT_FALSE(f[6].empty());
+			}
+			if (f[1] == "auto-answer") {
+				s0 = true;
+				EXPECT_EQ(f[3], "2");
+			}
+		} else if (f[0] != "model") {
+			EXPECT_EQ(f[0], "choice");
+			EXPECT_EQ(f.size(), 4u);
+		}
+	}
+	EXPECT_TRUE(country);
+	EXPECT_TRUE(echo);
+	EXPECT_TRUE(s0);
+	EXPECT_EQ(rows[0][2], std::to_string(settings));
+	/* in any state: off hook */
+	cmd(m, l, "ATH1\r");
+	EXPECT_EQ(cmd(m, l, "AT!M\r").substr(0, 8), "model\t1\t");
+	/* nothing after M */
+	EXPECT_EQ(cmd(m, l, "ATH0!MX\r").find("ERROR"), std::string::npos)
+		<< "!M takes the rest of the line as further commands";
+}
+
 /* AT!R: the init string of what differs from the defaults, in any
    state; AT followed by nothing when nothing does */
 TEST(Core, InitString)

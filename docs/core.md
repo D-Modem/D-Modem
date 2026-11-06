@@ -26,7 +26,8 @@ The code is in `core/`. For the full technical description, see
   `AT!CF` opens a full-screen setup screen in the style of Borland's
   Turbo Vision, `AT!CT` a command line in the style of Cisco's IOS
   (`show running-config`, `configure terminal`), and `AT!C` picks the one
-  your terminal can show. `AT!R` prints an init string of every setting
+  your terminal can show. `AT!M` lists the settings for programs such
+  as the desktop apps. `AT!R` prints an init string of every setting
   you changed from the defaults, to paste into your next session.
 - **Runs the call.** It moves a call from idle, to dialling or
   answering, to connecting, to online. Typing `+++` drops you back to

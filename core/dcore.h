@@ -594,11 +594,12 @@ private:
 	s16 at_T(char *p, s16 *len);
 	void rate_history(u32 tx, u32 rx);
 
-	/* the configurators (config.cpp): AT!R, AT!C, AT!CF, AT!CT; the
+	/* the configurators (config.cpp): AT!R, AT!M, AT!C, AT!CF, AT!CT; the
 	   modem idle and on hook (they run only then); the DTE's
 	   characters to the one that runs, its end, its early end (a RING,
 	   DTR off), its timers */
 	s16 at_bang(char *p, s16 *len);
+	void model_listing();
 	bool conf_idle() const;
 	void conf_feed();
 	void conf_check();
