@@ -321,6 +321,7 @@ Modem::Modem(Host &host, const Options &opt)
    serves), then everything goes */
 Modem::~Modem()
 {
+	conf_close();
 	if (started_) {
 		if (state_ != IDLE) {
 			result_ = Result::NoCarrier;
@@ -1458,8 +1459,10 @@ s32 Modem::dte_input(const char *buf, s32 n)
 	}
 	if (voice_drain_)
 		voice_drain();
-	if (command_)
+	if (command_ && !conf_)
 		at_process();
+	if (command_ && conf_)
+		conf_feed();
 	return k;
 }
 
@@ -1715,7 +1718,7 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 		later(later_, 0);
 	if (commands_due_) {
 		commands_due_ = false;
-		if (command_ && xmit_count_ > 0)
+		if (command_ && xmit_count_ > 0 && !conf_)
 			at_process();
 	}
 }
@@ -2290,6 +2293,7 @@ s16 Modem::adaptive_param() const
 /* the Host hangs up (DTR, HUPCL) */
 void Modem::hangup()
 {
+	conf_close();
 	leased_stop();
 	if (state_ != IDLE)
 		set_cause(Cause::DtrOff);
@@ -2484,6 +2488,8 @@ void Modem::report(Result r)
 	bool verbose = sregs_[SREG_VERBOSE] != 0;
 	std::string line;
 
+	/* (a configurator on the DTE's screen ends first: a RING) */
+	conf_close();
 	logf("result: %s\n", result_text[static_cast<s16>(r)]);
 	if (sregs_[SREG_QUIET])
 		return;
@@ -2972,6 +2978,7 @@ void Modem::poll()
 		logf("the test's time (S18) is over\n");
 		test_end(true);
 	}
+	conf_poll();
 	if (!event_)
 		return;
 	ev = event_;
@@ -2990,7 +2997,8 @@ void Modem::leased_poll()
 		leased_at_ms_ = 0;
 		return;
 	}
-	if (state_ != IDLE || started_ || dp_ || mode_ != MODEM_MODE_DATA)
+	if (state_ != IDLE || started_ || dp_ || mode_ != MODEM_MODE_DATA ||
+	    conf_)
 		return;
 	if (leased_at_ms_) {
 		if (static_cast<s64>(host_.now_ms() - leased_at_ms_) < 0)
@@ -3047,6 +3055,11 @@ s32 Modem::next_timer_ms()
 			l = 0;
 		if (l >= 0 && (left < 0 || l < left))
 			left = l;
+	}
+	if (conf_) {
+		s32 c = conf_next_ms();
+		if (c >= 0 && (left < 0 || c < left))
+			left = c;
 	}
 	if (test_end_ms_) {
 		s32 t = std::max<s32>(0, static_cast<s32>(test_end_ms_ -

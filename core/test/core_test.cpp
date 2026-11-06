@@ -2868,3 +2868,171 @@ TEST(Core, PumpTable)
 	EXPECT_FALSE(dp_driver(DP_B202)->flags & dcore::DPF_LOOP3);
 	EXPECT_FALSE(dp_driver(DP_V91)->flags & dcore::DPF_LEASED);
 }
+
+/* AT!R: the init string of what differs from the defaults, in any
+   state; AT followed by nothing when nothing does */
+TEST(Core, InitString)
+{
+	Line l;
+	Modem *m = make(l, "r");
+	EXPECT_EQ(cmd(m, l, "AT!R\r"), "AT!R\r\r\nAT\r\nOK\r\n");
+	cmd(m, l, "ATS0=2L1\\N0+MS=34,1,1200,28800+GCI=B4\r");
+	EXPECT_EQ(cmd(m, l, "AT!R\r"),
+		  "AT!R\r\r\nAT+GCI=B4;+MS=34,1,1200,28800;\\N0L1S0=2+ES=1,0,1\r\nOK\r\n");
+	/* the string reproduces the settings on a modem at its defaults */
+	Line l2;
+	Modem *m2 = make(l2, "r2");
+	cmd(m2, l2, "AT+GCI=B4;+MS=34,1,1200,28800;\\N0L1S0=2+ES=1,0,1\r");
+	EXPECT_EQ(cmd(m2, l2, "AT!R\r"), cmd(m, l, "AT!R\r"));
+	/* in any state: off hook */
+	cmd(m, l, "ATE0H1\r");
+	EXPECT_EQ(cmd(m, l, "AT!R\r"),
+		  "AT+GCI=B4;+MS=34,1,1200,28800;\\N0E0L1S0=2+ES=1,0,1\r\nOK\r\n");
+	/* a long one in lines of 63 characters at most */
+	cmd(m, l, "ATH0S6=9S7=99S9=9S10=99S11=99S12=99S24=99S18=9S92=9X3V0Q0&C1&H3\r");
+	std::string r = cmd(m, l, "AT!R\r");
+	EXPECT_NE(r.find("\r\nAT"), std::string::npos);
+	size_t from = 0, lines = 0;
+	while (from < r.size()) {
+		size_t e = r.find("\r\n", from);
+		EXPECT_LE(e - from, 63u) << r;
+		from = e + 2;
+		lines++;
+	}
+	EXPECT_GE(lines, 3u) << r;
+	delete m2;
+	delete m;
+}
+
+/* AT!CT: the command line configurator; settings take effect at once;
+   exit ends it with OK; only with the modem idle and on hook */
+TEST(Core, ConfigCli)
+{
+	Line l;
+	Modem *m = make(l, "ct");
+	std::string s = cmd(m, l, "AT!CT\r");
+	EXPECT_NE(s.find("dmodem#"), std::string::npos) << s;
+	s = cmd(m, l, "sh run\r");
+	EXPECT_NE(s.find("Current configuration:"), std::string::npos) << s;
+	EXPECT_EQ(s.find("echo"), std::string::npos) << s;
+	s = cmd(m, l, "conf t\r");
+	EXPECT_NE(s.find("dmodem(config)#"), std::string::npos) << s;
+	s = cmd(m, l, "echo off\r");
+	EXPECT_EQ(m->sreg(SREG_ECHO), 0);
+	cmd(m, l, "max-rate 33600\r");
+	cmd(m, l, "modulation v34\r");
+	cmd(m, l, "auto-answer 3\r");
+	EXPECT_EQ(m->sreg(SREG_RINGS_TO_AUTO_ANSWER), 3);
+	/* errors as IOS gives them */
+	s = cmd(m, l, "echo maybe\r");
+	EXPECT_NE(s.find("% Invalid input detected at '^' marker."),
+		  std::string::npos) << s;
+	EXPECT_NE(s.find("\n" + std::string(20, ' ') + "^"), std::string::npos)
+		<< s;
+	s = cmd(m, l, "c\r");
+	EXPECT_NE(s.find("% Ambiguous command:  \"c\""), std::string::npos)
+		<< s;
+	s = cmd(m, l, "echo\r");
+	EXPECT_NE(s.find("% Incomplete command."), std::string::npos) << s;
+	s = cmd(m, l, "max-rate 99999\r");
+	EXPECT_NE(s.find("% Invalid input"), std::string::npos) << s;
+	/* help and completion */
+	s = cmd(m, l, "echo ?");
+	EXPECT_NE(s.find("off"), std::string::npos) << s;
+	EXPECT_NE(s.find("on"), std::string::npos) << s;
+	cmd(m, l, "\x15");
+	s = cmd(m, l, "spea\t");
+	EXPECT_NE(s.find("speaker "), std::string::npos) << s;
+	cmd(m, l, "\x15");
+	/* no: off, default: the default */
+	cmd(m, l, "no echo\r");
+	EXPECT_EQ(m->sreg(SREG_ECHO), 0);
+	cmd(m, l, "default echo\r");
+	EXPECT_EQ(m->sreg(SREG_ECHO), 1);
+	cmd(m, l, "no echo\r");
+	s = cmd(m, l, "do show init-string\r");
+	EXPECT_NE(s.find("AT+MS=34,1,300,33600;E0S0=3"), std::string::npos)
+		<< s;
+	s = cmd(m, l, "\x1a");
+	EXPECT_NE(s.find("dmodem#"), std::string::npos) << s;
+	s = cmd(m, l, "exit\r");
+	EXPECT_NE(s.find("OK\r\n"), std::string::npos) << s;
+	/* back to AT commands */
+	EXPECT_EQ(cmd(m, l, "ATS0?\r"), "3\r\nOK\r\n");
+	/* the rest of the line after AT!CT is not read; what comes after
+	   exit is a command */
+	s = cmd(m, l, "AT!CT\rexit\rATS0?\r");
+	EXPECT_NE(s.find("OK\r\n3\r\nOK"), std::string::npos) << s;
+	/* off hook: ERROR (AT!R still works) */
+	cmd(m, l, "ATV1H1\r");
+	EXPECT_EQ(cmd(m, l, "AT!CT\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT!C\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT!CF\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT!CX\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT!R\r").substr(0, 2), "AT");
+	cmd(m, l, "ATH0\r");
+	/* a RING ends it, with no OK */
+	cmd(m, l, "AT!CT\r");
+	l.out.clear();
+	m->ring_signal(true);
+	EXPECT_NE(l.out.find("RING"), std::string::npos) << l.out;
+	EXPECT_EQ(l.out.find("OK"), std::string::npos) << l.out;
+	m->ring_signal(false);
+	EXPECT_EQ(cmd(m, l, "AT\r"), "OK\r\n");
+	delete m;
+}
+
+/* AT!C: a terminal that answers the cursor position report gets the
+   full screen (its size and UTF-8 asked), one that does not the command
+   line */
+TEST(Core, ConfigAuto)
+{
+	Line l;
+	Modem *m = make(l, "c");
+	std::string s = cmd(m, l, "AT!C\r");
+	EXPECT_NE(s.find("\x1b[6n"), std::string::npos) << s;
+	l.out.clear();
+	now += 2000;
+	m->poll();
+	EXPECT_NE(l.out.find("dmodem#"), std::string::npos) << l.out;
+	cmd(m, l, "exit\r");
+
+	s = cmd(m, l, "AT!C\r");
+	s = cmd(m, l, "\x1b[5;1R");
+	EXPECT_NE(s.find("\x1b[999;999H\x1b[6n"), std::string::npos) << s;
+	s = cmd(m, l, "\x1b[30;100R");
+	EXPECT_NE(s.find("\r\xc3\xa9\x1b[6n"), std::string::npos) << s;
+	s = cmd(m, l, "\x1b[30;2R");
+	EXPECT_NE(s.find("D-Modem Setup"), std::string::npos) << s;
+	EXPECT_NE(s.find("\xe2\x95\x94"), std::string::npos) << s;  /* ╔ */
+	EXPECT_NE(s.find("\x1b[30;1H"), std::string::npos) << s;
+	/* the Terminal group (the fourth): echo off, F2 saves it */
+	cmd(m, l, "\t\x1b[B\x1b[B\x1b[B\t");
+	EXPECT_EQ(m->sreg(SREG_ECHO), 1);
+	cmd(m, l, "\x1b[C");    /* the next value */
+	EXPECT_EQ(m->sreg(SREG_ECHO), 1);
+	cmd(m, l, "\x1bOQ");    /* F2 */
+	EXPECT_EQ(m->sreg(SREG_ECHO), 0);
+	cmd(m, l, "\r");        /* the message box */
+	/* a change not saved, then Esc: the question, No */
+	cmd(m, l, "\x1b[C");
+	s = cmd(m, l, "\x1b");
+	EXPECT_EQ(s, "");
+	now += 200;
+	l.out.clear();
+	m->poll();
+	EXPECT_NE(l.out.find("Save the changes"), std::string::npos);
+	s = cmd(m, l, "n");
+	EXPECT_NE(s.find("OK\r\n"), std::string::npos) << s;
+	EXPECT_EQ(m->sreg(SREG_ECHO), 0);
+
+	/* AT!CF on a terminal in CP437; Alt-X with nothing changed leaves */
+	cmd(m, l, "AT!CF\r");
+	cmd(m, l, "\x1b[1;1R\x1b[24;80R");
+	s = cmd(m, l, "\x1b[24;3R");
+	EXPECT_NE(s.find("\xc9"), std::string::npos);   /* ╔ */
+	EXPECT_EQ(s.find("\xe2\x95\x94"), std::string::npos);
+	s = cmd(m, l, "\x1bx");
+	EXPECT_NE(s.find("OK"), std::string::npos) << s;
+	delete m;
+}

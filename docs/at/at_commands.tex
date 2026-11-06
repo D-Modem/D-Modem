@@ -702,8 +702,8 @@ rarer ones.
 \cmdl[ampV]{\&V\p{n}} & View active configuration, call statistics. & \cmdl[plusFPR]{+FPR} & Fax \std{DTE} rate (kept). \\ \hline
 \cmdl[ampW]{\&W\p{n}} & Store profile (accepted). & \cmdl[vcmds]{+V\ldots} & Voice (\hyperref[sec:voice]{Section~\ref*{sec:voice}}). \\ \hline
 \cmdl[ampY]{\&Y\p{n}} & Profile at power on (accepted). & \cmdl[plusFLI]{+FLI, +FPI} & Fax \std{Class 2} identity. \\ \hline
- &  & \cmdl[plusFLP]{+FLP, +FSP} & Fax \std{Class 2} polling. \\ \hline
- &  & \cmdl[plusFCC]{+FCC, +FIS, +FCS} & Fax \std{Class 2} capabilities. \\ \hline
+\cmdl[bangC]{!C, !CF, !CT} & Configurators. & \cmdl[plusFLP]{+FLP, +FSP} & Fax \std{Class 2} polling. \\ \hline
+\cmdl[bangR]{!R} & Init string of the settings. & \cmdl[plusFCC]{+FCC, +FIS, +FCS} & Fax \std{Class 2} capabilities. \\ \hline
  &  & \cmdl[plusFBO]{+FBO, +FHS, \ldots} & Fax \std{Class 2} settings. \\ \hline
  &  & \cmdl[plusFDT]{+FDT, +FDR, +FET, +FKS} & Fax \std{Class 2} pages. \\ \hline
  &  & \cmdl[plusMV18S]{+MV18S, +MV18R} & \std{V.18} text telephone. \\ \hline
@@ -990,6 +990,88 @@ Accepted, changing nothing: there are no stored profiles.
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
+\end{command}
+
+\begin{command}{bangR}{!R}{Init String of the Settings}
+\cmdl[bangR]{!R} prints an init string: the commands that set every setting
+that differs from its default, for you to copy and paste into the next
+session after \cmdl[Z]{ATZ} (there are no stored profiles).  It covers
+the settings the configurators (\cmdl[bangC]{!C}) list: the basic
+commands' (\cmdl[E]{E}, \cmdl[X]{X}, \cmdl[bsN]{\bs N}, \ldots), the
+S-registers of their own (\sreg{0}, \sreg{6} to \sreg{12}, \ldots),
+\cmdl[plusGCI]{+GCI} (first: it sets \sreg{8} and \sreg{24}),
+\cmdl[plusMS]{+MS} (its four values together), \cmdl[plusFCLASS]{+FCLASS},
+\cmdl[hashCID]{\#CID}, \cmdl[plusPMH]{+PMH} and the extended parameters.
+A line is \textbf{63} characters at most, as a command line is; a longer
+string takes more lines, each beginning with \cmd{AT}.  With nothing
+changed it prints \cmd{AT} alone.  It works in any state, during a call
+too.
+\begin{results}
+\res{\rc{OK}}{Always.}
+\end{results}
+\example{Example output: AT!R}
+\begin{verbatim}
+AT+GCI=B4;+MS=34,1,1200,28800;\N0L1S0=2+ES=1,0,1
+OK
+\end{verbatim}
+\end{command}
+
+\begin{command}{bangC}{!C, !CF, !CT}{Configurators}
+The configurators show every setting with its value and its default,
+and change them through the settings' own commands, so they take what
+the commands take.  They run only while the modem is idle and on hook:
+otherwise the command is \rc{ERROR}.  The rest of the command line is
+not read.  Leaving the configurator gives \rc{OK}; a \rc{RING} (or the
+\std{DTE} hanging up) ends it at once, with no \rc{OK}.
+\begin{itemize}
+\item \cmdl[bangC]{!CF} is a full-screen configurator in the style of
+  Borland's Turbo Vision, for an \std{ANSI} terminal: a menu bar
+  (\textbf{F10}, Alt and a letter), the groups of settings and their
+  settings side by side, dialogs for a value, and a status line.  The
+  arrows move, Tab goes between the groups and the settings, Enter
+  changes a setting (Left, Right and Space step through its values,
+  Del sets its default), \textbf{F2} saves the changes, \textbf{F3}
+  shows their init string (\cmdl[bangR]{!R}), \textbf{F5} sets every
+  default, Alt-X or Esc leaves (asking whether to save).  Only the cells
+  that change are sent, in \std{UTF-8} or \std{CP437} box drawing.
+\item \cmdl[bangC]{!CT} is a command line in the style of Cisco's IOS.
+  \cmd{dmodem\#} takes \cmd{show running-config} (what differs from the
+  defaults), \cmd{show settings} [\p{group}], \cmd{show init-string},
+  \cmd{show version}, \cmd{configure terminal} and \cmd{exit};
+  \cmd{dmodem(config)\#} takes \p{setting} \p{value}, \cmd{no}
+  \p{setting} (off, or its default), \cmd{default} \p{setting},
+  \cmd{do} \p{command}, and \cmd{exit} or \cmd{end} (or Ctrl-Z).  A word
+  may be cut short (\cmd{sh run}, \cmd{conf t}); \cmd{?} lists what may
+  come next, Tab completes a word, the Up and Down arrows recall lines.
+  A change takes effect at once.
+\item \cmdl[bangC]{!C} looks at the terminal: it asks for the cursor's
+  position (\cmd{ESC [6n}).  A terminal that answers within 1.5\,s gets
+  \cmdl[bangC]{!CF}, with its size and whether it takes \std{UTF-8} asked
+  the same way; one that does not gets \cmdl[bangC]{!CT}.
+  \cmdl[bangC]{!CF} asks too, and takes 80 by 24 in \std{UTF-8} without
+  an answer.
+\end{itemize}
+\begin{results}
+\res{\rc{OK}}{When you leave the configurator.}
+\res{\rc{ERROR}}{The modem is not idle and on hook.}
+\end{results}
+\example{Example: AT!CT}
+\begin{verbatim}
+dmodem#conf t
+Enter configuration commands, one per line.  End with CNTL/Z.
+dmodem(config)#modulation v34
+dmodem(config)#no echo
+dmodem(config)#end
+dmodem#sh run
+Building configuration...
+
+Current configuration:
+!
+modulation v34
+echo off
+!
+end
+\end{verbatim}
 \end{command}
 
 \section{Identification and Diagnostics}\label{sec:ident}

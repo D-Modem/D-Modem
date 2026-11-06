@@ -22,6 +22,12 @@ The code is in `core/`. For the full technical description, see
 - **Keeps the settings.** The S-registers (numbered settings such as S0,
   the number of rings before answering), the result codes (`OK`,
   `CONNECT`, `NO CARRIER`), and each country's telephone line settings.
+- **Has built-in configurators.** With the modem idle and on hook,
+  `AT!CF` opens a full-screen setup screen in the style of Borland's
+  Turbo Vision, `AT!CT` a command line in the style of Cisco's IOS
+  (`show running-config`, `configure terminal`), and `AT!C` picks the one
+  your terminal can show. `AT!R` prints an init string of every setting
+  you changed from the defaults, to paste into your next session.
 - **Runs the call.** It moves a call from idle, to dialling or
   answering, to connecting, to online. Typing `+++` drops you back to
   command mode without hanging up, and `ATO` returns you online.
