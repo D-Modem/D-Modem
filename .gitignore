@@ -1,3 +1,6 @@
 # CMake build directories (cmake -B build)
 build*/
 __pycache__/
+# the site (tools/site_reference.py --site, brand's tools/site.sh)
+/.site/
+/site/

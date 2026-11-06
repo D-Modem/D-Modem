@@ -5,6 +5,14 @@ dmodemd is the modem.  It began as Smart Link's slmodemd (Debian’s sl-modem-da
 Configure the SIP account in the SIP_LOGIN environment variable (`SIP_PORT` sets the local SIP port, 5060 by default): 
 
     # export SIP_LOGIN=username:password@sip.example.com
+
+`SIP_LOG_LEVEL` sets how much the SIP user agent logs (a number, 4 by
+default; higher logs more), and `DMODEM_REC=<base>` records each call's
+line audio as it passes the modem, what it receives in `<base>.rx` and
+what it sends in `<base>.tx`.  The [environment variables](reference/environment.md)
+page lists them all, and [dmodemd's command line](reference/dmodemd.md)
+every option.
+
 Next, run dmodemd.  Use -d<level> for debug logging. 
 
     # ./build/dmodemd/dmodemd -d9

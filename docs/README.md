@@ -95,6 +95,10 @@ measurements, and test lists.
 
 ## References
 
+- [dmodemd's command line](reference/dmodemd.md), the
+  [environment variables](reference/environment.md) and the
+  [CMake options](reference/cmake.md): made from the source by
+  `tools/site_reference.py`
 - [ITU-T Recommendations](specs/README.md): the standards D-Modem
   implements, with a script that downloads them
 - [AT command reference](at_commands.pdf): every command, result code and

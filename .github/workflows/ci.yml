@@ -53,8 +53,9 @@
 # and the package list, so a mirror that stalls doesn't stall the run.
 #
 # A push or pull request that changes only documentation (docs/, the
-# Markdown files and COPYING: nothing builds or tests from them) runs
-# none of it; but for docs/cellular/annexes.tex, whose Annex E the
+# Markdown files and COPYING: nothing builds or tests from them) or the
+# site (mkdocs.yml, tools/site_reference.py and its Pages workflow)
+# runs none of it; but for docs/cellular/annexes.tex, whose Annex E the
 # v44_preset_check test compares with the code.  (The patterns are
 # paths, not paths-ignore, so that a later one can take a file back.)  A
 # push runs it on main alone (a branch's commits run it as its pull
@@ -70,6 +71,9 @@ on:
       - '!docs/**'
       - '!**.md'
       - '!COPYING'
+      - '!mkdocs.yml'
+      - '!tools/site_reference.py'
+      - '!.github/workflows/pages.yml'
       - 'docs/cellular/annexes.tex'
   pull_request:
     paths:
@@ -77,6 +81,9 @@ on:
       - '!docs/**'
       - '!**.md'
       - '!COPYING'
+      - '!mkdocs.yml'
+      - '!tools/site_reference.py'
+      - '!.github/workflows/pages.yml'
       - 'docs/cellular/annexes.tex'
   workflow_dispatch:
 
