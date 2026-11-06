@@ -51,7 +51,7 @@ namespace dsp {
 struct CngDetect;
 }
 
-namespace dcore { class Modem; }
+namespace dcore { class Modem; class Config; }
 
 /* what the data pumps get as their struct modem (modem_dp.h): the way
    back to the Modem */
@@ -594,6 +594,18 @@ private:
 	s16 at_T(char *p, s16 *len);
 	void rate_history(u32 tx, u32 rx);
 
+	/* the configurators (config.cpp): AT!R, AT!C, AT!CF, AT!CT; the
+	   modem idle and on hook (they run only then); the DTE's
+	   characters to the one that runs, its end, its early end (a RING,
+	   DTR off), its timers */
+	s16 at_bang(char *p, s16 *len);
+	bool conf_idle() const;
+	void conf_feed();
+	void conf_check();
+	void conf_close();
+	void conf_poll();
+	s32 conf_next_ms() const;
+
 	/* the AT interpreter (at.cpp) */
 	void at_process();
 	s16 at_command(char *cmd);
@@ -923,7 +935,11 @@ private:
 	bool t38_ = false;
 	s32 t38_max_ = 0;
 
+	/* the configurator that has the DTE (AT!C), null none */
+	Config *conf_ = nullptr;
+
 	friend struct LinkOwner;
+	friend class Config;
 };
 
 /* what a pump's DpDriver says of it (flags) */

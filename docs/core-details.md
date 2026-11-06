@@ -24,6 +24,7 @@ the reference for every command.
 | Identity and country | `+GCI +GCAP +GMI +GMM +GMR` |
 | Fax and voice | `+FCLASS`; class 1 fax (`+FTS +FRS +FTM +FRM +FTH +FRH +FMI +FMM +FMR`); class 2 and 2.0 fax (`+FCLASS=2` and `2.0`: `+FLI +FPI +FCC +FIS +FCS +FBO +FCR +FPS +FLP +FSP +FHS +FDT +FDR +FET +FKS`, and class 2's names, in `at_fax2()`); voice (`+V...` in `+FCLASS=8`, `+VCID`) |
 | V.92 | modem-on-hold (`+PMH +PMHT +PMHR`) |
+| Configurators | `!C !CF !CT` (idle and on hook), `!R` (the init string) |
 
 **Other modems' setup strings.** The interpreter also accepts the
 commands that other modems' setup strings send (V.250's, Rockwell's and
@@ -46,6 +47,74 @@ Conexant's, USRobotics'):
   messages of `&A`, `X` and `\V`. With `V0` a CONNECT's number gives its
   rate, as Smart Link's did.
 - **The country parameters** (`homolog_data.cpp`, `+GCI`).
+
+### The configurators
+
+`config.h` holds one settings model (`Config::model()`) that `AT!R`,
+`AT!CF`, `AT!CT` and `AT!C` share (`config.cpp`, `config_tui.cpp`,
+`config_cli.cpp`). Each `Setting` has:
+
+- its key on the command line, its group, a label and a line of help;
+- its AT command (`form`, `%s` the value);
+- its values: choices (each with its AT text, a command line name and a
+  label), a number from `lo` to `hi`, or an extended parameter's list;
+- how to read it from the modem (`get`).
+
+The model covers the basic commands' settings, the S-registers with no
+command of their own (timers, characters), `+GCI`, `+MS` (its four
+values as four settings, `ms` 0 to 3), `+FCLASS`, `#CID`, `+PMH`,
+`+PMHT` and every kept parameter (`kept_params`).
+
+- **Changing a setting** runs its AT command (`Config::apply()`, through
+  `at_command()`), so the configurators take exactly what the AT
+  interpreter takes and nothing else (a value is checked against the
+  model first, so a configurator never runs a command that is not a
+  setting's).
+- **The defaults** (`Config::defaults()`) are what `ATZ` sets: the
+  settings' fields are set as `sregs_init()`, `kept_init()` and `reset()`
+  set them for the time it takes to read them, then put back. S8 and
+  S24 are the country's; the country's own default is the USA's.
+- **`AT!R`** (`Config::init_lines()`) gives the commands of the settings
+  whose values differ from their defaults, in the model's order
+  (`+GCI` first, since it sets S8 and S24; `+MS` as one command with its
+  four values), an extended command followed by `;` when another comes
+  after it on the line, in lines of 63 characters (`LINE_CHARS`) at most.
+  It runs in any state.
+
+**Running one.** `AT!C`, `AT!CF` and `AT!CT` are ERROR unless the modem
+is idle and on hook (`conf_idle()`: no call, the line not started, on
+hook, no voice, fax or loop test, no held dial). The rest of the line is
+not read. While a configurator runs (`conf_`), `dte_input()` gives it the
+DTE's characters one at a time (`conf_feed()`) instead of the AT
+interpreter, and `poll()` its timers; leaving it reports OK, and what
+the DTE typed after that is commands again. A result (a RING), `hangup()`
+(DTR off) and the destructor end it at once (`conf_close()`), without
+OK; a leased line's S0 answer waits until it ends.
+
+**Keys.** `Config::input()` turns the characters into keys: ANSI's and
+VT100's escape sequences (arrows, Home, End, PgUp, PgDn, Ins, Del, F1 to
+F10, Shift-Tab), ESC and a character as Alt and it, a lone ESC after 120
+ms, CR LF as one Enter, the cursor position report (`ESC [r;cR`).
+
+**`AT!C`** (and `AT!CF`) send `ESC [6n`. With no answer in 1.5 s,
+`AT!C` starts the command line and `AT!CF` the full screen at 80 by 24 in
+UTF-8. With one, the cursor goes to row and column 999 and is asked
+again (the terminal's size, 80 by 24 to 160 by 66), then a CR and an é in
+UTF-8 and again: column 2 is a terminal that takes UTF-8, else the
+screen is drawn in CP437.
+
+**`AT!CF`** draws each frame into cells (a code point and a CGA colour)
+and sends the cells that changed since the last frame, with the cursor
+moves and SGR colours they need (never the last cell, which would
+scroll some terminals). Changes are kept until F2 (or the question on
+leaving) runs them, `+MS`'s as one `+MS`; a value the modem refuses is
+listed in a red message box.
+
+**`AT!CT`** parses each line against the words its mode takes (exec,
+configuration), a word cut short where only one begins so, with IOS's
+errors (`% Invalid input detected at '^' marker.`, `% Ambiguous
+command`, `% Incomplete command.`), `?` and Tab. A setting changes at
+once.
 
 ### The call's statistics
 

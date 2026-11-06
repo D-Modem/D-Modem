@@ -28,6 +28,7 @@
 
 #include "dm_types.h"
 #include "dcore.h"
+#include "config.h"
 #include "str.h"
 #include "reinit.h"
 #include "voice_codec.h"
@@ -457,11 +458,11 @@ void Modem::at_process()
 			report(Result::Ok);
 		else if (ret < 0)
 			report(Result::Error);
-		return ret > 0 && !command_ && fax_;
+		return ret > 0 && ((!command_ && fax_) || conf_);
 	};
 	char c;
 
-	while (get_chars(&c, 1) == 1) {
+	while (!conf_ && get_chars(&c, 1) == 1) {
 		bool echo = sregs_[SREG_ECHO] != 0;
 		char bs = static_cast<char>(sregs_[SREG_BS_CHAR]);
 
@@ -540,6 +541,9 @@ s16 Modem::at_command(char *cmd)
 		} else {
 			switch (upper(*p)) {
 			case ';':
+				break;
+			case '!':
+				ret = at_bang(p, &len);
 				break;
 			case 'A':
 				ret = at_A(p, &len);
@@ -2288,6 +2292,46 @@ void Modem::ec_mode_from_es()
 			sregs_[SREG_EC] = static_cast<unsigned char>(n);
 			return;
 		}
+}
+
+/*
+ *    the configurators' view of the kept parameters (config.h)
+ */
+
+/* how many there are */
+s16 kept_param_count()
+{
+	return KEPT_COUNT;
+}
+
+/* parameter i's name */
+const char *kept_param_name(s16 i)
+{
+	return kept_params[i].name;
+}
+
+/* how many values it has at the start */
+u16 kept_param_n(s16 i)
+{
+	return kept_params[i].n;
+}
+
+/* its values at the start */
+const u32 *kept_param_values(s16 i)
+{
+	return kept_params[i].values;
+}
+
+/* its ranges, as =? gives them */
+const char *kept_param_ranges(s16 i)
+{
+	return kept_params[i].ranges;
+}
+
+/* +MS may choose pump id */
+bool ms_may_choose(u32 id)
+{
+	return ms_choosable(id);
 }
 
 } // namespace dcore
