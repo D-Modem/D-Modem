@@ -12,10 +12,6 @@
 #    tools/site_reference.py --check   fails if they are out of date, or
 #                                      if an environment variable is in
 #                                      no page of docs/
-#    tools/site_reference.py --site    copies docs/ to .site/docs/ for the
-#                                      site (mkdocs.yml's docs_dir): the
-#                                      home page made from README.md, and
-#                                      links out of docs/ made GitHub's
 """Write (or check) docs/reference/ from the source tree."""
 
 import os
@@ -244,54 +240,7 @@ def page_environment(problems):
     return "".join(b)
 
 
-# --- the site's copy of docs/ ---------------------------------------------
-
-BLOB = "https://github.com/D-Modem/D-Modem/blob/main/"
-LINK_RE = re.compile(r"(\]\()([^)\s]+)(\))")
-
-
-def site_link(target, page_dir):
-    """A link of a page in docs/<page_dir>, as the site has it: one into
-    docs/ unchanged, one out of it to the file on GitHub."""
-    if re.match(r"[a-z]+:|#", target):
-        return target
-    path, frag = (target.split("#", 1) + [""])[:2]
-    whole = os.path.normpath(os.path.join("docs", page_dir, path))
-    if whole == "docs" or whole.startswith("docs" + os.sep):
-        return target
-    if whole == "README.md":
-        return os.path.relpath("docs/index.md", os.path.join("docs", page_dir)) + ("#" + frag if frag else "")
-    return BLOB + whole.replace(os.sep, "/") + ("#" + frag if frag else "")
-
-
-def site_copy():
-    import shutil
-    dst = os.path.join(ROOT, ".site", "docs")
-    shutil.rmtree(dst, ignore_errors=True)
-    shutil.copytree(os.path.join(ROOT, "docs"), dst)
-    for d, _, files in os.walk(dst):
-        page_dir = os.path.relpath(d, dst)
-        page_dir = "" if page_dir == "." else page_dir
-        for f in files:
-            if not f.endswith(".md"):
-                continue
-            path = os.path.join(d, f)
-            with open(path, encoding="utf-8") as fh:
-                text = fh.read()
-            text = LINK_RE.sub(lambda m: m.group(1) + site_link(m.group(2), page_dir) + m.group(3), text)
-            with open(path, "w", encoding="utf-8") as fh:
-                fh.write(text)
-    # the home page: README.md, its links as a page in docs/ has them
-    home = read("README.md")
-    home = LINK_RE.sub(lambda m: m.group(1) + site_link(os.path.relpath(m.group(2), "docs") if not re.match(r"[a-z]+:|#", m.group(2)) else m.group(2), "") + m.group(3), home)
-    with open(os.path.join(dst, "index.md"), "w", encoding="utf-8") as fh:
-        fh.write(home)
-    return 0
-
-
 def main():
-    if "--site" in sys.argv[1:]:
-        return site_copy()
     check = "--check" in sys.argv[1:]
     problems = []
     pages = {

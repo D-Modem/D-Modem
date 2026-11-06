@@ -1,8 +1,8 @@
 INHERIT: .site/mkdocs-base.yml
-# D-Modem's site, https://d-modem.github.io/D-Modem/: docs/ with brand's
-# shared theme and workflow, copied to .site/docs (tools/site_reference.py
-# --site): the home page made from README.md, links out of docs/ to GitHub;
-# docs/reference/ is made from the source (tools/site_reference.py).
+# D-Modem's site, https://d-modem.github.io/D-Modem/: docs/ and the README
+# with brand's shared theme and workflow (brand's docs/sites.md: the site is
+# built from a copy of docs/, .site/docs).  docs/reference/ is made from the
+# source (tools/site_reference.py).
 site_name: D-Modem
 site_description: An open V.92 softmodem
 site_url: https://d-modem.github.io/D-Modem/

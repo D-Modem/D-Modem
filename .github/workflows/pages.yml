@@ -20,6 +20,4 @@ jobs:
   site:
     uses: D-Modem/brand/.github/workflows/site.yml@main
     with:
-      prepare: |
-        python3 tools/site_reference.py --check
-        python3 tools/site_reference.py --site
+      prepare: python3 tools/site_reference.py --check
