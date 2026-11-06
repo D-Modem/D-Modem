@@ -90,18 +90,103 @@ A packet is
 
 all scrambled. The window is 64 packets, with selective
 retransmission: a turn starts with the packets the far side has not
-acknowledged. A side with nothing to send sends one fill packet, so the
-other side gets the line back at once (Adaptive Duplex). If no turn
+acknowledged. A side with nothing to send sends one fill packet (a micro
+turn, below, once on the final loading), so the other side gets the
+line back at once (Adaptive Duplex). If no turn
 comes (the far side's lost), the caller takes the line again after
 0.6 s, the answerer after 0.9 s, unless the line carries more than its
 quiet level (the far side in a turn whose tones were missed).
 
+## Micro turns (D-Modem's own)
+
+Telebit's micro packets run at 88.26 baud on a few carriers; their
+layout is unknown. D-Modem's micro turn is 20 ms of silence, 24 ms of
+both tones (`PRE_SHORT`), then four short epochs of 64 samples and 26
+of guard (90 samples, 88.9 baud): one short comb, then three data
+epochs of one packet. A short epoch uses every 16th carrier (125 Hz
+apart, 375 to 3375 Hz), 4 times the long epoch's amplitude (16 times
+the power, as the long epoch's power is spread over 16 times as many
+carriers), so each takes 2 bits more than the final loading gives that
+carrier, 6 at most. The short symbol is the first 64 samples of the
+1024 point IFFT with only those bins, so the long comb's channel
+applies to it unchanged.
+
+A side sends a micro turn when it has no packet to send again, no
+control data and less data than one micro packet holds (about 50
+octets at 30 dB). A receiver on the final loading tries every turn as a
+micro turn first: it scans 160 samples from the tones' end for the
+short comb (the adjacent carriers' phase steps, against the channel,
+coherent above 0.8), refines its timing from their mean, takes the
+common phase from it and decodes the packet; a bad CRC (a long turn)
+goes on to the long comb. A micro turn takes about 90 ms against 330 ms
+for a turn of one long packet.
+
+## The pump and the link
+
+The pump (`dp_pep.cpp`) gives PEP the link layer's bits as octets.
+When the link frames them (V.42, MNP or start-stop characters, which
+the core says with `dp_runtime_set_framed()`), the pump takes them at
+the rate the link was given at `CONNECT` (so its bit timers keep time),
+up to two long turns ahead, and leaves out its idle: ones after 9 ones
+kept (no character or frame has more) and flags after 16 kept (V.42's
+answerer needs a few to see one as a character, and asynchronous
+characters never repeat one 8 bit pattern three times). The received
+octets go to the link at the far side's line rate, not a turn's at
+once. A synchronous call's bits are a raw stream and go as they are.
+
+The caller skips V.42's detection phase in PEP and starts LAPM at
+once: the ODPs and the answer to them would take two turns each way,
+past T400 (750 ms). The answerer keeps its detection phase, which ends
+on the caller's flags, or takes MNP's LR.
+
+## Automode and the answer tone
+
+The caller's watch, before PEP's tones, takes the line in 10 ms
+blocks: the power at 2100 Hz, at the two tones, and the answer tone's
+envelope. Its AM depth over 400 ms (the envelope less its mean, against
+it; above 0.1) tells ANSam from a plain answer tone, which V.34's
+caller now measures the same way. The answer tone survives ANSam's
+phase reversals (gaps of up to 5 blocks). After it, 150 ms of a signal
+that is neither PEP's tones nor 2100 Hz is another modulation. The pump
+hands the call over with `DPSTAT_CHANGEDP` (V.34 for ANSam and for the
+answerer, V.32bis with its automode otherwise, Bell 212A for 2225 Hz),
+and the call's statistics are no longer PEP's.
+
+## Statistics
+
+At `CONNECT` and on each block after it the pump fills the call's
+statistics: the line rates, the packets' counts, the micro turns, and
+for each of the 512 bins the bits each way and the noise measured in
+the start-up (`noise_dbm0()`). `ATI11` shows the counts, `ATI12` the
+table (Telebit's S70 to S75 would clash with D-Modem's own S70, S71 and
+S92, so they are not S-registers).
+
+## What the T2000 recordings show
+
+Five recordings of a Telebit T2000 (Wikimedia Commons: call set-up,
+duplex and simplex data, XMODEM with and without spoofing) were
+measured:
+
+- The answerer sends 3.1 s of plain 2100 Hz and 70 ms of silence before
+  PEP's tones.
+- The epoch is 1024 samples at 8000 Hz plus a guard of about 61 (64 in
+  Telebit's documents; the lossy audio makes it rough), the guard a
+  copy of the symbol's start after it. The comb (E0) is the same both
+  ways, and so are the 9 training epochs.
+- The T2000's carriers end at bin 434 (3390.6 Hz).
+- A turn starts with one E0 epoch and no tones; on the 2-bit link the
+  data is QPSK times E0's phases.
+- Long turns are about 1.8 s. An idle line is a 46 ms burst each way
+  every 120 ms, about a dozen carriers each; their epoch could not be
+  found.
+
+No turn was decoded to bits, so the packets, the scrambler and the
+loading record of a real Telebit are still unknown.
+
 ## Not done
 
-- The answer sequence of a T2500 (PEP tones, then the V.25 answer tone
-  and the other modulations, S92), so a PEP modem can answer anything.
-- The micro and small packets (88.26 baud, for typing), S36's lead
-  tone, S120.
-- Compression (S110), UUCP g, Kermit and XMODEM spoofing (S111), the
-  S70 to S77 statistics.
+- S36's lead tone, S120; Telebit's small packets.
+- Telebit's compression (S110), UUCP g, Kermit and XMODEM spoofing
+  (S111).
 - Turbo PEP (the WorldBlazer's, 7 bits a carrier, 23 kbit/s).
+- Talking to a real Telebit (its packets are not known).

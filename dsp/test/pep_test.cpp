@@ -238,8 +238,9 @@ TEST(Pep, RateFollowsNoise)
 }
 
 /* Adaptive Duplex: the caller has nothing to send, so its turns are
-   one packet; the answerer's data gets most of the line (half as much
-   again as it gets when both send all they can) */
+   one packet, sent as micro turns; the answerer's data gets most of
+   the line (half as much again as it gets when both send all they
+   can) */
 TEST(Pep, AdaptiveDuplex)
 {
 	Pair both(40);
@@ -249,6 +250,8 @@ TEST(Pep, AdaptiveDuplex)
 	one.run(20);
 	one.expect_ok(20000, 0);
 	EXPECT_EQ(one.rx[1].octets, 0);
+	EXPECT_GT(one.m[0].micro_tx(), 0);
+	EXPECT_EQ(one.m[1].micro_rx(), one.m[0].micro_tx());
 	EXPECT_GT(one.rx[0].octets, 3 * both.rx[0].octets / 2);
 	printf("one way %lld octets, both ways %lld\n",
 	       static_cast<long long>(one.rx[0].octets),

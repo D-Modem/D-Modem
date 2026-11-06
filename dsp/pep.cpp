@@ -14,6 +14,7 @@
 #include <cstdlib>
 #include <queue>
 
+#include "modem_defs.h"
 #include "pep.h"
 
 namespace dsp {
@@ -60,6 +61,22 @@ const s32 WAIT_CALLER = 4800, WAIT_ANSWERER = 7200;
 const s32 BLK = 128, HOP = 32;
 const float TONES_ON = 0.6f, TONES_OFF = 0.35f;
 const s16 TONES_HITS = 3;
+/* micro turns (D-Modem's for Telebit's micro packets, 88 baud): the
+   gap, 24 ms of the tones, then short epochs of 64 samples and 26 of
+   guard (90, 88.9 baud): one of the comb (its timing), MS_DATA of one
+   packet; their carriers every 16th bin (125 Hz) from 375 to 3375 Hz,
+   16 times the power (the long epoch's power on a 16th of the
+   carriers), so 2 bits more than the loading's there, 6 at most; the
+   window from 13 samples in */
+const s32 PRE_SHORT = 192;
+const s32 MS_N = 64, MS_G = 26, MS_EP = MS_N + MS_G, MS_W = 13;
+const s16 MS_DATA = 3, MS_STEP = 16, MS_LO = 3, MS_HI = 27;
+const float MS_BOOST = 4;
+const s32 MS_LEN = (1 + MS_DATA) * MS_EP;
+/* the receiver's search for the short comb from the tones' end
+   (samples), and its coherence at least */
+const s32 MS_SCAN_LO = -32, MS_SCAN_HI = 128, MS_SCAN_STEP = 4;
+const double MS_COHERENT = 0.8;
 /* a packet's header and CRC (octets); its sequence numbers' window */
 const s32 HDR = 7, OVERHEAD = HDR + 2;
 const u8 WINDOW = 64;
@@ -188,6 +205,7 @@ void PepModem::init(const Config &c, Source src, Sink sink)
 	} else {
 		ph_ = PH_A_SEND;
 		tx_start_tones_comb(COMBS, 0, nullptr);
+		first_end_ = tx_end_;
 		logf("answerer: tones and comb");
 	}
 }
@@ -319,6 +337,77 @@ void PepModem::tx_epoch_data(const PepLoading &l, const std::vector<u8> &oct)
 	tx_samples(X, EPOCH);
 }
 
+/* the bits of a micro turn's carriers (by short bin j, MS_LO to MS_HI)
+   on loading l: 2 more than l's at bin 16 j, 6 at most, none where it
+   has none */
+void PepModem::micro_bits(const PepLoading &l, std::vector<u8> &b) const
+{
+	b.assign(MS_HI + 1, 0);
+	for (s16 j = MS_LO; j <= MS_HI; j++) {
+		u8 lb = l.bits[static_cast<size_t>(j * MS_STEP)];
+		b[static_cast<size_t>(j)] = lb == 0 || lb == PILOT ? 0 :
+			static_cast<u8>(std::min<s16>(MAX_BITS, lb + 2));
+	}
+}
+
+/* (see micro_bits()) the octets of a micro turn's packet on l */
+s32 PepModem::micro_octets(const PepLoading &l) const
+{
+	std::vector<u8> b;
+	micro_bits(l, b);
+	s32 n = 0;
+	for (u8 v : b)
+		n += v;
+	return n * MS_DATA / 8;
+}
+
+/* a short epoch of X (by bin, only every 16th used): its period of 64
+   (the IFFT's first 64), then their first 26 again */
+void PepModem::tx_short(const std::vector<cf> &X)
+{
+	std::vector<cf> a(N, cf(0, 0));
+	for (s16 k = MS_STEP; k <= CARRIERS; k += MS_STEP)
+		a[static_cast<size_t>(k)] = X[static_cast<size_t>(k)];
+	fft_.inverse(a.data());
+	for (s32 i = 0; i < MS_EP; i++)
+		out_.push_back(2 * scale_ * a[static_cast<size_t>(i % MS_N)].real());
+	tx_end_ = t_ + static_cast<s64>(out_.size());
+	rx_ = RX_OFF;
+	rx_from_ = tx_end_ + ECHO_GAP;
+}
+
+/* a micro turn of the packet oct (its micro_octets(l)): the gap, the
+   tones, the short comb, its data epochs */
+void PepModem::tx_micro(const PepLoading &l, const std::vector<u8> &oct)
+{
+	std::vector<u8> b;
+	micro_bits(l, b);
+	out_.insert(out_.end(), static_cast<size_t>(TURN_GAP), 0.0f);
+	tx_epoch_tones(PRE_SHORT);
+	std::vector<cf> X(CARRIERS + 1, cf(0, 0));
+	for (s16 j = MS_LO; j <= MS_HI; j++)
+		X[static_cast<size_t>(j * MS_STEP)] = MS_BOOST *
+			comb_[static_cast<size_t>(j * MS_STEP)];
+	tx_short(X);
+	s32 pos = 0, nbits = static_cast<s32>(oct.size()) * 8;
+	for (s16 e = 0; e < MS_DATA; e++) {
+		std::fill(X.begin(), X.end(), cf(0, 0));
+		for (s16 j = MS_LO; j <= MS_HI; j++) {
+			size_t k = static_cast<size_t>(j * MS_STEP);
+			u8 nb = b[static_cast<size_t>(j)];
+			if (!nb)
+				continue;
+			u32 v = 0;
+			for (s16 i = 0; i < nb; i++, pos++)
+				if (pos < nbits && (oct[static_cast<size_t>(
+						pos / 8)] >> (pos % 8) & 1))
+					v |= 1u << i;
+			X[k] = VwbQam::map(nb, v) * l.gain[k] * MS_BOOST;
+		}
+		tx_short(X);
+	}
+}
+
 /* the start-up's tones, combs comb epochs and phases phase epochs of
    mask (180 degrees on its carriers) */
 void PepModem::tx_start_tones_comb(s16 combs, s16 phases,
@@ -373,6 +462,38 @@ void PepModem::tx_turn()
 		std::vector<u8> fresh;
 	};
 	std::vector<P> ps;
+	/* little to send (nothing again, no control, the source's data
+	   short of a micro packet): a micro turn of it */
+	s32 mcap = tx_final_on_ && have_tx_final_ && cfg_.micro ?
+		micro_octets(tx_final_) : 0;
+	std::vector<u8> first;
+	bool pulled = false;
+	if (mcap > OVERHEAD && outq_.empty() && ctrl_out_.empty() &&
+	    seq_diff(tx_seq_, tx_base_) < WINDOW - 1) {
+		s32 mroom = mcap - OVERHEAD;
+		first.resize(static_cast<size_t>(room));
+		s32 n = src_ ? src_(first.data(), mroom) : 0;
+		first.resize(static_cast<size_t>(std::max(n, 0)));
+		pulled = true;
+		if (n < mroom) {
+			u8 type = PK_FILL, sq = 0;
+			const u8 *d = nullptr;
+			if (n > 0) {
+				sq = tx_seq_++;
+				auto &kept = outq_[sq] = Out{ PK_DATA, first };
+				type = PK_DATA;
+				d = kept.pay.data();
+			}
+			tx_micro(tx_final_, make_packet(type, sq, d, n, 0,
+							mcap));
+			turns_tx_++;
+			micro_tx_++;
+			wait_until_ = tx_end_ + (cfg_.calling ? WAIT_CALLER :
+						 WAIT_ANSWERER);
+			hits_ = 0;
+			return;
+		}
+	}
 	/* again, oldest first */
 	for (u8 i = 0; i < WINDOW && ps.size() < static_cast<size_t>(
 				 cfg_.turn_max); i++) {
@@ -396,8 +517,18 @@ void PepModem::tx_turn()
 			o.pay.assign(ctrl_out_.begin(), ctrl_out_.begin() + n);
 			ctrl_out_.erase(ctrl_out_.begin(), ctrl_out_.begin() + n);
 		} else if (tx_final_on_ && src_) {
+			/* (what the micro turn's test took first, topped
+			   up) */
+			s32 have = 0;
+			if (pulled) {
+				o.pay = std::move(first);
+				have = static_cast<s32>(o.pay.size());
+				pulled = false;
+			}
 			o.pay.resize(static_cast<size_t>(room));
-			s32 n = src_(o.pay.data(), room);
+			s32 n = have + std::max<s32>(0, src_(o.pay.data() +
+							       have,
+							       room - have));
 			if (n <= 0)
 				break;
 			o.pay.resize(static_cast<size_t>(n));
@@ -479,8 +610,14 @@ void PepModem::rx_run()
 				hits_ = 0;
 				if (rx_ == RX_TONES) {
 					rx_ = RX_COMB;
+					far_heard_ = true;
 				} else {
-					rx_ = RX_SYNC;
+					/* a micro turn, if the far side
+					   may send one, else (or if it
+					   is not) a long one's comb */
+					rx_ = rx_final_.total > 0 &&
+						ph_ == PH_LINK ? RX_MICRO :
+								 RX_SYNC;
 				}
 			}
 			rx_scan_ += HOP;
@@ -511,6 +648,15 @@ void PepModem::rx_run()
 			if (t_ < static_cast<s64>(at_) + EPOCH + 2 * GUARD)
 				return;
 			rx_turn_epoch();
+			break;
+		case RX_MICRO:
+			if (t_ < static_cast<s64>(at_) + MS_SCAN_HI + MS_LEN +
+				 2 * GUARD)
+				return;
+			if (rx_micro())
+				rx_turn_end();
+			else
+				rx_ = RX_SYNC;
 			break;
 		}
 		if (rx_ == before && rx_ != RX_TONES && rx_ != RX_PRE)
@@ -563,6 +709,118 @@ void PepModem::window(double at, cf *Y, double r) const
 	for (s16 k = 0; k <= CARRIERS; k++)
 		Y[k] = y[static_cast<size_t>(k)] * std::polar(1.0f,
 			static_cast<float>(-TWO_PI * k * W_OFF / N));
+}
+
+/* the short epoch at line time at: its bins every 16th (the rest 0),
+   as window() gives a long one's (the same scale, from its start) */
+void PepModem::window_short(double at, cf *Y) const
+{
+	auto x = [this](s64 i) { return in_(i); };
+	float y[MS_N];
+	for (s32 n = 0; n < MS_N; n++)
+		y[n] = interp_.at(x, at + (MS_W + n) * r_);
+	for (s16 k = 0; k <= CARRIERS; k++)
+		Y[k] = cf(0, 0);
+	for (s16 j = MS_LO; j <= MS_HI; j++) {
+		cf c(0, 0);
+		for (s32 n = 0; n < MS_N; n++)
+			c += y[n] * std::polar(1.0f, static_cast<float>(
+				-TWO_PI * j * (n + MS_W) / MS_N));
+		Y[j * MS_STEP] = c * static_cast<float>(N / MS_N);
+	}
+}
+
+/* a micro turn's packet at about at_, if it is one: the short comb's
+   timing against our channel (its phase's slope over the carriers,
+   twice), the data epochs decoded on rx_final_; whether its CRC is
+   right (then it is taken, the turn over) */
+bool PepModem::rx_micro()
+{
+	std::vector<cf> Y(CARRIERS + 1);
+	/* the short comb's coherence (its adjacent carriers' phase
+	   steps, together against their power) with the window from
+	   at, and the step's mean as samples late */
+	auto fit = [&](double at, double *d) {
+		window_short(at, Y.data());
+		std::complex<double> sum(0, 0);
+		double e = 0;
+		cf prev(0, 0);
+		for (s16 j = MS_LO; j <= MS_HI; j++) {
+			size_t k = static_cast<size_t>(j * MS_STEP);
+			cf c = Y[k] * std::conj(comb_[k] * H_[k]);
+			if (j > MS_LO)
+				sum += std::complex<double>(c * std::conj(prev));
+			e += std::norm(c);
+			prev = c;
+		}
+		*d = std::arg(sum) * MS_N / TWO_PI;
+		return e > 0 ? std::abs(sum) / e : 0.0;
+	};
+	/* the tones' end is only about where a micro turn's comb starts:
+	   the best of a scan, then its timing refined */
+	double at = at_, best = 0, d = 0;
+	for (s32 o = MS_SCAN_LO; o <= MS_SCAN_HI; o += MS_SCAN_STEP) {
+		double q = fit(at_ + o, &d);
+		if (q > best) {
+			best = q;
+			at = at_ + o;
+		}
+	}
+	if (best < MS_COHERENT)
+		return false;
+	for (s16 it = 0; it < 3; it++) {
+		fit(at, &d);
+		at -= d;
+		if (std::fabs(d) < 0.05)
+			break;
+	}
+	/* the common phase from the comb */
+	window_short(at, Y.data());
+	std::complex<double> cp(0, 0);
+	for (s16 j = MS_LO; j <= MS_HI; j++) {
+		size_t k = static_cast<size_t>(j * MS_STEP);
+		cp += std::complex<double>(Y[k] * std::conj(comb_[k] * H_[k] *
+							   MS_BOOST));
+	}
+	cf rot = std::polar(1.0f, static_cast<float>(-std::arg(cp)));
+	std::vector<u8> b;
+	micro_bits(rx_final_, b);
+	s32 n = micro_octets(rx_final_);
+	std::vector<u8> oct(static_cast<size_t>(n), 0);
+	s32 pos = 0, nbits = n * 8;
+	for (s16 e = 0; e < MS_DATA; e++) {
+		window_short(at + (1 + e) * MS_EP * r_, Y.data());
+		for (s16 j = MS_LO; j <= MS_HI; j++) {
+			size_t k = static_cast<size_t>(j * MS_STEP);
+			u8 nb = b[static_cast<size_t>(j)];
+			if (!nb)
+				continue;
+			cf z = Y[k] / H_[k] * rot /
+				(rx_final_.gain[k] * MS_BOOST);
+			u32 v = VwbQam::slice(nb, z);
+			for (s16 i = 0; i < nb; i++, pos++)
+				if (pos < nbits && (v >> i & 1))
+					oct[static_cast<size_t>(pos / 8)] |=
+						static_cast<u8>(1 << (pos % 8));
+		}
+	}
+	scramble(oct.data(), oct.size());
+	/* not a micro packet: no count of a bad one (the long turn's
+	   comb is tried next) */
+	s64 bad = pk_bad_;
+	bool ok = rx_packet(oct);
+	if (!ok) {
+		pk_bad_ = bad;
+		return false;
+	}
+	micro_rx_++;
+	rx_got_ = 1;
+	if (!rx_final_seen_) {
+		rx_final_seen_ = true;
+		check_up();
+	}
+	logf("turn: micro at %.2f (%+.2f)", at, at - at_);
+	return true;
 }
 
 /* a comb epoch's lateness (samples): the slope of its phase over the
@@ -1039,6 +1297,17 @@ void PepModem::rx_turn_end()
  *    the start-up's decisions
  */
 
+/* see pep.h: a tone of amplitude a is a bin of a N / 2, its power
+   a^2 / 2, so a bin's power p is the line's 2 p / N^2 */
+float PepModem::noise_dbm0(s16 k) const
+{
+	if (nacc_.empty() || k < 1 || k > CARRIERS)
+		return 0;
+	return static_cast<float>(10 * std::log10(
+		2 * noise(k) / (static_cast<double>(N) * N) / DP_DBM0_POWER +
+		1e-12));
+}
+
 /* carrier k's noise: the silence's, or the comb's own unsteadiness if
    more */
 double PepModem::noise(s16 k) const
@@ -1250,6 +1519,12 @@ s32 PepModem::tx_rate() const
 s32 PepModem::rx_rate() const
 {
 	return static_cast<s32>(s64{rx_final_.total} * FS / EPOCH);
+}
+
+/* see pep.h */
+s32 PepModem::turn_octets() const
+{
+	return std::max(0, tx_final_.octets() - OVERHEAD) * cfg_.turn_max;
 }
 
 /* see pep.h */

@@ -76,6 +76,8 @@ struct dp_runtime {
 	s16 pcm;                /* V.91: the received codes as they are
 				   (no DC removal) */
 	s16 analog;             /* an analogue line (dp_runtime_set_analog) */
+	s16 framed;             /* the link frames its bits
+				   (dp_runtime_set_framed) */
 	s32 v110;               /* a clear channel's V.110 user rate
 				   (+CBST), 0 for none (the answerer then
 				   finds one the caller sends) */

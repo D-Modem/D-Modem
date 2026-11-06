@@ -10,6 +10,7 @@
 
 #include <dcore.h>
 #include <log.h>
+#include <dsplibs.h>
 
 #include "script.h"
 
@@ -85,11 +86,14 @@ struct ScriptCore final : public Core, public dcore::Host {
 
 } // namespace
 
-/* CORE_DEBUG: the log level; the pumps registered */
+/* CORE_DEBUG: the log level, DSP_DEBUG the pumps'; the pumps
+   registered */
 void core_init()
 {
 	if (getenv("CORE_DEBUG"))
 		dcore::log_level = atoi(getenv("CORE_DEBUG"));
+	if (getenv("DSP_DEBUG"))
+		dsplibs_debug_level = atoi(getenv("DSP_DEBUG"));
 	prop_dp_init();
 }
 

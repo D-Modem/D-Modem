@@ -1049,6 +1049,9 @@ I6 & The last call's statistics, as USRobotics' link diagnostics (the
   same as \cmdl[I]{I11}). \\ \hline
 I7 & The country: \rc{Country: USA}. \\ \hline
 I11 & The last call's statistics, as Conexant's modems give them. \\ \hline
+I12 & The last \cmd{PEP} call's carriers: each bin's frequency, its
+  bits each way and the noise on it (dBm0); \rc{No PEP Call} after
+  another. \\ \hline
 \end{vtable}
 
 \cmdl[I]{ATI11} lists the last call's statistics: in online command state
@@ -1064,7 +1067,7 @@ modulation does not make, the cause while the call is up.
 \begin{vtable}{2}{|T{0.33\textwidth}|L{0.53\textwidth}|}{ATI11 Lines}
   {\thd{Line} & \thd{Value}}
 Last Connection & The modulation it came up with (\cmd{V34}, \cmd{V90},
-  \cmd{V92}, \cmd{V91}, \cmd{V32bis}, \ldots), \cmd{Fax}, or \cmd{None}. \\ \hline
+  \cmd{V92}, \cmd{V91}, \cmd{V32bis}, \cmd{PEP}, \ldots), \cmd{Fax}, or \cmd{None}. \\ \hline
 Initial Transmit/Receive Carrier Rate & The rates (bit/s) at \rc{CONNECT}. \\ \hline
 Final Transmit/Receive Carrier Rate & The rates now, or at the end
   (after renegotiations). \\ \hline
@@ -1101,6 +1104,11 @@ Transmit Frame Error Count & The information frames among them sent
   again. \\ \hline
 Receive Frame Count & The frames received intact. \\ \hline
 Receive Frame Error Count & The frames received with a bad \std{FCS}. \\ \hline
+\cmd{PEP} Line Rate (Tx/Rx) & \cmd{PEP}'s rate on the line each way while a
+  side has it (bit/s). \\ \hline
+\cmd{PEP} Packets Accepted, Received Bad & \cmd{PEP}'s packets taken, and
+  received with a bad \std{CRC}. \\ \hline
+\cmd{PEP} Micro Turns (Tx/Rx) & Its short turns, sent and taken. \\ \hline
 Retrains by Local Modem, Retrains Requested by Remote Modem & Retrains,
   ours and the other modem's. \\ \hline
 Rate Renegotiation by Local/Remote Modem & Rate renegotiations (\std{V.34},

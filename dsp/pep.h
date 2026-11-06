@@ -103,6 +103,7 @@ public:
 		s16 max_bits = pep::MAX_BITS;
 		float margin_db = 3;    /* over a carrier's bits' SNR */
 		s16 turn_max = 10;      /* packets a turn at most (N) */
+		bool micro = true;      /* micro turns when little is to go */
 		s32 timeout_s = 60;     /* nothing received so long: FAILED */
 	};
 	enum State { STARTUP, DATA, FAILED };
@@ -126,11 +127,15 @@ public:
 	/* the data's rate one way when both send all they can: a turn's
 	   payload each way over the time of both turns */
 	s32 duplex_rate(bool rx) const;
+	/* the payload of our longest turn (octets) */
+	s32 turn_octets() const;
 	/* the loadings: ours to send with, the far side's (S71, S73) */
 	const PepLoading &tx_loading() const { return tx_final_; }
 	/* (see tx_loading()) */
 	const PepLoading &rx_loading() const { return rx_final_; }
-	/* the line's noise by bin, dB against the comb's carrier (S76) */
+	/* carrier k's noise, dBm0 in its bin's band (S76) */
+	float noise_dbm0(s16 k) const;
+	/* the line's noise by bin, dB against the comb's carrier */
 	const std::vector<float> &noise_db() const { return noise_db_; }
 	/* packets received again (S74) and taken (S75) */
 	s64 packets_bad() const { return pk_bad_; }
@@ -148,6 +153,16 @@ public:
 	s32 turns_tx() const { return turns_tx_; }
 	/* (see turns_tx()) */
 	s32 turns_rx() const { return turns_rx_; }
+	/* of them, micro turns (one short packet) */
+	s32 micro_tx() const { return micro_tx_; }
+	/* (see micro_tx()) */
+	s32 micro_rx() const { return micro_rx_; }
+	/* the far side's start-up tones heard: it is a PEP modem */
+	bool far_heard() const { return far_heard_; }
+	/* the samples (8000 Hz) run so far */
+	s64 now() const { return t_; }
+	/* the answerer: when its first tones and comb end (samples) */
+	s64 first_end() const { return first_end_; }
 	/* the log since the last call */
 	std::string take_log();
 
@@ -162,6 +177,7 @@ private:
 		RX_PRE,         /* a turn's tones */
 		RX_SYNC,        /* its comb epoch */
 		RX_EPOCHS,      /* its packets (or the answerer's phase) */
+		RX_MICRO,       /* a micro turn's, if it is one */
 	};
 	enum Phase {
 		PH_A_SEND,      /* answerer: its tones and comb */
@@ -189,6 +205,10 @@ private:
 	void tx_samples(const std::vector<cf> &X, s32 len);
 	std::vector<u8> make_packet(u8 type, u8 seq, const u8 *pay, s32 n,
 				    u8 left, s32 cap);
+	void micro_bits(const PepLoading &l, std::vector<u8> &b) const;
+	s32 micro_octets(const PepLoading &l) const;
+	void tx_short(const std::vector<cf> &X);
+	void tx_micro(const PepLoading &l, const std::vector<u8> &oct);
 
 	/* the receiver */
 	void rx_sample(float x);
@@ -204,6 +224,8 @@ private:
 	void rx_turn_epoch();
 	bool rx_packet(const std::vector<u8> &oct);
 	void rx_turn_end();
+	void window_short(double at, cf *Y) const;
+	bool rx_micro();
 	bool phase_bit(s16 k) const;
 	void decode(const cf *Z, const PepLoading &l, std::vector<u8> &oct,
 		    std::vector<cf> *dec) const;
@@ -242,6 +264,8 @@ private:
 	VwbHistory in_;
 	std::deque<float> out_;         /* to send */
 	s64 tx_end_ = 0;                /* when what was queued ends */
+	s64 first_end_ = 0;             /* (see first_end()) */
+	bool far_heard_ = false;        /* (see far_heard()) */
 
 	/* the receiver */
 	Rx rx_ = RX_OFF;
@@ -288,6 +312,7 @@ private:
 	u16 far_map_ = 0;
 	s64 pk_good_ = 0, pk_bad_ = 0, pk_again_ = 0;
 	s32 turns_tx_ = 0, turns_rx_ = 0;
+	s32 micro_tx_ = 0, micro_rx_ = 0;
 };
 
 } // namespace dsp
