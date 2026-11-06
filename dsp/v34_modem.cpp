@@ -31,6 +31,7 @@
 #include "dm_types.h"
 #include "bits.h"
 #include "v34.h"
+#include "x2.h"
 #include "v90.h"
 
 namespace dsp {
@@ -633,8 +634,27 @@ void V34Rx::got_bit(s16 bit)
 	}
 	if (mp_n) {
 		mpbits[mp_n++] = bit;
-		if (mp_n == 19)
+		if (mp_n == 19 && !x2)
 			mp_len = bit ? 188 : 88;
+		if (mp_n == mp_len && x2) {
+			/* x2: 17 ones, a zero, 4 words, the CRC */
+			u16 w[4];
+			mp_n = 0;
+			if (x2_record_parse(mpbits, 4, w) == 0) {
+				if (!ev_mp || w[0] != x2_w[0])
+					DSP_DBG("v34 rx: x2 MP %04x %04x %04x "
+						"%04x\n", w[0], w[1], w[2],
+						w[3]);
+				copy_array(x2_w, w);
+				mp.ack = w[0] >> 15;
+				ev_mp = 1;
+				after_mp = 1;
+				mp_end = sym;
+				ones = 0;
+			} else
+				DSP_DBG("v34 rx: x2 MP with bad CRC\n");
+			return;
+		}
 		if (mp_n == mp_len) {
 			V34Mp mp_;
 			mp_n = 0;
@@ -676,7 +696,7 @@ void V34Rx::got_bit(s16 bit)
 			mpbits[i] = 1;
 		mpbits[17] = 0;
 		mp_n = 18;
-		mp_len = 0;
+		mp_len = x2 ? 18 + 4 * 17 + 16 : 0;
 		after_mp = 0;
 		return;
 	}
@@ -902,7 +922,9 @@ void V34Rx::ls_window(cplx d, s32 start)
 		/* the sample clock offset from the delays of successive
 		   solutions: the input comes later when the equalizer delay
 		   goes down */
-		if (ls_sym)
+		/* (x2: not across the client's silence before its phase
+		   4, whose symbols are not counted) */
+		if (ls_sym && !(x2 && phase4_ls))
 			t_freq -= (c0 - ls_d) / (sym_ - ls_sym);
 		ls_d = c0;
 		ls_sym = sym_;
@@ -1137,6 +1159,9 @@ void V34Rx::symbol()
 		else
 			d = v34_trn4[nearest4(z)];
 		e = cplx_pow(cplx_sub(z, d)) / 2;
+		if (dsplibs_debug_level >= 9)
+			DSP_DBG("v34 rx%d: trn %" PRId32 " %.5f %.5f %.5f "
+				"%.5f\n", tap, n, z.re, z.im, d.re, d.im);
 		mse += 0.01f * (e - mse);
 		/* not on the fading end of a signal; smaller steps once
 		   trained, the data constellations are dense */

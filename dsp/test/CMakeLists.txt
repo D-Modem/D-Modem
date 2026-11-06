@@ -138,6 +138,9 @@ target_link_libraries(vcvm_data_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_test_exe(k56flex_test k56flex_test.cpp ${S}/k56flex.cpp
 	${S}/k56flex_tables.cpp)
 dmodem_gtest(k56flex_test LABELS quick)
+dmodem_test_exe(x2_test x2_test.cpp ${S}/x2.cpp ${S}/k56flex.cpp
+	${S}/k56flex_tables.cpp)
+dmodem_gtest(x2_test LABELS quick)
 dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
 dmodem_gtest(rs_test LABELS quick)
 # jbig.h: T.82's coder test and artificial image, T.85's markers
@@ -275,6 +278,11 @@ dmodem_test_exe(dmodem_test dmodem_test.cpp
 target_include_directories(dmodem_test PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 target_link_libraries(dmodem_test PRIVATE dmodem)
 dmodem_gtest(dmodem_test LABELS quick)
+# libdmodem as the far end of courier-emu's closed loop: the original
+# USRobotics Courier firmware calls it (docs/dsp/x2-details.md)
+dmodem_test_exe(courier_peer courier_peer.cpp)
+target_include_directories(courier_peer PRIVATE ${PROJECT_SOURCE_DIR}/frontend/dmodemd)
+target_link_libraries(courier_peer PRIVATE dmodem)
 # a point of sale transaction (SDLC frames through V.80) over V.29
 # FastPOS and V.22 fast connect
 dmodem_test_exe(pos_test pos_test.cpp)

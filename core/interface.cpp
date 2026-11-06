@@ -98,6 +98,7 @@ static DpDriver pump_table[] = {
 	  nullptr, 0, -1, -1, DPF_LEASED | DPF_LOOP3 },
 	{ DP_FAX, "VFax", nullptr, nullptr },
 	{ DP_K56, "K56Flex", "56", nullptr, nullptr, 0, 0x81, 0x81, 0 },
+	{ DP_X2, "x2", "57", nullptr, nullptr, 0, -1, -1, 0 },
 	{ DP_V8BIS, "V8bis", nullptr, nullptr },
 	/* (V.58: V.90 Issue 1, PCM one way and V.34 the other) */
 	{ DP_V90, "V90", "90", nullptr,

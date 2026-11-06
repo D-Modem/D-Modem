@@ -431,7 +431,8 @@ std::string Modem::v59_value(u16 tag) const
 	/* 6.6: the modes there are besides V.59's */
 	case 0x0101: {
 		static const struct { u32 dp; const char *name; } other[] = {
-			{ DP_K56, "K56flex" }, { DP_V32TERBO, "V.32terbo" },
+			{ DP_K56, "K56flex" }, { DP_X2, "x2" },
+			{ DP_V32TERBO, "V.32terbo" },
 			{ DP_V26TER, "V.26ter" }, { DP_V26BIS, "V.26bis" },
 			{ DP_V29FP, "V.29FastPOS" }, { DP_HST, "HST" },
 			{ DP_B103, "Bell103" }, { DP_B212, "Bell212A" },

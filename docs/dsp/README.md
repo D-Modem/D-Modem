@@ -57,6 +57,9 @@ kind of call (`AT+A8E=1,1,,1`).
 K56flex, an older 56k standard from before V.90, works at both ends:
 D-Modem answers a K56flex modem with it, and calls a K56flex server with
 it. See [its own page](k56flex.md).
+USRobotics' x2, the other early 56k standard, is in progress: D-Modem
+answers an x2 modem as the server, and the start-up completes, but the
+x2 modem does not yet accept the data. See [its own page](x2.md).
 
 ## The two ends of a 56k call
 

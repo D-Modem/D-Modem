@@ -615,6 +615,9 @@ struct V34Rx {
 				   16 points after its J' (our Js asked) */
 	s16 i16, q16;           /* the 16 point decision's turn and
 				   quarter point */
+	s16 x2;                 /* x2's client: its MP is a record of 4
+				   words (x2.h) */
+	u16 x2_w[4];            /* the last good one's */
 	s16 jword;
 	unsigned char mpbits[200];
 	/* V.90 digital modem: Ja carries the DIL descriptor */
