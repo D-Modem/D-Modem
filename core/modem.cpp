@@ -56,6 +56,9 @@ extern "C" int dp_runtime_pcm(void *runtime) DCORE_WEAK;
 /* an analogue line for the pumps (dsplibs.h): weak as well */
 extern "C" void dp_runtime_set_analog(void *runtime, int analog)
 	DCORE_WEAK;
+/* the link's bits framed, for the pumps (dsplibs.h): weak as well */
+extern "C" void dp_runtime_set_framed(void *runtime, int framed)
+	DCORE_WEAK;
 /* a clear channel's V.110 rate for the pump, and the one it runs at
    (dsplibs.h): weak as well */
 extern "C" void dp_runtime_set_v110(void *runtime, long rate) DCORE_WEAK;
@@ -904,6 +907,10 @@ bool Modem::link_compression_ok()
 s16 Modem::link_init()
 {
 	dlink::Config c;
+	/* the pumps' bits framed (V.42, MNP, characters) unless the call
+	   is synchronous */
+	if (DCORE_HAS(dp_runtime_set_framed) && dp_runtime_)
+		dp_runtime_set_framed(dp_runtime_, !cfg_.sync);
 	c.ec = cfg_.ec;
 	c.detect = cfg_.ec_detector;
 	c.mnp = cfg_.mnp;
@@ -1105,7 +1112,8 @@ void Modem::update_status(Status s)
 		   the ODPs (the USRobotics Courier; an answerer without the
 		   phase sends flags, which end it); not after V.8 (V.34,
 		   V.90, V.92's quick connect may have agreed LAPM:
-		   qc_lapm), nor on a leased line or a clear channel, whose
+		   qc_lapm), nor on a leased line, a clear channel or PEP
+		   (whose turns put the ends' round trip past T400), whose
 		   two ends connect too far apart for T400 */
 		{
 			const unsigned id = dp_ ? dp_->id : 0;
@@ -1114,7 +1122,8 @@ void Modem::update_status(Status s)
 				id == DP_V92;
 			link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
 				     !(caller_ && dsp_info_.qc_lapm &&
-				       (v8 || leased() || clear_channel())) &&
+				       (v8 || leased() || clear_channel() ||
+					id == DP_PEP)) &&
 				     id != DP_VCVM);
 		}
 		break;
@@ -2703,6 +2712,8 @@ void Modem::call_stats()
 			    "/" + dec(d.pep_rx_rate));
 			number("PEP Packets Accepted", d.pep_good);
 			number("PEP Packets Received Bad", d.pep_bad);
+			row("PEP Micro Turns (Tx/Rx)", dec(d.pep_micro_tx) +
+			    "/" + dec(d.pep_micro_rx));
 		}
 		number("Retrains by Local Modem", d.retrains_local);
 		number("Retrains Requested by Remote Modem",

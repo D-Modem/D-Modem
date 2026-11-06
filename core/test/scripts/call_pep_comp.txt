@@ -1,0 +1,19 @@
+# PEP both ends with compression over V.42: the caller without V.44
+# and zstd (+DS44=0, +DSZ=0), so V.42bis; the caller's ATI11 then
+# shows LAPM, V42bis and PEP's own counts, its micro turns among them
+A ATE0X3W2+MS=PEP+DS44=0+DSZ=0\r
+B ATE0+MS=255\r
+B ATA\r
+A ATD\r
+until A CONNECT 40000
+until B CONNECT 5000
+send A 2000
+send B 2000
+run 8000
+A +++
+run 1500
+A ATI11\r
+run 500
+A ATH\r
+until B NO CARRIER 20000
+run 500

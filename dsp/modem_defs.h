@@ -323,6 +323,7 @@ struct dp_stats {
 	unsigned char pep_rx_bits[DP_STATS_PEP_BINS];
 	float pep_noise[DP_STATS_PEP_BINS];
 	unsigned long pep_bad, pep_good;
+	unsigned long pep_micro_tx, pep_micro_rx;   /* micro turns sent, taken */
 };
 
 /*

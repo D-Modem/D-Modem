@@ -251,6 +251,14 @@ void dp_runtime_set_analog(void *runtime, int analog)
 }
 
 /* see dsplibs.h */
+void dp_runtime_set_framed(void *runtime, int framed)
+{
+	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
+	if (rt)
+		rt->framed = framed;
+}
+
+/* see dsplibs.h */
 void dp_runtime_set_v110(void *runtime, long rate)
 {
 	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);

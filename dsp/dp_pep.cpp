@@ -38,6 +38,11 @@ public:
 
 private:
 	s32 source(u8 *buf, s32 n);
+	bool pull(u8 *v);
+	void pace();
+	void deliver();
+	void deliver_all();
+	bool idle(u8 v);
 	void sink(const u8 *d, s32 n);
 	void log_lines();
 	void run8k(float x);
@@ -51,6 +56,17 @@ private:
 	Resampler down_, up_rs_;
 	std::deque<float> tx_;          /* at srate, to send */
 	std::string pending_;
+	/* the link's bits kept for PEP: the ones they end with, the
+	   last octet and how many of it in a row */
+	static constexpr s16 FLAGS_KEPT = 16;
+	static constexpr s32 TXQ_TURNS = 2;
+	std::deque<u8> txq_;
+	double credit_ = 0;             /* pace()'s bits due */
+	std::deque<u8> rxq_;            /* received, for the link */
+	double rx_credit_ = 0;          /* deliver()'s bits due */
+	s16 ones_ = 0;
+	u8 last_ = 0;
+	s16 same_ = 0;
 
 	/* automode (+MS=PEP,1): a caller that is not PEP's handed on */
 	bool automode_ = false;
@@ -109,30 +125,128 @@ s16 PepPump::start(struct modem *m, enum DP_ID, s16 caller_, s32 srate_, s32)
 	return 0;
 }
 
-/* n octets of the link layer's bits, the first the least significant:
-   it always has them (ones when it has nothing of its own) */
-s32 PepPump::source(u8 *buf, s32 n)
+/* the link's next octet, the first bit the least significant; whether
+   it was kept (not idle()) */
+bool PepPump::pull(u8 *v)
 {
 	u8 b[8];
-	for (s32 i = 0; i < n; i++) {
-		std::fill_n(b, 8, 1);
-		modem_get_bits(modem, 1, b, 8);
-		u8 v = 0;
-		for (s16 k = 0; k < 8; k++)
-			v = static_cast<u8>(v | (b[k] & 1) << k);
-		buf[i] = v;
-	}
-	return n;
+	std::fill_n(b, 8, 1);
+	modem_get_bits(modem, 1, b, 8);
+	u8 x = 0;
+	for (s16 k = 0; k < 8; k++)
+		x = static_cast<u8>(x | (b[k] & 1) << k);
+	*v = x;
+	return !idle(x);
 }
 
-/* octets received, to the link layer, the first bit the least
-   significant */
+/* the link's bits at its rate (connect_at()'s, its bit timers'), one
+   sample's worth, when it frames them: into txq_ while it holds less
+   than a few turns of them; its idle left out */
+void PepPump::pace()
+{
+	if (!up_ || !rt || !rt->framed)
+		return;
+	credit_ += static_cast<double>(mdm_.duplex_rate(false)) / srate;
+	size_t cap = static_cast<size_t>(TXQ_TURNS) *
+		static_cast<size_t>(mdm_.turn_octets());
+	while (credit_ >= 8) {
+		credit_ -= 8;
+		if (txq_.size() >= cap)
+			continue;
+		u8 v;
+		if (pull(&v))
+			txq_.push_back(v);
+	}
+}
+
+/* up to n octets of the link's for PEP: what pace() took, then more at
+   once while it has them (until its idle) */
+s32 PepPump::source(u8 *buf, s32 n)
+{
+	s32 got = 0;
+	while (got < n && !txq_.empty()) {
+		buf[got++] = txq_.front();
+		txq_.pop_front();
+	}
+	u8 v;
+	while (got < n && pull(&v))
+		buf[got++] = v;
+	return got;
+}
+
+/* whether the link's octet v is idle that can go (when the link frames
+   its bits, dp_runtime_set_framed()): ones after at least
+   9 kept (marks: no character or frame has so many), or the flag (at
+   any of its 8 phases) after FLAGS_KEPT of it kept (HDLC's flags
+   between frames, as many as the answerer's detection phase needs to
+   find one as a character; never three in a row in asynchronous
+   characters, whose start bits come every 10); v kept, if not */
+bool PepPump::idle(u8 v)
+{
+	if (!rt || !rt->framed)
+		return false;
+	auto flag = [](u8 x) {
+		for (s16 r = 0; r < 8; r++)
+			if (static_cast<u8>(0x7e << r | 0x7e >> (8 - r)) == x)
+				return true;
+		return false;
+	};
+	if ((v == 0xff && ones_ >= 9) ||
+	    (same_ >= FLAGS_KEPT && v == last_ && flag(v)))
+		return true;
+	if (v == 0xff) {
+		ones_ += 8;
+	} else {
+		/* the ones it ends with, sent last (its top bits) */
+		s16 t = 0;
+		while (t < 8 && (v >> (7 - t) & 1))
+			t++;
+		ones_ = t;
+	}
+	same_ = v == last_ ? static_cast<s16>(std::min<s16>(same_ + 1,
+							     FLAGS_KEPT)) : 1;
+	last_ = v;
+	return false;
+}
+
+/* octets received, for the link layer (deliver()), the first bit the
+   least significant */
 void PepPump::sink(const u8 *d, s32 n)
 {
-	for (s32 i = 0; i < n; i++) {
+	rxq_.insert(rxq_.end(), d, d + n);
+	if (!rt || !rt->framed)
+		deliver_all();
+}
+
+/* (see deliver()) all of them at once: a raw stream's, which has no
+   timers to keep */
+void PepPump::deliver_all()
+{
+	while (!rxq_.empty()) {
 		u8 b[8];
 		for (s16 k = 0; k < 8; k++)
-			b[k] = (d[i] >> k) & 1;
+			b[k] = (rxq_.front() >> k) & 1;
+		rxq_.pop_front();
+		modem_put_bits(modem, 1, b, 8);
+	}
+}
+
+/* received octets to the link at the far side's line rate, one
+   sample's worth (as a modem's line gives them, not a turn's at once:
+   its bit timers, such as V.42's detection phase's, see them come) */
+void PepPump::deliver()
+{
+	if (rxq_.empty()) {
+		rx_credit_ = 0;
+		return;
+	}
+	rx_credit_ += static_cast<double>(mdm_.rx_rate()) / srate;
+	while (rx_credit_ >= 8 && !rxq_.empty()) {
+		rx_credit_ -= 8;
+		u8 b[8];
+		for (s16 k = 0; k < 8; k++)
+			b[k] = (rxq_.front() >> k) & 1;
+		rxq_.pop_front();
 		modem_put_bits(modem, 1, b, 8);
 	}
 }
@@ -146,6 +260,8 @@ void PepPump::stats_pep(bool tables)
 	stats->have |= DP_STATS_PEP;
 	stats->pep_bad = static_cast<unsigned long>(mdm_.packets_bad());
 	stats->pep_good = static_cast<unsigned long>(mdm_.packets_good());
+	stats->pep_micro_tx = static_cast<unsigned long>(mdm_.micro_tx());
+	stats->pep_micro_rx = static_cast<unsigned long>(mdm_.micro_rx());
 	if (!tables)
 		return;
 	stats->pep_tx_rate = mdm_.tx_rate();
@@ -310,6 +426,8 @@ s16 PepPump::process(void *in, void *out, s32 cnt)
 				run8k(y[k]);
 		} else
 			run8k(src[i]);
+		pace();
+		deliver();
 		float y = 0;
 		if (!tx_.empty()) {
 			y = tx_.front();
