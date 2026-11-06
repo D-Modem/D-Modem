@@ -958,7 +958,42 @@ columns at most: the basic commands', the S-registers in use
 \cmdl[plusMS]{+MS} and the other extended settings, and the extended
 parameters.  There are no stored profiles: the list ends with
 \rc{STORED PROFILES: none}.  \cmdl[ampV]{\&V1} gives the last call's
-statistics, as \cmdl[I]{ATI11} (Rockwell's).
+statistics as Rockwell's modems list them: one line each, the name
+padded with dots to 28 columns, then the value.  It covers the same call
+as \cmdl[I]{ATI11} (the one up in online command state, else the last;
+before any, \rc{No Previous Call}).  A call that never came up, or a fax
+call, gets the first line only.  A value the modem does not measure is
+\cmd{N/A}.
+
+\begin{vtable}{2}{|T{0.33\textwidth}|L{0.53\textwidth}|}{AT\&V1 Lines}
+  {\thd{Line} & \thd{Value}}
+TERMINATION REASON & \cmd{NONE} while the call is up; \cmd{LOCAL REQUEST}
+  (\cmdl[H]{ATH}, \cmdl[Z]{ATZ}, \std{DTR}), \cmd{KEY ABORT} (a character
+  while connecting), \cmd{GSTN CLEARDOWN} (the other modem's \std{LAPM}
+  \std{DISC} or \std{MNP} \std{LD}), \cmd{LINK DISCONNECT} (the \std{SIP}
+  call ended), \cmd{CARRIER LOSS}, \cmd{RETRAIN FAILURE} (a retrain that
+  failed), \cmd{INCOMPATIBLE PROTOCOL} (no error correction where it is
+  required, \std{LAPM}'s errors) or \cmd{NO CONNECT} (no dial tone, busy,
+  no answer, training failed). \\ \hline
+LAST TX rate, LAST RX rate & The rates now, or at the end, as
+  \p{n}\cmd{ BPS}; a \std{PCM} rate as Rockwell rounds it (\cmd{53333}). \\ \hline
+HIGHEST TX rate, HIGHEST RX rate & The highest the call reached. \\ \hline
+PROTOCOL & \cmd{LAPM}, \cmd{MNP} or \cmd{NONE}. \\ \hline
+COMPRESSION & \cmd{V44}, \cmd{V42Bis}, \cmd{MNP5}, \cmd{ZSTD} or \cmd{NONE}. \\ \hline
+Line QUALITY & The receiver's mean squared error, as Rockwell's
+  three-digit figure (the \std{NMSE} times 128: lower is better). \\ \hline
+Rx LEVEL & The received power in dBm0 without its sign, three digits (\cmd{015} for $-15$\,dBm0). \\ \hline
+Highest Rx State, Highest TX State, EQM Sum & \cmd{N/A} (Rockwell's
+  pump states). \\ \hline
+RBS Pattern & The frames of six whose bit the network robs, as a hex
+  mask (\cmd{08h}), as the analogue modem's \std{DIL} found them
+  (\std{V.90}, \std{V.92}). \\ \hline
+Rate Drop & \cmd{N/A}. \\ \hline
+Digital Pad & The network's pad: \cmd{None}, \cmd{3dB}, \cmd{6dB}, \ldots
+  (\std{V.90}, \std{V.92}). \\ \hline
+Local Rtrn Count, Remote Rtrn Count & Retrains, ours and the other
+  modem's, two digits. \\ \hline
+\end{vtable}
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -1022,8 +1057,8 @@ I12 & The last \cmd{PEP} call's carriers: each bin's frequency, its
 \cmdl[I]{ATI11} lists the last call's statistics: in online command state
 those of the call that is up, after a call (dialed or answered,
 connected or not) its own, until the next one; before any, \rc{No
-Previous Call}.  \cmdl[I]{ATI6} and \cmdl[ampV]{AT\&V1} give the same
-lines, and \cmdl[hashUD]{AT\#UD} the same figures in Unimodem's form.
+Previous Call}.  \cmdl[I]{ATI6} gives the same lines, \cmdl[ampV]{AT\&V1}
+the same call in Rockwell's form, and \cmdl[hashUD]{AT\#UD} the same figures in Unimodem's form.
 A line whose value the call does not have is left out: the rates and
 what follows for a call that never came up, the frame counts without
 error correction, the coding lines without \std{V.34}, the measurements a

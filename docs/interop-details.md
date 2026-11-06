@@ -1782,7 +1782,7 @@ Two open modems run the same SYN hunt calls (`open_v80_syn1`,
 
 `open_v90a_stats` escapes both D-Modems in V.90 data, on a network with
 a 3 dB pad, a robbed bit and the analogue modem's codec 100 ppm fast, for
-`AT&V1` or `ATI11`, and `AT#UD`. It checks:
+`ATI11`, `AT&V1` and `AT#UD`. It checks:
 
 - each direction's symbol rate and carrier (8000 and PCM downstream, 3429
   baud and 1959 Hz upstream);
@@ -1792,6 +1792,9 @@ a 3 dB pad, a robbed bit and the analogue modem's codec 100 ppm fast, for
 - the pad and the robbed bit as the analogue modem's DIL found them;
 - the same in Unimodem's keys (`AT#UD`'s `DIAG` lines), keys 20 and 21
   per direction: V.34's `C` upstream and PCM's `E` downstream.
+- `AT&V1`'s Rockwell lines: the termination `NONE` while up, the last
+  receive rate, the robbed bit as an `RBS Pattern` mask and the
+  `Digital Pad` of 3dB.
 
 ## Retrains and renegotiations on request
 

@@ -2766,6 +2766,137 @@ void Modem::pep_stats()
 	}
 }
 
+/* AT&V1: the last call's statistics (or this one's) as Rockwell's
+   controllers print them (the RC56 family's V.90 build, in its own
+   order): each label padded with dots to 28 columns, a space, the
+   value; "No Previous Call" before the first.  A call that never came
+   up (and a fax call) has the termination reason only.  The values
+   are ours where we have them: the rates as Rockwell's tables have
+   them (thirds of 8000 rounded, 50667), the protocol and compression
+   in its words, Line QUALITY from the receiver's normalised MSE (128
+   at an MSE of the points' minimum distance squared, 0 to 255), Rx
+   LEVEL the receive power in -dBm0, RBS Pattern the robbed bit frames
+   (bit 0 the first of 6, hex) and Digital Pad the digital loss the
+   DIL found; N/A for what we do not measure (the DSP's state numbers,
+   its EQM sum, the rate drop) */
+void Modem::rockwell_stats()
+{
+	auto row = [this](const char *label, const std::string &value) {
+		std::string line = label;
+		if (line.size() < 28)
+			line.append(28 - line.size(), '.');
+		puts(line + " " + value);
+		crlf();
+	};
+	/* a rate as Rockwell's: thirds of 8000 bit/s rounded */
+	auto rate = [](u32 r) {
+		long thirds = lrint(r * 3.0 / 8000);
+		if (r >= 25000 && r % 1000 &&
+		    fabs(thirds * 8000.0 / 3 - r) < 2)
+			r = static_cast<u32>(lrint(thirds * 8000.0 / 3));
+		return dec(r) + " BPS";
+	};
+	auto highest = [](u32 a, u32 b, const u32 *h, u8 n) {
+		u32 m = a > b ? a : b;
+		for (u8 i = 0; i < n; i++)
+			if (h[i] > m)
+				m = h[i];
+		return m;
+	};
+	static const std::string na = "N/A";
+
+	if (!stats_.call) {
+		puts("No Previous Call");
+		crlf();
+		return;
+	}
+	const char *reason = "NONE";
+	if (stats_.ended) {
+		switch (stats_.cause) {
+		case Cause::None:
+			break;
+		case Cause::LocalHangup:
+		case Cause::DteReset:
+		case Cause::DtrOff:
+			reason = "LOCAL REQUEST";
+			break;
+		case Cause::AnyKey:
+			reason = "KEY ABORT";
+			break;
+		case Cause::RemoteCleardown:
+			reason = "GSTN CLEARDOWN";
+			break;
+		case Cause::LineDropped:
+			reason = "LINK DISCONNECT";
+			break;
+		case Cause::CarrierLost:
+			reason = "CARRIER LOSS";
+			break;
+		case Cause::TrainingFailed:
+			reason = stats_.connected ? "RETRAIN FAILURE" :
+						    "NO CONNECT";
+			break;
+		case Cause::ProtocolFailure:
+			reason = "INCOMPATIBLE PROTOCOL";
+			break;
+		case Cause::NoDialtone:
+		case Cause::Busy:
+		case Cause::NoAnswer:
+		case Cause::NoCarrier:
+			reason = "NO CONNECT";
+			break;
+		}
+	}
+	row("TERMINATION REASON", reason);
+	if (stats_.fax || !stats_.connected)
+		return;
+
+	const struct dp_stats &d = dp_stats_;
+	u32 tx = stats_.ended ? stats_.tx1 : tx_rate_;
+	u32 rx = stats_.ended ? stats_.rx1 : rx_rate_;
+	row("LAST TX rate", rate(tx));
+	row("HIGHEST TX rate", rate(highest(stats_.tx0, tx, stats_.tx_hist,
+					      stats_.tx_hist_n)));
+	row("LAST RX rate", rate(rx));
+	row("HIGHEST RX rate", rate(highest(stats_.rx0, rx, stats_.rx_hist,
+					      stats_.rx_hist_n)));
+	/* Rockwell's words: NONE, MNP, LAPM (CELLULAR for MNP 10, which we
+	   have not); MNP5, V42Bis (V44 as Conexant's later builds) */
+	row("PROTOCOL", protocol_name());
+	std::string comp = compression_name();
+	row("COMPRESSION", comp == "V42bis" ? "V42Bis" : comp);
+	if (d.have & DP_STATS_NMSE) {
+		long q = lrint(d.nmse * 128);
+		row("Line QUALITY", dec(q < 0 ? 0 : q > 255 ? 255 : q, 3));
+	} else {
+		row("Line QUALITY", na);
+	}
+	if (stats_.samples) {
+		long lvl = lrint(-10 * log10(stats_.rx_pow / stats_.samples /
+					     DP_DBM0_POWER + 1e-9));
+		row("Rx LEVEL", dec(lvl < 0 ? 0 : lvl > 99 ? 99 : lvl, 3));
+	} else {
+		row("Rx LEVEL", na);
+	}
+	row("Highest Rx State", na);
+	row("Highest TX State", na);
+	row("EQM Sum", na);
+	if (d.have & DP_STATS_DIL) {
+		row("RBS Pattern", hex(static_cast<u32>(d.robbed_bits & 0x3f),
+				       2, true));
+		row("Rate Drop", na);
+		long pad = lrint(d.digital_loss);
+		row("Digital Pad", pad <= 0 ? std::string("None") :
+					      dec(pad) + "dB");
+	} else {
+		row("RBS Pattern", na);
+		row("Rate Drop", na);
+		row("Digital Pad", na);
+	}
+	row("Local Rtrn Count", dec(d.retrains_local, 2));
+	row("Remote Rtrn Count", dec(d.retrains_remote, 2));
+}
+
 /* a call's rates now (V.59's txDataHistory and rxDataHistory): kept
    from CONNECT until it ends, each direction's when it changes (the
    oldest gone when there are RATE_HISTORY) */

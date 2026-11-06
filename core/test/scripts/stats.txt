@@ -3,7 +3,9 @@
 # 60 ms), in online command state and after it on both sides (our
 # hangup, the remote's cleardown); a V.32bis call with MNP (and MNP 5),
 # then one without error correction, both of which the remote ended
-# (the carrier lost); one nobody answered.  AT&V1 and ATI6 are ATI11;
+# (the carrier lost); one nobody answered.  ATI6 is ATI11; AT&V1 the
+# same as Rockwell's (in online command state, after our hangup, the
+# carrier lost, no answer);
 # AT#UD the same as Unimodem's diagnostics (B's hangup by DTR: its
 # termination cause 20, cct108turnedOff); ATZ clears it
 A ATE0X3+MS=34\r
@@ -21,6 +23,7 @@ run 6000
 A +++
 run 1000
 A ATI11\r
+A AT&V1\r
 A AT#UD\r
 A ATO\r
 run 2000
@@ -67,12 +70,14 @@ hangup B
 until A NO CARRIER 10000
 run 500
 A ATI11\r
+A AT&V1\r
 B ATI11\r
 # no answer
 A ATS7=5D\r
 until A NO ANSWER 10000
 run 500
 A ATI11\r
+A AT&V1\r
 A AT#UD\r
 # ATZ clears the log: none after it; ATZ in a call ends it, and AT#UD
 # then holds only its termination cause (52, the DTE's reset)

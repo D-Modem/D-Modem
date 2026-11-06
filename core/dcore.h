@@ -581,6 +581,7 @@ private:
 	void set_cause(Cause c);
 	void call_stats();
 	void pep_stats();
+	void rockwell_stats();
 	void unimodem_diag();
 	/* V.59's managed objects (v59.cpp): +TMO; the high-level object
 	   of the last call's modulation, a mode object's code, an object's
