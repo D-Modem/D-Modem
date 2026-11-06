@@ -1,3 +1,5 @@
+<img src=".github/banner.png" alt="D-Modem/D-Modem: V.92 softmodem over SIP" width="100%">
+
 # D-Modem
 
 An open V.92 softmodem: connect to dial-up modems over a SIP call, with
