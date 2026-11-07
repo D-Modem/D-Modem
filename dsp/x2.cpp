@@ -20,7 +20,7 @@
 namespace dsp {
 
 const s32 x2_seg_len[X2_NSEGS] = {
-	-1, 363, 20004, 1200, 6000, 1152, -1, -1, 4080, -1,
+	-1, 363, 20004, 1200, 6000, 1152, -1, -1, 4086, -1,
 };
 
 /* the preamble: 22 codes over and over (as G.711 octets), 16 times,
@@ -148,20 +148,23 @@ void X2Map::frame(const unsigned char *bits, unsigned char code[X2_FRAME])
 				best = i;
 		car[best] = 1;
 	}
+	s32 sum = 0;
 	for (i = 0, j = 0; i < X2_FRAME; i++) {
 		code[i] = k56_code(r.lv[i][d[i]], 0);
 		if (car[i]) {
 			last = static_cast<s16>(s[j++] ^ last);
 			if (!last)
 				code[i] &= 0x7f;
-			rds += k56_value(code[i], 0);
+			sum += k56_value(code[i], 0);
 		}
 	}
-	/* the others against the running sum */
+	rds += sum;
+	/* the other: in the training, against the frame's own sum (above
+	   X2_FRAME_DC, negative); in the data against the running sum */
 	for (i = 0; i < X2_FRAME; i++) {
 		if (car[i])
 			continue;
-		if (rds > 0)
+		if (frame_dc ? sum > X2_FRAME_DC : rds > 0)
 			code[i] &= 0x7f;
 		rds += k56_value(code[i], 0);
 	}
@@ -189,6 +192,7 @@ void X2Train::segment(s16 s)
 	case X2_SYNC:
 		map.init(x2_rate_a);
 		map.last = 1;
+		map.frame_dc = 1;
 		break;
 	case X2_REC:
 		/* our record, in whole frames (zeros after it) */
@@ -196,9 +200,6 @@ void X2Train::segment(s16 s)
 		x2_record(rec_w, 3, rec);
 		rec_pos = 0;
 		rec_n = 0;
-		break;
-	case X2_START:
-		map.init(data_rate ? *data_rate : x2_rate_b);
 		break;
 	default:
 		break;
@@ -244,6 +245,11 @@ unsigned char X2Train::next(const unsigned char *data)
 	case X2_REC:
 	case X2_START:
 	case X2_DATA:
+		if (!pos && seg == X2_START && n == X2_FRAME) {
+			/* (a frame of ones in levels A first) */
+			map.init(data_rate ? *data_rate : x2_rate_b);
+			map.frame_dc = 0;
+		}
 		if (!pos) {
 			s16 nb = map.frame_bits();
 			if (seg == X2_DATA && data) {
@@ -271,7 +277,8 @@ unsigned char X2Train::next(const unsigned char *data)
 	} else if (len < 0 && go) {
 		/* a held segment ends: on a frame, a record */
 		bool at = seg < X2_SYNC ||
-			(!pos && (seg != X2_REC || !rec_pos));
+			(!pos && (seg != X2_REC || !rec_pos) &&
+			 (seg != X2_SYNC || n >= X2_SYNC_MIN));
 		if (at && seg != X2_DATA)
 			segment(static_cast<s16>(seg + 1));
 	}

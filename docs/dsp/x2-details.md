@@ -35,9 +35,9 @@ silent until the client's J; then its training, in G.711 octets:
 | J words | 1200 | the 12 bit word 09B0 99 times, then 099F, scrambled, at ±0x31 |
 | Ones | 6000 | scrambled ones at ±0x41 |
 | Alignment | 1152 | `9e 28 a1 21 a8 1e`, frame f turned f places left |
-| Sync | ≥ 10002 | mapped frames of ones (levels A), until the client's MP |
+| Sync | ≥ 10002 | mapped frames of ones (levels A), until the client's MP, ending on a frame |
 | Record | whole records | the server's record, until the client's E |
-| Start | 4080 | mapped ones in the data levels |
+| Start | 4086 | one frame of ones in levels A, then ones in the data levels |
 | Data | | mapped data frames |
 
 TRN has a fixed length: the client starts its phase 4 on the J words.
@@ -75,13 +75,19 @@ bit/s B = 19, MD = 5 and every position has the same 9 levels:
 - levels A (before the record): `a5 a7 ad af b7 bd c5 cf e5`;
 - levels B (32000 bit/s): `a5 a8 ab ae b3 b9 bf cb df`.
 
-The sixth sign does not carry data. The I-modem's choice depends on the
-last few values and the rest of the frame, but its exact rule is not
-known; D-Modem sets it against the running sum. The client appears to
-rely on the exact rule (most likely to train on the known frames of
-ones): with the I-modem's own octets from the sync segment on, the
-Courier starts error correction, and with D-Modem's it hangs up about a
-second into data.
+The sixth sign does not carry data. In levels A (the sync segment,
+the records and the first frame of the start) the I-modem's rule is
+known: the sixth value is negative when the other five, as signed
+linear values (14 bits), sum to more than 805, and positive otherwise.
+This matches every frame the I-modem sent, and D-Modem uses it.
+
+In the data levels the rule is not known. It is not frame-local: a
+leaky running sum (about 0.996 a frame) agrees with the I-modem about
+85% of the time, and a fit on how often each level has been sent about
+88%. D-Modem sets it against the running sum. The client appears to
+check it: with the I-modem's own octets from the start segment on, the
+Courier starts error correction, and with D-Modem's it hangs up about
+0.3 s into data.
 
 Upstream is V.34 data at the client's symbol rate with GPA, expanded
 shaping, the 64 state trellis code and non-linear encoding (9.7/V.34,

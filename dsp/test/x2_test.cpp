@@ -156,7 +156,7 @@ TEST(X2Train, Segments)
 		t.next();
 	EXPECT_EQ(t.rec_n, 1);
 	EXPECT_EQ(t.seg, X2_START);
-	for (int i = 0; i < 4080; i++)
+	for (int i = 0; i < 4086; i++)
 		t.next();
 	EXPECT_EQ(t.seg, X2_DATA);
 }

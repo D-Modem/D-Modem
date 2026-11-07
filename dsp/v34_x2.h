@@ -36,6 +36,7 @@ struct V34X2 {
 	s16 x2_quiet;           /* the client went quiet after its J */
 	s16 x2_mp_in;           /* its MP is in */
 	s16 x2_up;              /* the upstream's rate, N * 2400 */
+	s16 x2_rec_e;           /* our records sent at its E (-1 before) */
 	unsigned char x2_bits[X2_MAXBITS];
 
 	s16 x2_start();
@@ -67,6 +68,7 @@ s16 V34X2<P>::x2_start()
 	x2_quiet = 0;
 	x2_mp_in = 0;
 	x2_up = 0;
+	x2_rec_e = -1;
 	x2_t0 = self.total;
 	/* PCM once our tone is out of the converters */
 	self.pcm_tx = 0;
@@ -196,9 +198,9 @@ s16 V34X2<P>::x2_step(s32 c)
 				return self.fallback("no common data rate");
 			}
 		}
-		/* frames of ones (1667 at least) until its MP; then our
+		/* frames of ones (X2_SYNC_MIN codes at least) until its MP; then our
 		   record */
-		if (x2t.seg == X2_SYNC && x2_mp_in && x2t.n >= 10002 &&
+		if (x2t.seg == X2_SYNC && x2_mp_in &&
 		    !x2t.go) {
 			x2t.go = 1;
 			x2_t0 = self.total;
@@ -211,11 +213,13 @@ s16 V34X2<P>::x2_step(s32 c)
 		break;
 	case X4_REC:
 		/* our record until its E */
-		if (x2t.seg == X2_REC && r.ev_e && !x2t.go) {
+		if (x2t.seg == X2_REC && r.ev_e && x2_rec_e < 0) {
 			DSP_DBG("v34: x2: the client's E after %d records\n",
 				x2t.rec_n);
-			x2t.go = 1;
+			x2_rec_e = x2t.rec_n;
 		}
+		if (x2_rec_e >= 0 && !x2t.go)
+			x2t.go = 1;
 		if (x2t.seg == X2_DATA) {
 			self.set_state(X4_DATA);
 			self.set_rates(self.rate_tx, self.rate_rx);

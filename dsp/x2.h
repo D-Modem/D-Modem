@@ -32,6 +32,10 @@ namespace dsp {
 #define X2_FRAME        6       /* codes a frame */
 #define X2_MAXBITS      48      /* data bits a frame at most */
 #define X2_MAXLEVELS    128
+#define X2_SYNC_MIN     10002   /* X2_SYNC's codes at least (1667 frames) */
+/* the training's free sign: negative when the frame's other values sum
+   above this (k56_value()'s 14 bit units) */
+#define X2_FRAME_DC     805
 
 /* a record's bits (the client's MP, the server's own): 17 ones, a zero,
    each 16 bit word from its least significant bit and a zero after it,
@@ -59,6 +63,7 @@ struct X2Map {
 	u32 scr;                /* the scrambler, shared with X2Train */
 	s16 last;               /* the last sign carrying a data bit */
 	s32 rds;                /* the running sum of the sent values */
+	s16 frame_dc;           /* the free sign by the frame's own sum */
 
 	void init(const X2Rate &rate);
 	/* the data bits a frame */
@@ -82,7 +87,8 @@ enum X2Seg {
 	X2_SYNC,        /* mapped frames (levels A) of ones, until the
 			   client's MP */
 	X2_REC,         /* our record over and over, until the client's E */
-	X2_START,       /* ones in the data levels, 4080 */
+	X2_START,       /* a frame of ones in levels A, then ones in the
+			   data levels, 4086 */
 	X2_DATA,        /* the data frames (X2Map's) */
 	X2_NSEGS
 };
