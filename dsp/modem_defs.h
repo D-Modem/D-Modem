@@ -165,6 +165,9 @@ enum DP_ID {
 				   number is D-Modem's */
 	DP_V34      = 34,
 	DP_K56      = 56,       /* K56flex: the core runs V.90 for it */
+	DP_X2       = 57,       /* USRobotics' x2, as the server (the V.34
+				   pump, v34_x2.h); not in V.250, the number
+				   is D-Modem's */
 	DP_CLEAR    = 64,       /* a clear 64 kbit/s digital channel (an
 				   ISDN B-channel's data call): no
 				   modulation, 8 bits an octet */

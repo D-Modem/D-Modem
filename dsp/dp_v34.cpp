@@ -41,6 +41,7 @@
 #include "v34.h"
 #include "k56flex.h"
 #include "k56flex_rx.h"
+#include "x2.h"
 #include "v90.h"
 #include "v90a.h"
 #include "v91.h"
@@ -173,6 +174,15 @@ enum v34_state {
 	K3_TRN2,
 	K4_MP,
 	K4_DATA,
+	/* x2's phases 3 and 4 (v34_x2.h), the server's: silence until the
+	   client's J; the preamble and TRN until its phase 4; 09B0, ones,
+	   the alignment and frames of ones until its MP; our record until
+	   its E, then ones; the data */
+	X3_WAIT,
+	X3_TRAIN,
+	X3_SEQ,
+	X4_REC,
+	X4_DATA,
 	/* phase 2 answerer */
 	P2A_INFO0,
 	P2A_A,
@@ -190,6 +200,8 @@ enum v34_state {
 	P2A_S2_40,
 	P2A_S2_10,
 	P2A_INFO1,
+	/* x2: silence after L1 until the client's marker (v34_x2.h) */
+	P2A_X2MARK,
 	/* phase 2 caller */
 	P2C_INFO0,
 	P2C_B,
@@ -809,10 +821,12 @@ struct V34Qc {
 
 /* (PcmFrames: V.90's phase 4 frames, MP the sequence) */
 #include "v34_k56.h"
+#include "v34_x2.h"
 
 struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	V34Moh<V34Pump>,
 	V34K56<V34Pump>,
+	V34X2<V34Pump>,
 	V34V8<V34Pump>,
 	V34Info0<V34Pump>,
 	V34Probe<V34Pump>,
@@ -1133,9 +1147,17 @@ void V34Info0<P>::make_info0(BitQ *q)
 	/* 2743, 2800, 3429; 3000 low and high carrier, 3200 low and high
 	   carrier; 3429 allowed */
 	q->put(info0_rates, 8);
-	q->put(0, 1);        /* power reduction */
-	q->put(0, 3);        /* symbol rate difference */
-	q->put(0, 1);        /* CME */
+	if (self.x2 && !self.caller && !self.pcm) {
+		/* x2's server (as the I-modem's): power reduction, a
+		   difference of 6 and CME, its bits 23 and 24 the mark */
+		q->put(1, 1);
+		q->put(6, 3);
+		q->put(1, 1);
+	} else {
+		q->put(0, 1);        /* power reduction */
+		q->put(0, 3);        /* symbol rate difference */
+		q->put(0, 1);        /* CME */
+	}
 	q->put(1, 1);        /* 1664 point constellations */
 	if (self.pcm) {
 		/* short phase 2 (Table 15/V.92), not in a retrain (where
@@ -1342,6 +1364,8 @@ s16 V34Pump::info_expected()
 		return info0_rx_len();
 	if (hdx_on)
 		return 31 + 16;         /* INFOh */
+	if (state == P2A_X2MARK)
+		return 19 + 16;         /* x2's marker, 7 bits */
 	return caller ? 50 + 16 : 89 + 16;
 }
 
@@ -2222,6 +2246,13 @@ void V34Cc<P>::info_frame(CcRx *r)
 				"preemph %d, max rate %d, md %d\n",
 				rinfo1a.power_red, rinfo1a.add_power_red,
 				rinfo1a.preemph, rinfo1a.max_rate, rinfo1a.md);
+		} else if (self.state == P2A_X2MARK) {
+			/* x2's marker: the carrier, two symbol rates */
+			self.x2_mark = 0;
+			for (s16 i = 0; i < 7; i++)
+				self.x2_mark = static_cast<s16>(
+					self.x2_mark | (r->frame[12 + i] & 1) << i);
+			DSP_DBG("v34: x2 marker %#04x\n", self.x2_mark);
 		} else {
 			s16 b;
 			rinfo1c.parse(r->frame);
@@ -2379,7 +2410,8 @@ void V34Cc<P>::cc_phase_frame()
 	for (k = 0; k < len; k++)
 		r->frame[k] = k < 4 ? 1 : h[(n - len + k) % CC_HIST];
 	if (!info_crc_ok(r->frame, len - 16) ||
-	    (ev_info0 && info_crc_ok(r->frame, self.info0_rx_len() - 16)))
+	    (ev_info0 && len > self.info0_rx_len() &&
+	     info_crc_ok(r->frame, self.info0_rx_len() - 16)))
 		return;
 	if (dsplibs_debug_level >= 6)
 		DSP_DBG("v34: INFO frame at sampling phase %d (timing at "
@@ -2426,7 +2458,7 @@ void V34Cc<P>::cc_rx_bit(s16 bit)
 				ok = r->frame[i] == ((0x72 >> (11 - i)) & 1);
 			/* (not an INFO1: the remote's INFO0 again and what
 			   follows it) */
-			if (ok && ev_info0 &&
+			if (ok && ev_info0 && len > self.info0_rx_len() &&
 			    info_crc_ok(r->frame, self.info0_rx_len() - 16))
 				ok = 0;
 			if (ok) {
@@ -2980,6 +3012,9 @@ void V34Pump::ec_schedule()
 		   our Js */
 		(k56_on && state == K3_TRAIN && k56t.seg >= K56_TRN1A &&
 		 k56t.seg <= K56_JS) ||
+		/* x2: the preamble and TRN, the client silent after its J
+		   until its phase 4 */
+		(x2_on && state == X3_TRAIN) ||
 		/* V.92 PCM upstream: the same, until Su */
 		(state == V92_RUN && v92u.ec_train()) ||
 		/* V.90's analogue modem: S to Ja, until the digital
@@ -3156,7 +3191,7 @@ void V34Pump::pump_rx_sample(float x)
 		return;
 	}
 	/* (K56flex's phases 3 and 4 come before phase 2 in the list) */
-	if (state < P2A_INFO0 && !(state >= K3_TRAIN && state <= K4_DATA)) {
+	if (state < P2A_INFO0 && !(state >= K3_TRAIN && state <= X4_DATA)) {
 		bit = v21.run(x);
 		if (bit >= 0 && v21.carrier)
 			v8_rx_bit(bit);
@@ -5853,6 +5888,13 @@ s16 V34Pump::handshake()
 	case K4_MP:
 	case K4_DATA:
 		return k56_step(c);
+	case P2A_X2MARK:
+	case X3_WAIT:
+	case X3_TRAIN:
+	case X3_SEQ:
+	case X4_REC:
+	case X4_DATA:
+		return x2_step(c);
 	/* V.92 short phase 1, calling */
 	case QCC_QC1A:
 	case QCC_WAIT:
@@ -5976,7 +6018,15 @@ s16 V34Pump::handshake()
 		}
 		break;
 	case P2A_L1:
-		if (c >= ms2samples(160, srate)) {
+		/* x2: L1 at L2's level, then silence for the client's
+		   marker */
+		if (x2 && !pcm)
+			probe_gain = 1;
+		if (c >= ms2samples(160, srate) && x2 && !pcm) {
+			set_state(P2A_X2MARK);
+			txm = TXM_SILENCE;
+			ev_info1 = 0;
+		} else if (c >= ms2samples(160, srate)) {
 			set_state(P2A_L2);
 			probe_gain = 1;
 		}
@@ -7319,12 +7369,19 @@ float V34Pump::pump_tx_sample()
 		break;
 	case TXM_FSK:
 		y = fsk.sample([this] {
-			if (v8tx.pos >= v8tx.n && v8tx_repeat)
+			if (v8tx.pos >= v8tx.n && v8tx_repeat) {
 				v8tx.pos = 0;
+				/* x2's server: its JM's carrier turned over
+				   after each message */
+				if (x2 && state == V8A_JM && !pcm)
+					x2_jm_sign = static_cast<s16>(
+						-x2_jm_sign);
+			}
 			return v8tx.pos < v8tx.n ?
 				       static_cast<s16>(v8tx.b[v8tx.pos++]) :
 				       1;
 		});
+		y *= x2_jm_sign;
 		break;
 	case TXM_CC:
 		y = cc.sample([this] { return cc_symbol(this); });
@@ -7408,7 +7465,7 @@ s16 V34Pump::sample(float x, float *y, const float *ref)
 			return DPSTAT_ERROR;
 	}
 	if (state != V34_DATA && state != V90A_DATA && state != K4_DATA &&
-	    state != KC4_DATA &&
+	    state != KC4_DATA && state != X4_DATA &&
 	    !hdx_up && total >= timeout) {
 		DSP_DBG("v34: start-up timeout in state %d\n", state);
 		return DPSTAT_ERROR;
@@ -7560,7 +7617,8 @@ s16 V34Pump::process(void *in, void *out, s32 cnt)
 			   echo canceller */
 			float ref[2];
 			s16 m;
-			pcm_ = k56_on ? k56_sample() : v90tx.sample();
+			pcm_ = k56_on ? k56_sample() : x2_on ? x2_sample() :
+				v90tx.sample();
 			m = rs_ref.run(pcm_, ref);
 			for (k = 0; k < m && ref_n < V34_FIFO; k++)
 				ref_fifo[ref_n++] = ref[k];
@@ -7632,6 +7690,13 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	/* (and the analogue modem's, calling: below) */
 	k56c = id == DP_K56 && caller_;
 	if (id == DP_K56)
+		id = DP_V90;
+	/* x2 as the server (the digital modem, answering), on a 8000 Hz
+	   line; V.90 and V.34 for a caller without it */
+	x2 = id == DP_X2 && !caller_ && line_rate == 8000;
+	x2_on = 0;
+	x2_jm_sign = 1;
+	if (id == DP_X2)
 		id = DP_V90;
 	/* a V.90 digital modem needs the 8000 Hz G.711 network */
 	v90 = (id == DP_V90 || id == DP_V92) && line_rate == 8000;
@@ -7840,7 +7905,7 @@ void V34Pump::cleanup()
    V.90 (the digital modem) and V.91 run from V.8 on this pump too, and
    V.92 starts it as well (V.90 or V.34) */
 static const enum DP_ID v34_ids[] = { DP_V8, DP_V34, DP_V90, DP_V91, DP_V92,
-				       DP_K56 };
+				       DP_K56, DP_X2 };
 
 /* this pump for v34_ids */
 s16 dp_v34_init(void)

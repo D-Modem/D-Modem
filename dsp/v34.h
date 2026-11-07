@@ -615,6 +615,9 @@ struct V34Rx {
 				   16 points after its J' (our Js asked) */
 	s16 i16, q16;           /* the 16 point decision's turn and
 				   quarter point */
+	s16 x2;                 /* x2's client: its MP is a record of 4
+				   words (x2.h) */
+	u16 x2_w[4];            /* the last good one's */
 	s16 jword;
 	unsigned char mpbits[200];
 	/* V.90 digital modem: Ja carries the DIL descriptor */
@@ -632,6 +635,8 @@ struct V34Rx {
 	s16 mp_n, mp_len;       /* collecting an MP frame */
 	s16 ones;               /* ones since the end of the last MP frame */
 	s16 after_mp;
+	s16 x2_e_n, x2_e_ones;  /* x2: bits and ones since the last MP
+				   frame (E through a burst) */
 	s16 ev_mp;
 	V34Mp mp;       /* the remote's MP */
 	s32 mp_end;             /* symbol of the end of the last MP frame */
