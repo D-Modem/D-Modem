@@ -91,10 +91,11 @@ void unmap(const X2Rate &r, const unsigned char code[X2_FRAME], s16 *last,
 		bits[k++] = (x >> i) & 1;
 }
 
-/* random frames at both start-up rates back to their bits */
+/* random frames at both start-up rates and the next one back to their
+   bits */
 TEST(X2Map, DecodesBack)
 {
-	for (const X2Rate *r : { &x2_rate_a, &x2_rate_b }) {
+	for (const X2Rate *r : { &x2_rate_a, &x2_rate_b, &x2_rate_c }) {
 		X2Map m{};
 		m.init(*r);
 		m.last = 1;
@@ -106,7 +107,7 @@ TEST(X2Map, DecodesBack)
 			unsigned char in[X2_MAXBITS], line[X2_MAXBITS],
 				code[X2_FRAME];
 			s16 nb = m.frame_bits();
-			ASSERT_EQ(nb, 24);
+			ASSERT_EQ(nb, r == &x2_rate_c ? 41 : 24);
 			for (s16 i = 0; i < nb; i++)
 				in[i] = static_cast<unsigned char>(rand() & 1);
 			m.frame(in, code);

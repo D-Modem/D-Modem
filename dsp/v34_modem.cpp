@@ -1260,6 +1260,8 @@ void V34Rx::reneg_s()
 	mse_mid = mse_old = 0;
 	ev_reneg = ev_s = 1;
 	ev_mp = ev_e = 0;
+	/* (its TRN and MP on 4 points, whatever phase 4 had) */
+	ev_jp = 0;
 	/* V.90: CP, CP' and E of the renegotiation to come */
 	ev_cp = ev_cpack = 0;
 	cp_silence = 0;

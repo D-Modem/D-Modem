@@ -89,6 +89,34 @@ the start segment, then sets it against a running sum that starts from
 zero there (a leaky sum agrees with it about 87% of the time on three
 calls). D-Modem sets it against the running sum.
 
+### The rate change
+
+The data starts at the start-up rate. At the data levels' frame 16882
+(counting the start segment's from 0; 12.66 s) the I-modem sends, the
+same in every call:
+
+- 8 frames `a5 a5 a5 25 25 25` and one `25 25 25 a5 a5 a5`, as they
+  are;
+- its scrambler from zero (and the last sign positive), then its record
+  in the data levels, 10 times without the acknowledge bit (`733C`)
+  and 33 times with it;
+- one more frame, then the next rate's levels. With the Courier's
+  settings of the closed-loop tests that is 64 levels in each position
+  (the first position's list one larger at the top and without `ce`):
+  B = 36, MD = 5, 54666 bit/s. With the Courier's defaults the I-modem
+  went to 50 and 51 levels (B = 34, 52000 bit/s). How the server learns
+  which is not known: nothing the client sends differs.
+
+The Courier renegotiates its upstream on a timer of its own about then:
+S in data mode, S-bar, a short TRN, its MP (word 0's bits 2 to 5 now
+14 or 12, word 1's mask `1FFE`), on 4 points even when phase 4's TRN
+went to 16. It waits for the marker and records before it acknowledges
+and sends E; then its upstream goes up (28800 bit/s). D-Modem answers
+its MP with the marker and records when they have not gone yet, and
+otherwise with its record until E. In some calls the Courier's S comes
+just after the marker and it then sends a long TRN without an MP;
+that case is not handled yet.
+
 Upstream is V.34 data at the client's symbol rate with GPA, expanded
 shaping, the 64 state trellis code and non-linear encoding (9.7/V.34,
 theta 0.3125), at the highest rate of the client's mask up to 12

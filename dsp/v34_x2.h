@@ -23,6 +23,16 @@
 #define V34_X2_H
 
 
+/* the I-modem's marker 12.7 s into the data (frames from the first in
+   the data levels), its records after it */
+#define X2_MARK_AT      16882
+#define X2_MARK_N       9
+/* the I-modem's next rate: one frame after its 43 records */
+#define X2_SWITCH_AFTER (X2_MARK_N + 43 * 4 + 1)
+/* the data's first frame by that count: after the start's 680 in the
+   data levels */
+#define X2_START_FR     680
+
 /* the x2 part of the pump */
 template <class P>
 struct V34X2 {
@@ -37,6 +47,17 @@ struct V34X2 {
 	s16 x2_mp_in;           /* its MP is in */
 	s16 x2_up;              /* the upstream's rate, N * 2400 */
 	s16 x2_rec_e;           /* our records sent at its E (-1 before) */
+	s16 x2_reneg;           /* the client renegotiates its rate */
+	s16 x2_rec_out;         /* our record in the data, 4 frames of it
+				   (its bit next), -1 none */
+	unsigned char x2_rec[96];
+	s32 x2_fr;              /* frames since the first in the data
+				   levels */
+	s16 x2_rec_left;        /* records still to send (at the marker) */
+	s32 x2_mark_fr;         /* our marker's frame (sooner as the
+				   answer to the client's MP) */
+	s32 x2_switch_fr;       /* our next rate's frame */
+	unsigned char x2_raw[X2_FRAME];
 	unsigned char x2_bits[X2_MAXBITS];
 
 	s16 x2_start();
@@ -69,6 +90,12 @@ s16 V34X2<P>::x2_start()
 	x2_mp_in = 0;
 	x2_up = 0;
 	x2_rec_e = -1;
+	x2_reneg = 0;
+	x2_rec_out = -1;
+	x2_rec_left = 0;
+	x2_fr = X2_START_FR - 1;
+	x2_mark_fr = X2_MARK_AT;
+	x2_switch_fr = X2_MARK_AT + X2_SWITCH_AFTER;
 	x2_t0 = self.total;
 	/* PCM once our tone is out of the converters */
 	self.pcm_tx = 0;
@@ -126,9 +153,73 @@ s16 V34X2<P>::x2_sample()
 	s16 s0 = x2t.seg;
 	if (x2t.seg == X2_DATA) {
 		if (!x2t.pos)
+			x2_fr++;
+		if (!x2t.pos && x2_fr == x2_switch_fr) {
+			x2t.map.init(x2_rate_c);
+			self.rate_tx = static_cast<s32>(x2t.map.frame_bits()) *
+				8000 / X2_FRAME;
+			self.set_rates(self.rate_tx, self.rate_rx);
+			DSP_DBG("v34: x2: down %" PRId32 " from here (%" PRId32
+				" ms)\n", self.rate_tx,
+				self.total * 1000 / self.srate);
+		}
+		if (!x2t.pos && x2_fr >= x2_mark_fr &&
+		    x2_fr < x2_mark_fr + X2_MARK_N) {
+			/* the I-modem's: 8 frames +++---, one ---+++ */
+			static const unsigned char m[2][X2_FRAME] = {
+				{ 0xa5, 0xa5, 0xa5, 0x25, 0x25, 0x25 },
+				{ 0x25, 0x25, 0x25, 0xa5, 0xa5, 0xa5 } };
+			s16 k = x2_fr == x2_mark_fr + X2_MARK_N - 1;
+			for (s16 i = 0; i < X2_FRAME; i++)
+				x2_raw[i] = k56_code(m[k][i] | 0x80, 0) &
+					(m[k][i] & 0x80 ? 0xff : 0x7f);
+			x2t.raw = x2_raw;
+			if (x2_fr == x2_mark_fr)
+				DSP_DBG("v34: x2: our marker (%" PRId32
+					" ms)\n", self.total * 1000 /
+					self.srate);
+			if (x2_fr == x2_mark_fr + X2_MARK_N - 1) {
+				/* then our record: 10 without the
+				   acknowledge bit, 33 with it */
+				u16 w[3] = { static_cast<u16>(x2t.rec_w[0] &
+							      0x7fff),
+					     x2t.rec_w[1], x2t.rec_w[2] };
+				memset(x2_rec, 0, sizeof x2_rec);
+				x2_record(w, 3, x2_rec);
+				x2_rec_out = 0;
+				x2_rec_left = 43;
+			}
+		} else if (!x2t.pos && x2_rec_out >= 0) {
+			/* our record in place of the data (a renegotiation) */
+			s16 nb = x2t.map.frame_bits();
+			memcpy(x2_bits, x2_rec + x2_rec_out,
+			       static_cast<size_t>(nb));
+			x2_rec_out = static_cast<s16>((x2_rec_out + nb) %
+						      sizeof x2_rec);
+			if (!x2_rec_out && x2_rec_left > 0) {
+				if (--x2_rec_left == 33) {
+					memset(x2_rec, 0, sizeof x2_rec);
+					x2_record(x2t.rec_w, 3, x2_rec);
+				}
+				if (!x2_rec_left) {
+					DSP_DBG("v34: x2: our records sent (%"
+						PRId32 " ms)\n", self.total *
+						1000 / self.srate);
+					x2_rec_out = -1;
+				}
+			} else if (!x2_reneg && !x2_rec_out && !x2_rec_left)
+				/* the client's E: the data again after the
+				   record */
+				x2_rec_out = -1;
+		} else if (!x2t.pos)
 			CoreBits{ self.modem }.get(x2_bits,
 						   x2t.map.frame_bits());
 		code = x2t.next(x2_bits);
+		if (x2t.pos == 1 && x2_fr == x2_mark_fr + X2_MARK_N - 1) {
+			/* the scrambler from zero after the marker */
+			x2t.map.scr = 0;
+			x2t.map.last = 1;
+		}
 	} else
 		code = x2t.next();
 	if (x2t.seg != s0)
@@ -233,6 +324,50 @@ s16 V34X2<P>::x2_step(s32 c)
 		    ms2samples(8000, self.srate)) {
 			DSP_DBG("v34: x2: no E from the client\n");
 			return self.fallback("no E");
+		}
+		break;
+	case X4_DATA:
+		/* the client's renegotiation: its S, S-bar, TRN, MP and E on
+		   4 points (its upstream rate); our downstream goes on */
+		if (r.ev_reneg) {
+			DSP_DBG("v34: x2: the client renegotiates (%" PRId32
+				" ms)\n", self.total * 1000 / self.srate);
+			r.ev_reneg = 0;
+			x2_reneg = 1;
+			x2_mp_in = 0;
+			x2_t0 = self.total;
+		}
+		if (!x2_reneg)
+			break;
+		if (r.ev_mp && !x2_mp_in) {
+			x2_mp_in = 1;
+			if (x2_data_setup()) {
+				DSP_DBG("v34: x2: no common rate\n");
+				return DPSTAT_ERROR;
+			}
+			if (x2_fr + 1 < x2_mark_fr) {
+				/* the answer: our marker and records now */
+				x2_mark_fr = x2_fr + 1;
+				x2_switch_fr = x2_mark_fr + X2_SWITCH_AFTER;
+			} else if (x2_fr >= x2_mark_fr + X2_MARK_N &&
+				   !x2_rec_left) {
+				/* our record (its acknowledge bit set) in
+				   the data until its E */
+				memset(x2_rec, 0, sizeof x2_rec);
+				x2_record(x2t.rec_w, 3, x2_rec);
+				x2_rec_out = 0;
+			}
+		}
+		if (x2_mp_in && r.ev_e) {
+			x2_reneg = 0;
+			self.set_rates(self.rate_tx, self.rate_rx);
+			DSP_DBG("v34: x2 renegotiated " RATE_FMT "\n",
+				self.rate_tx, self.rate_rx);
+		} else if (self.total - x2_t0 >= ms2samples(5000,
+							      self.srate)) {
+			DSP_DBG("v34: x2: the client's renegotiation timed "
+				"out\n");
+			return DPSTAT_ERROR;
 		}
 		break;
 	default:

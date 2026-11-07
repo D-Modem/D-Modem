@@ -53,6 +53,31 @@ static const unsigned char x2_lv_b[9] = {
 	0xa5, 0xa8, 0xab, 0xae, 0xb3, 0xb9, 0xbf, 0xcb, 0xdf,
 };
 
+/* the I-modem's rate after its records in the data with the Courier's
+   settings of these tests (54666 bit/s, 36 bits and 5 signs: 64 levels
+   in each position, the first's one larger at the top, one fewer in
+   the middle) */
+static const unsigned char x2_lv_c0[64] = {
+	0x9d, 0x9e, 0x9f, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4,
+	0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac,
+	0xad, 0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4,
+	0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc,
+	0xbd, 0xbe, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4,
+	0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcc,
+	0xcd, 0xcf, 0xd1, 0xd3, 0xd5, 0xd7, 0xd9, 0xdb,
+	0xdd, 0xdf, 0xe2, 0xe6, 0xea, 0xee, 0xf4, 0xfb,
+};
+static const unsigned char x2_lv_c[64] = {
+	0x9e, 0x9f, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5,
+	0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad,
+	0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5,
+	0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd,
+	0xbe, 0xbf, 0xc0, 0xc1, 0xc2, 0xc3, 0xc4, 0xc5,
+	0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xcb, 0xcc, 0xcd,
+	0xce, 0xcf, 0xd1, 0xd3, 0xd5, 0xd7, 0xd9, 0xdb,
+	0xdd, 0xdf, 0xe2, 0xe6, 0xea, 0xee, 0xf4, 0xfb,
+};
+
 const X2Rate x2_rate_a = {
 	19, 5, { 9, 9, 9, 9, 9, 9 },
 	{ x2_lv_a, x2_lv_a, x2_lv_a, x2_lv_a, x2_lv_a, x2_lv_a },
@@ -60,6 +85,11 @@ const X2Rate x2_rate_a = {
 const X2Rate x2_rate_b = {
 	19, 5, { 9, 9, 9, 9, 9, 9 },
 	{ x2_lv_b, x2_lv_b, x2_lv_b, x2_lv_b, x2_lv_b, x2_lv_b },
+};
+
+const X2Rate x2_rate_c = {
+	36, 5, { 64, 64, 64, 64, 64, 64 },
+	{ x2_lv_c0, x2_lv_c, x2_lv_c, x2_lv_c, x2_lv_c, x2_lv_c },
 };
 
 /* the CRC of a record's words (bits, one a byte) */
@@ -170,6 +200,13 @@ void X2Map::frame(const unsigned char *bits, unsigned char code[X2_FRAME])
 	}
 }
 
+/* (see x2.h) */
+void X2Map::raw(const unsigned char code[X2_FRAME])
+{
+	for (s16 i = 0; i < X2_FRAME; i++)
+		rds += k56_value(code[i], 0);
+}
+
 /* silence, with our record's words */
 void X2Train::init()
 {
@@ -252,7 +289,9 @@ unsigned char X2Train::next(const unsigned char *data)
 		}
 		if (!pos) {
 			s16 nb = map.frame_bits();
-			if (seg == X2_DATA && data) {
+			if (seg == X2_DATA && raw) {
+				/* (as they are) */
+			} else if (seg == X2_DATA && data) {
 				memcpy(bits, data, static_cast<size_t>(nb));
 			} else if (seg == X2_REC) {
 				for (s16 i = 0; i < nb; i++) {
@@ -265,7 +304,12 @@ unsigned char X2Train::next(const unsigned char *data)
 			} else {
 				memset(bits, 1, sizeof bits);
 			}
-			map.frame(bits, codes);
+			if (seg == X2_DATA && raw) {
+				memcpy(codes, raw, X2_FRAME);
+				map.raw(raw);
+				raw = nullptr;
+			} else
+				map.frame(bits, codes);
 		}
 		code = codes[pos];
 		pos = static_cast<s16>((pos + 1) % X2_FRAME);

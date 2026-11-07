@@ -70,11 +70,15 @@ struct X2Map {
 	s16 frame_bits() const { return r.B + r.MD; }
 	/* frame_bits() data bits (one a byte) to 6 codes */
 	void frame(const unsigned char *bits, unsigned char code[X2_FRAME]);
+	/* 6 codes sent as they are (into the running sum) */
+	void raw(const unsigned char code[X2_FRAME]);
 };
 
 /* the start-up rates' levels: A for the ones before the record, B the
    first data rate's (19 bits and 5 signs, 32000 bit/s) */
 extern const X2Rate x2_rate_a, x2_rate_b;
+/* the rate the I-modem went on to after its records in the data */
+extern const X2Rate x2_rate_c;
 
 /* the server's training, the codes before the data */
 enum X2Seg {
@@ -108,6 +112,8 @@ struct X2Train {
 	s16 go;                 /* a held segment: on to the next (at a
 				   frame; X2_REC at a record's end) */
 	const X2Rate *data_rate;        /* X2_START's and X2_DATA's */
+	const unsigned char *raw;       /* X2_DATA: this frame's codes as
+					   they are (X2Map::raw()) */
 
 	void init();
 	void segment(s16 s);

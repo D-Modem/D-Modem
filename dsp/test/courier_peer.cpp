@@ -14,7 +14,8 @@
  *
  *    COURIER_PEER_AT: the AT commands before the answer (AT+MS=X2 by
  *    default); COURIER_PEER_DEBUG: the log level (default 5);
- *    COURIER_PEER_SEND: text to send once online; COURIER_PEER_DIAL:
+ *    COURIER_PEER_SEND: text to send once online (and again every
+ *    COURIER_PEER_EVERY ms, numbered, when that is set); COURIER_PEER_DIAL:
  *    dial that number instead of answering.  What the DTE gets
  *    is in the log, as "dte: ...".
  *
@@ -93,6 +94,9 @@ int main()
 	if (!d)
 		return 1;
 	bool answered = false, sent = false;
+	const char *every_s = getenv("COURIER_PEER_EVERY");
+	long every = every_s ? atol(every_s) * 8 : 0, samples = 0, next = 0,
+	     count = 0;
 	std::string dte;
 	std::vector<unsigned char> in, out;
 	for (;;) {
@@ -130,9 +134,18 @@ int main()
 		}
 		struct dmodem_status st;
 		dmodem_status(d, &st);
+		samples += n;
 		if (st.link == DMODEM_ONLINE && send && !sent) {
 			if (write(sv[1], send, strlen(send)) > 0)
 				sent = true;
+			next = samples + every;
+		} else if (st.link == DMODEM_ONLINE && send && every &&
+			   samples >= next) {
+			std::string t = "\r\n[" + std::to_string(++count) +
+				" at " + std::to_string(samples / 8000) +
+				" s] " + send;
+			if (write(sv[1], t.data(), t.size()) > 0)
+				next = samples + every;
 		}
 		if (!write_all(out.data(), n))
 			break;
