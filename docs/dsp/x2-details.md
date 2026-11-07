@@ -100,7 +100,11 @@ same in every call:
 - its scrambler from zero (and the last sign positive), then its record
   in the data levels, 10 times without the acknowledge bit (`733C`)
   and 33 times with it;
-- one more frame, then the next rate's levels. With the Courier's
+- one more frame, then the next rate's levels. That frame and the next
+  rate's first 681 carry ones, not data (both I-modem calls; the data
+  starts at frame 681 of the next rate). The Courier takes nothing at
+  the next rate without them: it sends flags for 2.5 s, renegotiates
+  again, and hangs up. With them the call holds. With the Courier's
   settings of the closed-loop tests that is 64 levels in each position
   (the first position's list one larger at the top and without `ce`):
   B = 36, MD = 5, 54666 bit/s. With the Courier's defaults the I-modem

@@ -29,6 +29,10 @@
 #define X2_MARK_N       9
 /* the I-modem's next rate: one frame after its 43 records */
 #define X2_SWITCH_AFTER (X2_MARK_N + 43 * 4 + 1)
+/* ones in place of the data from that frame to 681 into the next rate
+   (both its calls; the Courier takes no data at the next rate
+   without them) */
+#define X2_ONES_AFTER   681
 /* the data's first frame by that count: after the start's 680 in the
    data levels */
 #define X2_START_FR     680
@@ -57,6 +61,7 @@ struct V34X2 {
 	s32 x2_mark_fr;         /* our marker's frame (sooner as the
 				   answer to the client's MP) */
 	s32 x2_switch_fr;       /* our next rate's frame */
+	s32 x2_ones;            /* frames of ones still to send */
 	unsigned char x2_raw[X2_FRAME];
 	unsigned char x2_bits[X2_MAXBITS];
 
@@ -96,6 +101,7 @@ s16 V34X2<P>::x2_start()
 	x2_fr = X2_START_FR - 1;
 	x2_mark_fr = X2_MARK_AT;
 	x2_switch_fr = X2_MARK_AT + X2_SWITCH_AFTER;
+	x2_ones = 0;
 	x2_t0 = self.total;
 	/* PCM once our tone is out of the converters */
 	self.pcm_tx = 0;
@@ -154,6 +160,8 @@ s16 V34X2<P>::x2_sample()
 	if (x2t.seg == X2_DATA) {
 		if (!x2t.pos)
 			x2_fr++;
+		if (!x2t.pos && x2_fr == x2_switch_fr - 1)
+			x2_ones = 1 + X2_ONES_AFTER;
 		if (!x2t.pos && x2_fr == x2_switch_fr) {
 			x2t.map.init(x2_rate_c);
 			self.rate_tx = static_cast<s32>(x2t.map.frame_bits()) *
@@ -211,6 +219,11 @@ s16 V34X2<P>::x2_sample()
 				/* the client's E: the data again after the
 				   record */
 				x2_rec_out = -1;
+		} else if (!x2t.pos && x2_ones > 0) {
+			/* ones about the next rate */
+			x2_ones--;
+			memset(x2_bits, 1,
+			       static_cast<size_t>(x2t.map.frame_bits()));
 		} else if (!x2t.pos)
 			CoreBits{ self.modem }.get(x2_bits,
 						   x2t.map.frame_bits());
