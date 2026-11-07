@@ -651,8 +651,16 @@ void V34Rx::got_bit(s16 bit)
 				after_mp = 1;
 				mp_end = sym;
 				ones = 0;
-			} else
+			} else {
 				DSP_DBG("v34 rx: x2 MP with bad CRC\n");
+				/* E may still follow, after a good MP before
+				   it (20 ones: an MP's sync has 17) */
+				after_mp = ev_mp;
+				mp_end = sym;
+				ones = 0;
+			}
+			x2_e_n = after_mp && mp.ack ? 1 : 0;
+			x2_e_ones = 0;
 			return;
 		}
 		if (mp_n == mp_len) {
@@ -677,6 +685,30 @@ void V34Rx::got_bit(s16 bit)
 				DSP_DBG("v34 rx: MP with bad CRC\n");
 		}
 		return;
+	}
+	if (after_mp && x2_e_n) {
+		/* x2, after its MP': E is the 20 bits after the frame's 2
+		   (2 zeros, then E or the next frame's sync of 17 ones
+		   and a zero). An error burst on E (the client in data
+		   mode from there): E for 17 ones of them, the sync's
+		   zero not one of them */
+		s16 i = x2_e_n++ - 1;
+		if (i >= 2)
+			x2_e_ones = static_cast<s16>(x2_e_ones + bit);
+		if (i == 19 && !bit)
+			x2_e_n = 0;
+		else if (i == 21) {
+			x2_e_n = 0;
+			if (x2_e_ones >= 17 && x2_e_ones < 20) {
+				ev_e = 1;
+				DSP_DBG("v34 rx: E at symbol %" PRId32
+					" (MP end %" PRId32 "), %d bits in "
+					"error\n", sym, mp_end,
+					20 - x2_e_ones);
+				set_stage(V34_RX_DATA);
+				return;
+			}
+		}
 	}
 	if (after_mp) {
 		/* E: 20 ones after an MP sequence */
@@ -1270,6 +1302,7 @@ void V34Rx::reneg_s()
 	mp_n = 0;
 	after_mp = 0;
 	ones = 0;
+	x2_e_n = x2_e_ones = 0;
 	zero(mp);
 	s_count = 0;
 	set_stage(V34_RX_S);

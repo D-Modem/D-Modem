@@ -635,6 +635,8 @@ struct V34Rx {
 	s16 mp_n, mp_len;       /* collecting an MP frame */
 	s16 ones;               /* ones since the end of the last MP frame */
 	s16 after_mp;
+	s16 x2_e_n, x2_e_ones;  /* x2: bits and ones since the last MP
+				   frame (E through a burst) */
 	s16 ev_mp;
 	V34Mp mp;       /* the remote's MP */
 	s32 mp_end;             /* symbol of the end of the last MP frame */

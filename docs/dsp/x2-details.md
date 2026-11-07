@@ -155,6 +155,18 @@ and sends E; then its upstream goes up (28800 bit/s). D-Modem answers
 its MP with the marker and records when they have not gone yet, and
 otherwise with its record until E.
 
+The Courier's MP frames come two zeros apart, each a sync of 17 ones
+and a zero, then the frame; E is 20 ones in place of the next sync, so
+D-Modem takes 20 ones after a frame as E. The upstream's error bursts
+can land on it: on lines 8.5 to 10 dB down, with courier-emu's frame
+interrupt following the DSP's timer, a burst hit the frame before E and
+E itself in all three calls tried, so D-Modem missed E, waited for the
+renegotiation to end, and dropped the call 5 s later. After an MP' it
+now takes the 20 bits after a frame as E when at least 17 are ones and
+the sync's zero is not among them (2 bits in error in those calls),
+also after a frame with a bad CRC. The calls at 8.5, 9.5 and 10 dB
+then hold to the end of the run, with 94 to 98 lines arriving.
+
 The Courier's S came about 50 ms before the I-modem's marker time in
 every closed-loop call. A marker before its S makes it renegotiate
 about 100 ms later all the same, but on 16 points and without an MP;
