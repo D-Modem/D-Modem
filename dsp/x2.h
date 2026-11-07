@@ -79,8 +79,10 @@ struct X2Map {
 extern const X2Rate x2_rate_a, x2_rate_b;
 /* the rates the I-modem went on to after its records in the data: C
    for a client whose renegotiation's MP takes 14 (word 0's bits 2 to
-   5; 54666 bit/s), D for 12 (52000) */
-extern const X2Rate x2_rate_c, x2_rate_d;
+   5; 54666 bit/s), D for 12 (52000), E for 8 (46666), F for 11
+   (50666), G for 13 (53333): B is 22 more than the index */
+extern const X2Rate x2_rate_c, x2_rate_d, x2_rate_e, x2_rate_f,
+	x2_rate_g;
 /* the rate for the most the client takes (as its MP has it), nullptr
    for one whose rate is not known: the client expects that rate's
    levels and no other (a Courier that took 14 sent 52000's levels

@@ -129,7 +129,7 @@ s16 V34X2<P>::x2_start()
 
 /* the client's MP (x2.h's four words): the rates both ways.  Down: its
    word 0's bits 2 to 5 the most it takes (1 to 15: the start-up's MP
-   has 1, its renegotiations' 12 or 14 in the I-modem's calls; the next
+   has 1, its renegotiations' 8 to 14 in the I-modem's calls; the next
    rate by x2_rate_for(); test: DSP_X2_DOWN_MAX=<n> takes no more than
    n); up: the highest rate of its word 1's mask that our record
    allows (12), at expanded shaping, 64 states and non-linear encoding */
@@ -248,9 +248,13 @@ s16 V34X2<P>::x2_sample()
 						   x2t.map.frame_bits());
 		code = x2t.next(x2_bits);
 		if (x2t.pos == 1 && x2_fr == x2_mark_fr + X2_MARK_N - 1) {
-			/* the scrambler from zero after the marker */
+			/* the scrambler from zero after the marker, and
+			   the records and the frame after them in the
+			   start-up's data levels (B) at any rate: so the
+			   I-modem sends them after a second marker too */
 			x2t.map.scr = 0;
 			x2t.map.last = 1;
+			x2t.map.init(x2_rate_b);
 		}
 	} else
 		code = x2t.next();
@@ -377,19 +381,18 @@ s16 V34X2<P>::x2_step(s32 c)
 				DSP_DBG("v34: x2: no common rate\n");
 				return DPSTAT_ERROR;
 			}
-			/* the rate it takes: one above ours is the answer
-			   (our marker, records and that rate, as the
-			   I-modem does again in a call whose first
-			   renegotiation took 12 and its next 14); the
-			   same or lower, our record until its E */
+			/* the rate it takes, when we know its levels, is the
+			   answer (our marker, records and that rate): the
+			   I-modem does so at each renegotiation, to a higher
+			   rate (12, then 14) or the same one (8 three times
+			   on a 18 dB line); one we do not know, our record
+			   until its E */
 			const X2Rate *nr = x2_rate_for(x2_down);
-			s16 up = nr && nr->B + nr->MD > x2_cur->B +
-				x2_cur->MD;
-			if (x2_fr + 1 < x2_mark_fr && !up) {
+			if (x2_fr + 1 < x2_mark_fr && !nr) {
 				/* none: no marker, and no next rate */
 				x2_mark_fr = x2_switch_fr = X2_NEVER;
 			}
-			if (up && (x2_fr + 1 < x2_mark_fr ||
+			if (nr && (x2_fr + 1 < x2_mark_fr ||
 				   x2_fr >= x2_switch_fr + X2_ONES_AFTER)) {
 				x2_next = nr;
 				x2_mark_fr = x2_fr + 1;
