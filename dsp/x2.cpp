@@ -78,6 +78,28 @@ static const unsigned char x2_lv_c[64] = {
 	0xdd, 0xdf, 0xe2, 0xe6, 0xea, 0xee, 0xf4, 0xfb,
 };
 
+/* the I-modem's rate for a client whose MP takes 12 (52000 bit/s, 34
+   bits and 5 signs): 50 levels in the first position, 51 in the
+   others */
+static const unsigned char x2_lv_d0[50] = {
+	0x9e, 0x9f, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5,
+	0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad,
+	0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5,
+	0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd,
+	0xbe, 0xbf, 0xc1, 0xc3, 0xc5, 0xc7, 0xc9, 0xcb,
+	0xcd, 0xd1, 0xd4, 0xd7, 0xda, 0xdd, 0xe2, 0xe8,
+	0xee, 0xf9,
+};
+static const unsigned char x2_lv_d[51] = {
+	0x9f, 0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6,
+	0xa7, 0xa8, 0xa9, 0xaa, 0xab, 0xac, 0xad, 0xae,
+	0xaf, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6,
+	0xb7, 0xb8, 0xb9, 0xba, 0xbb, 0xbc, 0xbd, 0xbe,
+	0xbf, 0xc1, 0xc3, 0xc5, 0xc7, 0xc9, 0xcb, 0xcd,
+	0xcf, 0xd1, 0xd4, 0xd7, 0xda, 0xdd, 0xe0, 0xe5,
+	0xea, 0xf0, 0xfa,
+};
+
 const X2Rate x2_rate_a = {
 	19, 5, { 9, 9, 9, 9, 9, 9 },
 	{ x2_lv_a, x2_lv_a, x2_lv_a, x2_lv_a, x2_lv_a, x2_lv_a },
@@ -91,6 +113,16 @@ const X2Rate x2_rate_c = {
 	36, 5, { 64, 64, 64, 64, 64, 64 },
 	{ x2_lv_c0, x2_lv_c, x2_lv_c, x2_lv_c, x2_lv_c, x2_lv_c },
 };
+const X2Rate x2_rate_d = {
+	34, 5, { 50, 51, 51, 51, 51, 51 },
+	{ x2_lv_d0, x2_lv_d, x2_lv_d, x2_lv_d, x2_lv_d, x2_lv_d },
+};
+
+/* (see x2.h) */
+const X2Rate *x2_rate_for(s16 down)
+{
+	return down == 14 ? &x2_rate_c : down == 12 ? &x2_rate_d : nullptr;
+}
 
 /* the CRC of a record's words (bits, one a byte) */
 static u16 x2_crc(const unsigned char *b, s16 n)
@@ -169,12 +201,15 @@ void X2Map::frame(const unsigned char *bits, unsigned char code[X2_FRAME])
 		x /= static_cast<u64>(r.n[i]);
 		car[i] = 0;
 	}
-	/* the signs: the MD positions of the highest digits (the smallest
-	   levels; of equal ones the first), in their order */
+	/* the signs: the MD positions of the smallest levels (of equal
+	   ones the first), in their order; by the level, not the digit,
+	   where the positions' lists differ (as the I-modem: its ones
+	   after a rate change decode with this, not by the digits) */
 	for (j = 0; j < r.MD; j++) {
 		s16 best = -1;
 		for (i = 0; i < X2_FRAME; i++)
-			if (!car[i] && (best < 0 || d[i] > d[best]))
+			if (!car[i] && (best < 0 || r.lv[i][d[i]] >
+					r.lv[best][d[best]]))
 				best = i;
 		car[best] = 1;
 	}

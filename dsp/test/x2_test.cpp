@@ -58,7 +58,7 @@ TEST(X2Record, ClientMpRoundTrip)
 }
 
 /* a frame's codes back to its MD + B line bits (before descrambling):
-   the digits, the MD signs of the highest ones as changes */
+   the digits, the MD signs of the smallest levels as changes */
 void unmap(const X2Rate &r, const unsigned char code[X2_FRAME], s16 *last,
 	   unsigned char *bits)
 {
@@ -74,7 +74,8 @@ void unmap(const X2Rate &r, const unsigned char code[X2_FRAME], s16 *last,
 	for (j = 0; j < r.MD; j++) {
 		s16 best = -1;
 		for (i = 0; i < X2_FRAME; i++)
-			if (!car[i] && (best < 0 || d[i] > d[best]))
+			if (!car[i] && (best < 0 || r.lv[i][d[i]] >
+					r.lv[best][d[best]]))
 				best = i;
 		car[best] = 1;
 	}
@@ -91,11 +92,12 @@ void unmap(const X2Rate &r, const unsigned char code[X2_FRAME], s16 *last,
 		bits[k++] = (x >> i) & 1;
 }
 
-/* random frames at both start-up rates and the next one back to their
+/* random frames at both start-up rates and the next ones back to their
    bits */
 TEST(X2Map, DecodesBack)
 {
-	for (const X2Rate *r : { &x2_rate_a, &x2_rate_b, &x2_rate_c }) {
+	for (const X2Rate *r : { &x2_rate_a, &x2_rate_b, &x2_rate_c,
+				      &x2_rate_d }) {
 		X2Map m{};
 		m.init(*r);
 		m.last = 1;
@@ -107,7 +109,7 @@ TEST(X2Map, DecodesBack)
 			unsigned char in[X2_MAXBITS], line[X2_MAXBITS],
 				code[X2_FRAME];
 			s16 nb = m.frame_bits();
-			ASSERT_EQ(nb, r == &x2_rate_c ? 41 : 24);
+			ASSERT_EQ(nb, r == &x2_rate_c ? 41 : r == &x2_rate_d ? 39 : 24);
 			for (s16 i = 0; i < nb; i++)
 				in[i] = static_cast<unsigned char>(rand() & 1);
 			m.frame(in, code);
@@ -120,6 +122,86 @@ TEST(X2Map, DecodesBack)
 		}
 		/* the free sign holds the running sum down */
 		EXPECT_LT(rds_max, 40000);
+	}
+}
+
+/* the I-modem's own line octets, 10 frames of the ones after its rate
+   change (from frame 30 of its rate D, frame 68 of its rate C, in two
+   courier-emu calls): back to ones, frames whose signs go to other
+   positions by the digits than by the levels among them */
+TEST(X2Map, DecodesIModemOnes)
+{
+	static const unsigned char d[60] = {
+	0x30, 0x35, 0xac, 0xa8, 0xd1, 0x4b,
+	0xb2, 0x47, 0xaf, 0x38, 0x25, 0xcf,
+	0x41, 0x60, 0x9f, 0xc1, 0xbd, 0x33,
+	0x23, 0x3a, 0x34, 0xc7, 0xd1, 0x23,
+	0x37, 0x7a, 0xa6, 0x35, 0x2f, 0xf0,
+	0x47, 0x5a, 0xa1, 0xa6, 0xc1, 0xa1,
+	0x38, 0xb4, 0xd4, 0x4b, 0x41, 0x45,
+	0x26, 0xb7, 0xba, 0xcf, 0x2e, 0xa7,
+	0x43, 0x3d, 0xa3, 0xb3, 0x20, 0x43,
+	0x24, 0xb5, 0xb7, 0x2f, 0xbe, 0xba,
+	};
+	static const unsigned char c[60] = {
+	0xbc, 0x9f, 0x4f, 0x21, 0x2f, 0x4c,
+	0x3b, 0x51, 0xb6, 0xc3, 0xa0, 0xf4,
+	0xbc, 0x1f, 0x4a, 0xb4, 0xaf, 0x31,
+	0xa8, 0x26, 0x30, 0xa9, 0x51, 0xc7,
+	0xad, 0x3c, 0x4b, 0xd1, 0x47, 0xee,
+	0xbb, 0x4b, 0xd7, 0xe2, 0x6e, 0xea,
+	0x74, 0xe6, 0x6a, 0xbc, 0x66, 0x3c,
+	0x34, 0xdf, 0x3d, 0xb5, 0x4b, 0xba,
+	0x51, 0xc9, 0x4b, 0xa8, 0x4b, 0x45,
+	0xcc, 0x3b, 0x3d, 0x53, 0x33, 0xac,
+	};
+	const struct {
+		const X2Rate *r;
+		const unsigned char *o;
+	} calls[] = { { &x2_rate_d, d }, { &x2_rate_c, c } };
+	for (const auto &t : calls) {
+		u32 dscr = 0;
+		s16 last = 1;
+		for (int f = 0; f < 10; f++) {
+			unsigned char code[X2_FRAME], line[X2_MAXBITS];
+			for (int i = 0; i < X2_FRAME; i++) {
+				unsigned char o = t.o[6 * f + i];
+				code[i] = static_cast<unsigned char>(
+					k56_code(o | 0x80, 0) &
+					(o & 0x80 ? 0xff : 0x7f));
+			}
+			unmap(*t.r, code, &last, line);
+			s16 nb = static_cast<s16>(t.r->B + t.r->MD);
+			for (s16 i = 0; i < nb; i++) {
+				unsigned char b = static_cast<unsigned char>(
+					descramble(&dscr, SCR_GPC, line[i]));
+				/* (the descrambler from the first frame) */
+				if (f > 0)
+					EXPECT_EQ(b, 1) << "frame " << f
+							<< " bit " << i;
+			}
+		}
+	}
+}
+
+/* the next rate by the most the client takes */
+TEST(X2Map, RateFor)
+{
+	EXPECT_EQ(x2_rate_for(1), nullptr);
+	EXPECT_EQ(x2_rate_for(11), nullptr);
+	EXPECT_EQ(x2_rate_for(12), &x2_rate_d);
+	EXPECT_EQ(x2_rate_for(13), nullptr);
+	EXPECT_EQ(x2_rate_for(14), &x2_rate_c);
+	EXPECT_EQ(x2_rate_for(15), nullptr);
+	/* enough levels for the bits, and each list the largest first */
+	for (const X2Rate *r : { &x2_rate_c, &x2_rate_d }) {
+		double v = 1;
+		for (int i = 0; i < X2_FRAME; i++) {
+			v *= r->n[i];
+			for (int j = 1; j < r->n[i]; j++)
+				EXPECT_LT(r->lv[i][j - 1], r->lv[i][j]);
+		}
+		EXPECT_GE(v, static_cast<double>(INT64_C(1) << r->B));
 	}
 }
 

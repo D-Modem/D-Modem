@@ -38,6 +38,8 @@
    many frames (3 s) after the I-modem's. A marker before its S makes
    it renegotiate on 16 points without an MP, and it hangs up */
 #define X2_MARK_WAIT    4000
+/* (a marker's or switch's frame that does not come) */
+#define X2_NEVER        INT32_C(0x3fffffff)
 /* the data's first frame by that count: after the start's 680 in the
    data levels */
 #define X2_START_FR     680
@@ -66,6 +68,9 @@ struct V34X2 {
 	s32 x2_mark_fr;         /* our marker's frame (sooner as the
 				   answer to the client's MP) */
 	s32 x2_switch_fr;       /* our next rate's frame */
+	const X2Rate *x2_cur;   /* the data's rate */
+	const X2Rate *x2_next;  /* the next rate's (at x2_switch_fr) */
+	s16 x2_down;            /* the client's MP: the most it takes */
 	s32 x2_ones;            /* frames of ones still to send */
 	unsigned char x2_raw[X2_FRAME];
 	unsigned char x2_bits[X2_MAXBITS];
@@ -107,6 +112,10 @@ s16 V34X2<P>::x2_start()
 	/* (test: DSP_X2_MARK_AT=<frame> for another) */
 	x2_mark_fr = env_int("DSP_X2_MARK_AT", X2_MARK_AT + X2_MARK_WAIT);
 	x2_switch_fr = x2_mark_fr + X2_SWITCH_AFTER;
+	x2_cur = &x2_rate_b;
+	/* (without an MP that says, the rate of the tests' Courier) */
+	x2_next = &x2_rate_c;
+	x2_down = 0;
 	x2_ones = 0;
 	x2_t0 = self.total;
 	/* PCM once our tone is out of the converters */
@@ -119,8 +128,10 @@ s16 V34X2<P>::x2_start()
 }
 
 /* the client's MP (x2.h's four words): the rates both ways.  Down: its
-   word 0's bits 2 to 5 the most it takes (1 to 15, of which we have the
-   first); up: the highest rate of its word 1's mask that our record
+   word 0's bits 2 to 5 the most it takes (1 to 15: the start-up's MP
+   has 1, its renegotiations' 12 or 14 in the I-modem's calls; the next
+   rate by x2_rate_for(); test: DSP_X2_DOWN_MAX=<n> takes no more than
+   n); up: the highest rate of its word 1's mask that our record
    allows (12), at expanded shaping, 64 states and non-linear encoding */
 template <class P>
 s16 V34X2<P>::x2_data_setup()
@@ -137,6 +148,9 @@ s16 V34X2<P>::x2_data_setup()
 		max = static_cast<s16>(m);
 	if (down < 1 || md != x2_rate_b.MD)
 		return -1;
+	if (s32 m = env_int("DSP_X2_DOWN_MAX"); m > 0 && down > m)
+		down = static_cast<s16>(m);
+	x2_down = down;
 	for (n = max; n >= 1; n--)
 		if ((mask >> (n - 1)) & 1 &&
 		    v34_rates[self.prx.baud][n - 1].b)
@@ -149,7 +163,7 @@ s16 V34X2<P>::x2_data_setup()
 	self.prx.start_data(&p, CoreBits{ self.modem });
 	x2_up = n;
 	self.rate_rx = p.rate;
-	self.rate_tx = (x2_rate_b.B + x2_rate_b.MD) * 8000 / X2_FRAME;
+	self.rate_tx = (x2_cur->B + x2_cur->MD) * 8000 / X2_FRAME;
 	DSP_DBG("v34: x2 rates: down %" PRId32 ", up %" PRId32 " (the "
 		"client's MP: down %d, mask %04x, %d signs)\n", self.rate_tx,
 		self.rate_rx, down, w[1], md);
@@ -169,7 +183,8 @@ s16 V34X2<P>::x2_sample()
 		if (!x2t.pos && x2_fr == x2_switch_fr - 1)
 			x2_ones = 1 + X2_ONES_AFTER;
 		if (!x2t.pos && x2_fr == x2_switch_fr) {
-			x2t.map.init(x2_rate_c);
+			x2_cur = x2_next;
+			x2t.map.init(*x2_cur);
 			self.rate_tx = static_cast<s32>(x2t.map.frame_bits()) *
 				8000 / X2_FRAME;
 			self.set_rates(self.rate_tx, self.rate_rx);
@@ -179,14 +194,12 @@ s16 V34X2<P>::x2_sample()
 		}
 		if (!x2t.pos && x2_fr >= x2_mark_fr &&
 		    x2_fr < x2_mark_fr + X2_MARK_N) {
-			/* the I-modem's: 8 frames +++---, one ---+++ */
-			static const unsigned char m[2][X2_FRAME] = {
-				{ 0xa5, 0xa5, 0xa5, 0x25, 0x25, 0x25 },
-				{ 0x25, 0x25, 0x25, 0xa5, 0xa5, 0xa5 } };
+			/* the I-modem's: 8 frames +++---, one ---+++, at
+			   the rate's largest level in each position */
 			s16 k = x2_fr == x2_mark_fr + X2_MARK_N - 1;
 			for (s16 i = 0; i < X2_FRAME; i++)
-				x2_raw[i] = k56_code(m[k][i] | 0x80, 0) &
-					(m[k][i] & 0x80 ? 0xff : 0x7f);
+				x2_raw[i] = k56_code(x2_cur->lv[i][0], 0) &
+					((i < 3) != k ? 0xff : 0x7f);
 			x2t.raw = x2_raw;
 			if (x2_fr == x2_mark_fr)
 				DSP_DBG("v34: x2: our marker (%" PRId32
@@ -364,11 +377,25 @@ s16 V34X2<P>::x2_step(s32 c)
 				DSP_DBG("v34: x2: no common rate\n");
 				return DPSTAT_ERROR;
 			}
-			if (x2_fr + 1 < x2_mark_fr) {
-				/* the answer: our marker and records now */
+			/* the rate it takes: one above ours is the answer
+			   (our marker, records and that rate, as the
+			   I-modem does again in a call whose first
+			   renegotiation took 12 and its next 14); the
+			   same or lower, our record until its E */
+			const X2Rate *nr = x2_rate_for(x2_down);
+			s16 up = nr && nr->B + nr->MD > x2_cur->B +
+				x2_cur->MD;
+			if (x2_fr + 1 < x2_mark_fr && !up) {
+				/* none: no marker, and no next rate */
+				x2_mark_fr = x2_switch_fr = X2_NEVER;
+			}
+			if (up && (x2_fr + 1 < x2_mark_fr ||
+				   x2_fr >= x2_switch_fr + X2_ONES_AFTER)) {
+				x2_next = nr;
 				x2_mark_fr = x2_fr + 1;
 				x2_switch_fr = x2_mark_fr + X2_SWITCH_AFTER;
-			} else if (x2_fr >= x2_mark_fr + X2_MARK_N &&
+			} else if ((x2_mark_fr == X2_NEVER ||
+				    x2_fr >= x2_mark_fr + X2_MARK_N) &&
 				   !x2_rec_left) {
 				/* our record (its acknowledge bit set) in
 				   the data until its E */

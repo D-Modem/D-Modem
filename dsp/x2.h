@@ -77,8 +77,15 @@ struct X2Map {
 /* the start-up rates' levels: A for the ones before the record, B the
    first data rate's (19 bits and 5 signs, 32000 bit/s) */
 extern const X2Rate x2_rate_a, x2_rate_b;
-/* the rate the I-modem went on to after its records in the data */
-extern const X2Rate x2_rate_c;
+/* the rates the I-modem went on to after its records in the data: C
+   for a client whose renegotiation's MP takes 14 (word 0's bits 2 to
+   5; 54666 bit/s), D for 12 (52000) */
+extern const X2Rate x2_rate_c, x2_rate_d;
+/* the rate for the most the client takes (as its MP has it), nullptr
+   for one whose rate is not known: the client expects that rate's
+   levels and no other (a Courier that took 14 sent 52000's levels
+   renegotiates within 3 s and hangs up) */
+const X2Rate *x2_rate_for(s16 down);
 
 /* the server's training, the codes before the data */
 enum X2Seg {

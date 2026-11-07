@@ -67,9 +67,12 @@ Downstream, each frame takes MD + B scrambled bits (GPC, 1 + x^-18 +
 x^-23). The first MD are signs; the B others, as a number (least
 significant bit first), pick each position's level in mixed radix, the
 first position the lowest digit. The levels are sorted largest first.
-The MD signs go to the positions of the highest digits (the smallest
-levels; of equal ones the first), in their order, each sent as a change
-from the last one sent that way (starting from positive). At 32000
+The MD signs go to the positions of the smallest levels (of equal ones
+the first), in their order, each sent as a change from the last one
+sent that way (starting from positive). Where the positions' lists
+differ it is the level that counts, not the digit: the I-modem's ones
+after a rate change decode with no errors that way, and about 1.5% of
+their frames go wrong by the digits. At 32000
 bit/s B = 19, MD = 5 and every position has the same 9 levels:
 
 - levels A (before the record): `a5 a7 ad af b7 bd c5 cf e5`;
@@ -100,16 +103,32 @@ same in every call:
 - its scrambler from zero (and the last sign positive), then its record
   in the data levels, 10 times without the acknowledge bit (`733C`)
   and 33 times with it;
-- one more frame, then the next rate's levels. That frame and the next
+- one more frame, then the next rate's levels (see below). That frame and the next
   rate's first 681 carry ones, not data (both I-modem calls; the data
   starts at frame 681 of the next rate). The Courier takes nothing at
   the next rate without them: it sends flags for 2.5 s, renegotiates
-  again, and hangs up. With them the call holds. With the Courier's
-  settings of the closed-loop tests that is 64 levels in each position
-  (the first position's list one larger at the top and without `ce`):
-  B = 36, MD = 5, 54666 bit/s. With the Courier's defaults the I-modem
-  went to 50 and 51 levels (B = 34, 52000 bit/s). How the server learns
-  which is not known: nothing the client sends differs.
+  again, and hangs up. With them the call holds.
+
+The next rate is the one the client's renegotiation MP takes (word 0's
+bits 2 to 5): for 14, 64 levels in each position (the first position's
+list one larger at the top and without `ce`): B = 36, MD = 5, 54666
+bit/s; for 12, 50 levels in the first position and 51 in the others
+(B = 34, 52000 bit/s):
+
+- first: `9e`-`bf`, `c1 c3 c5 c7 c9 cb cd d1 d4 d7 da dd e2 e8 ee f9`;
+- others: `9f`-`bf`, `c1 c3 c5 c7 c9 cb cd cf d1 d4 d7 da dd e0 e5 ea
+  f0 fa`.
+
+Repeated and crossed I-modem calls show it is not either side's
+settings: with all defaults the Courier's first renegotiation took 12
+and its next, about 20 s later, 14, and the I-modem changed rate at
+each (the second marker at the 52000 levels' largest, `9e`/`9f`). The
+client expects the levels of the rate it took and no other: a Courier
+that took 14 and got 52000's levels renegotiated within 3 s (taking 9)
+and hung up. D-Modem changes to the rate an MP takes when it knows it
+(12 or 14) and it is above the one it sends; for any other it answers
+with its record and no marker, and the Courier, waiting for one,
+hangs up.
 
 The Courier renegotiates its upstream on a timer of its own about then:
 S in data mode, S-bar, a short TRN, its MP (word 0's bits 2 to 5 now
