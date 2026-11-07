@@ -126,6 +126,19 @@ shaping, the 64 state trellis code and non-linear encoding (9.7/V.34,
 theta 0.3125), at the highest rate of the client's mask up to 12
 (28800); the Courier sent at 24000.
 
+The emulated Courier's upstream has bursts of errors, about 22 a
+second at 24000 and at 28800 alike. Each is 20 to 40 symbols of
+broadband error near the decision distance in the received signal;
+the gain, phase and offset hold, and the equalizer, echo canceller,
+trellis code and theta make no difference. They come with the
+Courier's lower energy frames: frames with the smaller ring sums take
+most of them, and the signal's energy over them is 10 to 15% under
+the mean. D-Modem's own transmitter through the same receiver at the
+same mean square error decodes with none. The emulated I-modem saw
+them too: in the run recorded against it, it rejected the Courier's
+I-frames twice among its first 14. V.42 recovers by retransmission;
+about one RR in ten is lost.
+
 V.42's detection starts right after E. In its first tenth of a second
 D-Modem's receiver is still settling into the 320 point constellation
 and may decode a stray HDLC flag; the detection takes two flags in a
