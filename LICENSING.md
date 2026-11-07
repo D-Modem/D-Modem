@@ -104,4 +104,5 @@ does, without their code.
 ## Contributions
 
 Contributions can be accepted only under terms that let the D-Modem Authors offer
-them under both licences above. Ask before sending one.
+them under both licences above, so each one comes with the contributor
+agreement in [CONTRIBUTING.md](CONTRIBUTING.md).
