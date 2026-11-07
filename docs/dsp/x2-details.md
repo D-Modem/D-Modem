@@ -81,15 +81,20 @@ known: the sixth value is negative when the other five, as signed
 linear values (14 bits), sum to more than 805, and positive otherwise.
 This matches every frame the I-modem sent, and D-Modem uses it.
 
-In the data levels the rule is not known. It is not frame-local: a
-leaky running sum (about 0.996 a frame) agrees with the I-modem about
-85% of the time, and a fit on how often each level has been sent about
-88%. D-Modem sets it against the running sum. The client appears to
-check it: with the I-modem's own octets from the start segment on, the
-Courier starts error correction, and with D-Modem's it hangs up about
-0.3 s into data.
+In the data levels the rule is not known, and the client does not
+need it: with the I-modem's own octets in the emulator and only these
+signs changed, the Courier sent exactly the same. It is not
+frame-local. The I-modem sends it negative through the first frames of
+the start segment, then sets it against a running sum that starts from
+zero there (a leaky sum agrees with it about 87% of the time on three
+calls). D-Modem sets it against the running sum.
 
 Upstream is V.34 data at the client's symbol rate with GPA, expanded
 shaping, the 64 state trellis code and non-linear encoding (9.7/V.34,
 theta 0.3125), at the highest rate of the client's mask up to 12
 (28800); the Courier sent at 24000.
+
+V.42's detection starts right after E. In its first tenth of a second
+D-Modem's receiver is still settling into the 320 point constellation
+and may decode a stray HDLC flag; the detection takes two flags in a
+row as V.42, so it waits for the Courier's ODPs and answers them.

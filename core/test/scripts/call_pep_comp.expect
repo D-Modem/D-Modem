@@ -6,110 +6,110 @@
       0 B: OK\r\n
       0 B< ATA\r
       0 A< ATD\r
-   7680 B: CONNECT FAST\r\n
-   8080 A: CONNECT FAST\r\n
-   8080 until A 'CONNECT': yes
-   8080 until B 'CONNECT': yes
-   8620 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8620 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8680 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8680 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8680 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8680 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8680 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8680 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8740 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8740 A: B0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8740 A: B0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8740 A: B0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8740 A: B0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8740 A: B0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8740 A: B0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8740 A: B0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8780 A: B0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8780 A: B0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8780 A: B0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8780 A: B0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8780 A: B0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8780 A: B0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8780 A: B0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8780 A: B0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8780 A: B0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8820 A: B0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8820 A: B0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8820 A: B0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8820 A: B0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8820 A: B0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8820 A: B0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   8820 A: B0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9120 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9120 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9180 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9180 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9180 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9180 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9180 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9180 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9220 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9220 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9220 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9220 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9220 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9220 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9220 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9220 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9280 B: A0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9280 B: A0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9280 B: A0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9280 B: A0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9280 B: A0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9280 B: A0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9280 B: A0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9280 B: A0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9280 B: A0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9300 B: A0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9300 B: A0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9300 B: A0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9300 B: A0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9300 B: A0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9300 B: A0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9300 B: A0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  16080 A< +++
-  16580 A: B0032 The quick \r\n
-  16580 A: OK\r\n
-  17580 A< ATI11\r
-  17580 A: Description                         Status\r\n
-  17580 A: -----------                         ------\r\n
-  17580 A: Last Connection                     PEP\r\n
-  17580 A: Initial Transmit Carrier Rate       9441\r\n
-  17580 A: Initial Receive Carrier Rate        9441\r\n
-  17580 A: Final Transmit Carrier Rate         9441\r\n
-  17580 A: Final Receive Carrier Rate          9441\r\n
-  17580 A: Protocol Negotiation Result         LAPM\r\n
-  17580 A: Data Compression Result             V42bis\r\n
-  17580 A: Estimated SNR (dB)                  77.2\r\n
-  17580 A: Receive Signal Power Level (dBm0)   -16.5\r\n
-  17580 A: Transmit Signal Power Level (dBm0)  -16.9\r\n
-  17580 A: Round Trip Delay (ms)               55\r\n
-  17580 A: Timing Offset (ppm)                 0\r\n
-  17580 A: Characters Sent                     2003\r\n
-  17580 A: Characters Received                 2000\r\n
-  17580 A: Transmit Frame Count                13\r\n
-  17580 A: Transmit Frame Error Count          0\r\n
-  17580 A: Receive Frame Count                 13\r\n
-  17580 A: Receive Frame Error Count           0\r\n
-  17580 A: PEP Line Rate (Tx/Rx)               22455/22455\r\n
-  17580 A: PEP Packets Accepted                38\r\n
-  17580 A: PEP Packets Received Bad            0\r\n
-  17580 A: PEP Micro Turns (Tx/Rx)             32/30\r\n
-  17580 A: Retrains by Local Modem             0\r\n
-  17580 A: Retrains Requested by Remote Modem  0\r\n
-  17580 A: Rate Renegotiation by Local Modem   0\r\n
-  17580 A: Rate Renegotiation by Remote Modem  0\r\n
-  17580 A: Call Duration                       0:00:09\r\n
-  17580 A: OK\r\n
-  18080 A< ATH\r
-  18080 A: OK\r\n
-  18100 A: NO CARRIER\r\n
-  22020 B: A0032 The quick +++NO CARRIER\r\n
-  22020 until B 'NO CARRIER': yes
+   9800 B: CONNECT FAST\r\n
+  10220 A: CONNECT FAST\r\n
+  10220 until A 'CONNECT': yes
+  10220 until B 'CONNECT': yes
+  10760 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10760 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10800 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10800 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10800 A: B0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10800 A: B0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10800 A: B0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10800 A: B0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10860 A: B0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10860 A: B0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10860 A: B0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10860 A: B0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10860 A: B0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10860 A: B0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10860 A: B0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10860 A: B0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10900 A: B0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10900 A: B0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10900 A: B0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10900 A: B0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10900 A: B0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10900 A: B0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10900 A: B0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10900 A: B0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10900 A: B0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10940 A: B0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10940 A: B0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10940 A: B0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10940 A: B0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10940 A: B0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10940 A: B0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10940 A: B0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11240 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11240 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11300 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11300 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11300 B: A0004 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11300 B: A0005 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11300 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11300 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11340 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11340 B: A0009 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11340 B: A0010 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11340 B: A0011 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11340 B: A0012 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11340 B: A0013 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11340 B: A0014 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11340 B: A0015 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11400 B: A0016 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11400 B: A0017 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11400 B: A0018 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11400 B: A0019 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11400 B: A0020 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11400 B: A0021 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11400 B: A0022 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11400 B: A0023 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11400 B: A0024 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11420 B: A0025 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11420 B: A0026 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11420 B: A0027 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11420 B: A0028 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11420 B: A0029 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11420 B: A0030 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  11420 B: A0031 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  18220 A< +++
+  18720 A: B0032 The quick \r\n
+  18720 A: OK\r\n
+  19720 A< ATI11\r
+  19720 A: Description                         Status\r\n
+  19720 A: -----------                         ------\r\n
+  19720 A: Last Connection                     PEP\r\n
+  19720 A: Initial Transmit Carrier Rate       9441\r\n
+  19720 A: Initial Receive Carrier Rate        9441\r\n
+  19720 A: Final Transmit Carrier Rate         9441\r\n
+  19720 A: Final Receive Carrier Rate          9441\r\n
+  19720 A: Protocol Negotiation Result         LAPM\r\n
+  19720 A: Data Compression Result             V42bis\r\n
+  19720 A: Estimated SNR (dB)                  77.2\r\n
+  19720 A: Receive Signal Power Level (dBm0)   -16.5\r\n
+  19720 A: Transmit Signal Power Level (dBm0)  -16.9\r\n
+  19720 A: Round Trip Delay (ms)               55\r\n
+  19720 A: Timing Offset (ppm)                 0\r\n
+  19720 A: Characters Sent                     2003\r\n
+  19720 A: Characters Received                 2000\r\n
+  19720 A: Transmit Frame Count                14\r\n
+  19720 A: Transmit Frame Error Count          0\r\n
+  19720 A: Receive Frame Count                 13\r\n
+  19720 A: Receive Frame Error Count           0\r\n
+  19720 A: PEP Line Rate (Tx/Rx)               22455/22455\r\n
+  19720 A: PEP Packets Accepted                45\r\n
+  19720 A: PEP Packets Received Bad            0\r\n
+  19720 A: PEP Micro Turns (Tx/Rx)             38/37\r\n
+  19720 A: Retrains by Local Modem             0\r\n
+  19720 A: Retrains Requested by Remote Modem  0\r\n
+  19720 A: Rate Renegotiation by Local Modem   0\r\n
+  19720 A: Rate Renegotiation by Remote Modem  0\r\n
+  19720 A: Call Duration                       0:00:09\r\n
+  19720 A: OK\r\n
+  20220 A< ATH\r
+  20220 A: OK\r\n
+  20240 A: NO CARRIER\r\n
+  24140 B: A0032 The quick +++NO CARRIER\r\n
+  24140 until B 'NO CARRIER': yes

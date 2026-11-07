@@ -247,11 +247,12 @@ bool Detector::tx_fill()
 }
 
 /* the characters received: SYN DLE STX at an answerer that may take
-   MNP hands the rest over at once; an HDLC flag means V.42 and ends the
-   phase 36 bits on (armed once); else the patterns: an ADP decides at
-   the originator ('E' then 'C': V.42, 'E' then NUL: refused), an ODP at
-   the answerer (answered with ADPs for 16 patterns when it has V.42,
-   passed over without), anything else starts the search again */
+   MNP hands the rest over at once; two HDLC flags in a row mean V.42
+   and end the phase 36 bits on (armed once); else the patterns: an ADP
+   decides at the originator ('E' then 'C': V.42, 'E' then NUL:
+   refused), an ODP at the answerer (answered with ADPs for 16 patterns
+   when it has V.42, passed over without), anything else starts the
+   search again */
 void Detector::rx_scan()
 {
 	u8 ch;
@@ -264,8 +265,12 @@ void Detector::rx_scan()
 			link_->mnp_lr_seen(rx_);
 			return;
 		}
+		/* (two in a row: one alone may be noise as the receiver
+		   settles) */
 		if (ch == FLAG) {
-			link_->logf("detect: HDLC flag.");
+			if ((rx_chars_ >> 8 & 0xff) != FLAG)
+				continue;
+			link_->logf("detect: HDLC flags.");
 			ec_enable_ = true;
 			if (link_->timer_what() != Link::Timer::DetectEnd ||
 			    link_->timer() > PATTERN_BITS)
