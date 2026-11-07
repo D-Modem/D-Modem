@@ -117,9 +117,15 @@ S in data mode, S-bar, a short TRN, its MP (word 0's bits 2 to 5 now
 went to 16. It waits for the marker and records before it acknowledges
 and sends E; then its upstream goes up (28800 bit/s). D-Modem answers
 its MP with the marker and records when they have not gone yet, and
-otherwise with its record until E. In some calls the Courier's S comes
-just after the marker and it then sends a long TRN without an MP;
-that case is not handled yet.
+otherwise with its record until E.
+
+The Courier's S came about 50 ms before the I-modem's marker time in
+every closed-loop call. A marker before its S makes it renegotiate
+about 100 ms later all the same, but on 16 points and without an MP;
+after 2.6 s of TRN it hangs up. A second marker in that TRN does not
+help. So D-Modem does not send its marker at the I-modem's time: it
+waits for the Courier's MP and answers it, and sends the marker 3 s
+later (frame 20882) only if no renegotiation has come by then.
 
 Upstream is V.34 data at the client's symbol rate with GPA, expanded
 shaping, the 64 state trellis code and non-linear encoding (9.7/V.34,

@@ -33,6 +33,11 @@
    (both its calls; the Courier takes no data at the next rate
    without them) */
 #define X2_ONES_AFTER   681
+/* our marker as the answer to the client's MP when it renegotiates
+   (its S about 50 ms before the I-modem's marker); without one that
+   many frames (3 s) after the I-modem's. A marker before its S makes
+   it renegotiate on 16 points without an MP, and it hangs up */
+#define X2_MARK_WAIT    4000
 /* the data's first frame by that count: after the start's 680 in the
    data levels */
 #define X2_START_FR     680
@@ -99,8 +104,9 @@ s16 V34X2<P>::x2_start()
 	x2_rec_out = -1;
 	x2_rec_left = 0;
 	x2_fr = X2_START_FR - 1;
-	x2_mark_fr = X2_MARK_AT;
-	x2_switch_fr = X2_MARK_AT + X2_SWITCH_AFTER;
+	/* (test: DSP_X2_MARK_AT=<frame> for another) */
+	x2_mark_fr = env_int("DSP_X2_MARK_AT", X2_MARK_AT + X2_MARK_WAIT);
+	x2_switch_fr = x2_mark_fr + X2_SWITCH_AFTER;
 	x2_ones = 0;
 	x2_t0 = self.total;
 	/* PCM once our tone is out of the converters */
