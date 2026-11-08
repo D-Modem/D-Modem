@@ -501,6 +501,8 @@ TEST_F(Bridge, ServerThatTakesNoMore)
 	int ln = listen_at(path, 0);
 
 	ASSERT_GE(ln, 0) << path << ": " << strerror(errno);
+	bool full = false;
+
 	/* connections it never accepts until its queue takes no more */
 	for (int i = 0; i < 64; i++) {
 		struct sockaddr_un a = {};
@@ -510,9 +512,19 @@ TEST_F(Bridge, ServerThatTakesNoMore)
 		nonblock(fd);
 		if (connect(fd, (struct sockaddr *)&a, sizeof(a))) {
 			close(fd);
+			full = true;
 			break;
 		}
 		queued.push_back(fd);
+	}
+	if (!full) {
+		/* (macOS: a unix socket's queue takes every connection, and
+		   the call's connect with them) */
+		for (int fd : queued)
+			close(fd);
+		close(ln);
+		unlink(path.c_str());
+		GTEST_SKIP() << "the listen queue never filled";
 	}
 	unix_profile(&p, path, 10);
 	k.id = 1;
