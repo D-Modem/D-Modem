@@ -24,6 +24,7 @@
 #include <string.h>
 #include <strings.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #ifndef __HAIKU__
 #include <sys/syscall.h>
 #endif
@@ -259,10 +260,31 @@ static int relay(const struct dmbridge_host *h, int from, int to,
  *    the TCP server
  */
 
+/* a blocking connect() on fd given at most timeout seconds where the
+   system honours SO_SNDTIMEO for it (Linux, for TCP and unix sockets: a
+   server whose listen queue is full, or that has stopped accepting,
+   would otherwise hold the connect for ever); 0, or -1 (errno) */
+static int connect_within(int fd, const struct sockaddr *a, socklen_t len,
+			  int timeout)
+{
+	struct timeval tv = { timeout > 0 ? timeout : 0, 0 }, none = { 0, 0 };
+	int r, err;
+
+	if (timeout > 0)
+		setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+	r = connect(fd, a, len);
+	err = errno;
+	if (timeout > 0)
+		setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &none, sizeof(none));
+	errno = err;
+	return r;
+}
+
 /* host:port, the first address that takes it (a blocking connect, in
-   tcp_thread()), non-blocking once connected; -1 on failure */
+   tcp_thread(), of at most timeout seconds each), non-blocking once
+   connected; -1 on failure */
 static int connect_tcp(const struct dmbridge_host *h, const char *host,
-		       const char *port)
+		       const char *port, int timeout)
 {
 	struct addrinfo hints = { 0 }, *res, *ai;
 	int fd = -1, err;
@@ -279,7 +301,7 @@ static int connect_tcp(const struct dmbridge_host *h, const char *host,
 		fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
 		if (fd < 0)
 			continue;
-		if (!connect(fd, ai->ai_addr, ai->ai_addrlen))
+		if (!connect_within(fd, ai->ai_addr, ai->ai_addrlen, timeout))
 			break;
 		close(fd);
 		fd = -1;
@@ -295,8 +317,11 @@ static int connect_tcp(const struct dmbridge_host *h, const char *host,
 	return fd;
 }
 
-/* the unix socket path, non-blocking once connected; -1 on failure */
-static int connect_unix(const struct dmbridge_host *h, const char *path)
+/* the unix socket path (a connect of at most timeout seconds: each call
+   has a connection of its own, and a busy server may not take it at
+   once), non-blocking once connected; -1 on failure */
+static int connect_unix(const struct dmbridge_host *h, const char *path,
+			int timeout)
 {
 	struct sockaddr_un sun = { .sun_family = AF_UNIX };
 	/* (closed on exec: fcntl(), as Haiku has no SOCK_CLOEXEC) */
@@ -305,7 +330,8 @@ static int connect_unix(const struct dmbridge_host *h, const char *path)
 	if (fd >= 0)
 		fcntl(fd, F_SETFD, FD_CLOEXEC);
 	copy(sun.sun_path, path, sizeof(sun.sun_path));
-	if (fd < 0 || connect(fd, (struct sockaddr *)&sun, sizeof(sun))) {
+	if (fd < 0 || connect_within(fd, (struct sockaddr *)&sun, sizeof(sun),
+				     timeout)) {
 		log_line(h, NULL, DMBRIDGE_WARNING, "cannot connect to %s: %s",
 			 path, strerror(errno));
 		if (fd >= 0)
@@ -324,6 +350,7 @@ struct tcp_job {
 	char host[256];
 	char port[16];
 	char path[108];         /* a unix socket instead */
+	int timeout;            /* seconds the connect may take */
 	int out;
 };
 
@@ -332,8 +359,8 @@ struct tcp_job {
 static void *tcp_thread(void *arg)
 {
 	struct tcp_job *j = arg;
-	int fd = *j->path ? connect_unix(j->h, j->path) :
-			    connect_tcp(j->h, j->host, j->port);
+	int fd = *j->path ? connect_unix(j->h, j->path, j->timeout) :
+			    connect_tcp(j->h, j->host, j->port, j->timeout);
 
 	if (send(j->out, &fd, sizeof(fd), MSG_NOSIGNAL) != (ssize_t)sizeof(fd) &&
 	    fd >= 0)
@@ -377,6 +404,7 @@ static int tcp_start(const struct dmbridge_host *h,
 	copy(j->port, p->port, sizeof(j->port));
 	if (p->mode == DMBRIDGE_UNIX)
 		copy(j->path, p->path, sizeof(j->path));
+	j->timeout = p->timeout;
 	j->out = sv[1];
 	if (start_thread(h, tcp_thread, j)) {
 		close(sv[0]);
@@ -648,8 +676,17 @@ enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 	if (c->connecting >= 0) {
 		if (st->link != DMODEM_ONLINE)
 			return end(c, "REMOTE");
-		if (!tcp_done(c->connecting, &c->fd))
+		if (!tcp_done(c->connecting, &c->fd)) {
+			/* (where the system has no limit on the connect
+			   itself: the thread's result is thrown away) */
+			if (c->p->timeout > 0 && c->samples > c->connect_by) {
+				log_line(c->h, c->call, DMBRIDGE_WARNING,
+					 "the server did not take the call in %d s",
+					 c->p->timeout);
+				return end(c, "ERROR");
+			}
 			return DMBRIDGE_RUN;
+		}
 		close(c->connecting);
 		c->connecting = -1;
 		if (c->fd < 0)
@@ -711,6 +748,9 @@ enum dmbridge_event dmbridge_call_serve(struct dmbridge_call *c,
 		c->connecting = tcp_start(c->h, c->p);
 		if (c->connecting < 0)
 			return end(c, "ERROR");
+		/* a second more than the connect's own limit */
+		c->connect_by = c->samples +
+			((long long)c->p->timeout + 1) * DMODEM_RATE;
 		/* sent once the server is connected, before what the
 		   remote modem sends */
 		if (c->p->header && env)

@@ -77,7 +77,7 @@ FreeSWITCH can serve several numbers in several ways:
 | `answer` | `ATA` | The command line the modem answers with. |
 | `law` | `auto` | The G.711 law: `ulaw`, `alaw`, or `auto` for the channel's codec. |
 | `clear` | `auto` | `true`: every call is a clear 64 kbit/s channel (`AT+MS=CLEAR` on the channel's octets as they are, as for an ISDN data call). FreeSWITCH has no digital-bearer calls, so `auto` here means `false`. |
-| `timeout` | `60` | Seconds the modems have to connect. |
+| `timeout` | `60` | Seconds the modems have to connect; then (`tcp`, `unix`) the seconds the server has to take the call, or the call ends with `ERROR`. |
 | `jitter-buffer` | `60` | The jitter buffer in ms, as in `<settings>` (see [The channel](#the-channel)). |
 | `fax` | `true` | Receive a calling fax machine as a fax (see [Fax](#fax)). |
 
@@ -350,6 +350,12 @@ PPP and a shell, each started with the caller's credentials and these
 details of the call. It runs either as a `mode` `exec` program for each
 call, or as one server for all calls (`modemmenu -serve`) behind a
 `mode` `unix` profile with `header` `true`.
+
+Every call is a connection of its own to the profile's server: many
+callers at once on one `modemmenu -serve` (or a BBS) socket are many
+connections, each with its own header, and each server session hands
+the caller on by connections of its own. No descriptor is passed
+between the processes; each hop copies the caller's bytes.
 
 When it returns, `dmodem` sets these channel variables:
 

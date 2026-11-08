@@ -30,7 +30,8 @@
 ;                    link).  A SIP call in CLEARMODE (codec_clearmode)
 ;                    is clear whatever this says.  yes: every call;
 ;                    no: never
-;   timeout = 60     seconds for the modems to connect
+;   timeout = 60     seconds for the modems to connect, then for the
+;                    server (tcp, unix) to take the call
 ;
 ;   fax = yes        a fax machine calling (its CNG tone) is received
 ;                    as a fax (into fax_dir) instead of by the modem

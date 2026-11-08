@@ -73,7 +73,7 @@ Its faxes use T.38 in the same way as the module's do
 | `answer` | `ATA` | The command line the modem answers with. |
 | `law` | `auto` | The network's G.711 law: `ulaw`, `alaw`, or `auto` for the channel's. |
 | `clear` | `auto` | ISDN data calls as a clear 64 kbit/s channel: `auto`, `yes` or `no` (see [The channel](#the-channel)). |
-| `timeout` | `60` | Seconds the modems have to connect. |
+| `timeout` | `60` | Seconds the modems have to connect; then (`tcp`, `unix`) the seconds the server has to take the call, or the call ends with `ERROR`. |
 | `fax` | `yes` | Receive a calling fax machine as a fax (see [Fax](#fax)). |
 
 Option names are matched without regard to case, and `_` and `-` are
@@ -365,6 +365,12 @@ PPP and a shell, each started with the caller's credentials and these
 details of the call. It runs either as a `mode = exec` program for each
 call, or as one server for all calls (`modemmenu -serve`) behind a
 `mode = unix` profile with `header = yes`.
+
+Every call is a connection of its own to the profile's server: many
+callers at once on one `modemmenu -serve` (or a BBS) socket are many
+connections, each with its own header, and each server session hands
+the caller on by connections of its own. No descriptor is passed
+between the processes; each hop copies the caller's bytes.
 
 When it returns, `DModem()` sets:
 

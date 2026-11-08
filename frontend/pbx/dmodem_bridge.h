@@ -83,7 +83,8 @@ struct dmbridge_profile {
 	char answer[128];       /* the command line that answers (ATA) */
 	enum dmodem_law law;    /* DMODEM_LAW_UNKNOWN: the channel's */
 	enum dmbridge_clear clear;
-	int timeout;            /* seconds to connect */
+	int timeout;            /* seconds to connect: the modems, then
+				   (tcp, unix) the server */
 	struct dmbridge_fax fax;
 };
 
@@ -164,6 +165,7 @@ struct dmbridge_call {
 	pid_t pid;              /* the program */
 	struct dmbridge_pipe to_line, to_fd;
 	long long samples, deadline, closing;
+	long long connect_by;   /* the server connected by then (samples) */
 };
 
 /* nothing yet (status ERROR): dmbridge_call_end() may follow */
