@@ -78,6 +78,11 @@ struct dmbridge_profile {
 	char path[108];         /* mode unix: the server's socket */
 	int header;             /* tcp, unix: the program's environment (the
 				   call's details) first on the connection */
+	int handoff;            /* unix (with header): the modem's DTE a
+				   pty, its terminal to the server
+				   (SCM_RIGHTS, with the header), the
+				   connection then only the session's
+				   lifetime: no bytes copied here */
 	char command[1024];
 	char init[128];         /* extra AT commands, e.g. +MS=34 */
 	char answer[128];       /* the command line that answers (ATA) */
@@ -104,14 +109,14 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
    else empty (the fax settings too: the module's general ones go
    there) */
 void dmbridge_profile_init(struct dmbridge_profile *p);
-/* a profile's option (mode, host, port, path, header, command, init,
+/* a profile's option (mode, host, port, path, header, handoff, command, init,
    answer, law, clear, timeout and the fax ones); 0 if name is something else.
    where: the profile, for the log ("[bbs]", "profile bbs") */
 int dmbridge_profile_option(const struct dmbridge_host *h,
 			    struct dmbridge_profile *p, const char *where,
 			    const char *name, const char *value);
-/* -1 if mode tcp lacks host or port, mode unix path, or mode exec
-   command */
+/* -1 if mode tcp lacks host or port, mode unix path, mode exec
+   command, or handoff mode unix and header */
 int dmbridge_profile_check(const struct dmbridge_host *h,
 			   const struct dmbridge_profile *p,
 			   const char *where);
@@ -166,6 +171,7 @@ struct dmbridge_call {
 	struct dmbridge_pipe to_line, to_fd;
 	long long samples, deadline, closing;
 	long long connect_by;   /* the server connected by then (samples) */
+	int handed;             /* the DTE is the server's (handoff) */
 };
 
 /* nothing yet (status ERROR): dmbridge_call_end() may follow */

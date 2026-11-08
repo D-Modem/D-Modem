@@ -8,7 +8,8 @@
  *    BBS listen there): each call a connection of its own, its own
  *    header first, its bytes never another call's; and a server that
  *    takes no more connections costs a call its server, not the line
- *    for ever
+ *    for ever.  The same with the handoff (the modem's DTE passed to the
+ *    server, SCM_RIGHTS): the server on the modem's bytes themselves
  *
  *    DMODEM_DEBUG=<level>   libdmodem's log, and the bridge's
  */
@@ -101,10 +102,38 @@ static int listen_at(const std::string &path, int n)
 	return fd;
 }
 
+/* what came on fd into buf (as read()), and in *got a descriptor that
+   came with it (SCM_RIGHTS), if one did */
+static int recv_fd(int fd, char *buf, size_t size, int *got)
+{
+	struct msghdr m = {};
+	struct iovec v = { buf, size };
+	union {
+		struct cmsghdr h;
+		char b[CMSG_SPACE(sizeof(int))];
+	} u;
+	int n;
+
+	m.msg_iov = &v;
+	m.msg_iovlen = 1;
+	m.msg_control = u.b;
+	m.msg_controllen = sizeof(u.b);
+	n = (int)recvmsg(fd, &m, 0);
+	for (struct cmsghdr *c = CMSG_FIRSTHDR(&m); n >= 0 && c;
+	     c = CMSG_NXTHDR(&m, c))
+		if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS)
+			memcpy(got, CMSG_DATA(c), sizeof(int));
+	return n;
+}
+
 /* the server: as modemmenu -serve, a connection for each call, served
    at once; its header read, then a greeting naming the call its header
-   names, then each line back with that name in front */
+   names, then each line back with that name in front, until a line
+   "quit": "bye" then, and the session ends.  With handoff the modem's
+   DTE comes with the header, and the caller's bytes are on it */
 struct Server {
+	bool handoff = false;
+	std::atomic<int> fds{ 0 };      /* descriptors handed over */
 	int ln = -1;
 	std::atomic<bool> stop{ false };
 	std::atomic<int> active{ 0 }, most{ 0 }, served{ 0 };
@@ -119,14 +148,16 @@ struct Server {
 	{
 		std::string in, id;
 		char buf[512];
-		bool header = true;
-		int n;
+		bool header = true, quit = false;
+		int n, data = fd, passed = -1;
 
 		served++;
 		int now = ++active;
 		for (int m = most; now > m && !most.compare_exchange_weak(m, now);)
 			;
-		while ((n = read(fd, buf, sizeof(buf))) > 0) {
+		while (!quit && (n = header && handoff ?
+				 recv_fd(fd, buf, sizeof(buf), &passed) :
+				 (int)read(data, buf, sizeof(buf))) > 0) {
 			in.append(buf, n);
 			if (header) {
 				size_t end = in.find("\n\n");
@@ -147,19 +178,43 @@ struct Server {
 							" connected twice");
 				}
 				header = false;
+				if (handoff) {
+					if (passed < 0) {
+						fail("caller " + id + ": no descriptor");
+						break;
+					}
+					fds++;
+					data = passed;
+					/* the line's terminal: a session,
+					   pppd, run on it */
+					if (!isatty(data))
+						fail("caller " + id + ": not a terminal");
+					fcntl(data, F_SETFL,
+					      fcntl(data, F_GETFL) & ~O_NONBLOCK);
+					/* (what came after the header, on
+					   the connection: nothing should) */
+					if (!in.empty())
+						fail("caller " + id + ": bytes on the connection");
+				}
 				std::string hello = "hello " + id + "\r\n";
-				if (write(fd, hello.data(), hello.size()) < 0)
+				if (write(data, hello.data(), hello.size()) < 0)
 					break;
 			}
 			size_t eol;
 			while ((eol = in.find('\n')) != std::string::npos) {
 				std::string line = id + ":" + in.substr(0, eol + 1);
 				in.erase(0, eol + 1);
-				if (write(fd, line.data(), line.size()) < 0)
+				if (line == id + ":quit\r\n") {
+					line = "bye\r\n";
+					quit = true;
+				}
+				if (write(data, line.data(), line.size()) < 0 || quit)
 					break;
 			}
 		}
 		active--;
+		if (data != fd)
+			close(data);
 		close(fd);
 	}
 
@@ -210,6 +265,7 @@ struct Call {
 	const struct dmbridge_profile *p;
 	std::atomic<int> *ready;        /* the calls through to the server */
 	int calls;                      /* how many there are */
+	bool quit = false;              /* the caller ends it by "quit" */
 	const char *status = "";
 	std::string got;                /* what the caller's DTE received */
 	std::vector<std::string> failures;
@@ -293,7 +349,10 @@ static void run_call(Call *k)
 		if (c.connecting >= 0 || (greeted && *k->ready < k->calls))
 			std::this_thread::sleep_for(std::chrono::milliseconds(2));
 		if (ponged && *k->ready >= k->calls && !hung_up) {
-			dmodem_hangup(a);
+			if (k->quit)
+				write(sa[1], "quit\r\n", 6);
+			else
+				dmodem_hangup(a);
 			hung_up = true;
 		}
 	}
@@ -316,18 +375,22 @@ static void run_call(Call *k)
 					      k->got + "]");
 	if (!ponged)
 		k->failures.push_back("no echo; got [" + k->got + "]");
+	if (k->quit && k->got.find("bye\r\n") == std::string::npos)
+		k->failures.push_back("no bye; got [" + k->got + "]");
 }
 
 /* the bridge's profile for a server at path: mode unix, the header,
-   V.22, timeout s */
+   V.22, timeout s, and the handoff if handoff */
 static void unix_profile(struct dmbridge_profile *p, const std::string &path,
-			 int timeout)
+			 int timeout, bool handoff = false)
 {
 	dmbridge_profile_init(p);
 	ASSERT_TRUE(dmbridge_profile_option(&host, p, "test", "mode", "unix"));
 	ASSERT_TRUE(dmbridge_profile_option(&host, p, "test", "path", path.c_str()));
 	ASSERT_TRUE(dmbridge_profile_option(&host, p, "test", "header", "yes"));
 	ASSERT_TRUE(dmbridge_profile_option(&host, p, "test", "init", line_ms));
+	if (handoff)
+		ASSERT_TRUE(dmbridge_profile_option(&host, p, "test", "handoff", "yes"));
 	p->timeout = timeout;
 	ASSERT_EQ(dmbridge_profile_check(&host, p, "test"), 0);
 }
@@ -347,10 +410,9 @@ protected:
 	}
 };
 
-/* eight callers at once on one server's unix socket: each a connection of
-   its own with its own header, all of them on the server together, every
-   call's bytes its own; each call ends when its caller hangs up */
-TEST_F(Bridge, ManyCallersOneUnixServer)
+/* eight calls at once to one server, with the handoff or not; every
+   failure of each, and of the server */
+static void many_callers(bool handoff)
 {
 	const int calls = 8;
 	std::string path = socket_path("many");
@@ -360,14 +422,16 @@ TEST_F(Bridge, ManyCallersOneUnixServer)
 	std::vector<Call> k(calls);
 	std::vector<std::thread> th;
 
+	srv.handoff = handoff;
 	ASSERT_TRUE(srv.start(path)) << path << ": " << strerror(errno);
-	unix_profile(&p, path, 20);
+	unix_profile(&p, path, 20, handoff);
 	for (int i = 0; i < calls; i++) {
 		k[i].id = 100 + i;
 		k[i].name = "call" + std::to_string(i);
 		k[i].p = &p;
 		k[i].ready = &ready;
 		k[i].calls = calls;
+		k[i].quit = handoff && i % 2;   /* half end it on the server */
 		th.emplace_back(run_call, &k[i]);
 	}
 	for (auto &t : th)
@@ -378,13 +442,51 @@ TEST_F(Bridge, ManyCallersOneUnixServer)
 	for (auto &c : k) {
 		for (auto &f : c.failures)
 			ADD_FAILURE() << c.name << ": " << f;
-		EXPECT_STREQ(c.status, "REMOTE") << c.name;
+		EXPECT_STREQ(c.status, c.quit ? "LOCAL" : "REMOTE") << c.name;
 	}
 	for (auto &f : srv.failures)
 		ADD_FAILURE() << "server: " << f;
 	EXPECT_EQ(srv.served, calls) << "connections to the server";
 	EXPECT_EQ((int)srv.callers.size(), calls) << "distinct headers";
 	EXPECT_EQ(srv.most, calls) << "calls on the server at once";
+	EXPECT_EQ(srv.fds, handoff ? calls : 0) << "modems' DTEs handed over";
+	if (handoff)
+		EXPECT_FALSE(logged("not sent at the hangup"));
+}
+
+/* eight callers at once on one server's unix socket: each a connection of
+   its own with its own header, all of them on the server together, every
+   call's bytes its own; each call ends when its caller hangs up */
+TEST_F(Bridge, ManyCallersOneUnixServer)
+{
+	many_callers(false);
+}
+
+/* the same with the handoff: each call's modem DTE passed to the server
+   with its header, the bytes between the caller and the server through
+   no one; half the calls end by the caller hanging up (REMOTE), half by
+   the server ending the session (LOCAL, its last line delivered) */
+TEST_F(Bridge, ManyCallersHandedOver)
+{
+	many_callers(true);
+}
+
+/* handoff with what cannot have it: mode tcp, or no header */
+TEST_F(Bridge, HandoffNeedsUnixAndHeader)
+{
+	struct dmbridge_profile p;
+
+	dmbridge_profile_init(&p);
+	dmbridge_profile_option(&host, &p, "t", "host", "localhost");
+	dmbridge_profile_option(&host, &p, "t", "port", "23");
+	dmbridge_profile_option(&host, &p, "t", "header", "yes");
+	dmbridge_profile_option(&host, &p, "t", "handoff", "yes");
+	EXPECT_EQ(dmbridge_profile_check(&host, &p, "t"), -1);
+	dmbridge_profile_option(&host, &p, "t", "mode", "unix");
+	dmbridge_profile_option(&host, &p, "t", "path", "/x");
+	EXPECT_EQ(dmbridge_profile_check(&host, &p, "t"), 0);
+	dmbridge_profile_option(&host, &p, "t", "header", "no");
+	EXPECT_EQ(dmbridge_profile_check(&host, &p, "t"), -1);
 }
 
 /* a server that has stopped taking connections (its listen queue full):

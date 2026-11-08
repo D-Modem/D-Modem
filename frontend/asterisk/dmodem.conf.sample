@@ -14,6 +14,9 @@
 ;                    the pty is hung up when the call ends
 ;   header = no      tcp, unix: yes sends those variables to the server
 ;                    first, NAME=value lines and an empty line
+;   handoff = no     unix (with header = yes): yes passes the modem's
+;                    line itself to the server with the header
+;                    (SCM_RIGHTS) instead of copying bytes to it
 ;   init = AT...     extra AT commands for the modem, e.g. AT+MS=34 to
 ;                    stop at V.34, AT+MS=132 for V.32bis
 ;   answer = ATA     the command line the modem answers with; commands

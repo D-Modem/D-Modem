@@ -56,6 +56,7 @@
       <param name="port" value="23"/>
       <param name="path" value="/run/modemmenu/modemmenu.sock"/>  mode unix: the server's socket
       <param name="header" value="false"/>    tcp, unix: the call's details first (DMODEM_* lines)
+      <param name="handoff" value="false"/>   unix with header: the modem's line itself to the server (SCM_RIGHTS)
       <param name="command" value="exec /usr/sbin/pppd ..."/>
       <param name="init" value="+MS=34"/>     more AT commands for the modem
       <param name="answer" value="ATA"/>      the command line that answers (AT+MS=132;A)

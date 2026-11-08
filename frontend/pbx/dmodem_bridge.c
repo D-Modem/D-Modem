@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #ifndef __HAIKU__
@@ -153,6 +154,8 @@ int dmbridge_profile_option(const struct dmbridge_host *h,
 		copy(p->path, value, sizeof(p->path));
 	} else if (dmbridge_option_is(name, "header")) {
 		p->header = h->is_true(value);
+	} else if (dmbridge_option_is(name, "handoff")) {
+		p->handoff = h->is_true(value);
 	} else if (dmbridge_option_is(name, "command")) {
 		copy(p->command, value, sizeof(p->command));
 	} else if (dmbridge_option_is(name, "init")) {
@@ -200,6 +203,11 @@ int dmbridge_profile_check(const struct dmbridge_host *h,
 	if (p->mode == DMBRIDGE_UNIX && !*p->path) {
 		log_line(h, NULL, DMBRIDGE_ERROR, "%s: mode unix needs path",
 			 where);
+		return -1;
+	}
+	if (p->handoff && (p->mode != DMBRIDGE_UNIX || !p->header)) {
+		log_line(h, NULL, DMBRIDGE_ERROR,
+			 "%s: handoff needs mode unix and header", where);
 		return -1;
 	}
 	if (p->mode == DMBRIDGE_EXEC && !*p->command) {
@@ -432,6 +440,112 @@ static int tcp_done(int pending, int *fd)
 }
 
 /*
+ *    the handoff: the modem's DTE to the server
+ */
+
+static enum dmbridge_event end(struct dmbridge_call *c, const char *s);
+
+/* b's bytes (the header) on fd, the descriptor give attached to them
+   (SCM_RIGHTS); what was sent of b, or -1 (errno) */
+static int send_with_fd(int fd, const char *b, int len, int give)
+{
+	struct msghdr m = { 0 };
+	struct iovec v = { (void *)b, (size_t)len };
+	union {
+		struct cmsghdr h;
+		char buf[CMSG_SPACE(sizeof(int))];
+	} u;
+	struct cmsghdr *cm;
+
+	memset(&u, 0, sizeof(u));
+	m.msg_iov = &v;
+	m.msg_iovlen = 1;
+	m.msg_control = u.buf;
+	m.msg_controllen = sizeof(u.buf);
+	cm = CMSG_FIRSTHDR(&m);
+	cm->cmsg_level = SOL_SOCKET;
+	cm->cmsg_type = SCM_RIGHTS;
+	cm->cmsg_len = CMSG_LEN(sizeof(int));
+	memcpy(CMSG_DATA(cm), &give, sizeof(int));
+	return (int)sendmsg(fd, &m, MSG_NOSIGNAL);
+}
+
+/* the bytes the modem has yet to take from its DTE (what the server
+   wrote last); 0 where the system cannot say */
+static int dte_unread(int fd)
+{
+	int n = 0;
+
+#ifdef FIONREAD
+	if (ioctl(fd, FIONREAD, &n))
+		n = 0;
+#else
+	(void)fd;
+#endif
+	return n;
+}
+
+/* online, the server connected, the profile's handoff: the modem's DTE
+   (the terminal of its pty) passed to the server with the header,
+   then the connection kept only as the server's sign that the session
+   goes on; when it closes, what the server wrote last goes out and the
+   call ends (LOCAL) */
+static enum dmbridge_event step_handoff(struct dmbridge_call *c)
+{
+	struct dmodem_status *st = &c->st;
+	char buf[256];
+	int n;
+
+	if (!c->handed) {
+		/* (the terminal blocking, as a session's programs expect
+		   their tty; the flag is the open file's, the server's too) */
+		fcntl(c->dte[1], F_SETFL, fcntl(c->dte[1], F_GETFL) & ~O_NONBLOCK);
+		n = send_with_fd(c->fd, c->to_fd.data, c->to_fd.len, c->dte[1]);
+		if (n < 0 && (errno == EAGAIN || errno == EINTR))
+			return DMBRIDGE_RUN;
+		if (n <= 0) {
+			nonblock(c->dte[1]);
+			log_line(c->h, c->call, DMBRIDGE_WARNING,
+				 "cannot hand the line to the server: %s",
+				 n ? strerror(errno) : "nothing sent");
+			return end(c, "ERROR");
+		}
+		memmove(c->to_fd.data, c->to_fd.data + n, c->to_fd.len - n);
+		c->to_fd.len -= n;
+		/* the server's now: the modem's bytes go to it alone */
+		close(c->dte[1]);
+		c->dte[1] = -1;
+		c->handed = 1;
+		log_line(c->h, c->call, DMBRIDGE_INFO,
+			 "the line handed to the server");
+	}
+	/* the rest of the header, if it did not all go at once */
+	relay(c->h, -1, c->fd, &c->to_fd);
+	if (st->link != DMODEM_ONLINE)
+		return end(c, "REMOTE");
+	if (c->closing < 0) {
+		/* (nothing comes on it but its end) */
+		n = read(c->fd, buf, sizeof(buf));
+		if (n == 0 || (n < 0 && errno != EAGAIN && errno != EINTR)) {
+			log_line(c->h, c->call, DMBRIDGE_INFO,
+				 "the server ended the session");
+			c->closing = c->samples;
+		}
+		return DMBRIDGE_RUN;
+	}
+	n = dte_unread(c->dte[0]);
+	if ((!n && !st->tx_pending && c->samples - c->closing > DMODEM_RATE) ||
+	    c->samples - c->closing > 30 * DMODEM_RATE) {
+		if (n || st->tx_pending)
+			log_line(c->h, c->call, DMBRIDGE_WARNING,
+				 "%d bytes not sent at the hangup",
+				 n + (int)st->tx_pending);
+		return end(c, "LOCAL");
+	}
+	return DMBRIDGE_RUN;
+}
+
+/*
  *    the program
  */
 
@@ -465,6 +579,33 @@ static int pts_name(int fd, char *path, size_t size)
 #else
 	return ptsname_r(fd, path, size) ? -1 : 0;
 #endif
+}
+
+/* a new pty for the modem's line: fd[0] its master, fd[1] its slave
+   (raw, not our controlling tty), both closed on exec; 0, or -1 */
+static int line_pty(const struct dmbridge_host *h, int fd[2])
+{
+	char slave[64];
+	struct termios t;
+
+	fd[0] = posix_openpt(O_RDWR | O_NOCTTY);
+	fd[1] = -1;
+	if (fd[0] < 0 || grantpt(fd[0]) || unlockpt(fd[0]) ||
+	    pts_name(fd[0], slave, sizeof(slave)) ||
+	    (fd[1] = open(slave, O_RDWR | O_NOCTTY)) < 0) {
+		log_line(h, NULL, DMBRIDGE_WARNING, "no pty: %s",
+			 strerror(errno));
+		if (fd[0] >= 0)
+			close(fd[0]);
+		return -1;
+	}
+	fcntl(fd[0], F_SETFD, FD_CLOEXEC);
+	fcntl(fd[1], F_SETFD, FD_CLOEXEC);
+	if (!tcgetattr(fd[1], &t)) {
+		cfmakeraw(&t);
+		tcsetattr(fd[1], TCSANOW, &t);
+	}
+	return 0;
 }
 
 /* the program on the slave of a new pty, the master returned; the child
@@ -578,10 +719,15 @@ int dmbridge_call_start(struct dmbridge_call *c,
 	c->call = call;
 	c->p = p;
 	c->orig = orig;
-	/* the modem's DTE: one end of a socketpair, the other end ours */
-	if (socketpair(AF_UNIX, SOCK_STREAM, 0, c->dte)) {
-		log_line(h, call, DMBRIDGE_WARNING, "socketpair: %s",
-			 strerror(errno));
+	/* the modem's DTE: one end of a socketpair, the other end ours;
+	   for the handoff a pty, the modem on its master, the terminal
+	   the server's to have (a caller's session, pppd, on it as on a
+	   serial line) */
+	if (p->handoff ? line_pty(h, c->dte) :
+			 socketpair(AF_UNIX, SOCK_STREAM, 0, c->dte)) {
+		if (!p->handoff)
+			log_line(h, call, DMBRIDGE_WARNING, "socketpair: %s",
+				 strerror(errno));
 		c->dte[0] = c->dte[1] = -1;
 		return -1;
 	}
@@ -693,6 +839,8 @@ enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 			return end(c, "ERROR");
 		log_fds(c);
 	}
+	if (c->p->handoff)
+		return step_handoff(c);
 	relay(c->h, c->dte[1], c->fd, &c->to_fd);
 	if (st->link != DMODEM_ONLINE)
 		return end(c, "REMOTE");
