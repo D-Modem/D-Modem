@@ -13,6 +13,7 @@
 namespace dmd {
 namespace red {
 
+/* see rtp_red.h */
 bool decode(const u8 *p, size_t n, u32 ts, std::vector<Block> *out)
 {
 	size_t at = 0, data = 0;
@@ -52,6 +53,7 @@ bad:
 	return false;
 }
 
+/* see rtp_red.h */
 size_t encode(const Block *red, size_t nred, const Block &primary, u8 *out,
 	      size_t max)
 {
@@ -86,6 +88,7 @@ size_t encode(const Block *red, size_t nred, const Block &primary, u8 *out,
 	return at + primary.n;
 }
 
+/* see rtp_red.h */
 std::vector<s16> fmtp_types(const std::string &v)
 {
 	std::vector<s16> t;
@@ -115,6 +118,7 @@ std::vector<s16> fmtp_types(const std::string &v)
 	return t;
 }
 
+/* see rtp_red.h */
 std::string fmtp(s16 pt, s16 level)
 {
 	std::string p = std::to_string(pt), s = p;

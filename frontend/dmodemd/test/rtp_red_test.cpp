@@ -148,6 +148,7 @@ TEST(RtpRed, Malformed)
 	EXPECT_TRUE(v.empty());
 }
 
+/* a=fmtp values read, and ours */
 TEST(RtpRed, Fmtp)
 {
 	EXPECT_EQ(red::fmtp_types("0/0/0"),
