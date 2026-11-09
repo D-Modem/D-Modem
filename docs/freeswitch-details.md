@@ -73,11 +73,12 @@ FreeSWITCH can serve several numbers in several ways:
 | `path` | none | `mode` `unix`: the server's stream socket. Required. |
 | `command` | none | `mode` `exec`: the program, run by `/bin/sh -c`. Required. |
 | `header` | `false` | `tcp` and `unix` only: send the call's details first (see [below](#what-the-server-or-program-sees)). |
+| `handoff` | `false` | `unix` with `header` only: pass the modem's line itself to the server (see [below](#what-the-server-or-program-sees)). |
 | `init` | empty | Extra AT commands for the modem, in both directions (for example `+MS=34`). |
 | `answer` | `ATA` | The command line the modem answers with. |
 | `law` | `auto` | The G.711 law: `ulaw`, `alaw`, or `auto` for the channel's codec. |
 | `clear` | `auto` | `true`: every call is a clear 64 kbit/s channel (`AT+MS=CLEAR` on the channel's octets as they are, as for an ISDN data call). FreeSWITCH has no digital-bearer calls, so `auto` here means `false`. |
-| `timeout` | `60` | Seconds the modems have to connect. |
+| `timeout` | `60` | Seconds the modems have to connect; then (`tcp`, `unix`) the seconds the server has to take the call, or the call ends with `ERROR`. |
 | `jitter-buffer` | `60` | The jitter buffer in ms, as in `<settings>` (see [The channel](#the-channel)). |
 | `fax` | `true` | Receive a calling fax machine as a fax (see [Fax](#fax)). |
 
@@ -350,6 +351,23 @@ PPP and a shell, each started with the caller's credentials and these
 details of the call. It runs either as a `mode` `exec` program for each
 call, or as one server for all calls (`modemmenu -serve`) behind a
 `mode` `unix` profile with `header` `true`.
+
+Every call is a connection of its own to the profile's server: many
+callers at once on one `modemmenu -serve` (or a BBS) socket are many
+connections, each with its own header.
+
+With `handoff = yes` as well (`unix` and `header` only), the module
+puts the modem on a pty and passes the pty's terminal to the server
+instead of copying bytes to it: the header goes over the connection with
+the descriptor attached (`SCM_RIGHTS`), and from then on the server, and
+whatever it runs on that terminal (a login session, a shell, pppd), is
+on the modem's line itself, as on a serial port. The connection carries nothing more; it stays open
+for as long as the session lasts. When the server closes it, the module
+waits for what the server wrote last to go out, then hangs up (`LOCAL`);
+when the remote modem goes, the server sees its end of the line close.
+The server must expect the descriptor (`modemmenu -serve` and the BBS's
+`handoff` listeners do); a server that does not gets the header and
+nothing after it.
 
 When it returns, `dmodem` sets these channel variables:
 

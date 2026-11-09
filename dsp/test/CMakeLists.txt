@@ -287,6 +287,19 @@ if(NOT WIN32)
 		${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 	target_link_libraries(courier_peer PRIVATE dmodem)
 endif()
+# the PBX modules' call (frontend/pbx/dmodem_bridge.c): many callers at
+# once on one server's unix socket
+if(NOT WIN32)
+	dmodem_test_exe(dmodem_bridge_test
+		${PROJECT_SOURCE_DIR}/frontend/pbx/test/dmodem_bridge_test.cpp
+		${PROJECT_SOURCE_DIR}/frontend/pbx/dmodem_bridge.c)
+	target_include_directories(dmodem_bridge_test PRIVATE
+		${PROJECT_SOURCE_DIR}/frontend/pbx
+		${PROJECT_SOURCE_DIR}/frontend/dmodemd)
+	target_compile_definitions(dmodem_bridge_test PRIVATE _GNU_SOURCE)
+	target_link_libraries(dmodem_bridge_test PRIVATE dmodem)
+	dmodem_gtest(dmodem_bridge_test LABELS quick)
+endif()
 # a point of sale transaction (SDLC frames through V.80) over V.29
 # FastPOS and V.22 fast connect
 dmodem_test_exe(pos_test pos_test.cpp)

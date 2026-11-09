@@ -58,4 +58,4 @@ D-Modem began at Aon's Cyber Labs in 2021 ([acknowledgements](docs/acknowledgeme
 
 ## License
 
-D-Modem is copyright the D-Modem Authors, under the GNU Affero General Public License version 3 only ([COPYING](COPYING)), or under a commercial licence from the D-Modem Authors.  See [LICENSING.md](LICENSING.md) for the parts under other licences: the Asterisk module (GPL-2.0) and the interop test binaries in `dsp/test/`, which belong to their owners and are **not** subject to this repository's terms ([dsp/test/NOTICE.md](dsp/test/NOTICE.md)).
+D-Modem is copyright the D-Modem Authors, under the GNU Affero General Public License version 3 only ([COPYING](COPYING)), or under a commercial licence from the D-Modem Authors.  See [LICENSING.md](LICENSING.md) for the parts under other licences: the Asterisk module (GPL-2.0) and the interop test binaries in `dsp/test/`, which belong to their owners and are **not** subject to this repository's terms ([dsp/test/NOTICE.md](dsp/test/NOTICE.md)). Contributions come with a contributor agreement ([CONTRIBUTING.md](CONTRIBUTING.md)).

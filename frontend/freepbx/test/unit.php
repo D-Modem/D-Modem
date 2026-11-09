@@ -163,6 +163,16 @@ dmodem_post($m, array_merge($bbs, ['name' => 'sock', 'mode' => 'unix', 'path' =>
 ok(isset($m->errors['path']), 'a unix socket path must be absolute');
 dmodem_post($m, array_merge($bbs, ['name' => 'run', 'mode' => 'exec', 'command' => '']));
 ok(isset($m->errors['command']), 'exec needs a command');
+dmodem_post($m, array_merge($bbs, ['name' => 'hand', 'handoff' => 'yes', 'header' => 'yes']));
+ok(isset($m->errors['handoff']), 'handoff needs a unix socket');
+dmodem_post($m, array_merge($bbs, ['name' => 'hand', 'mode' => 'unix', 'path' => '/run/menu.sock',
+				   'handoff' => 'yes']));
+ok(isset($m->errors['handoff']), 'handoff needs the call details first');
+ok($m->getProfile('hand') === null, 'a bad handoff profile is not kept');
+dmodem_post($m, array_merge($bbs, ['name' => 'menu', 'mode' => 'unix', 'path' => '/run/menu.sock',
+				   'header' => 'yes', 'handoff' => 'yes']));
+same($m->errors, [], 'profile menu (handoff) saved');
+same($m->getProfile('menu')['handoff'], true, 'handoff checked: on');
 
 /* editing keeps the name: it is the destination */
 dmodem_post($m, array_merge($bbs, ['original' => 'bbs', 'name' => 'renamed', 'port' => '2424']));
@@ -176,7 +186,7 @@ dmodem_post($m, array_merge($bbs, ['original' => 'bbs', 'port' => '2323']));
 $m->writeConfig($m->genConfig());
 $conf = $m->FreePBX->written['dmodem.conf'];
 $c = read_conf($conf);
-same(array_keys($c), ['general', 'bbs', 'ppp'], 'dmodem.conf: [general] and the profiles in order');
+same(array_keys($c), ['general', 'bbs', 'menu', 'ppp'], 'dmodem.conf: [general] and the profiles in order');
 same($c['bbs']['answer'], 'AT+MS=132;A', 'a ; in a value survives (written \\;)');
 same($c['ppp']['command'], 'exec /usr/sbin/pppd nodetach noauth local; echo x', 'the command with its ;');
 same($c['bbs']['host'] . ':' . $c['bbs']['port'], '127.0.0.1:2323', 'tcp host and port');
@@ -187,6 +197,10 @@ same($c['general']['fax_ecm'], 'no', 'fax_ecm no');
 same($c['general']['fax_ident'], '+1 555 0100', 'fax_ident');
 same($c['general']['fax_max_rate'], '9600', 'fax_max_rate');
 ok(!isset($c['ppp']['header']), 'exec has no header');
+same($c['menu']['handoff'] . ' ' . $c['menu']['header'], 'yes yes', 'handoff and header on the unix profile');
+ok(!isset($c['bbs']['handoff']) && !isset($c['ppp']['handoff']), 'handoff only for unix');
+dmodem_post($m, ['action' => 'delete', 'profile' => 'menu']);
+ok($m->getProfile('menu') === null, 'profile menu deleted');
 ok(!isset($c['general']['ari_url']), 'no ARI settings for app_dmodem');
 ok(strpos($conf, '<b>') !== false && strpos($conf, "\n; The <b>BBS</b>\n") !== false,
    'the description as a comment');

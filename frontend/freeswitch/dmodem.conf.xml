@@ -56,12 +56,13 @@
       <param name="port" value="23"/>
       <param name="path" value="/run/modemmenu/modemmenu.sock"/>  mode unix: the server's socket
       <param name="header" value="false"/>    tcp, unix: the call's details first (DMODEM_* lines)
+      <param name="handoff" value="false"/>   unix with header: the modem's line itself to the server (SCM_RIGHTS)
       <param name="command" value="exec /usr/sbin/pppd ..."/>
       <param name="init" value="+MS=34"/>     more AT commands for the modem
       <param name="answer" value="ATA"/>      the command line that answers (AT+MS=132;A)
       <param name="law" value="auto"/>        ulaw, alaw or auto (the channel's codec)
       <param name="clear" value="false"/>     true: the call is a clear 64 kbit/s channel (AT+MS=CLEAR on the channel's octets as they are, an ISDN data call's); auto (the default) is false here
-      <param name="timeout" value="60"/>      seconds for the modems to connect
+      <param name="timeout" value="60"/>      seconds for the modems to connect, then for the server (tcp, unix) to take the call
       <param name="jitter-buffer" value="60"/> ms, as in settings
       <param name="fax" value="true"/>        and the fax settings, as above
     </profile>

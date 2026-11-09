@@ -19,7 +19,7 @@ $(function () {
 		if (m === undefined)
 			return;
 		show(['host', 'port'], m === 'tcp');
-		show(['path'], m === 'unix');
+		show(['path', 'handoff'], m === 'unix');
 		show(['command'], m === 'exec');
 		show(['header'], m !== 'exec');
 	}

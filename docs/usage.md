@@ -53,7 +53,26 @@ dmodemd marks the G.711 formats in its offers as voice band data
 (V.152, `a=gpmd:0 vbd=yes`), so a gateway that honours it turns off
 its echo canceller, comfort noise and silence suppression for the call;
 an offer with a format so marked gets that format in the answer.
-`SIP_V152=no` leaves the marks out.
+The offer also says, in V.152's `a=maxmptime`, that dmodemd sends and
+takes 20 ms packets. `SIP_V152=no` leaves the marks out.
+
+On a trunk that loses packets, the far end's lost packets would reach
+the modem as gaps of silence, and the modem would have to retrain or
+resend. dmodemd offers RFC 2198 redundancy (`red/8000`, V.152's assured
+mode) on every call. When the far end takes it, each packet carries the
+two frames before it again, and a lost packet of theirs is rebuilt from
+the packets after it. `SIP_RED=1` to `3` sets how many frames go again
+(each one adds 64 kbit/s), and `SIP_RED=no` turns redundancy off. A far
+end that doesn't take the offer gets ordinary G.711. At the end of a
+call that lost packets or used redundancy, the log says how much audio
+was lost and how many packets were rebuilt.
+
+The jitter buffer has a fixed delay of 60 ms, as V.152 asks (a modem
+can't take a change in delay in the middle of a call). On a trunk whose
+packets often come later than that, `SIP_JITTER=<ms>` (20 to 1000)
+makes it longer. A packet that never comes is played as silence. Made-up
+audio in its place would reach the modem as wrong data with no sign of
+the error, while silence lets V.42 see the error and resend.
 
 `SIP_V150=yes` adds V.150.1's modem relay: on a data call with a gateway
 that has it, the gateway terminates its modem's modulation and the data
