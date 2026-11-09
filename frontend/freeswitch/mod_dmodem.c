@@ -829,6 +829,10 @@ SWITCH_STANDARD_APP(dmodem_function)
 							"caller_id_number");
 			const char *dialed = switch_channel_get_variable(
 				channel, "destination_number");
+			/* the address the call came from by SIP: the BBS
+			   places a caller with no caller ID by it */
+			const char *peer = switch_channel_get_variable(channel,
+							"sip_network_ip");
 			char connected[24];
 			const char *env[] = {
 				"DMODEM_CHANNEL", name,
@@ -838,6 +842,7 @@ SWITCH_STANDARD_APP(dmodem_function)
 				"DMODEM_CALLERID", cid ? cid : "",
 				"DMODEM_DIALED", dialed ? dialed : "",
 				"DMODEM_CONNECTED", connected,
+				"DMODEM_PEER", peer ? peer : "",
 				NULL
 			};
 			snprintf(connected, sizeof(connected), "%lld",
