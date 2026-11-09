@@ -56,6 +56,18 @@ struct Config {
 				   band data, our G.711 formats marked
 				   a=gpmd:<pt> vbd=yes, and a VBD
 				   format the far end has taken first */
+	s16 red = 2;            /* $SIP_RED (0 to 3, 0 or "no" off):
+				   RFC 2198's redundancy, V.152's assured
+				   VBD mode for a lossy trunk: each of
+				   our packets has this many frames
+				   before it again, and a lost packet of
+				   the far end's is had from those after
+				   it; red/8000 offered, and taken when
+				   an offer has it (rtp_red.h) */
+	s16 jitter_ms = 60;     /* $SIP_JITTER (20 to 1000): the jitter
+				   buffer's delay, fixed (V.152's
+				   constant latency): longer for a
+				   trunk whose packets come late */
 	bool v150 = false;      /* $SIP_V150 ("yes"): V.150.1's modem
 				   relay, a data call's octets over SPRT
 				   when the far end (a gateway) has it:
