@@ -616,6 +616,23 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	return res;
 }
 
+/* peer_address: the address the call came from by SIP ("" if not SIP or
+   not known), for the BBS to place a caller with no caller ID */
+static void peer_address(struct ast_channel *chan, char *buf, size_t len)
+{
+	const char *tech = ast_channel_tech(chan)->type;
+
+	*buf = '\0';
+	if (!strcasecmp(tech, "PJSIP")) {
+		if (ast_func_read(chan, "CHANNEL(pjsip,remote_addr)", buf,
+				  len))
+			*buf = '\0';
+	} else if (!strcasecmp(tech, "SIP")) {
+		if (ast_func_read(chan, "CHANNEL(peerip)", buf, len))
+			*buf = '\0';
+	}
+}
+
 /* DModem([profile[,options]]): the modem on the channel until the call,
    the session or the time to connect ends (a calling fax machine goes
    to run_fax()); DMODEMSTATUS and DMODEMRATE set; -1 only when the
@@ -734,7 +751,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 
 		ev = t38_fax ? DMBRIDGE_FAX : dmbridge_call_step(&c, k);
 		if (ev == DMBRIDGE_CONNECTED) {
-			char connected[24];
+			char connected[24], peer[128];
 			const char *env[] = {
 				"DMODEM_CHANNEL", name,
 				"DMODEM_PROFILE", args.profile,
@@ -746,10 +763,12 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 				S_OR(ast_channel_dialed(chan)->number.str,
 				     ast_channel_exten(chan)),
 				"DMODEM_CONNECTED", connected,
+				"DMODEM_PEER", peer,
 				NULL
 			};
 			snprintf(connected, sizeof(connected), "%lld",
 				 (long long)time(NULL));
+			peer_address(chan, peer, sizeof(peer));
 			pbx_builtin_setvar_helper(chan, "DMODEMRATE", c.rate);
 			ast_verb(3, "%s: DModem connected at %s bit/s\n", name,
 				 c.rate);

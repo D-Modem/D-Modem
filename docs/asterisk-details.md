@@ -344,6 +344,7 @@ controlling terminal, in raw mode. Its environment has:
 | `DMODEM_CALLERID` | the caller's number |
 | `DMODEM_DIALED` | the number dialled (the DNID, or else the extension) |
 | `DMODEM_CONNECTED` | when the modems connected, in Unix time |
+| `DMODEM_PEER` | the address the call came from by SIP (PJSIP's `remote_addr`, chan_sip's `peerip`), or empty |
 
 A server has no environment. Instead, with `header = yes` in a `tcp` or
 `unix` profile, the same variables are sent first on the connection: one
@@ -357,6 +358,7 @@ DMODEM_RATE=33600/31200
 DMODEM_CALLERID=5559999
 DMODEM_DIALED=5551000
 DMODEM_CONNECTED=1791666309
+DMODEM_PEER=192.0.2.1:5060
 
 ```
 
