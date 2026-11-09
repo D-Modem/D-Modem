@@ -26,6 +26,14 @@
 # must offer RTP/SAVP; in, it answers our RTP/SAVP offer as it is
 # (SIP_SRTP's default).
 #
+# --red: the same calls over a lossy trunk, with RFC 2198's redundancy
+# (V.152's assured VBD mode): dmodemd's offer must have red/8000 for
+# CLEARMODE (a=fmtp 97/97/97) and V.152's a=maxmptime, its answer to
+# ours red/8000 too; both ways one packet in three is lost (we send it
+# not, and drop it of dmodemd's), and each is had from the packets after
+# it: none of dmodemd's missing at the far end, and dmodemd's log at the
+# call's end (our BYE) must have recovered some of ours.
+#
 # DMODEMD_DEBUG=<level>: dmodemd's -d (its log in $TMPDIR/clearmode.log)
 import base64, os, random, re, select, shutil, socket, subprocess, sys
 import tempfile, threading
@@ -35,13 +43,16 @@ import srtp
 
 dmodemd = sys.argv[1]
 SRTP = "--srtp" in sys.argv[2:]
+RED = "--red" in sys.argv[2:]
+RED_PT, LEVEL = 106, 2
 SUITE = "AES_CM_128_HMAC_SHA1_80"
 OUR_KEY = os.urandom(30)          # our master key || salt
 # SIP_PORT, ours, and DM_PORT (SIP_PORT + 1), dmodemd's: picked below,
-# a pair both free (dmodemd_clearmode and dmodemd_srtp run this script
+# a pair both free (dmodemd_clearmode, dmodemd_srtp and dmodemd_red run it
 # side by side, and the runner may hold a port of its own)
 log = open(os.path.join(tempfile.gettempdir(),
-            "clearmode%s.log" % ("-srtp" if SRTP else "")), "wb")
+            "clearmode%s.log" % ("-srtp" if SRTP else
+                                 "-red" if RED else "")), "wb")
 FLAG, ONES = 0x7E, 0xFF
 
 # the reason, and the end of the log (SIP and dmodemd's output) for CI
@@ -61,14 +72,60 @@ def fail(why):
     sys.stdout.flush()
     sys.exit(1)
 
+# RFC 2198: a RED payload of frames (ts, pt, data), oldest first, the
+# last the primary at ts; and back: the blocks (ts, pt, data) of one at
+# ts, None if it is malformed
+def red_encode(frames, ts):
+    hdr, data = b"", b""
+    for t, pt, d in frames[:-1]:
+        off = (ts - t) & 0xFFFFFFFF
+        hdr += bytes([0x80 | pt, off >> 6, (off & 0x3F) << 2 | len(d) >> 8,
+                      len(d) & 255])
+        data += d
+    return hdr + bytes([frames[-1][1]]) + data + frames[-1][2]
+def red_decode(p, ts):
+    at, blocks = 0, []
+    while True:
+        if at >= len(p):
+            return None
+        if not p[at] & 0x80:
+            blocks.append([ts, p[at] & 0x7F, 0])
+            at += 1
+            break
+        if at + 4 > len(p):
+            return None
+        off = p[at + 1] << 6 | p[at + 2] >> 2
+        blocks.append([(ts - off) & 0xFFFFFFFF, p[at] & 0x7F,
+                       (p[at + 2] & 3) << 8 | p[at + 3]])
+        at += 4
+    rest = len(p) - at - sum(b[2] for b in blocks[:-1])
+    if rest < 0:
+        return None
+    blocks[-1][2] = rest
+    out = []
+    for t, pt, n in blocks:
+        out.append((t, pt, p[at:at + n]))
+        at += n
+    return out
+
 # the far end of the clear channel on an RTP socket, its own thread: the
 # start, then characters to send (send()) and those received (got); in
-# SRTP with key (ours) and theirs, the far end's master keys
+# SRTP with key (ours) and theirs, the far end's master keys.  With red
+# (RFC 2198's format), each packet has LEVEL frames before it again, one
+# in three of ours is not sent and one in three of dmodemd's dropped,
+# and theirs are taken in their order, a lost one from the copies after
+# it (missing: the frames had from none)
 class ClearEnd:
-    def __init__(self, rtp, peer, pt, key=None, theirs=None):
-        self.rtp, self.peer, self.pt = rtp, peer, pt
+    def __init__(self, rtp, peer, pt, key=None, theirs=None, red=None):
+        self.rtp, self.peer, self.pt, self.red = rtp, peer, pt, red
+        self.past = []              # (ts, pt, payload) we sent last
+        self.rx = {}                # dmodemd's frames by their ts
+        self.rx_next = None         # the next of them to take
+        self.rx_newest = None
+        self.rx_count = 0
+        self.missing = 0
         self.tx = srtp.Srtp(key) if key else None
-        self.rx = srtp.Srtp(theirs) if theirs else None
+        self.unprotect = srtp.Srtp(theirs) if theirs else None
         self.tx_bits = []           # characters' bits waiting
         self.got = b""
         self.heard = self.open = False
@@ -126,11 +183,17 @@ class ClearEnd:
         while not self.stop:
             # 20 ms of octets out, what came in
             payload = bytes(self.out_octet() for _ in range(160))
-            hdr = bytes([0x80, self.pt, seq >> 8 & 255, seq & 255]) + \
+            pt = self.pt
+            if self.red is not None:
+                frames = self.past + [(ts, self.pt, payload)]
+                self.past = frames[-LEVEL:]
+                payload, pt = red_encode(frames, ts), self.red
+            hdr = bytes([0x80, pt, seq >> 8 & 255, seq & 255]) + \
                 ts.to_bytes(4, "big") + ssrc.to_bytes(4, "big")
             pkt = hdr + payload
-            self.rtp.sendto(self.tx.protect(pkt) if self.tx else pkt,
-                            self.peer)
+            if self.red is None or seq % 3 != 1:
+                self.rtp.sendto(self.tx.protect(pkt) if self.tx else pkt,
+                                self.peer)
             seq, ts = (seq + 1) & 0xFFFF, ts + 160
             nxt += 0.02
             while True:
@@ -144,13 +207,46 @@ class ClearEnd:
                 # queued, is not this call's, nor in its SRTP key)
                 if src != self.peer:
                     continue
-                if self.rx:
-                    d = self.rx.unprotect(d)
+                if self.unprotect:
+                    d = self.unprotect.unprotect(d)
                     if d is None:
                         fail("an SRTP packet failed its tag")
                 if len(d) > 12 and d[1] & 0x7F == self.pt:
                     for o in d[12:]:
                         self.in_octet(o)
+                elif self.red is not None and len(d) > 12 and \
+                        d[1] & 0x7F == self.red:
+                    self.red_in(d)
+    # a RED packet of dmodemd's (one in three dropped): its frames, and
+    # those now in order taken; a frame still not had once two newer
+    # have come, missing
+    def red_in(self, d):
+        self.rx_count += 1
+        if self.rx_count % 3 == 2:
+            return
+        ts = int.from_bytes(d[4:8], "big")
+        blocks = red_decode(d[12:], ts)
+        if blocks is None:
+            fail("a RED packet we can't read: %r" % d[12:40])
+        for t, pt, data in blocks:
+            if pt != self.pt or len(data) != 160:
+                fail("a RED block of format %d, %d octets" % (pt, len(data)))
+            self.rx.setdefault(t, data)
+        if self.rx_next is None:
+            self.rx_next = blocks[0][0]
+        if self.rx_newest is None or ((ts - self.rx_newest) & 0x80000000) == 0:
+            self.rx_newest = ts
+        while True:
+            if self.rx_next in self.rx:
+                for o in self.rx.pop(self.rx_next):
+                    self.in_octet(o)
+            elif ((self.rx_newest - self.rx_next) & 0xFFFFFFFF) >= \
+                    160 * (LEVEL + 1) and \
+                    (self.rx_newest - self.rx_next) & 0x80000000 == 0:
+                self.missing += 1
+            else:
+                break
+            self.rx_next = (self.rx_next + 160) & 0xFFFFFFFF
 
 # SIP
 def free_pair():
@@ -210,11 +306,12 @@ def reply(req, code, text, a, body="", tag="far1"):
     m += "Content-Length: %d\r\n\r\n%s" % (len(body), body)
     sip_send(m, a)
 # (in SRTP, with our key under crypto tag)
-def sdp(fmts, rtpmaps, tag=1):
+def sdp(fmts, rtpmaps, tag=1, fmtps=()):
     return ("v=0\r\no=far 1 1 IN IP4 127.0.0.1\r\ns=far\r\nc=IN IP4 127.0.0.1\r\n"
             "t=0 0\r\nm=audio %d RTP/%s %s\r\n" % (
                 RTP_PORT, "SAVP" if SRTP else "AVP", fmts) +
-            "".join("a=rtpmap:%s\r\n" % r for r in rtpmaps) + "a=ptime:20\r\n" +
+            "".join("a=rtpmap:%s\r\n" % r for r in rtpmaps) +
+            "".join("a=fmtp:%s\r\n" % f for f in fmtps) + "a=ptime:20\r\n" +
             ("a=crypto:%d %s inline:%s\r\n" % (
                 tag, SUITE, base64.b64encode(OUR_KEY).decode()) if SRTP else ""))
 # the audio line of an SDP body: its address, port and formats, the
@@ -339,6 +436,52 @@ def data_both_ways(dte, far):
             if not dte_ok and idle:
                 far.send(to_dte)
 
+# --red: an SDP body of dmodemd's must have red/8000 in format RED_PT
+# for CLEARMODE, LEVEL frames again (and, an offer, V.152's a=maxmptime)
+def check_red(body, offer):
+    _, fmts, maps = audio_of(body)
+    if str(RED_PT) not in fmts or \
+            maps.get(str(RED_PT), "").lower() != "red/8000":
+        fail("no red/8000 in format %d: %r" % (RED_PT, body))
+    f = "a=fmtp:%d %s" % (RED_PT, "/".join(["97"] * (LEVEL + 1)))
+    if f not in body:
+        fail("no %s: %r" % (f, body))
+    m = re.search(r"a=maxmptime:([^\r]*)", body)
+    if offer and (not m or len(m.group(1).split()) != len(fmts) or
+                  m.group(1).split()[0] != "20"):
+        fail("no a=maxmptime of a time for each format: %r" % body)
+
+# --red: our BYE (request uri ruri, From and To as the dialog has them,
+# Call-ID, CSeq number), and the line of dmodemd's log at the call's end
+# that has the frames had from our redundancy (some must be)
+def bye_and_check(ruri, frm, to, call_id, cseq, far):
+    log.flush()
+    start = os.path.getsize(log.name)
+    via = "Via: SIP/2.0/UDP 127.0.0.1:%d;branch=z9hG4bKbye%d;rport" % (
+        SIP_PORT, random.randrange(10**9))
+    sip_send("BYE %s SIP/2.0\r\n%s\r\nMax-Forwards: 70\r\nFrom: %s\r\n"
+             "To: %s\r\nCall-ID: %s\r\nCSeq: %d BYE\r\n"
+             "Content-Length: 0\r\n\r\n" % (ruri, via, frm, to, call_id, cseq),
+             ("127.0.0.1", DM_PORT))
+    pat = re.compile(rb"audio: \d+ ms lost \(played as silence\), (\d+) packets "
+                     rb"recovered from redundancy, (\d+) sent with it")
+    end = time.time() + 5
+    while time.time() < end:
+        sip_recv(0.2)
+        log.flush()
+        with open(log.name, "rb") as f:
+            f.seek(start)
+            m = pat.search(f.read())
+        if m:
+            break
+    else:
+        fail("no line of the audio's redundancy in dmodemd's log")
+    if int(m.group(1)) == 0 or int(m.group(2)) == 0:
+        fail("redundancy: %s" % m.group(0).decode())
+    if far.missing:
+        fail("%d frames of dmodemd's not had from its redundancy" % far.missing)
+    return m.group(0).decode()
+
 # out: dmodemd dials with +MS=CLEAR
 def outgoing():
     p, fd = start_dmodemd(False)
@@ -360,13 +503,21 @@ def outgoing():
                  for f in fmts]
         if names[:3] != ["CLEARMODE/8000", "PCMA/8000", "PCMU/8000"]:
             fail("the offer's formats: %r" % names)
+        if RED:
+            check_red(body, True)
         for pt in ("0", "8"):
             if not re.search(r"a=gpmd:%s vbd=yes" % pt, body):
                 fail("no a=gpmd:%s vbd=yes: %r" % (pt, body))
         theirs = their_key(body, 1)
         dm_rtp, _, _ = audio_of(body)
         reply(req, 100, "Trying", a)
-        reply(req, 200, "OK", a, sdp(fmts[0], [fmts[0] + " CLEARMODE/8000"]))
+        if RED:
+            reply(req, 200, "OK", a, sdp("%s %d" % (fmts[0], RED_PT),
+                                         [fmts[0] + " CLEARMODE/8000",
+                                          "%d red/8000" % RED_PT],
+                                         fmtps=["%d 97/97/97" % RED_PT]))
+        else:
+            reply(req, 200, "OK", a, sdp(fmts[0], [fmts[0] + " CLEARMODE/8000"]))
         while True:
             r = sip_recv(5)
             if not r:
@@ -374,11 +525,20 @@ def outgoing():
             if r[0].startswith("ACK"):
                 break
         far = ClearEnd(rtp, dm_rtp, int(fmts[0]),
-                       OUR_KEY if SRTP else None, theirs)
+                       OUR_KEY if SRTP else None, theirs,
+                       RED_PT if RED else None)
         data_both_ways(dte, far)
+        red = ""
+        if RED:
+            contact = re.search(r"<([^>]+)>", hdrs["contact"]).group(1)
+            red = "; " + bye_and_check(
+                contact, hdrs["to"] + ";tag=far1", hdrs["from"],
+                hdrs["call-id"], 1, far)
         far.stop = True
-        print("out: CONNECT 64000 in CLEARMODE%s, data both ways" % (
-            " over SRTP" if SRTP else ""), flush=True)
+        print("out: CONNECT 64000 in CLEARMODE%s, data both ways%s" % (
+            " over SRTP" if SRTP else
+            " over a lossy trunk with redundancy" if RED else "", red),
+            flush=True)
     finally:
         p.kill()
         p.wait()
@@ -399,7 +559,13 @@ def incoming():
             fail("no OK: %r" % dte.buf)
         dm = ("127.0.0.1", DM_PORT)
         call_id = "clear%d@127.0.0.1" % random.randrange(10**9)
-        body = sdp("97 8 0", ["97 CLEARMODE/8000", "8 PCMA/8000", "0 PCMU/8000"])
+        if RED:
+            body = sdp("97 8 0 %d" % RED_PT,
+                       ["97 CLEARMODE/8000", "8 PCMA/8000", "0 PCMU/8000",
+                        "%d red/8000" % RED_PT],
+                       fmtps=["%d 97/97/97/97" % RED_PT])
+        else:
+            body = sdp("97 8 0", ["97 CLEARMODE/8000", "8 PCMA/8000", "0 PCMU/8000"])
         via = "Via: SIP/2.0/UDP 127.0.0.1:%d;branch=z9hG4bK%d;rport" % (
             SIP_PORT, random.randrange(10**9))
         frm = "<sip:far@127.0.0.1:%d>;tag=far2" % SIP_PORT
@@ -423,6 +589,8 @@ def incoming():
             fail("the answer is not CLEARMODE: %r" % ok[2])
         if any("telephone-event" in v for v in maps.values()):
             fail("telephone-event on a clear channel: %r" % ok[2])
+        if RED:
+            check_red(ok[2], False)
         theirs = their_key(ok[2], 1)
         to_tagged = ok[1]["to"]
         sip_send("ACK sip:dm@127.0.0.1:%d SIP/2.0\r\n%s\r\nMax-Forwards: 70\r\n"
@@ -430,11 +598,18 @@ def incoming():
                  "Content-Length: 0\r\n\r\n" % (
                      DM_PORT, via.replace("branch=z9hG4bK", "branch=z9hG4bKa"),
                      frm, to_tagged, call_id), dm)
-        far = ClearEnd(rtp, dm_rtp, 97, OUR_KEY if SRTP else None, theirs)
+        far = ClearEnd(rtp, dm_rtp, 97, OUR_KEY if SRTP else None, theirs,
+                       RED_PT if RED else None)
         data_both_ways(dte, far)
+        red = ""
+        if RED:
+            red = "; " + bye_and_check(
+                "sip:dm@127.0.0.1:%d" % DM_PORT, frm, to_tagged, call_id, 2, far)
         far.stop = True
-        print("in: answered in CLEARMODE%s, CONNECT 64000, data both ways" % (
-            " over SRTP" if SRTP else ""), flush=True)
+        print("in: answered in CLEARMODE%s, CONNECT 64000, data both ways%s" % (
+            " over SRTP" if SRTP else
+            " over a lossy trunk with redundancy" if RED else "", red),
+            flush=True)
     finally:
         p.kill()
         p.wait()

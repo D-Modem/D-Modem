@@ -19,10 +19,23 @@
  *    modem's answer to the frame before from it, and that in RTP to the
  *    far end.  G.711 both ways, the modem's samples G.711's own values,
  *    so that its codes pass through as they are.  The jitter buffer is
- *    fixed (60 ms) and drops nothing to shrink (a slip the modem can't
- *    take): it starts over only when the far end does (another source, a
- *    jump in time), when its backlog passes 2 s, or when it has run dry
- *    with the far end's packets late (its clock slower than ours).
+ *    fixed (60 ms, $SIP_JITTER: V.152's constant latency) and drops
+ *    nothing to shrink (a slip the modem can't take): it starts over
+ *    only when the far end does (another source, a jump in time), when
+ *    its backlog passes 2 s, or when it has run dry with the far end's
+ *    packets late (its clock slower than ours).  A packet that never
+ *    comes is silence in its place: a modem's receiver takes that as the
+ *    error it is (V.42 sends it again), where audio made up to fill it
+ *    would pass for data.
+ *
+ *    V.152's voice band data: our G.711 formats marked a=gpmd:<pt>
+ *    vbd=yes, with a=maxmptime (20 ms), and a VBD format of an offer's
+ *    taken first.  Its assured mode, for a lossy trunk: RFC 2198's
+ *    redundancy (red/8000, $SIP_RED frames again, 2 unless set),
+ *    offered on every call and taken when an offer has it: each packet
+ *    we send has the frames before it again, and a packet of the far
+ *    end's that was lost on the way is had from those after it, while
+ *    there is time to play it (rtp_red.h).
  *
  *    Telephone-events (RFC 4733), offered and taken on every call: the
  *    modem's hook flash (sip::flash()) goes as event 16, in place of the
@@ -90,6 +103,7 @@ namespace libre {
 #include "line_recorder.h"
 #include "portable.h"
 #include "rtp_events.h"
+#include "rtp_red.h"
 #include "sip.h"
 #include "v150.h"
 #include "reinit.h"
@@ -106,9 +120,10 @@ const u16 SAMPLES = RATE / 50;
 const size_t FRAME = SAMPLES * 2;
 const s32 TICK_NS = 1000000000L / 50;
 
-/* the jitter buffer, fixed (samples): its delay, its longest backlog */
-const s32 JB_DELAY = 60 * RATE / 1000;
+/* the jitter buffer, fixed (samples): its longest backlog; its delay
+   (ms), the least and most $SIP_JITTER can have */
 const s32 JB_MAX = 2000 * RATE / 1000;
+const s16 JB_MIN_MS = 20, JB_MAX_MS = 1000;
 
 /* late packets in a row, the buffer dry, for it to start over (a
    moment's lateness only loses their time) */
@@ -141,6 +156,10 @@ const s16 TE_PT = 101;
 /* RFC 4040's CLEARMODE (a 64 kbit/s clear channel): the payload type of
    ours in an offer */
 const s16 CLEAR_PT = 97;
+/* RFC 2198's redundancy (red/8000): the payload types of ours in an
+   offer, for PCMU, PCMA and CLEARMODE; the most frames again */
+const s16 RED_PCMU_PT = 104, RED_PCMA_PT = 105, RED_CLEAR_PT = 106;
+const s16 RED_MAX = 3;
 /* V.150.1: the payload types of ours in an offer, SSE's (RTP's
    v150fw) and SPRT's (v150mr, not one of RTP's); RFC 4734's ANSam, the
    answerer's answer tone as an event; our SPRT line's parameters (U-MR,
@@ -701,6 +720,44 @@ s16 te_pt(const SdpMedia &m)
 	return dyn_pt(m, "telephone-event/8000");
 }
 
+/* RFC 2198's redundancy for format pt of audio line m: a red/8000
+   format whose a=fmtp has only pt (or that has none), its frames again
+   into *level (as its a=fmtp has them, else ours); -1 if it has none
+   (or it has no frames again) */
+s16 red_pt(const SdpMedia &m, s16 pt, s16 *level)
+{
+	for (const std::string &f : m.fmts) {
+		s32 r;
+		bool red = false, ok = true;
+		s16 lv = cfg_.red;
+
+		if (!dcore::parse_long(f, r) || r < 96 || r > 127)
+			continue;
+		for (const auto &a : m.attrs) {
+			size_t sp = a.second.find(' ');
+			if (sp == std::string::npos ||
+			    a.second.substr(0, sp) != f)
+				continue;
+			if (dcore::same_nocase(a.first, "rtpmap"))
+				red = lower(a.second.substr(sp + 1))
+					      .compare(0, 8, "red/8000") == 0;
+			else if (dcore::same_nocase(a.first, "fmtp")) {
+				std::vector<s16> t = dmd::red::fmtp_types(
+					a.second.substr(sp + 1));
+				ok = !t.empty();
+				for (s16 x : t)
+					ok = ok && x == pt;
+				lv = static_cast<s16>(t.size()) - 1;
+			}
+		}
+		if (red && ok && lv > 0) {
+			*level = std::min(lv, cfg_.red);
+			return static_cast<s16>(r);
+		}
+	}
+	return -1;
+}
+
 /* V.150.1's SSE format (v150fw) of audio line m, -1 if it has none */
 s16 sse_pt(const SdpMedia &m)
 {
@@ -802,6 +859,9 @@ struct Line {
 	s16 law = 0;
 	s16 te = -1;                    /* audio: telephone-event's format
 					   agreed, -1 if none */
+	s16 red = -1;                   /* audio: RFC 2198's redundancy's
+					   format agreed, -1 if none, and */
+	s16 red_level = 0;              /* the frames again in it */
 	s32 crypto = -1;                /* audio: SRTP, the a=crypto tag
 					   agreed (-1: plain RTP) */
 	const Suite *suite = nullptr;   /* and its suite */
@@ -819,6 +879,8 @@ Line audio_answer(const Sdp &s, const SdpMedia &m)
 	l.pt = g711_pt(m, &l.law);
 	/* (no events on a clear channel: their tones would be data) */
 	l.te = l.law == 3 ? -1 : te_pt(m);
+	l.red = cfg_.red > 0 && l.pt >= 0 ? red_pt(m, l.pt, &l.red_level) :
+		-1;
 	if (is_savp(m)) {
 		Crypto c = crypto_of(m);
 		l.crypto = c.tag;
@@ -891,6 +953,16 @@ std::string t38_attrs(s32 version)
 		"a=T38FaxUdpEC:t38UDPRedundancy\r\n";
 }
 
+/* V.152's a=maxmptime for an audio line of audio formats of ours (20
+   ms each) and then others (events, redundancy: "-" each) */
+std::string maxmptime(int audio, int others)
+{
+	std::string s = "a=maxmptime:";
+	for (int i = 0; i < audio + others; i++)
+		s += std::string(i ? " " : "") + (i < audio ? "20" : "-");
+	return s + "\r\n";
+}
+
 /* an mbuf of s, at its start; NULL if there is no memory for it */
 struct mbuf *mbuf_of(const std::string &s)
 {
@@ -918,6 +990,9 @@ class Jitter {
 public:
 	/* empty, to start over with the next packet */
 	void reset() { started_ = false; }
+
+	/* its delay from the next start on: ms */
+	void delay(s16 ms) { delay_ = ms * static_cast<s32>(RATE / 1000); }
 
 	/* a packet of n G.711 octets (alaw: A-law) at ts from source ssrc;
 	   why the buffer started over for it, or NULL */
@@ -973,16 +1048,57 @@ public:
 		return why;
 	}
 
+	/* a redundant copy (RFC 2198) of n G.711 octets at ts from source
+	   ssrc, of a packet that may not have come: the samples of it
+	   that have not, while there is time to play them (none if the
+	   buffer has not started, or has another source); true if it had
+	   any */
+	bool fill(u32 ssrc, u32 ts, const u8 *p, size_t n, bool alaw)
+	{
+		bool any = false;
+
+		if (!started_ || ssrc != ssrc_ || !n ||
+		    n > static_cast<size_t>(JB_MAX))
+			return false;
+		s32 d = static_cast<s32>(ts - play_);
+		if (d + static_cast<s32>(n) <= 0 ||
+		    d + static_cast<s32>(n) > JB_MAX)
+			return false;
+		for (size_t k = 0; k < n; k++) {
+			u32 i;
+			if (d + static_cast<s32>(k) < 0)
+				continue;
+			i = (ts + static_cast<u32>(k)) & MASK;
+			if (valid_[i])
+				continue;
+			buf_[i] = static_cast<s16>(
+				dsp::g711::decode(alaw, p[k]));
+			valid_[i] = 1;
+			any = true;
+		}
+		if (any)
+			recovered++;
+		return any;
+	}
+
 	/* the packets put, those late and the latest of them (samples),
-	   the times it started over */
+	   the times it started over; the redundant copies that filled a
+	   gap (fill()), the samples played as silence for want of a
+	   packet with later ones come */
 	u32 packets = 0, late = 0, late_max = 0, restarts = 0;
+	u32 recovered = 0, lost = 0;
 
 	/* the next n samples to play (silence where none came) */
 	void get(s16 *out, size_t n)
 	{
 		for (size_t k = 0; k < n; k++) {
-			u32 i = (play_ + static_cast<u32>(k)) & MASK;
+			u32 t = play_ + static_cast<u32>(k);
+			u32 i = t & MASK;
 			out[k] = started_ && valid_[i] ? buf_[i] : 0;
+			if (started_ && !valid_[i] &&
+			    static_cast<s32>(t - first_) >= 0 &&
+			    static_cast<s32>(end_ - t) > 0)
+				lost++;
 			valid_[i] = 0;
 		}
 		if (started_)
@@ -998,16 +1114,18 @@ private:
 	u32 ssrc_ = 0;
 	u32 play_ = 0;          /* the timestamp to play next */
 	u32 end_ = 0;           /* the end of the latest packet */
+	u32 first_ = 0;         /* the first packet's, since the start */
+	s32 delay_ = 60 * RATE / 1000;  /* (samples) */
 
-	/* started over at ts of stream ssrc: empty, playing
-	   JB_DELAY behind it */
+	/* started over at ts of stream ssrc: empty, playing delay_ behind
+	   it */
 	void restart(u32 ssrc, u32 ts)
 	{
 		dsp::zero(valid_);
 		started_ = true;
 		ssrc_ = ssrc;
-		play_ = ts - static_cast<u32>(JB_DELAY);
-		end_ = ts;
+		play_ = ts - static_cast<u32>(delay_);
+		end_ = first_ = ts;
 	}
 };
 
@@ -1220,6 +1338,7 @@ public:
 		: modem_(modem), rtp_(rtp), family_(family), serial_(serial),
 		  mq_(mq), seq_(rand_u16()), ts_(rand_u32()), ssrc_(rand_u32())
 	{
+		jb_.delay(cfg_.jitter_ms);
 	}
 	/* the thread stopped */
 	~Media() { stop(); }
@@ -1257,6 +1376,13 @@ public:
 			    "%" PRIu32 " restarts", serial_,
 			    jb_.packets, jb_.late, jb_.late_max / (RATE / 1000),
 			    jb_.restarts);
+			if (jb_.lost || jb_.recovered || red_sent_)
+				say(3, "call %" PRIu32 ": audio: %" PRIu32 " ms "
+				    "lost (played as silence), %" PRIu32
+				    " packets recovered from redundancy, %"
+				    PRIu32 " sent with it (RFC 2198)", serial_,
+				    jb_.lost / (RATE / 1000), jb_.recovered,
+				    red_sent_);
 			if (bad_)
 				say(3, "call %" PRIu32 ": %" PRIu32 " SRTP "
 				    "packets failed their check", serial_,
@@ -1270,10 +1396,11 @@ public:
 	}
 
 	/* the far end's RTP at a (len), in payload type pt of law, its
-	   telephone-events in te (-1: none); send: whether it is to have
+	   telephone-events in te (-1: none), RFC 2198's redundancy in red
+	   with level frames again (-1: none); send: whether it is to have
 	   ours */
 	void remote(const struct sockaddr_storage &a, socklen_t len, s16 pt,
-		    s16 law, s16 te, bool send)
+		    s16 law, s16 te, s16 red, s16 level, bool send)
 	{
 		std::lock_guard<std::mutex> lk(mu_);
 		peer_ = a;
@@ -1281,6 +1408,8 @@ public:
 		pt_ = pt;
 		law_ = law;
 		te_ = te;
+		red_ = red;
+		red_level_ = std::min(level, RED_MAX);
 		send_ = send;
 	}
 
@@ -1325,7 +1454,7 @@ private:
 	bool active_ = false, send_ = false;
 	struct sockaddr_storage peer_ = {};
 	socklen_t peer_len_ = 0;
-	s16 pt_ = 0, law_ = 1, te_ = -1;
+	s16 pt_ = 0, law_ = 1, te_ = -1, red_ = -1, red_level_ = 0;
 	std::shared_ptr<Srtp> srtp_;
 	std::shared_ptr<Relay> relay_;
 	s16 sse_ = -1;
@@ -1337,6 +1466,17 @@ private:
 	u16 seq_;
 	u32 ts_, ssrc_;
 	bool marker_ = true;
+
+	/* RFC 2198: the frames we sent last (oldest first), to go again;
+	   the packets sent with them */
+	struct Past {
+		u32 ts;
+		s16 pt;
+		u8 d[SAMPLES];
+	};
+	std::vector<Past> past_;
+	u32 red_sent_ = 0;
+	std::vector<dmd::red::Block> blocks_;
 
 	/* the hook flash being sent (RFC 4733): its timestamp, length and
 	   duration so far (samples), its last packet's copies sent (0 while
@@ -1403,10 +1543,36 @@ private:
 		}
 	}
 
+	/* a block of audio, format p, n octets at ts from ssrc (primary:
+	   the packet's own, else a redundant copy): to the jitter buffer
+	   if it is in G.711 (pt of law, or a static one) */
+	void audio_in(s16 p, u32 ssrc, u32 ts, const u8 *d, size_t n,
+		      bool primary, s16 pt, s16 law)
+	{
+		s16 l;
+
+		if (p == pt)
+			l = law;
+		else if (p == 0 || p == 8)
+			l = p == 8 ? 2 : 1;
+		else
+			return;
+		if (!primary) {
+			jb_.fill(ssrc, ts, d, n, l >= 2);
+			return;
+		}
+		const char *why = jb_.put(ssrc, ts, d, n, l >= 2);
+		if (why)
+			say(3, "call %" PRIu32 ": the jitter buffer "
+			    "starts over (%s)", serial_, why);
+	}
+
 	/* the packets that have come: into the jitter buffer if on, those
-	   in G.711 (pt of law, or a static one); telephone-events (te) to
-	   event_in(); V.150.1's SSEs (sse) to the relay */
-	void drain(bool on, s16 pt, s16 law, s16 te, s16 sse)
+	   in G.711 (pt of law, or a static one), in RFC 2198's redundancy
+	   (red) the primary block and the copies of those before it;
+	   telephone-events (te) to event_in(); V.150.1's SSEs (sse) to
+	   the relay */
+	void drain(bool on, s16 pt, s16 law, s16 te, s16 sse, s16 red)
 	{
 		u8 b[2048];
 
@@ -1414,7 +1580,8 @@ private:
 			ssize_t n = recv(rtp_, reinterpret_cast<char *>(b),
 					 sizeof(b), MSG_DONTWAIT);
 			size_t h, end;
-			s16 p, l;
+			s16 p;
+			u32 ts, ssrc;
 
 			if (n < 0 && errno == EINTR)
 				continue;
@@ -1444,34 +1611,39 @@ private:
 			if (h >= end)
 				continue;
 			p = b[1] & 0x7f;
+			ts = static_cast<u32>(b[4]) << 24 | u32{b[5]} << 16 |
+			     u32{b[6]} << 8 | b[7];
+			ssrc = static_cast<u32>(b[8]) << 24 |
+			       u32{b[9]} << 16 | u32{b[10]} << 8 | b[11];
 			if (p == sse && sse >= 0 && rl_) {
 				rl_->sse_in(b + h, end - h);
 				continue;
 			}
 			if (p == te && te >= 0) {
-				event_in(b + h, end - h,
-					 static_cast<u32>(b[4]) << 24 |
-						 u32{b[5]} << 16 |
-						 u32{b[6]} << 8 | b[7]);
+				event_in(b + h, end - h, ts);
 				continue;
 			}
-			if (p == pt)
-				l = law;
-			else if (p == 0 || p == 8)
-				l = p == 8 ? 2 : 1;
-			else
+			if (p != red || red < 0) {
+				audio_in(p, ssrc, ts, b + h, end - h, true, pt,
+					 law);
 				continue;
-			const char *why =
-				jb_.put(static_cast<u32>(b[8]) << 24 |
-						u32{b[9]} << 16 |
-						u32{b[10]} << 8 | b[11],
-					static_cast<u32>(b[4]) << 24 |
-						u32{b[5]} << 16 |
-						u32{b[6]} << 8 | b[7],
-					b + h, end - h, l >= 2);
-			if (why)
-				say(3, "call %" PRIu32 ": the jitter buffer "
-				    "starts over (%s)", serial_, why);
+			}
+			/* RED: the primary first (it may start the buffer
+			   over), then the copies into what it lacks (a
+			   copy of an event is not played: its packets
+			   come again on their own) */
+			if (!dmd::red::decode(b + h, end - h, ts, &blocks_))
+				continue;
+			const dmd::red::Block &pri = blocks_.back();
+			if (pri.pt == te && te >= 0)
+				event_in(pri.data, pri.n, ts);
+			else
+				audio_in(pri.pt, ssrc, ts, pri.data, pri.n,
+					 true, pt, law);
+			for (size_t k = 0; k + 1 < blocks_.size(); k++)
+				audio_in(blocks_[k].pt, ssrc, blocks_[k].ts,
+					 blocks_[k].data, blocks_[k].n, false,
+					 pt, law);
 		}
 	}
 
@@ -1507,17 +1679,49 @@ private:
 			     len);
 	}
 
-	/* a frame of the modem's (out) in RTP to peer */
-	void send_rtp(const s16 *out, s16 pt, s16 law,
+	/* a frame of the modem's (out) in RTP to peer: in format pt, or
+	   with RFC 2198's redundancy (level of the frames before it again,
+	   in format red) */
+	void send_rtp(const s16 *out, s16 pt, s16 law, s16 red, s16 level,
 		      const struct sockaddr_storage &peer, socklen_t len)
 	{
-		u8 p[12 + SAMPLES + Srtp::TAG_MAX];
+		u8 p[12 + 4 * RED_MAX + 1 + (RED_MAX + 1) * SAMPLES +
+		     Srtp::TAG_MAX];
+		Past now;
 
-		header(p, pt, marker_, ts_);
+		now.ts = ts_;
+		now.pt = pt;
 		for (u16 i = 0; i < SAMPLES; i++)
-			p[12 + i] = dsp::g711::encode(law >= 2, out[i]);
-		send_packet(p, 12 + SAMPLES, peer, len);
+			now.d[i] = dsp::g711::encode(law >= 2, out[i]);
+		/* (a new start: none before it to go again) */
+		if (marker_ || red < 0 || level <= 0)
+			past_.clear();
+		if (red < 0 || level <= 0) {
+			header(p, pt, marker_, ts_);
+			memcpy(p + 12, now.d, SAMPLES);
+			send_packet(p, 12 + SAMPLES, peer, len);
+			marker_ = false;
+			return;
+		}
+		dmd::red::Block r[RED_MAX];
+		size_t nr = 0;
+		for (const Past &x : past_)
+			r[nr++] = { static_cast<u8>(x.pt), x.ts, x.d,
+				    SAMPLES };
+		dmd::red::Block pri = { static_cast<u8>(pt), ts_, now.d,
+					SAMPLES };
+		header(p, red, marker_, ts_);
+		size_t n = dmd::red::encode(r, nr, pri, p + 12,
+					    sizeof(p) - 12 - Srtp::TAG_MAX);
+		if (n) {
+			send_packet(p, 12 + n, peer, len);
+			if (nr)
+				red_sent_++;
+		}
 		marker_ = false;
+		past_.push_back(now);
+		while (past_.size() > static_cast<size_t>(level))
+			past_.erase(past_.begin());
 	}
 
 	/* the hook flash's packet in payload type te to peer (RFC 4733:
@@ -1670,7 +1874,7 @@ private:
 			socklen_t len;
 			s16 in[SAMPLES], out[SAMPLES];
 			bool on, send;
-			s16 pt, law, te, sse;
+			s16 pt, law, te, sse, red, level;
 
 			next.tv_nsec += TICK_NS;
 			if (next.tv_nsec >= 1000000000L) {
@@ -1693,11 +1897,13 @@ private:
 				pt = pt_;
 				law = law_;
 				te = te_;
+				red = red_;
+				level = red_level_;
 				crypt_ = srtp_;
 				rl_ = relay_;
 				sse = sse_;
 			}
-			drain(on, pt, law, te, sse);
+			drain(on, pt, law, te, sse, red);
 			if (rl_)
 				rl_->tick(tmr_jiffies());
 			if (!on) {
@@ -1734,7 +1940,8 @@ private:
 			bool quiet = rl_ && relay_frame(sse, te, send, peer,
 							 len);
 			if (!flash(te, send, peer, len) && send && !quiet)
-				send_rtp(out, pt, law, peer, len);
+				send_rtp(out, pt, law, red, level, peer,
+					 len);
 			ts_ += SAMPLES;
 		}
 	}
@@ -1844,9 +2051,38 @@ struct Call {
 					std::string cl = std::to_string(CLEAR_PT);
 					std::string se = std::to_string(l.sse);
 					bool clear = want_clear_ && cfg_.clearmode;
+					/* RFC 2198's redundancy, a format
+					   for each of ours */
+					std::string reds, red_maps;
+					if (cfg_.red > 0) {
+						std::vector<std::pair<s16, s16>> rv;
+						if (clear)
+							rv.push_back({ RED_CLEAR_PT,
+								       CLEAR_PT });
+						rv.push_back({ RED_PCMA_PT, 8 });
+						rv.push_back({ RED_PCMU_PT, 0 });
+						if (!clear)
+							std::swap(rv[0], rv[1]);
+						for (const auto &r : rv) {
+							std::string x =
+								std::to_string(r.first);
+							reds += " " + x;
+							red_maps += "a=rtpmap:" + x +
+								" red/8000\r\na=fmtp:" +
+								x + " " +
+								dmd::red::fmtp(r.second,
+									       cfg_.red) +
+								"\r\n";
+						}
+					}
 					m += (clear ? cl + " 8 0 " : "0 8 ") + te +
 						(l.sse >= 0 ? " " + se : "") +
-						"\r\n";
+						reds + "\r\n";
+					if (cfg_.v152)
+						m += maxmptime(clear ? 3 : 2,
+							       1 + (l.sse >= 0) +
+							       (cfg_.red > 0 ?
+								(clear ? 3 : 2) : 0));
 					if (clear)
 						m += "a=rtpmap:" + cl +
 							" CLEARMODE/8000\r\n";
@@ -1860,6 +2096,7 @@ struct Call {
 					if (l.sse >= 0)
 						m += "a=rtpmap:" + se +
 							" v150fw/8000\r\n";
+					m += red_maps;
 					if (cfg_.v152)
 						m += "a=gpmd:0 vbd=yes\r\n"
 							"a=gpmd:8 vbd=yes\r\n";
@@ -1871,9 +2108,16 @@ struct Call {
 					std::string pt = std::to_string(l.pt);
 					std::string te = std::to_string(l.te);
 					std::string se = std::to_string(l.sse);
+					std::string rd = std::to_string(l.red);
 					m += pt + (l.te >= 0 ? " " + te : "") +
 						(l.sse >= 0 ? " " + se : "") +
-						"\r\na=rtpmap:" + pt +
+						(l.red >= 0 ? " " + rd : "") +
+						"\r\n";
+					if (cfg_.v152)
+						m += maxmptime(1, (l.te >= 0) +
+							       (l.sse >= 0) +
+							       (l.red >= 0));
+					m += "a=rtpmap:" + pt +
 						(l.law == 3 ? " CLEARMODE" :
 						 l.law == 2 ? " PCMA" : " PCMU") +
 						"/8000\r\n";
@@ -1887,6 +2131,13 @@ struct Call {
 					if (l.sse >= 0)
 						m += "a=rtpmap:" + se +
 							" v150fw/8000\r\n";
+					if (l.red >= 0)
+						m += "a=rtpmap:" + rd +
+							" red/8000\r\na=fmtp:" + rd +
+							" " +
+							dmd::red::fmtp(l.pt,
+								       l.red_level) +
+							"\r\n";
 					if (cfg_.v152 && l.law != 3)
 						m += "a=gpmd:" + pt +
 							" vbd=yes\r\n";
@@ -2163,6 +2414,8 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 		return false;
 	}
 	s16 te = law == 3 ? -1 : te_pt(m);
+	s16 level = 0;
+	s16 red = cfg_.red > 0 ? red_pt(m, pt, &level) : -1;
 	/* SRTP: ours in the suite agreed with our key, theirs with
 	   theirs */
 	std::shared_ptr<Srtp> srtp;
@@ -2179,7 +2432,7 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 			    k.suite->name);
 	}
 	c->media->keys(srtp);
-	c->media->remote(a, len, pt, law, te,
+	c->media->remote(a, len, pt, law, te, red, level,
 			 d != "sendonly" && d != "inactive" &&
 			 m.addr != "0.0.0.0");
 	law_ = law;
@@ -2187,10 +2440,14 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 	clear_ = law == 3;
 	if (!c->audio_up) {
 		c->audio_up = true;
-		say(3, "call %" PRIu32 ": media up%s, %s, to %s:%" PRId32,
+		say(3, "call %" PRIu32 ": media up%s, %s%s, to %s:%" PRId32,
 		    c->serial,
 		    c->incoming || c->confirmed ? "" : " (early media)",
 		    law == 1 ? "PCMU" : law == 2 ? "PCMA" : "CLEARMODE",
+		    red < 0 ? "" : level == 1 ?
+		    ", a frame again in each packet (RFC 2198)" :
+		    level == 2 ? ", 2 frames again in each packet (RFC 2198)" :
+		    ", 3 frames again in each packet (RFC 2198)",
 		    m.addr.c_str(), m.port);
 	}
 	c->media->active(true);
@@ -2337,6 +2594,8 @@ int on_answer(const struct sip_msg *msg, void *arg)
 	Line l = c->offered[i];
 	l.pt = g711_pt(s.media[i], &l.law);
 	l.te = l.law == 3 ? -1 : te_pt(s.media[i]);
+	l.red = cfg_.red > 0 && l.pt >= 0 ?
+		red_pt(s.media[i], l.pt, &l.red_level) : -1;
 	if (is_savp(s.media[i])) {
 		Crypto k = crypto_of(s.media[i]);
 		l.crypto = k.tag;
@@ -2958,6 +3217,8 @@ bool config_from_env(Config &cfg, bool listen)
 	const char *srtp = getenv("SIP_SRTP");
 	const char *v152 = getenv("SIP_V152");
 	const char *v150 = getenv("SIP_V150");
+	const char *red = getenv("SIP_RED");
+	const char *jitter = getenv("SIP_JITTER");
 	std::string s = login ? login : "";
 	size_t at = s.rfind('@');
 	size_t colon = s.find(':');
@@ -3005,6 +3266,24 @@ bool config_from_env(Config &cfg, bool listen)
 		  std::string_view(v152) == "0" ||
 		  dcore::same_nocase(v152, "off") ||
 		  dcore::same_nocase(v152, "false"));
+	cfg.red = 2;
+	if (red && *red) {
+		if (dcore::same_nocase(red, "no") ||
+		    dcore::same_nocase(red, "off") ||
+		    dcore::same_nocase(red, "false"))
+			cfg.red = 0;
+		else if (dcore::same_nocase(red, "yes") ||
+			 dcore::same_nocase(red, "on") ||
+			 dcore::same_nocase(red, "true"))
+			cfg.red = 2;
+		else
+			cfg.red = static_cast<s16>(std::clamp<long>(
+				dcore::leading_long(red), 0, RED_MAX));
+	}
+	cfg.jitter_ms = 60;
+	if (jitter && *jitter)
+		cfg.jitter_ms = static_cast<s16>(std::clamp<long>(
+			dcore::leading_long(jitter), JB_MIN_MS, JB_MAX_MS));
 	cfg.v150 = v150 && (dcore::same_nocase(v150, "yes") ||
 			    std::string_view(v150) == "1" ||
 			    dcore::same_nocase(v150, "on") ||
@@ -3018,6 +3297,8 @@ int start(const Config &cfg)
 	const char *level = getenv("SIP_LOG_LEVEL");
 
 	cfg_ = cfg;
+	cfg_.red = std::clamp<s16>(cfg_.red, 0, RED_MAX);
+	cfg_.jitter_ms = std::clamp<s16>(cfg_.jitter_ms, JB_MIN_MS, JB_MAX_MS);
 	user_ = cfg.user ? cfg.user : "";
 	password_ = cfg.password ? cfg.password : "";
 	domain_ = cfg.domain ? cfg.domain : "";

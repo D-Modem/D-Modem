@@ -42,7 +42,7 @@ if(DMODEM_DMODEMD)
 	# for dmodemd, and for a program that has the modem in a thread of
 	# its own (an Android app)
 	add_library(dmodem_sip STATIC sip_modem.cpp sip.cpp sip_dial.cpp
-		rtp_events.cpp v150.cpp
+		rtp_events.cpp rtp_red.cpp v150.cpp
 		$<TARGET_OBJECTS:dmodem_front> $<TARGET_OBJECTS:dmodem_core>
 		$<TARGET_OBJECTS:dmodem_dsp> $<TARGET_OBJECTS:dmodem_t30>
 		$<TARGET_OBJECTS:dmodem_link>)
@@ -309,6 +309,13 @@ if(DMODEM_DMODEMD)
 		dmodem_flags(rtp_events_test EXTRA NOOPT)
 		target_link_libraries(rtp_events_test PRIVATE ${DMODEM_LIBM})
 		dmodem_gtest(rtp_events_test LABELS quick)
+		# test/rtp_red_test.cpp: RFC 2198's redundant audio
+		# (rtp_red.h)
+		add_executable(rtp_red_test test/rtp_red_test.cpp rtp_red.cpp)
+		target_include_directories(rtp_red_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR})
+		dmodem_flags(rtp_red_test EXTRA NOOPT)
+		dmodem_gtest(rtp_red_test LABELS quick)
 		# test/v150_test.cpp: V.150.1's modem relay (v150.h)
 		add_executable(v150_test test/v150_test.cpp v150.cpp)
 		target_include_directories(v150_test PRIVATE
@@ -416,6 +423,13 @@ if(DMODEM_DMODEMD)
 			$<TARGET_FILE:dmodemd> --srtp)
 		set_tests_properties(dmodemd_srtp PROPERTIES LABELS quick
 			SKIP_RETURN_CODE 77 TIMEOUT 60)
+		# the same over a lossy trunk, one packet in three lost each
+		# way, with RFC 2198's redundancy (V.152's assured VBD mode)
+		dmodem_add_test(dmodemd_red ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/clearmode_test.py
+			$<TARGET_FILE:dmodemd> --red)
+		set_tests_properties(dmodemd_red PROPERTIES LABELS quick
+			TIMEOUT 60)
 		# --misdn: two dmodemd on fake mISDN cards calling each
 		# other through the script's ISDN network
 		if(TARGET dmodem_fake_misdn)
