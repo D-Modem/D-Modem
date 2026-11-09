@@ -69,11 +69,12 @@ Its faxes use T.38 in the same way as the module's do
 | `path` | none | `mode = unix`: the server's stream socket. Required. |
 | `command` | none | `mode = exec`: the program, run by `/bin/sh -c`. Required. |
 | `header` | `no` | `tcp` and `unix` only: send the call's details first (see [below](#what-the-server-or-program-sees)). |
+| `handoff` | `no` | `unix` with `header` only: pass the modem's line itself to the server (see [below](#what-the-server-or-program-sees)). |
 | `init` | empty | Extra AT commands for the modem, in both directions (for example `AT+MS=34` to stop at V.34). |
 | `answer` | `ATA` | The command line the modem answers with. |
 | `law` | `auto` | The network's G.711 law: `ulaw`, `alaw`, or `auto` for the channel's. |
 | `clear` | `auto` | ISDN data calls as a clear 64 kbit/s channel: `auto`, `yes` or `no` (see [The channel](#the-channel)). |
-| `timeout` | `60` | Seconds the modems have to connect. |
+| `timeout` | `60` | Seconds the modems have to connect; then (`tcp`, `unix`) the seconds the server has to take the call, or the call ends with `ERROR`. |
 | `fax` | `yes` | Receive a calling fax machine as a fax (see [Fax](#fax)). |
 
 Option names are matched without regard to case, and `_` and `-` are
@@ -365,6 +366,23 @@ PPP and a shell, each started with the caller's credentials and these
 details of the call. It runs either as a `mode = exec` program for each
 call, or as one server for all calls (`modemmenu -serve`) behind a
 `mode = unix` profile with `header = yes`.
+
+Every call is a connection of its own to the profile's server: many
+callers at once on one `modemmenu -serve` (or a BBS) socket are many
+connections, each with its own header.
+
+With `handoff = yes` as well (`unix` and `header` only), the module
+puts the modem on a pty and passes the pty's terminal to the server
+instead of copying bytes to it: the header goes over the connection with
+the descriptor attached (`SCM_RIGHTS`), and from then on the server, and
+whatever it runs on that terminal (a login session, a shell, pppd), is
+on the modem's line itself, as on a serial port. The connection carries nothing more; it stays open
+for as long as the session lasts. When the server closes it, the module
+waits for what the server wrote last to go out, then hangs up (`LOCAL`);
+when the remote modem goes, the server sees its end of the line close.
+The server must expect the descriptor (`modemmenu -serve` and the BBS's
+`handoff` listeners do); a server that does not gets the header and
+nothing after it.
 
 When it returns, `DModem()` sets:
 

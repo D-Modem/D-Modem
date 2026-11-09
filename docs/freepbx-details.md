@@ -63,6 +63,7 @@ Each profile also has:
 | Connect timeout | 60 s | 5 to 600 s. |
 | Take fax calls (`fax`) | on | Receive a calling fax machine as a fax. |
 | Call details first (`header`) | off | TCP and unix-socket servers only. |
+| Hand over the line (`handoff`) | off | Unix-socket servers with call details first only: the server gets the modem's line itself (a terminal) instead of a copy of its bytes. See [the handoff](asterisk-details.md). |
 | Description | empty | One line, 100 characters at most; shown with the destination. |
 
 A profile name has 1 to 40 characters (lower-case letters, digits, `-`

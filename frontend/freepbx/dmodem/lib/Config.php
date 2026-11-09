@@ -69,6 +69,7 @@ class Config
 			'path' => '',
 			'command' => '',
 			'header' => false,
+			'handoff' => false,
 			'law' => 'auto',
 			'clear' => 'auto',
 			'init' => '',
@@ -165,6 +166,8 @@ class Config
 			if ($p['command'] === '' || self::breaksLine($p['command']))
 				$e['command'] = _('The program to run, on one line');
 		}
+		if ($p['handoff'] && ($p['mode'] !== 'unix' || !$p['header']))
+			$e['handoff'] = _('The line itself goes only to a unix socket server, with the call details first');
 		if (!in_array($p['law'], self::LAWS, true))
 			$e['law'] = _('auto, ulaw or alaw');
 		if (!in_array($p['clear'], self::CLEARS, true))
@@ -285,6 +288,8 @@ class Config
 			}
 			if ($p['mode'] !== 'exec')
 				$o[] = self::line('header', (bool)$p['header']);
+			if ($p['mode'] === 'unix')
+				$o[] = self::line('handoff', (bool)$p['handoff']);
 			$o[] = self::line('law', $p['law']);
 			$o[] = self::line('clear', $p['clear']);
 			if ($p['init'] !== '')
