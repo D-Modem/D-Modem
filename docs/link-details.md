@@ -17,6 +17,8 @@ port or pty.) It is C++, in `namespace dlink`.
   sends HDLC flags straight away.
   - T400 (750 ms) runs at both ends. When it runs out, the remote has no
     V.42 and the call goes on as asynchronous characters.
+  - Two HDLC flags in a row count as the remote's V.42; one alone is
+    passed over, as noise from a receiver that is still settling.
   - ADPs other than "EC" and "E" + NUL, such as a cellular modem's "EM"
     (Appendix VI/V.42), are passed over: the "EC" that follows them
     decides.

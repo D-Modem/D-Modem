@@ -1119,6 +1119,7 @@ void Modem::update_status(Status s)
 		{
 			const unsigned id = dp_ ? dp_->id : 0;
 			const bool v8 = id == DP_V34 || id == DP_K56 ||
+				id == DP_X2 ||
 				id == DP_V90 || id == DP_V91 ||
 				id == DP_V92;
 			link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
@@ -1545,7 +1546,7 @@ bool Modem::link_req(s32 what)
 	if ((state_ != ONLINE && state_ != COMMAND_ONLINE) || !dp_ ||
 	    stats_.dp == DP_V91 ||
 	    (id != DP_V8 && id != DP_V34 && id != DP_V90 && id != DP_V92 &&
-	     id != DP_K56)) {
+	     id != DP_K56 && id != DP_X2)) {
 		logf("%s asked: not with this modulation\n", n);
 		return false;
 	}
@@ -2074,7 +2075,7 @@ bool Modem::v8bis_call() const
 		id = DP_V34;
 	return id == DP_V8 || id == DP_V34 || id == DP_V90 ||
 	       id == DP_V91 || id == DP_V92 || id == DP_VCVM || id == DP_K56 ||
-	       id == DP_VFC;
+	       id == DP_X2 || id == DP_VFC;
 }
 
 /* see dcore.h */
