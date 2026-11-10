@@ -558,6 +558,7 @@ private:
 	u8 intr_buf_[64] = {};          /* the ST7554's 4 octets, the sticks' 8, the Apple's endpoint's packet (64 at most, full speed) */
 	s16 intr_len_ = 4;
 	s16 fifo_samples_ = 0;          /* the device's own delay */
+	s16 lead_extra_ = 0;            /* DMODEM_USB_LEAD_MS's samples */
 	/* the stick: its ring detector's changes (mod 256) so far, its
 	   errors last seen */
 	u8 ring_edges_ = 0;

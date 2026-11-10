@@ -913,7 +913,17 @@ bool UsbLine::start_isos()
 	/* octets a ms, at most */
 	s16 pkt = static_cast<s16>((rate_ * 2 + 999) / 1000);
 
-	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
+	/* (DMODEM_USB_LEAD_MS=<ms>, up to 200: that much more of our
+	   samples queued ahead, for a host whose modem thread stalls
+	   longer than the 30 ms lead, the FIFO running dry) */
+	lead_extra_ = 0;
+	if (const char *e = getenv("DMODEM_USB_LEAD_MS")) {
+		long ms = strtol(e, nullptr, 10);
+		if (ms > 0 && ms <= 200)
+			lead_extra_ = static_cast<s16>(ms * rate_ / 1000);
+		DBG("%ld ms more lead (DMODEM_USB_LEAD_MS)\n", ms);
+	}
+	iso_.out_buf.assign(frame_ + frame_ / 2 + lead_extra_, 0);
 	delay_ = static_cast<s16>(iso_.out_buf.size()) +
 		 ISO_TRANSFERS * ISO_PACKETS * static_cast<s32>(rate_) /
 			 1000 +
@@ -1523,7 +1533,7 @@ s16 UsbLine::pump(dcore::Modem &m)
 	update_leds(m);
 	/* (a playback that has drifted ahead: dropped back to its lead;
 	   so is the handset's, and its microphone's samples not taken) */
-	size_t most = static_cast<size_t>(3 * frame_);
+	size_t most = static_cast<size_t>(3 * frame_ + lead_extra_);
 	most += chip_->ahead();
 	if (iso_.out_buf.size() > most) {
 		DBG("playback ahead: %zu samples dropped\n",
