@@ -4150,12 +4150,24 @@ s16 V34Pump::data_setup()
 	if (!ntx || !nrx || r->trellis > 2 || l->trellis > 2 ||
 	    p.init(ptx.baud, ntx, r->expanded, aux))
 		return -1;
-	/* the remote's receiver asks for the non-linear encoder */
-	if (r->nonlinear)
+	/* the remote's receiver asks for the non-linear encoder (a test:
+	   DSP_V34_TX_NL=0 leaves it out all the same) */
+	if (r->nonlinear && !env_off("DSP_V34_TX_NL"))
 		p.set_nonlinear(0.3125);
 	/* each MP asks for the trellis code of the other's transmitter */
 	p.states = 16 << r->trellis;
-	p.set_precoder(r->h);
+	/* and for its precoder (a test: DSP_V34_TX_PRECODE=0 sends without
+	   it all the same) */
+	if (env_off("DSP_V34_TX_PRECODE")) {
+		const s16 none[6] = {};
+		p.set_precoder(none);
+		DSP_DBG("v34 tx: without the precoder the remote asked for "
+			"(DSP_V34_TX_PRECODE=0)\n");
+	} else
+		p.set_precoder(r->h);
+	if (env_off("DSP_V34_TX_NL") && r->nonlinear)
+		DSP_DBG("v34 tx: without the non-linear encoder the remote "
+			"asked for (DSP_V34_TX_NL=0)\n");
 	ptx.start_data(&p, CoreBits{ modem }, ax);
 	rate_tx = p.rate;
 	stat_coding(false, p.states, r->nonlinear, p.precode, r->expanded);

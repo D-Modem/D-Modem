@@ -115,6 +115,7 @@ Before this recovery was added, we sent INFO0d again only after V.92's quick con
 - In data mode the receiver's equalizer then includes 1 + H(z). It decides on the channel output points y(n) over the whole grid, and runs a copy of the remote's precoder on the decided points to recover u(n).
 - The original library precodes when asked. Its signal decodes without errors both with the coefficients we compute and with stronger ones.
 - `DSP_V34_PRECODE_MIN=<dB>` asks for precoding from that gain on (a test; the default is 1 dB).
+- `DSP_V34_TX_PRECODE=0` and `DSP_V34_TX_NL=0` (tests, for a remote that may not decode what it asks for): the transmitter leaves out the precoder, or the non-linear encoder, that the remote's MP asks for.
 
 ### Non-linear encoding (9.7/V.34)
 
