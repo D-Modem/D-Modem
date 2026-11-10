@@ -24,6 +24,7 @@ The variables D-Modem's programs read, and those its PBX modules set for the pro
 | `DMODEM_USBDK` | read | [D-Modem on Windows: technical details](../windows-details.md) | `frontend/dmodemd/usb_line.cpp` |
 | `DMODEM_USB_LEAD_MS` | read | [The Agere USB 2.0 soft modem: technical details](../agere-usb-details.md) | `frontend/dmodemd/usb_line.cpp` |
 | `DMODEM_USB_REC` | read | [The Agere USB 2.0 soft modem: technical details](../agere-usb-details.md), [The Agere USB 2.0 soft modem](../agere-usb.md), [The Apple USB Modem](../apple-usb-modem.md), [Softmodem hardware: dmodemd on ALSA and USB: technical details](../hardware-details.md) | `frontend/dmodemd/usb_line.cpp` |
+| `DMODEM_USB_TRANSFERS` | read | [The Agere USB 2.0 soft modem: technical details](../agere-usb-details.md) | `frontend/dmodemd/usb_line.cpp` |
 | `DMODEM_USB_TX_GAIN` | read | [The Agere USB 2.0 soft modem: technical details](../agere-usb-details.md), [The Agere USB 2.0 soft modem](../agere-usb.md), [Softmodem hardware: dmodemd on ALSA and USB: technical details](../hardware-details.md) | `frontend/dmodemd/usb_line.cpp` |
 | `DMODEM_USB_WIN_FIFO` | read | [The Agere USB 2.0 soft modem: technical details](../agere-usb-details.md) | `frontend/dmodemd/usb_line.cpp` |
 | `DMODEM_UUID` | set for a program | [mod_dmodem: a data modem on a FreeSWITCH channel: technical details](../freeswitch-details.md) | `frontend/freeswitch/mod_dmodem.c` |

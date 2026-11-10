@@ -923,9 +923,22 @@ bool UsbLine::start_isos()
 			lead_extra_ = static_cast<s16>(ms * rate_ / 1000);
 		DBG("%ld ms more lead (DMODEM_USB_LEAD_MS)\n", ms);
 	}
+	/* (DMODEM_USB_TRANSFERS=<n>, 3 to MAX_TRANSFERS: that many
+	   transfers each way in flight, ISO_TRANSFERS by default; each is
+	   ISO_PACKETS ms of the codec's samples queued at the device, so a
+	   modem thread that stalls longer than all of them (a far echo's
+	   search) leaves its FIFO dry) */
+	iso_transfers_ = ISO_TRANSFERS;
+	if (const char *e = getenv("DMODEM_USB_TRANSFERS")) {
+		long v = strtol(e, nullptr, 10);
+		if (v >= ISO_TRANSFERS && v <= MAX_TRANSFERS)
+			iso_transfers_ = static_cast<s16>(v);
+		DBG("%d transfers each way (DMODEM_USB_TRANSFERS)\n",
+		    iso_transfers_);
+	}
 	iso_.out_buf.assign(frame_ + frame_ / 2 + lead_extra_, 0);
 	delay_ = static_cast<s16>(iso_.out_buf.size()) +
-		 ISO_TRANSFERS * ISO_PACKETS * static_cast<s32>(rate_) /
+		 iso_transfers_ * ISO_PACKETS * static_cast<s32>(rate_) /
 			 1000 +
 		 fifo_samples_;
 	intr_ = libusb_alloc_transfer(0);
@@ -948,13 +961,14 @@ bool UsbLine::start_isos()
 	return true;
 }
 
-/* stream s's transfers: ISO_TRANSFERS IN ones, the OUT ones (each sent
+/* stream s's transfers: iso_transfers_ IN ones (the voice codec's
+   ISO_TRANSFERS), the OUT ones (each sent
    when an IN one is done; the first ones now, pkt octets a packet of
    what s has to send, silence past it) */
 bool UsbLine::start_iso(Iso &s, s16 pkt)
 {
 	int err;
-	for (s16 i = 0; i < ISO_TRANSFERS; i++) {
+	for (s16 i = 0; i < (s.voice ? static_cast<s16>(ISO_TRANSFERS) : iso_transfers_); i++) {
 		s.in[i] = libusb_alloc_transfer(ISO_PACKETS);
 		s.out[i] = libusb_alloc_transfer(ISO_PACKETS);
 		if (!s.in[i] || !s.out[i])

@@ -564,6 +564,7 @@ private:
 	s16 intr_len_ = 4;
 	s16 fifo_samples_ = 0;          /* the device's own delay */
 	s16 lead_extra_ = 0;            /* DMODEM_USB_LEAD_MS's samples */
+	s16 iso_transfers_ = ISO_TRANSFERS;     /* DMODEM_USB_TRANSFERS */
 	/* the stick: its ring detector's changes (mod 256) so far, its
 	   errors last seen */
 	u8 ring_edges_ = 0;
