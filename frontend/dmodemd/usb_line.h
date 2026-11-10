@@ -71,6 +71,7 @@
 #define DMODEMD_USB_LINE_H
 
 #include <deque>
+#include <functional>
 #include <memory>
 #include <string>
 #include <cstdio>
@@ -143,6 +144,16 @@ public:
 	   Link's Windows driver drives it with Options.Buzzer
 	   (SetSpeakerVolume).  Not every board has one: off by default */
 	void set_buzzer(bool on) { buzzer_ = on; }
+	/* the modem's speaker (ATM, ATL) on the host's as well: volume(level)
+	   each time the core sets it (0 off, 1..3), and while it is on
+	   audio(in, out, n) with each frame's samples at the line's rate
+	   (in from the line, out the modem's to it) */
+	void on_speaker(std::function<void(s16 level)> volume,
+			std::function<void(const s16 *in, const s16 *out,
+					   s16 n)> audio) {
+		spk_volume_ = std::move(volume);
+		spk_audio_ = std::move(audio);
+	}
 	/* the WB stick's transmit level (the DAC's volume, SET_TX_GAIN: -63.5
 	   to +24 dB) and its hybrid input's gain (the MicPGA, SET_RX_GAIN: 0
 	   to 47.5 dB), in dB, rounded to its 0.5 dB steps; 0 (its reset
@@ -202,7 +213,8 @@ public:
 	s16 dsvd_mic(dcore::Modem &m, s16 *pcm, s16 n) override;
 	/* (see dsvd_voice()) */
 	void dsvd_ear(dcore::Modem &m, const s16 *pcm, s16 n) override;
-	/* the speaker's volume (set_buzzer()): the buzzer on or off */
+	/* the speaker's volume: the buzzer on or off (set_buzzer()), and
+	   to the host's speaker (on_speaker()) */
 	void speaker(dcore::Modem &m, s16 volume) override;
 	/* an analogue line, the modem dialling it itself */
 	bool analog_line(dcore::Modem &) override { return true; }
@@ -572,6 +584,10 @@ private:
 	   FIFO_CONTROL2 written last */
 	bool rhom_ = false, rhom_ok_ = false;
 	bool buzzer_ = false;           /* set_buzzer() */
+	/* on_speaker()'s, and the level the core last set */
+	std::function<void(s16)> spk_volume_;
+	std::function<void(const s16 *, const s16 *, s16)> spk_audio_;
+	s16 spk_level_ = 0;
 	u16 fifo2_ = 0;
 	u16 route_ = VOICE_DEVICE_LINE;
 	std::deque<s16> mic_;

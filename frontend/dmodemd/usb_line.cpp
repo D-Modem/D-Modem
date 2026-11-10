@@ -1334,10 +1334,13 @@ s16 UsbLine::set_hook(dcore::Modem &, s16 state)
 	return chip_->set_hook(state, was_off);
 }
 
-/* see usb_line.h: GPIO 11 set for any volume but 0, as Windows'
-   SetSpeakerVolume with Options.Buzzer */
+/* see usb_line.h: on_speaker()'s told; GPIO 11 set for any volume but
+   0, as Windows' SetSpeakerVolume with Options.Buzzer */
 void UsbLine::speaker(dcore::Modem &, s16 volume)
 {
+	if (volume != spk_level_ && spk_volume_)
+		spk_volume_(volume);
+	spk_level_ = volume;
 	if (!buzzer_ || !chip_->smart() || !h_ || dead_)
 		return;
 	u16 v = volume > 0 ? static_cast<u16>(gpio_ | GPIO_BUZEN) :
@@ -1510,6 +1513,8 @@ s16 UsbLine::pump(dcore::Modem &m)
 			}
 		if (rec_)
 			rec_frame(frame_in_.data(), frame_out_.data(), frame_);
+		if (spk_level_ > 0 && spk_audio_)
+			spk_audio_(frame_in_.data(), frame_out_.data(), frame_);
 		iso_.out_buf.insert(iso_.out_buf.end(), frame_out_.begin(),
 				    frame_out_.end());
 	}
