@@ -539,6 +539,11 @@ private:
 	void send_out(Iso &s);
 	void voice_frame(dcore::Modem &m);
 	u16 fifo_control2() const;
+	/* DMODEM_USB_WIN_FIFO's (see usb_line.cpp) */
+	bool win_fifo() const;
+	u16 win_low() const;
+	u16 win_high() const;
+	u16 fifo_control1() const;
 	void update_rhom();
 	void gone(const char *why);
 	void update_leds(dcore::Modem &m);

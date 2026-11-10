@@ -741,7 +741,7 @@ bool UsbLine::init_st7554_regs()
 					      (handset_ ? GPIO_HANDSET : 0));
 	return set_reg(GPIO_DIR, 0x3ff8) && set_gpio(gpio_) &&
 		set_reg(GPIO_MASK, mask) &&
-		set_reg(FIFO_CONTROL1, 0x2828 | BYTE_ORDER_LE) &&
+		set_reg(FIFO_CONTROL1, fifo_control1() | BYTE_ORDER_LE) &&
 		set_reg(FIFO_CONTROL2, fifo2_ = fifo_control2()) &&
 		set_reg(FIFO_MASK, 0) &&
 		set_reg(FIFO_MASK, SSI1_UNDERRUN | SSI1_OVERRUN) &&
@@ -1003,7 +1003,12 @@ bool UsbLine::start_fifos()
 	u16 mask = SSI1_UNDERRUN | SSI1_OVERRUN;
 	if (viso_.ep_in)
 		mask |= SSI2_UNDERRUN | SSI2_OVERRUN;
-	return set_reg(SSI1_COUNTER, FRAGSIZE) &&
+	u16 period = win_fifo() ? static_cast<u16>(rate_ * 5 / 1000 - 1) :
+		FRAGSIZE;
+	if (win_fifo())
+		DBG("FIFO as Windows has it: thresholds %02x/%02x, period %u "
+		    "(DMODEM_USB_WIN_FIFO)\n", win_low(), win_high(), period);
+	return set_reg(SSI1_COUNTER, period) &&
 		(!viso_.ep_in || set_reg(SSI2_COUNTER, VOICE_PERIOD)) &&
 		set_reg(FIFO_MASK, mask);
 }
@@ -1017,6 +1022,7 @@ void UsbLine::out_fill(Iso &s, libusb_transfer *t, const s16 *lengths)
 	s16 bps = s.voice ? 1 : 2;
 	if (chip_->fill_out(t))
 		return;
+	s32 dry = 0;
 	for (s16 i = 0; i < ISO_PACKETS; i++) {
 		s16 len = lengths[i] - lengths[i] % bps;
 		if (len > s.max_out)
@@ -1027,7 +1033,8 @@ void UsbLine::out_fill(Iso &s, libusb_transfer *t, const s16 *lengths)
 			if (!s.out_buf.empty()) {
 				x = s.out_buf.front();
 				s.out_buf.pop_front();
-			}
+			} else
+				dry++;
 			if (!s.voice) {
 				t->buffer[off + 2 * k] =
 					static_cast<u8>(x);
@@ -1044,6 +1051,11 @@ void UsbLine::out_fill(Iso &s, libusb_transfer *t, const s16 *lengths)
 		off += len;
 	}
 	t->length = off;
+	/* (our samples late: silence in their place, and the rest of the
+	   call that much later; off hook, said) */
+	if (dry && !s.voice && off_hook())
+		DBG("playback ran dry: %d samples of silence sent\n",
+		    static_cast<int>(dry));
 }
 
 /* libusb's callbacks: to the line */
@@ -1289,7 +1301,7 @@ void UsbLine::resume()
 		st->in_buf.clear();
 		st->out_lengths.clear();
 	}
-	iso_.out_buf.assign(frame_ + frame_ / 2, 0);
+	iso_.out_buf.assign(frame_ + frame_ / 2 + lead_extra_, 0);
 	viso_.out_buf.assign(VOICE_RATE / 50 + VOICE_RATE / 100, 0);
 	mic_.clear();
 	std::vector<libusb_transfer *> again;
@@ -1553,12 +1565,43 @@ s16 UsbLine::pump(dcore::Modem &m)
 	return 0;
 }
 
+/* DMODEM_USB_WIN_FIFO=1: the codec FIFO's thresholds and period as
+   Smart Link's Windows driver sets them (smartusb56-windows-details.md):
+   low/high 0x20/0x3e at 8000 Hz, 0x20/0x3a at 9600, 0x0e/0x2e at 16000,
+   a 5 ms period; otherwise Linux's 0x28/0x28 and 96 */
+bool UsbLine::win_fifo() const
+{
+	const char *e = getenv("DMODEM_USB_WIN_FIFO");
+	return e && atoi(e) == 1;
+}
+
+/* (see win_fifo()) the low threshold */
+u16 UsbLine::win_low() const
+{
+	return rate_ == 16000 ? 0x0e : 0x20;
+}
+
+/* (see win_fifo()) the high threshold */
+u16 UsbLine::win_high() const
+{
+	return rate_ == 16000 ? 0x2e : rate_ == 9600 ? 0x3a : 0x3e;
+}
+
+/* FIFO_CONTROL1 as it is to be: both FIFOs' low thresholds (the codec's
+   in bits 8-14, the voice codec's in 0-6) */
+u16 UsbLine::fifo_control1() const
+{
+	return win_fifo() ? static_cast<u16>(win_low() << 8 | 0x28) : 0x2828;
+}
+
 /* FIFO_CONTROL2 as it is to be: the thresholds, and with set_rhom()
    while the modem runs RHOM for the codec, and for the voice codec if
    it streams (Windows' ConfigureRHOM) */
 u16 UsbLine::fifo_control2() const
 {
-	u16 v = FIFO2_THRESHOLDS;
+	u16 v = win_fifo() ? static_cast<u16>(win_high() << 8 |
+					      (FIFO2_THRESHOLDS & 0xff)) :
+		FIFO2_THRESHOLDS;
 	if (rhom_ && rhom_ok_ && running_)
 		v |= RHOM_SSI1 | (viso_.ep_in ? RHOM_SSI2 : 0);
 	return v;

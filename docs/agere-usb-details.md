@@ -458,6 +458,7 @@ failed, came short, or had an odd count. If no samples have come for
 | `DMODEM_USB_TX_GAIN=<dB>` | Any USB modem: makes the modem's samples to the line louder or softer (-20 to 20 dB), clipped at full scale (the clipping said once in the log). |
 | `DMODEM_USB_TX_GAIN=auto` | Any USB modem: sets that gain for each call from the remote's answer tone (below). |
 | `DMODEM_USB_REC=<path>` | Any USB modem: records each call (below). |
+| `DMODEM_USB_WIN_FIFO=1` | A SmartUSB56: the codec FIFO's thresholds and period as Smart Link's Windows driver sets them (0x20/0x3A and 5 ms at 9600 Hz) instead of the Linux driver's 0x28/0x28 and 96 (a test). |
 | `DMODEM_USB_LEAD_MS=<ms>` | Any USB modem: queues that many more milliseconds (up to 200) of the modem's samples ahead of the device, for a host whose modem thread sometimes stalls longer than the 30 ms lead (the FIFO underruns in the log). It adds that much to the echo's delay. |
 
 **A fixed transmit gain.** The first device's remote heard it badly
