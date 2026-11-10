@@ -510,7 +510,8 @@ struct V34Echo {
 	s32 ls_n;
 
 	void init();
-	void search();
+	/* (max_d: the farthest delay looked at, 0 any) */
+	void search(s32 max_d);
 	float run(float tx, float rx);
 	/* the least squares solution in place of NLMS's when it leaves
 	   less: the dB it takes away, or 0 (none stored, or a far part) */
@@ -2835,8 +2836,11 @@ out:
 /* where the far echo is: the received signal of the last EC_SEARCH
    samples against our (scrambled, nearly white) transmitted signal at
    every delay beyond the near part.  The far part then covers
-   EC_FAR_LEN samples from a little before the strongest echo. */
-void V34Echo::search()
+   EC_FAR_LEN samples from a little before the strongest echo.  Up to
+   max_d samples of delay when it is not 0: the whole history at once
+   (16384 delays of 1024 products) takes long enough on a phone for the
+   USB modems' buffers to run dry. */
+void V34Echo::search(s32 max_d)
 {
 	const s16 mask = EC_HIST - 1;
 	float best = 0, run = 0, c, floor;
@@ -2846,6 +2850,8 @@ void V34Echo::search()
 
 	if (n_ > EC_HIST - EC_SEARCH)
 		n_ = EC_HIST - EC_SEARCH;
+	if (max_d > 0 && n_ > max_d)
+		n_ = max_d;
 	if (n_ < 2 * EC_NEAR_LEN) {
 		far_on = 0;
 		return;
@@ -3083,7 +3089,12 @@ void V34Pump::ec_schedule()
 				   e->n == ms2samples(500, srate) ||
 				   (e->n >= ms2samples(1000, srate) &&
 				    e->n % ms2samples(250, srate) == 0)))
-			e->search();
+			/* (in the first second only around the round trip
+			   we measured, twice it and more: a far echo there is
+			   found cheaply; after it at any delay, as one side
+			   of a VoIP call measures a short one) */
+			e->search(rtd > 0 && e->n < ms2samples(1000, srate) ?
+				  2 * rtd + EC_SEARCH : 0);
 		/* fast at first, also for a far part found late */
 		e->far_since++;
 		{
@@ -6999,10 +7010,17 @@ s16 V34Pump::handshake()
 		}
 		break;
 	case P3C_J:
-		/* until the answerer's S of phase 4, then J' and TRN */
+		/* until the answerer's S of phase 4, then J' and TRN; none
+		   in 4 s and the round trip (a USB modem's samples ran dry
+		   in our TRN, say, and the remote gave up on it): failed,
+		   rather than J for ever */
 		if (prx.ev_s && ptx.n % 8 == 0) {
 			ptx.trn16 = prx.j16;
 			tx_next(P4C_TRN, V34_TX_JP);
+		} else if (ptx.n * ptx.qam.sps >=
+			   ms2samples(4000, srate) + rtd) {
+			DSP_DBG("v34: no S after our J: failed\n");
+			return DPSTAT_ERROR;
 		}
 		break;
 	case P4C_TRN:
