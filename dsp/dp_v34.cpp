@@ -7411,7 +7411,10 @@ float V34Pump::pump_tx_sample()
 			if (prx.timing_fixed && !tx_loop_on &&
 			    fabsf(prx.t_freq / ptx.qam.sps) > TX_CLK_PPM * 1e-6f)
 				tx_loop_on = 1;
-			float want = tx_loop_on && prx.timing_fixed ? prx.t_freq : tx_clk;
+			/* (DSP_V34_LOOP_TIMING=2: held from the connect on,
+			   for an answerer that follows our clock in turn) */
+			float want = tx_loop_on && prx.timing_fixed &&
+				!(tx_loop == 2 && connected) ? prx.t_freq : tx_clk;
 			tx_clk += std::max(-TX_CLK_SLEW, std::min(TX_CLK_SLEW, want - tx_clk));
 			ptx.qam.set_clock(tx_clk);
 		}

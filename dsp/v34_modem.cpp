@@ -1273,7 +1273,8 @@ void V34Rx::symbol()
 				mse_mid = mse;
 			}
 			if (n % 2000 == 0)
-				DSP_DBG("v34 rx%d: data mse %.3f\n", tap, mse);
+				DSP_DBG("v34 rx%d: data mse %.3f, clock %+.0f ppm\n", tap,
+					mse, 1e6 * t_freq / qam.sps);
 		}
 		break;
 	}

@@ -212,7 +212,7 @@ The caller sends its symbols on the answerer's clock:
 
 A SmartUSB56's codec runs about 140 ppm off. A USR Courier answering lost our signal a symbol's slip (2 s) into data without loop timing.
 
-`DSP_V34_LOOP_TIMING=0` turns it off. The answerer keeps its own clock: only one side follows, as two would chase each other.
+`DSP_V34_LOOP_TIMING=0` turns it off. `DSP_V34_LOOP_TIMING=2` follows the remote in training and then holds the clock it reached from the connect on (a test, for an answerer that follows our clock in turn). Our receiver's `data mse` lines give the clock offset it tracks. The answerer keeps its own clock: only one side follows, as two would chase each other.
 
 ## Rate renegotiation (11.6/V.34)
 
