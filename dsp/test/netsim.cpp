@@ -33,6 +33,10 @@
  *    NET_PPM, the pad and robbed bits), its samples on the network's
  *    clock only at phase 0 and no ppm.
  *
+ *    NET_ISI=<c1>,<c2>,...: A's line through the filter 1 + c1 z^-1 +
+ *    c2 z^-2 + ... (in A's samples): intersymbol interference at B,
+ *    for a receiver that asks for V.34 precoding.
+ *
  *    NET_RING=<country> (tones.h's names: USA, UK, GERMANY, ...):
  *    the call is put through as that country's exchange puts it.  The
  *    modems say their hook on NET_HOOK_A and NET_HOOK_B (fds: '1' off
@@ -892,6 +896,35 @@ struct Ring {
 /* the network: the law (alaw) or a speech codec (NET_CODEC), the far
    codec of a 9600 Hz modem and the gains on the way (NET_PLAIN, NET_GAIN,
    NET_GAIN_UP), the impairments */
+/* NET_ISI's taps and A's last samples */
+static float isi_c[8], isi_h[8];
+static int isi_n;
+
+/* NET_ISI's taps from the environment */
+static void isi_init()
+{
+	const char *e = getenv("NET_ISI");
+	while (e && *e && isi_n < 8) {
+		isi_c[isi_n++] = (float)atof(e);
+		e = strchr(e, ',');
+		if (e)
+			e++;
+	}
+}
+
+/* x through 1 + c1 z^-1 + ..., clipped to 16 bits */
+static short isi_run(short x)
+{
+	float y = x;
+	int k;
+	for (k = 0; k < isi_n; k++)
+		y += isi_c[k] * isi_h[k];
+	for (k = isi_n - 1; k > 0; k--)
+		isi_h[k] = isi_h[k - 1];
+	isi_h[0] = x;
+	return (short)(y > 32767 ? 32767 : y < -32768 ? -32768 : lrintf(y));
+}
+
 struct Net : Drop, Step, Noise, Loop, Echo, Moh, Ring {
 	int plain;      /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
 			   resampler of dsp_util, not the raised cosine (the
@@ -932,6 +965,7 @@ struct Net : Drop, Step, Noise, Loop, Echo, Moh, Ring {
 			moh_init(getenv("NET_MOH"), ra);
 		if (getenv("NET_STEP"))
 			step_init(getenv("NET_STEP"));
+		isi_init();
 		if (getenv("NET_ECHO"))
 			echo_init(getenv("NET_ECHO"), ra);
 	}
@@ -955,6 +989,7 @@ struct Net : Drop, Step, Noise, Loop, Echo, Moh, Ring {
 };
 
 static Net net;
+
 static SpeechCodec codecs[2];
 
 /* samples of one direction: to 8000 Hz G.711 and on */
@@ -985,6 +1020,10 @@ int Net::run(struct dir *d, int a_out, int a_in)
 		if (moh_cut())
 			ibuf[i] = moh_sample(a_out);
 		ibuf[i] = step(ibuf[i], t);
+		/* NET_ISI=<c1>,<c2>,...: A's line through 1 + c1 z^-1 + ...
+		   (in A's samples): intersymbol interference for B's receiver */
+		if (a_out && isi_n)
+			ibuf[i] = isi_run(ibuf[i]);
 		/* the noise of an analogue line: on a 8000 Hz G.711
 		   signal on its way to a 9600 Hz modem it comes after the
 		   codec (below), not on the codes */
