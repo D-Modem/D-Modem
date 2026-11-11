@@ -611,8 +611,8 @@ s16 Modem::at_command(char *cmd)
 					len = 3;
 					break;
 				}
-				ret = !starts_nocase(p, "#CID") ? -1 :
-					at_CID(p, &len);
+				ret = starts_nocase(p, "#CID") ?
+					at_CID(p, &len) : at_hash(p, &len);
 				break;
 			case '%':
 				switch (upper(p[1])) {
@@ -811,6 +811,18 @@ s16 Modem::at_set_sreg(s16 num, char c, s16 lo, s16 hi, s16 *len)
 s16 Modem::at_A(char *p, s16 *len)
 {
 	*len = static_cast<s16>(strlen(p));
+	/* #CLS=8's: the line taken for voice (a ringing call answered),
+	   VCON; the handset too if #VLS=1 has it */
+	if (mode_ == MODEM_MODE_VOICE && hash_voice_) {
+		bool handset = voice_ ?
+			voice_device_ == VOICE_DEVICE_HANDSET :
+			hash_vls_ == 1;
+		s16 r = voice_set_device(handset ? VOICE_DEVICE_HANDSET_LINE :
+					 VOICE_DEVICE_LINE);
+		if (r == 1)
+			vcon_next_ = true;
+		return r;
+	}
 	return answer() ? -1 : 1;
 }
 
@@ -876,8 +888,9 @@ s16 Modem::at_D(char *p, s16 *len)
    (Host::analog_line(), after 2 s for the dial tone), OK when the call
    is answered, BUSY, NO ANSWER (S7) or ERROR when it fails.  With the line already taken, the
    number's digits are dialled on it as DTMF (S11 ms each, S11 ms
-   apart), as on a line off hook, and OK follows them.  number NULL: the
-   last one (ATDL).  1 (the result to come), 0 (OK now), or -1 */
+   apart), as on a line off hook, and OK follows them (after #CLS=8 the
+   answer's OK is VCON, as Rockwell's and US Robotics' modems have it).
+   number NULL: the last one (ATDL).  1 (the result to come), 0 (OK now), or -1 */
 s16 Modem::voice_dial(const char *number)
 {
 	if (voice_) {
@@ -901,6 +914,7 @@ s16 Modem::voice_dial(const char *number)
 	}
 	voice_dialing_ = true;
 	voice_dial_since_ = host_.now_ms();
+	vcon_next_ = hash_voice_;
 	if (host_.analog_line(*this)) {
 		/* a telephone line's: 2 s for the dial tone, then the
 		   number in DTMF (the engine's first OK, the line taken,
@@ -1527,9 +1541,48 @@ s16 Modem::at_FCLASS(char *p, s16 *len)
 		*len = 9;
 		if (q[1] == '1')
 			fax_class_ = 1;
+		hash_voice_ = false;
 		return set_mode(static_cast<enum MODEM_MODE>(q[1] - '0'));
 	}
 	return -1;
+}
+
+/* #CLS (Rockwell's and US Robotics' +FCLASS): =? the modes, ? the mode
+   (as +FCLASS? gives it), =0, =1, =2 (where class 2 is) or =8; voice
+   mode entered with #CLS=8 speaks their dialect (at_hash()) */
+s16 Modem::at_CLS(char *p, s16 *len)
+{
+	const char *q = p + 4;
+
+	if (q[0] == '=' && q[1] == '?') {
+		puts(has_fax2() ? "0,1,2,8" : "0,1,8");
+		crlf();
+		*len = 6;
+		return 0;
+	}
+	if (q[0] == '?') {
+		puts(fclass());
+		crlf();
+		*len = 5;
+		return 0;
+	}
+	if (q[0] != '=' || is_digit(q[2]) ||
+	    !(q[1] == '0' || q[1] == '1' || q[1] == '8' ||
+	      (q[1] == '2' && has_fax2())))
+		return -1;
+	*len = 6;
+	if (q[1] == '2') {
+		if (set_mode(MODEM_MODE_FAX))
+			return -1;
+		fax_class_ = 2;
+		return 0;
+	}
+	if (q[1] == '1')
+		fax_class_ = 1;
+	s16 ret = set_mode(static_cast<enum MODEM_MODE>(q[1] - '0'));
+	if (!ret && q[1] == '8')
+		hash_voice_ = true;
+	return ret;
 }
 
 namespace {
@@ -1993,21 +2046,23 @@ s16 Modem::at_VSM(char *p, s16 *len)
 
 /* +V...: caller ID in any mode, the rest in voice mode only: the
    parameters (? =? =<values>), +VIP, +VLS, and what the voice engine
-   does: +VTX, +VRX, +VTR, +VTS */
-s16 Modem::at_voice(char *p, s16 *len)
+   does: +VTX, +VRX, +VTR, +VTS.  hash: #V... of Rockwell's and US
+   Robotics' dialect (at_hash()) with the same meaning, its parameters
+   taken in any mode and its #VTS durations in 100 ms */
+s16 Modem::at_voice(char *p, s16 *len, bool hash)
 {
 	const char *q = p + 4, *e;
 	char cmd[3];
 
-	if (starts_nocase(p + 2, "CID"))
+	if (!hash && starts_nocase(p + 2, "CID"))
 		return at_CID(p, len);
-	if (mode_ != MODEM_MODE_VOICE || !p[2] || !p[3])
+	if ((mode_ != MODEM_MODE_VOICE && !hash) || !p[2] || !p[3])
 		return -1;
 	cmd[0] = static_cast<char>(upper(p[2]));
 	cmd[1] = static_cast<char>(upper(p[3]));
 	cmd[2] = '\0';
 	if (!strcmp(cmd, "SM"))
-		return at_VSM(p, len);
+		return hash ? -1 : at_VSM(p, len);
 	for (const auto &s : voice_settings) {
 		std::string_view name = s.name;
 		bool device = name == "LS";
@@ -2017,6 +2072,9 @@ s16 Modem::at_voice(char *p, s16 *len)
 
 		if (name != cmd)
 			continue;
+		if (hash && (device || events || name == "NH" ||
+			     name == "SD" || name == "TD"))
+			return -1;
 		for (s16 i = 0; i < s.n; i++)
 			v[i] = s.field[i] ? voice_info_.*s.field[i] :
 				events ? voice_events_ :
@@ -2075,6 +2133,8 @@ s16 Modem::at_voice(char *p, s16 *len)
 		return ret;
 	}
 	const std::string_view c = cmd;
+	if (mode_ != MODEM_MODE_VOICE)
+		return -1;
 	if (c == "IP") {
 		voice_init();
 		*len = 4;
@@ -2114,6 +2174,9 @@ s16 Modem::at_voice(char *p, s16 *len)
 	std::vector<VoiceTone> tones;
 	const u16 dflt = voice_info_.tone_default ?
 		voice_info_.tone_default : 100;
+	/* a duration given: 10 ms, or #VTS's 100 ms (Rockwell's and US
+	   Robotics', as vgetty's drivers for them count) */
+	const u32 unit = hash ? 10 : 1;
 	for (;;) {
 		VoiceTone t = { 0, 0, 0, dflt, false };
 		if (*q == '[') {
@@ -2125,6 +2188,8 @@ s16 Modem::at_voice(char *p, s16 *len)
 				if (is_digit(*q)) {
 					v[i] = number(q, &e);
 					q = e;
+					if (i == 2)
+						v[i] *= unit;
 				}
 			}
 			if (*q++ != ']' || v[0] > 4000 || v[1] > 4000 ||
@@ -2144,7 +2209,7 @@ s16 Modem::at_voice(char *p, s16 *len)
 			if (*q == ',') {
 				q++;
 				if (is_digit(*q)) {
-					u32 d = number(q, &e);
+					u32 d = number(q, &e) * unit;
 					q = e;
 					if (d > 6000)
 						return -1;
@@ -2178,6 +2243,252 @@ s16 Modem::at_voice(char *p, s16 *len)
 	vts_ = std::move(tones);
 	vts_next_ = 0;
 	return voice_tone_next();
+}
+
+/*
+ *    Rockwell's and US Robotics' voice commands
+ *
+ *    The "#" voice dialect that came before V.253, and that Unimodem/V,
+ *    vgetty's Rockwell and US_Robotics drivers and the voice programs of
+ *    their time speak: #CLS=8 for voice mode, then #VLS, #VBS, #VSR,
+ *    #VSM, #VTX, #VRX, #VTS and their settings.  The voice engine is
+ *    +FCLASS=8's; the line taken (ATA, ATD's answer, #VLS=1) is VCON.
+ */
+
+namespace {
+
+/* a # setting kept for ? (the modem has no use for it): the name after
+   '#', its values, their range, their value at the start; hex: given
+   and shown in hex (#VTD's report masks, #TL's and #RG's gains) */
+const struct HashSetting {
+	const char *name;
+	s16 n;
+	u32 lo, hi, dflt;
+	bool hex;
+} hash_settings[] = {
+	{ "VTD", 3, 0, 0xFF, 0x3F, true },   /* <DLE> report masks */
+	{ "VSD", 1, 0, 1, 0, false },        /* silence deletion */
+	{ "VSS", 1, 0, 3, 2, false },        /* silence sensitivity */
+	{ "VSP", 1, 0, 255, 50, false },     /* silence period, 100 ms */
+	{ "BDR", 1, 0, 48, 0, false },       /* the DTE's rate / 2400 */
+	{ "VSK", 1, 0, 255, 0, false },      /* the buffer's skid */
+	{ "TL", 1, 0, 0x1FFFF, 0x8000, true },  /* transmit level */
+	{ "RG", 1, 0, 0x1FFFF, 0x8000, true },  /* receive gain */
+};
+static_assert(sizeof(hash_settings) / sizeof(hash_settings[0]) <= 8,
+	      "hash_kept_ holds 8");
+
+/* c as a hex digit, -1 for another character */
+int hex_value(char c)
+{
+	if (c >= '0' && c <= '9')
+		return c - '0';
+	c = static_cast<char>(upper(c));
+	return c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1;
+}
+
+} // namespace
+
+/* the kept # settings at their start values (+VIP, the start) */
+void Modem::hash_init()
+{
+	for (size_t i = 0; i < sizeof(hash_settings) / sizeof(hash_settings[0]);
+	     i++)
+		for (s16 k = 0; k < 3; k++)
+			hash_kept_[i][k] = hash_settings[i].dflt;
+	voice_info_.silence_detect_period = 50;
+}
+
+/* the # commands but #UD and #CID: #CLS, #VLS, the sample format's
+   (#VBS, #VSR, #VSM), the kept settings, and the rest of #V... as the
+   +V commands of the same names (#VTX, #VRX, #VTS, #VGT, #VGR, #VRA,
+   #VRN, #VIT, #VIP) */
+s16 Modem::at_hash(char *p, s16 *len)
+{
+	if (starts_nocase(p, "#CLS"))
+		return at_CLS(p, len);
+	if (starts_nocase(p, "#VLS"))
+		return at_hash_vls(p, len);
+	if (starts_nocase(p, "#VBS") || starts_nocase(p, "#VSR") ||
+	    starts_nocase(p, "#VSM"))
+		return at_hash_format(p, len);
+	for (size_t i = 0; i < sizeof(hash_settings) / sizeof(hash_settings[0]);
+	     i++) {
+		const HashSetting &h = hash_settings[i];
+		const std::string_view name = h.name;
+		if (!starts_nocase(p + 1, h.name))
+			continue;
+		const char *q = p + 1 + name.size(), *e;
+		u32 v[3];
+		auto show = [&h](u32 x) {
+			return h.hex ? hex(x, 0, true) : dec(x);
+		};
+		std::copy(hash_kept_[i], hash_kept_[i] + 3, v);
+		if (q[0] == '=' && q[1] == '?') {
+			std::string line;
+			for (s16 k = 0; k < h.n; k++)
+				line += std::string(k ? "," : "") + "(" +
+					show(h.lo) + "-" + show(h.hi) + ")";
+			puts(line);
+			crlf();
+			q += 2;
+		} else if (q[0] == '?') {
+			std::string line;
+			for (s16 k = 0; k < h.n; k++)
+				line += (k ? "," : "") + show(v[k]);
+			puts(line);
+			crlf();
+			q++;
+		} else if (q[0] == '=') {
+			q++;
+			for (s16 k = 0; k < h.n; k++) {
+				if (k && *q++ != ',')
+					return -1;
+				if (h.hex) {
+					/* (up to 5 hex digits) */
+					s16 d = 0;
+					v[k] = 0;
+					for (; d < 6 && hex_value(*q) >= 0;
+					     d++, q++)
+						v[k] = v[k] * 16 +
+							static_cast<u32>(
+								hex_value(*q));
+					if (!d || d > 5)
+						return -1;
+				} else {
+					if (!is_digit(*q))
+						return -1;
+					v[k] = number(q, &e);
+					q = e;
+				}
+				if (v[k] < h.lo || v[k] > h.hi)
+					return -1;
+			}
+			std::copy(v, v + 3, hash_kept_[i]);
+			if (name == "VSP")
+				voice_info_.silence_detect_period = v[0];
+		} else {
+			return -1;
+		}
+		*len = static_cast<s16>(q - p);
+		return 0;
+	}
+	if (upper(p[1]) == 'V')
+		return at_voice(p, len, true);
+	return -1;
+}
+
+/* #VLS: the device, Rockwell's numbers (US Robotics' for the line and
+   the handset): 0 the line (taken by ATA, ATD), 4 the line with the
+   speaker, which is the line's alone; 1 the handset (a Host's own,
+   has_handset()), taken at once (VCON) and on the call if the line is.
+   =? the devices, ? the device; ERROR for a speaker or a microphone */
+s16 Modem::at_hash_vls(char *p, s16 *len)
+{
+	const char *q = p + 4, *e;
+	bool handset = host_.has_handset(*this);
+
+	if (q[0] == '=' && q[1] == '?') {
+		puts(handset ? "0,1,4" : "0,4");
+		crlf();
+		*len = 6;
+		return 0;
+	}
+	if (q[0] == '?') {
+		puts(dec(hash_vls_));
+		crlf();
+		*len = 5;
+		return 0;
+	}
+	if (q[0] != '=' || !is_digit(q[1]))
+		return -1;
+	u32 n = number(q + 1, &e);
+	*len = static_cast<s16>(e - p);
+	if (n == 0 || n == 4) {
+		/* the handset's alone stops; the line's call goes on */
+		if (voice_ && voice_device_ == VOICE_DEVICE_HANDSET)
+			voice_stop();
+		else if (voice_ && voice_device_ == VOICE_DEVICE_HANDSET_LINE &&
+			 voice_set_device(VOICE_DEVICE_LINE) < 0)
+			return -1;
+		hash_vls_ = static_cast<u16>(n);
+		return 0;
+	}
+	if (n != 1 || !handset || mode_ != MODEM_MODE_VOICE)
+		return -1;
+	s16 r = voice_set_device(voice_ ? VOICE_DEVICE_HANDSET_LINE :
+				 VOICE_DEVICE_HANDSET);
+	if (r < 0)
+		return -1;
+	hash_vls_ = 1;
+	if (r == 1)
+		vcon_next_ = true;
+	return r;
+}
+
+/* #VBS (bits a sample), #VSR (samples/s) and #VSM (US Robotics' coder),
+   on +VSM's format: #VBS=8 8-bit unsigned linear (+VSM's 1), =16 16-bit
+   linear (129), =4 US Robotics' ADPCM (G.726, 133) after #VSM=129;
+   #VSR=7200, 8000 or 11025 where the format runs at it; #VSM=129[,8000]
+   US Robotics' ADPCM, #VSM=128 (its GSM) ERROR.  Rockwell's own ADPCM
+   (#VBS=2, 3, 4 without #VSM=129) is ERROR too. */
+s16 Modem::at_hash_format(char *p, s16 *len)
+{
+	/* B, R or M */
+	const char c = static_cast<char>(upper(p[2]) == 'B' ? 'B' :
+					 upper(p[3]));
+	const char *q = p + 4, *e;
+	const dsp::voice::Format *f =
+		dsp::voice::format(voice_info_.comp_method);
+
+	if (q[0] == '=' && q[1] == '?') {
+		puts(c == 'B' ? (usr_adpcm_ ? "4,8,16" : "8,16") :
+		     c == 'R' ? "7200,8000,11025" : "129,8000");
+		crlf();
+		*len = 6;
+		return 0;
+	}
+	if (q[0] == '?') {
+		puts(c == 'B' ? dec(f ? f->bps : 8) :
+		     c == 'R' ? dec(voice_info_.sample_rate) :
+		     usr_adpcm_ ? "129," + dec(voice_info_.sample_rate) :
+		     std::string("0"));
+		crlf();
+		*len = 5;
+		return 0;
+	}
+	if (q[0] != '=' || !is_digit(q[1]))
+		return -1;
+	u32 v = number(q + 1, &e), rate = voice_info_.sample_rate;
+	*len = static_cast<s16>(e - p);
+	if (c == 'R') {
+		if (!dsp::voice::runs_at(voice_info_.comp_method, v))
+			return -1;
+		voice_info_.sample_rate = v;
+		return 0;
+	}
+	if (c == 'M') {
+		if (v != 129)
+			return -1;
+		if (*e == ',') {
+			rate = number(e + 1, &e);
+			*len = static_cast<s16>(e - p);
+			if (rate != 8000)
+				return -1;
+		}
+		usr_adpcm_ = true;
+		voice_info_.comp_method = 133;
+		voice_info_.sample_rate = 8000;
+		return 0;
+	}
+	unsigned cml = v == 8 ? 1 : v == 16 ? 129 :
+		v == 4 && usr_adpcm_ ? 133 : 0;
+	if (!cml)
+		return -1;
+	voice_info_.comp_method = cml;
+	if (!dsp::voice::runs_at(cml, rate))
+		voice_info_.sample_rate = 8000;
+	return 0;
 }
 
 /*

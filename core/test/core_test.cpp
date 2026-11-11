@@ -583,6 +583,82 @@ TEST(Core, VoiceLineGone)
 	delete m;
 }
 
+/* Rockwell's and US Robotics' voice dialect (#CLS=8): the modes, the
+   sample format's commands (#VBS, #VSR, #VSM: US Robotics' ADPCM only
+   after #VSM=129, at 8000 only), the kept settings in hex or decimal,
+   VCON for the line taken (ATA; #VLS=0A, US Robotics' way to answer),
+   #VTX as +VTX, #VTS's durations in 100 ms; +FCLASS=8 is V.253's again */
+TEST(Core, VoiceHashDialect)
+{
+	Line l;
+	Modem *m = make(l, "hash");
+	int16_t in[160] = {}, out[160];
+	auto run = [&](int blocks) {
+		l.out.clear();
+		for (int i = 0; i < blocks; i++) {
+			now += 20;
+			if (m->started())
+				m->process(in, out, 160);
+			m->poll();
+		}
+		return l.out;
+	};
+
+	EXPECT_EQ(cmd(m, l, "ATE0#CLS=?\r"), "ATE0#CLS=?\r\r\n0,1,2,8\r\nOK\r\n");
+	/* settings in data mode too, as vgetty's Rockwell driver sends
+	   them before #CLS=8 */
+	EXPECT_EQ(cmd(m, l, "AT#VSP=55#VSD=0#VTD=3F,3F,3F#VSS=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VTD?\r"), "3F,3F,3F\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSP?;#VSS=?\r"), "55\r\n(0-3)\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSS=4\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#TL=8000\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VTX\r"), "ERROR\r\n");  /* not in voice */
+	EXPECT_EQ(cmd(m, l, "AT#CLS=8\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#CLS?;+FCLASS?\r"), "8\r\n8\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VLS=?\r"), "0,4\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VLS=2\r"), "ERROR\r\n");
+
+	/* the sample format */
+	EXPECT_EQ(cmd(m, l, "AT#VBS?;#VSR?\r"), "8\r\n8000\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS=2\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS=4\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS=16#VSR=7200\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "+VSM=129,7200,0,0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSM=128,8000\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSM=129,8000#VBS=4\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS=?;#VSM?\r"),
+		  "4,8,16\r\n129,8000\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "+VSM=133,8000,0,0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSR=7200\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS=8\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "+VSM=1,8000,0,0\r\nOK\r\n");
+
+	/* the line taken: VCON, as a number with ATV0 */
+	EXPECT_EQ(cmd(m, l, "AT#VLS=0A\r"), "");
+	EXPECT_EQ(run(1), "VCON\r\n");
+	EXPECT_TRUE(m->started());
+	EXPECT_EQ(cmd(m, l, "AT#VTX\r"), "");
+	EXPECT_EQ(run(1), "CONNECT\r\n");
+	EXPECT_EQ(cmd(m, l, "\x10\x03"), "");
+	EXPECT_EQ(run(1), "OK\r\n");
+	/* [f1,f2,d]: d in 100 ms, so 0.3 s */
+	EXPECT_EQ(cmd(m, l, "AT#VTS=[440,0,3]\r"), "");
+	EXPECT_EQ(run(10), "");
+	EXPECT_EQ(run(10), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATH0\r"), "OK\r\n");
+	EXPECT_FALSE(m->started());
+	EXPECT_EQ(cmd(m, l, "AT#CLS?\r"), "0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATV0#CLS=8\r"), "0\r\n");
+	EXPECT_EQ(cmd(m, l, "ATA\r"), "");
+	EXPECT_EQ(run(1), "90\r\n");
+	EXPECT_EQ(cmd(m, l, "ATV1H0\r"), "OK\r\n");
+
+	/* +FCLASS=8: V.253's OK for the line taken */
+	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8;+VLS=1\r"), "");
+	EXPECT_EQ(run(1), "OK\r\n");
+	delete m;
+}
+
 /* the local phone (a phone on the modem's jack) off and on hook: in
    voice mode V.253's event 8, <DLE>H and <DLE>h, once a change (in any
    other mode nothing); +VLS=? lists event 8 in every state of both

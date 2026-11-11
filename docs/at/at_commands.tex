@@ -689,6 +689,7 @@ rarer ones.
 \cmdl[bsV]{\bs V\p{n}} & Protocol in \rc{CONNECT}. & \cmdl[pctB]{\%B, *B} & Blacklisted numbers. \\ \hline
 \cmdl[pctC]{\%C\p{n}} & Data compression. & \cmdl[pctE]{\%E\p{n}} & Line quality monitor (kept). \\ \hline
 \cmdl[hashCID]{\#CID} & Caller ID. & \cmdl[hashUD]{\#UD} & Unimodem diagnostics. \\ \hline
+\cmdl[hashCLS]{\#CLS} & Data, fax or voice (Rockwell, US Robotics). & \cmdl[hashV]{\#V\ldots} & Voice, Rockwell's and US Robotics' commands. \\ \hline
 \cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10} (accepted). & \cmdl[mnp10]{)M, @M, *H} & \std{MNP~10} (accepted). \\ \hline
 \cmdl[plusMS]{+MS} & Modulation. & \cmdl[plusGMI]{+GMI, +GMM, +GMR} & Identification. \\ \hline
 \cmdl[plusGCAP]{+GCAP} & Capabilities. & \cmdl[plusGCI]{+GCI} & Country. \\ \hline
@@ -2738,6 +2739,9 @@ Each command line is answered with a result code, as a word
 \rc{FAX} & 88 & Adaptive answer (\cmdl[plusFAA]{+FAA=1}): a fax call; \std{Class 1}
   follows. \\ \hline
 \rc{DATA} & 89 & Adaptive answer: a data call; its \rc{CONNECT} follows. \\ \hline
+\rc{VCON} & 90 & Voice mode entered with \cmdl[hashCLS]{\#CLS=8}: the line taken
+  for voice (\cmdl[A]{A}, \cmdl[D]{D}'s answer, \cmdl[hashVLS]{\#VLS=1}), where
+  \cmdl[plusFCLASS]{+FCLASS=8} gives \rc{OK}. \\ \hline
 \end{vtable}
 
 A data call's \rc{CONNECT} gives the rate the modem receives at, in bit/s
@@ -3643,6 +3647,10 @@ are accepted (0 to 255) and kept, though the modem compresses no silence.
 132 & IMA \std{ADPCM}, 4 bits a sample, two an octet with the first in the
   low nibble (as in a \std{WAV} file), at 7200, 8000 or 11025; the coder
   starts afresh at each \cmdl[plusVTX]{+VTX}, \cmdl[plusVTX]{+VRX}, \cmdl[plusVTX]{+VTR}. \\ \hline
+133 & \std{G.726} \std{ADPCM} at 32~kbit/s (\std{G.721}), 4 bits a sample, two an
+  octet with the first in the low nibble, at 8000: US Robotics'
+  \std{ADPCM} (\cmdl[hashVBS]{\#VSM=129}); the coder starts afresh as 132's.
+  D-Modem's own number. \\ \hline
 \end{vtable}
 \end{command}
 
@@ -3834,6 +3842,98 @@ command state (a \cmdl[plusVTX]{+VTX}, \cmdl[plusVTX]{+VRX}, \cmdl[plusVTX]{+VTR
 way ends first): after \cmd{<DLE>c}, \rc{FAX}, \cmdl[plusFCLASS]{+FCLASS=1} and the fax
 answer's \rc{CONNECT}; after \cmd{<DLE>e}, \cmdl[plusFCLASS]{+FCLASS=0} and the adaptive
 data answer (\rc{DATA}, then its \rc{CONNECT}).
+
+\subsection{Rockwell's and US Robotics' Voice Commands}\label{sec:hashvoice}
+
+Before \std{V.253}, Rockwell's and US Robotics' modems had voice commands of
+their own, with \cmdr{\#} for \cmdr{+}: Windows~95's Unimodem/V, vgetty's
+\cmd{Rockwell} and \cmd{US\_Robotics} drivers and many answering machine
+programs of that time speak them.  The modem takes them too.  Voice mode
+entered with \cmdl[hashCLS]{\#CLS=8} is the same voice mode as
+\cmdl[plusFCLASS]{+FCLASS=8}, with these differences: the line taken is
+\rc{VCON} rather than \rc{OK}, \cmdl[A]{A} answers a call for voice (as
+\cmdl[plusVLS]{+VLS=1} does), and \cmdl[hashV]{\#VTS}'s durations are in 100~ms.
+\cmdl[plusFCLASS]{+FCLASS=8} turns the differences off again.  The \cmd{<DLE>}
+events and the ends of \cmdl[hashV]{\#VTX} and \cmdl[hashV]{\#VRX} are those of the
+section above.
+
+\begin{command}{hashCLS}{\#CLS}{Data, Fax or Voice}
+As \cmdl[plusFCLASS]{+FCLASS}: 0 data, 1 \std{Class 1} fax, 2 \std{Class 2} fax, 8 voice
+in this dialect.
+\begin{syntax}
+\item \#CLS=\p{n}
+\item \#CLS? (gives the mode, as \cmdl[plusFCLASS]{+FCLASS?})
+\item \#CLS=? (gives \rc{0,1,2,8})
+\end{syntax}
+\end{command}
+
+\begin{command}{hashVLS}{\#VLS}{Voice Line Select}
+The device, by Rockwell's numbers.  0 and 4 are the line (the modem has
+no speaker to monitor it with); it is taken by \cmdl[A]{A} or
+\cmdl[D]{D}, each \rc{VCON} when it is.  1 is a handset of the modem's
+own (a SmartUSB56 with \texttt{dmodemd --usb-voice-codec}), taken at once
+(\rc{VCON}), with the line if the line is taken.  US Robotics' modems
+answer with \cmdl[hashVLS]{\#VLS=0A}: \cmdl[hashVLS]{\#VLS=0}, then \cmdl[A]{A}.
+\begin{syntax}
+\item \#VLS=\p{n}
+\item \#VLS? (gives the device)
+\item \#VLS=? (gives \rc{0,4}, or \rc{0,1,4} with a handset)
+\end{syntax}
+\begin{results}
+\res{\rc{OK}, \rc{VCON}}{As above.}
+\res{\rc{ERROR}}{For a speaker or a microphone (2, 3, 5, 6, 7), or 1 without a handset.}
+\end{results}
+\end{command}
+
+\begin{command}{hashVBS}{\#VBS, \#VSR, \#VSM}{Voice Sample Format}
+\cmdl[hashVBS]{\#VBS} is the bits a sample and \cmdl[hashVBS]{\#VSR} the samples a
+second; together they set \cmdl[plusVSM]{+VSM}'s format.  \cmdl[hashVBS]{\#VSM=129}
+is US Robotics' \std{ADPCM}, which is \std{G.726} at 32~kbit/s; vgetty
+reads it so.  Rockwell's own \std{ADPCM} (2, 3 and 4 bits) and US Robotics'
+\std{GSM} (\cmdl[hashVBS]{\#VSM=128}) are not there: they are \rc{ERROR}, and vgetty
+then needs \cmd{rec\_compression 8} (8-bit linear at 7200) in its
+\cmd{voice.conf}.
+\begin{vtable}{2}{|T{0.22\textwidth}|L{0.64\textwidth}|}{\#VBS and \#VSM Values}
+  {\thd{Command} & \thd{Format}}
+\#VBS=8 & 8-bit linear unsigned (\cmdl[plusVSM]{+VSM=1}), at 7200, 8000
+  or 11025; Rockwell's 8-bit \std{PCM}. \\ \hline
+\#VBS=16 & 16-bit linear signed, the low octet first (\cmdl[plusVSM]{+VSM=129}), at
+  7200, 8000 or 11025. \\ \hline
+\#VSM=129[,8000] & US Robotics' \std{ADPCM} (\cmdl[plusVSM]{+VSM=133}), at 8000; then
+  \cmdl[hashVBS]{\#VBS=4} keeps it and \cmdl[hashVBS]{\#VBS=8} or \cmdl[hashVBS]{16} leaves it. \\ \hline
+\#VSR=\p{r} & \p{r} samples a second where the format runs at \p{r}
+  (\rc{ERROR} otherwise). \\ \hline
+\end{vtable}
+Each gives its value with \cmdr{?} and its values with \cmdr{=?}.
+\end{command}
+
+\begin{command}{hashV}{\#VTX, \#VRX, \#VTS, \ldots}{Voice Commands}
+\cmdl[hashV]{\#VTX}, \cmdl[hashV]{\#VRX}, \cmdl[hashV]{\#VTS}, \cmdl[hashV]{\#VGT}, \cmdl[hashV]{\#VGR},
+\cmdl[hashV]{\#VRA}, \cmdl[hashV]{\#VRN}, \cmdl[hashV]{\#VIT} and \cmdl[hashV]{\#VIP} are their \cmdr{+V}
+namesakes, but that \cmdl[hashV]{\#VTS}'s durations are in 100~ms
+(\cmdl[hashV]{\#VTS=[440,0,5]} beeps for half a second) and the settings are
+taken in any mode.  These are kept for \cmdr{?} and have no other effect,
+as the modem has no silence deletion and no level controls of
+Rockwell's: \cmdl[hashV]{\#VTD} (\cmd{<DLE>} report masks, three hex values),
+\cmdl[hashV]{\#VSD} (silence deletion, 0 or 1), \cmdl[hashV]{\#VSS} (silence
+sensitivity, 0 to 3), \cmdl[hashV]{\#VSK} (buffer skid), \cmdl[hashV]{\#BDR} (the
+\std{DTE}'s rate), \cmdl[hashV]{\#TL} and \cmdl[hashV]{\#RG} (levels, hex);
+\cmdl[hashV]{\#VSP} (the silence period, in 100~ms) is kept as
+\cmdl[plusVSD]{+VSD}'s.
+\example{Example session: vgetty's Rockwell driver answers}
+\begin{verbatim}
+AT#VSP=55#VSD=0#VTD=3F,3F,3F#VSS=1       OK
+AT#CLS=8                                 OK
+                                         RING
+AT#VBS=8#VSR=7200                        OK
+ATA                                      VCON
+AT#VTX                                   CONNECT  the greeting
+<DLE><ETX>                               OK
+AT#VRX                                   CONNECT  the message
+!                                        <DLE><ETX>OK
+ATH0                                     OK
+\end{verbatim}
+\end{command}
 
 \section{Online, the Escape and Hanging Up}\label{sec:online}
 
