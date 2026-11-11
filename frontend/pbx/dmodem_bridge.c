@@ -124,6 +124,7 @@ void dmbridge_profile_init(struct dmbridge_profile *p)
 	p->mode = DMBRIDGE_TCP;
 	copy(p->answer, "ATA", sizeof(p->answer));
 	p->timeout = 60;
+	p->voice_listen = 3;
 }
 
 /* (see dmodem_bridge.h) */
@@ -184,6 +185,17 @@ int dmbridge_profile_option(const struct dmbridge_host *h,
 						       DMBRIDGE_CLEAR_NO;
 	} else if (dmbridge_option_is(name, "timeout")) {
 		p->timeout = atoi(value);
+	} else if (dmbridge_option_is(name, "voice")) {
+		if (strlen(value) >= sizeof(p->voice))
+			log_line(h, NULL, DMBRIDGE_WARNING,
+				 "%s: voice too long", where);
+		copy(p->voice, value, sizeof(p->voice));
+	} else if (dmbridge_option_is(name, "voice_listen")) {
+		p->voice_listen = atoi(value);
+		if (p->voice_listen < 0 || p->voice_listen > 30)
+			p->voice_listen = 3;
+	} else if (dmbridge_option_is(name, "voice_dsvd")) {
+		p->voice_dsvd = h->is_true(value);
 	} else {
 		return 0;
 	}
@@ -694,6 +706,100 @@ done:
  *    the call
  */
 
+/* n samples into ring r, the oldest dropped to make room */
+static void ring_put(struct dmbridge_ring *r, const int16_t *pcm, int n)
+{
+	const int size = (int)(sizeof(r->buf) / sizeof(r->buf[0]));
+	for (int i = 0; i < n; i++) {
+		if (r->len == size) {
+			r->head = (r->head + 1) % size;
+			r->len--;
+		}
+		r->buf[(r->head + r->len) % size] = pcm[i];
+		r->len++;
+	}
+}
+
+/* up to max samples out of ring r, how many */
+static int ring_get(struct dmbridge_ring *r, int16_t *pcm, int max)
+{
+	const int size = (int)(sizeof(r->buf) / sizeof(r->buf[0]));
+	int n = r->len < max ? r->len : max;
+	for (int i = 0; i < n; i++) {
+		pcm[i] = r->buf[r->head];
+		r->head = (r->head + 1) % size;
+	}
+	r->len -= n;
+	return n;
+}
+
+/* libdmodem's voice path (struct dmodem_voice): the channel opened or
+   closed, told by the next dmbridge_call_step(); the rings emptied */
+static void voice_state(void *arg, int on)
+{
+	struct dmbridge_call *c = arg;
+	c->dsvd_changed = c->dsvd_on != on;
+	c->dsvd_on = on;
+	c->ear.len = c->mic.len = 0;
+	log_line(c->h, c->call, DMBRIDGE_INFO, "the voice channel %s",
+		 on ? "opened" : "closed");
+}
+
+/* (see voice_state()): the extension's speech */
+static int voice_mic(void *arg, int16_t *pcm, int n)
+{
+	struct dmbridge_call *c = arg;
+	return ring_get(&c->mic, pcm, n);
+}
+
+/* (see voice_state()): the far end's, for the extension */
+static void voice_ear(void *arg, const int16_t *pcm, int n)
+{
+	struct dmbridge_call *c = arg;
+	ring_put(&c->ear, pcm, n);
+}
+
+/* (see dmodem_bridge.h) */
+int dmbridge_dsvd_ear(struct dmbridge_call *c, int16_t *pcm, int max)
+{
+	return ring_get(&c->ear, pcm, max);
+}
+
+/* (see dmodem_bridge.h) */
+void dmbridge_dsvd_mic(struct dmbridge_call *c, const int16_t *pcm, int n)
+{
+	if (c->dsvd_on)
+		ring_put(&c->mic, pcm, n);
+}
+
+/* (see dmodem_bridge.h) */
+void dmbridge_dsvd_close(struct dmbridge_call *c)
+{
+	if (!c->d || !c->dsvd_on)
+		return;
+	log_line(c->h, c->call, DMBRIDGE_INFO,
+		 "the extension hung up: the voice channel closed");
+	c->mic.len = 0;
+	dmodem_voice_close(c->d);
+	/* (ASVD's stays open: silence from us) */
+	c->dsvd_changed = 0;
+}
+
+/* (see dmodem_bridge.h) */
+enum dmbridge_event dmbridge_voice_step(struct dmbridge_call *c, int n)
+{
+	struct dmodem_status *st = &c->st;
+
+	c->samples += n;
+	dmodem_status(c->d, st);
+	if (st->caller_modem || st->fax_caller) {
+		log_line(c->h, c->call, DMBRIDGE_INFO,
+			 "the caller's modem asks for data");
+		return DMBRIDGE_DATA;
+	}
+	return DMBRIDGE_RUN;
+}
+
 /* (see dmodem_bridge.h) */
 void dmbridge_call_init(struct dmbridge_call *c)
 {
@@ -712,8 +818,8 @@ int dmbridge_call_start(struct dmbridge_call *c,
 			enum dmodem_law law, int orig)
 {
 	struct dmodem_config cfg = { 0 };
-	struct dmodem_status st;
-	char init[192];
+	struct dmodem_voice v = { 0 };
+	char init[256];
 
 	c->h = h;
 	c->call = call;
@@ -735,7 +841,11 @@ int dmbridge_call_start(struct dmbridge_call *c,
 	nonblock(c->dte[1]);
 	/* no echo, no result codes, no auto answer, no +++ escape; the call
 	   is there already: no dial tone to wait for */
-	snprintf(init, sizeof(init), "ATE0Q1S0=0S2=255X3%s\r", p->init);
+	/* (DSVD's and ASVD's voice to the extension: V.8 bis offering
+	   both) */
+	snprintf(init, sizeof(init), "ATE0Q1S0=0S2=255X3%s%s\r",
+		 *p->voice && p->voice_dsvd ? "+A8E=1,1,,1+DSVD=1+ASVD=1" : "",
+		 p->init);
 	cfg.name = name;
 	cfg.law = law;
 	cfg.dte_fd = c->dte[0];
@@ -752,24 +862,56 @@ int dmbridge_call_start(struct dmbridge_call *c,
 		log_line(h, call, DMBRIDGE_WARNING, "no modem");
 		return -1;
 	}
+	if (*p->voice && p->voice_dsvd) {
+		v.state = voice_state;
+		v.mic = voice_mic;
+		v.ear = voice_ear;
+		v.arg = c;
+		/* (the caller asks for voice; we never do) */
+		v.wait = 1;
+		dmodem_set_voice(c->d, &v);
+	}
 	drain(c->dte[1]);
-	if (orig)
+	if (orig) {
 		dmodem_dial(c->d, "");
-	else {
-		/* the profile's answer command line (ATA): the modem is
-		   connecting after it, or the line was no answer */
-		dmodem_command(c->d, p->answer);
-		dmodem_status(c->d, &st);
-		if (st.link != DMODEM_CONNECTING) {
-			log_line(h, call, DMBRIDGE_WARNING,
-				 "\"%s\" did not answer", p->answer);
-			return -1;
-		}
+		c->deadline = (long long)p->timeout * DMODEM_RATE;
+	} else if (*p->voice && p->voice_listen > 0) {
+		/* a person or a modem: the line listened to first, the
+		   modem silent (dmbridge_call_step()) */
+		c->listen_until = (long long)p->voice_listen * DMODEM_RATE;
+		log_line(h, call, DMBRIDGE_DEBUG,
+			 "listening %d s for a person", p->voice_listen);
+	} else if (dmbridge_call_resume(c)) {
+		return -1;
 	}
 	c->status = "NOCARRIER";
-	c->deadline = (long long)p->timeout * DMODEM_RATE;
 	return 0;
 }
+
+/* (see dmodem_bridge.h) */
+int dmbridge_call_resume(struct dmbridge_call *c)
+{
+	struct dmodem_status st;
+
+	c->listen_until = 0;
+	c->voice_leg = 0;
+	/* the profile's answer command line (ATA): the modem is
+	   connecting after it, or the line was no answer */
+	dmodem_command(c->d, c->p->answer);
+	dmodem_status(c->d, &st);
+	if (st.link != DMODEM_CONNECTING) {
+		log_line(c->h, c->call, DMBRIDGE_WARNING,
+			 "\"%s\" did not answer", c->p->answer);
+		c->status = "ERROR";
+		return -1;
+	}
+	c->status = "NOCARRIER";
+	c->deadline = c->samples + (long long)c->p->timeout * DMODEM_RATE;
+	return 0;
+}
+
+/* ms of a person's speech before the voice leg */
+#define VOICE_SPEECH_MS 300
 
 /* DMBRIDGE_END with status s */
 static enum dmbridge_event end(struct dmbridge_call *c, const char *s)
@@ -793,6 +935,34 @@ enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 	c->samples += n;
 	dmodem_poll_dte(c->d);
 	dmodem_status(c->d, st);
+	if (c->listen_until) {
+		/* a person speaking: the voice leg; a calling modem's or
+		   fax machine's tone, or the time up: the modem answers */
+		if (st->caller_speech_ms >= VOICE_SPEECH_MS &&
+		    !st->caller_modem && !st->fax_caller) {
+			log_line(c->h, c->call, DMBRIDGE_INFO,
+				 "a person is calling: to %s", c->p->voice);
+			c->listen_until = 0;
+			c->voice_leg = 1;
+			c->status = "VOICE";
+			dmodem_listen(c->d);
+			return DMBRIDGE_VOICE;
+		}
+		if (st->caller_modem || st->fax_caller ||
+		    c->samples >= c->listen_until) {
+			log_line(c->h, c->call, DMBRIDGE_DEBUG,
+				 "no person (%s): the modem answers",
+				 st->caller_modem || st->fax_caller ?
+				 "a calling tone" : "no speech");
+			if (dmbridge_call_resume(c))
+				return DMBRIDGE_END;
+		}
+		return DMBRIDGE_RUN;
+	}
+	if (c->online && c->dsvd_changed) {
+		c->dsvd_changed = 0;
+		return c->dsvd_on ? DMBRIDGE_DSVD_OPEN : DMBRIDGE_DSVD_CLOSED;
+	}
 	if (!c->online) {
 		/* (not what the link delivered with ONLINE: the remote's
 		   first data) */

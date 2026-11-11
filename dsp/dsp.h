@@ -622,6 +622,35 @@ struct CngDetect {
 	void block();
 };
 
+/* who is calling, from what the caller sends before an answer tone (the
+   line answered silently): a person's speech, or a calling modem's
+   tones.  Blocks of 20 ms, each with Goertzel filters at the tones a
+   calling modem or fax machine sends (V.25's CT 1300 Hz, V.8's CI on
+   V.21's low channel 980 to 1180 Hz, CNG 1100 Hz, V.8 bis's 1375+2002
+   Hz and its others, the answer tones): a block whose two strongest of
+   them hold most of its energy is a tone's; one loud enough whose
+   energy is spread wide is speech's.  A calling machine is CT, V.21's
+   low channel (CI, and CNG, which lies in its band) or V.8 bis's CRe
+   for 100 ms on end; speech counts block by block. */
+struct CallerListen {
+	enum { NTONES = 17 };
+	Goertzel g[NTONES];
+	float energy;
+	s16 n, len;
+	s32 speech_blocks;      /* blocks of speech heard */
+	s16 run_ct, run_ci, run_cre;  /* blocks on end of each */
+	bool modem;             /* a calling machine's tone heard */
+
+	/* at srate, nothing heard */
+	void init(s32 srate);
+	/* one sample of the line */
+	void sample(float x);
+	/* ms of speech heard so far */
+	s32 speech_ms() const { return speech_blocks * 20; }
+	/* one block's verdict */
+	void block();
+};
+
 /* the ring signal of a line on hook, as a modem codec hears it with its
    line monitor (caller ID) path on: a large wave of 15 to 70 Hz (the
    bell's 20 or 25 Hz, Japan's 16 Hz, a few 50 Hz), at 90 V and more on

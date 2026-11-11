@@ -91,6 +91,15 @@ struct dmbridge_profile {
 	int timeout;            /* seconds to connect: the modems, then
 				   (tcp, unix) the server */
 	struct dmbridge_fax fax;
+	/* voice: where a person who calls goes, and a DSVD or ASVD
+	   caller's voice channel, as the module's PBX names an extension
+	   (exten@context; empty: nowhere, the modem answers at once as
+	   ever); listen: the seconds the line is listened to before the
+	   modem answers, for speech; dsvd: the modem offers DSVD and ASVD
+	   (V.8 bis) and their voice channel goes there */
+	char voice[128];
+	int voice_listen;
+	int voice_dsvd;
 };
 
 /* an option's name is key: the case and '-' or '_' (fax_dir, fax-dir)
@@ -105,12 +114,13 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 			struct dmbridge_fax *f, const char *name,
 			const char *value);
 
-/* a profile's defaults: mode tcp, ATA to answer, 60 s to connect, all
-   else empty (the fax settings too: the module's general ones go
-   there) */
+/* a profile's defaults: mode tcp, ATA to answer, 60 s to connect, 3 s
+   to listen for a person (with voice), all else empty (the fax settings
+   too: the module's general ones go there) */
 void dmbridge_profile_init(struct dmbridge_profile *p);
 /* a profile's option (mode, host, port, path, header, handoff, command, init,
-   answer, law, clear, timeout and the fax ones); 0 if name is something else.
+   answer, law, clear, timeout, voice, voice-listen, voice-dsvd and the fax
+   ones); 0 if name is something else.
    where: the profile, for the log ("[bbs]", "profile bbs") */
 int dmbridge_profile_option(const struct dmbridge_host *h,
 			    struct dmbridge_profile *p, const char *where,
@@ -128,6 +138,21 @@ int dmbridge_profile_check(const struct dmbridge_host *h,
  *    line, the modem (c.d) on it, then dmbridge_call_step(), and on
  *    DMBRIDGE_CONNECTED dmbridge_call_serve() at once; after the last,
  *    dmbridge_call_hangup(), and dmbridge_call_end() in any case.
+ *
+ *    With the profile's voice, an answered call is listened to first
+ *    (the modem silent, on hook): a person speaking is DMBRIDGE_VOICE,
+ *    and the module puts the caller through to the profile's voice
+ *    extension, its own leg's audio to the caller, the caller's both to
+ *    that leg and through the modem (c.d), then dmbridge_voice_step().
+ *    The leg ends when the extension hangs up or its dialplan ends, or
+ *    at DMBRIDGE_DATA (the caller's modem asks for data: the leg hung
+ *    up); then dmbridge_call_resume(), and the modem answers on the
+ *    call as at the start.  Online with the profile's voice_dsvd, a
+ *    DSVD or ASVD caller's voice channel opening is
+ *    DMBRIDGE_DSVD_OPEN: the module calls the extension and moves the
+ *    audio with dmbridge_dsvd_ear() and dmbridge_dsvd_mic() while the
+ *    data goes on; its closing is DMBRIDGE_DSVD_CLOSED (the leg hung
+ *    up), and the leg's end dmbridge_dsvd_close().
  */
 
 /* the bytes between the modem and the server or program */
@@ -145,6 +170,22 @@ enum dmbridge_event {
 				   receives faxes: the modem is gone, the
 				   line is the module's fax receiver's */
 	DMBRIDGE_END,                /* the call is over (status) */
+	DMBRIDGE_VOICE,              /* a person is calling: the voice leg
+				   (the modem on hook, silent) */
+	DMBRIDGE_DATA,               /* in the voice leg, the caller's modem
+				   asks for data (V.25's CT, V.8's CI,
+				   V.8 bis's CRe, a fax's CNG): the leg
+				   ends, dmbridge_call_resume() */
+	DMBRIDGE_DSVD_OPEN,          /* online, a voice channel opened (DSVD,
+				   ASVD): its leg to the extension */
+	DMBRIDGE_DSVD_CLOSED,        /* and closed: that leg hung up */
+};
+
+/* a voice channel's samples one way (16 bit, 8000 a second): a ring of
+   1 s, the oldest dropped when it is full */
+struct dmbridge_ring {
+	int16_t buf[DMODEM_RATE];
+	int head, len;
 };
 
 struct dmbridge_call {
@@ -172,6 +213,14 @@ struct dmbridge_call {
 	long long samples, deadline, closing;
 	long long connect_by;   /* the server connected by then (samples) */
 	int handed;             /* the DTE is the server's (handoff) */
+	/* voice: the line listened to until then (samples; 0: not
+	   listening); the voice leg on; a DSVD or ASVD voice channel open
+	   and its change not yet told; its far end's speech (ear) and ours
+	   (mic) */
+	long long listen_until;
+	int voice_leg;
+	int dsvd_on, dsvd_changed;
+	struct dmbridge_ring ear, mic;
 };
 
 /* nothing yet (status ERROR): dmbridge_call_end() may follow */
@@ -194,6 +243,21 @@ enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n);
    DMBRIDGE_RUN, or DMBRIDGE_END (ERROR) */
 enum dmbridge_event dmbridge_call_serve(struct dmbridge_call *c,
 					const char *const *env);
+/* in the voice leg, n samples of the caller's through the modem (c->d)
+   since the last: DMBRIDGE_RUN, or DMBRIDGE_DATA */
+enum dmbridge_event dmbridge_voice_step(struct dmbridge_call *c, int n);
+/* the voice leg is over (the module's leg gone): the modem answers on
+   the call now, the time to connect from now; 0, or -1 if the answer
+   command line did not answer (status ERROR) */
+int dmbridge_call_resume(struct dmbridge_call *c);
+/* a voice channel's far end speech for the extension's leg: up to max
+   samples, how many */
+int dmbridge_dsvd_ear(struct dmbridge_call *c, int16_t *pcm, int max);
+/* the extension's speech to the voice channel: n samples */
+void dmbridge_dsvd_mic(struct dmbridge_call *c, const int16_t *pcm, int n);
+/* the extension's leg has gone: a DSVD voice channel closed (the data
+   going on); an ASVD one stays, silent */
+void dmbridge_dsvd_close(struct dmbridge_call *c);
 /* the end on the line: the modem hangs up if it is connected */
 void dmbridge_call_hangup(struct dmbridge_call *c);
 /* the modem, the server or the program (SIGHUP, SIGKILL after 5 s) and

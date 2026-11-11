@@ -483,6 +483,73 @@ void CngDetect::block()
 }
 
 /*
+ *    Who is calling (CallerListen)
+ */
+
+/* the tones: CT, CI's two, CNG, V.8 bis's CRe (two), its others, V.21's
+   high channel, the answer tones */
+static const float CALLER_TONES[CallerListen::NTONES] = {
+	1300, 980, 1030, 1080, 1130, 1180, 1100, 1375, 2002, 400, 650, 1529,
+	1650, 1850, 2100, 2150, 2225,
+};
+/* (V.21's low channel: the five from CL_CI0, its band of 980 to 1180 Hz,
+   which keyed FSK spreads over) */
+enum { CL_CT, CL_CI0, CL_CNG = 6, CL_CRE0, CL_CRE1 };
+#define CL_SPEECH_MIN   (150.0f * 150.0f)  /* a block's mean square */
+#define CL_TONE_RUN     5                  /* blocks: 100 ms */
+
+/* see dsp.h */
+void CallerListen::init(s32 srate)
+{
+	*this = CallerListen();
+	len = static_cast<s16>(srate * 20 / 1000);
+	for (s16 k = 0; k < NTONES; k++)
+		g[k].init(CALLER_TONES[k], len, srate);
+}
+
+/* see dsp.h */
+void CallerListen::sample(float x)
+{
+	energy += x * x;
+	for (auto &t : g)
+		t.run(x);
+	if (++n < len)
+		return;
+	block();
+	n = 0;
+	energy = 0;
+}
+
+/* see dsp.h */
+void CallerListen::block()
+{
+	float e = energy / len, top = 0, second = 0;
+
+	for (const auto &t : g) {
+		if (t.power > top) {
+			second = top;
+			top = t.power;
+		} else if (t.power > second) {
+			second = t.power;
+		}
+	}
+	bool loud = e > CL_SPEECH_MIN;
+	run_ct = loud && g[CL_CT].power > 0.6f * e ? run_ct + 1 : 0;
+	float ci = 0;
+	for (s16 k = CL_CI0; k < CL_CI0 + 5; k++)
+		ci += g[k].power;
+	run_ci = loud && ci > 0.6f * e ? run_ci + 1 : 0;
+	run_cre = loud && g[CL_CRE0].power + g[CL_CRE1].power > 0.6f * e ?
+		run_cre + 1 : 0;
+	if (run_ct >= CL_TONE_RUN || run_ci >= CL_TONE_RUN ||
+	    run_cre >= CL_TONE_RUN)
+		modem = true;
+	/* (V.21's keyed FSK spreads, its band holds it all the same) */
+	if (loud && top + second < 0.4f * e && ci < 0.4f * e)
+		speech_blocks++;
+}
+
+/*
  *    Ring signal
  */
 

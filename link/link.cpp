@@ -332,6 +332,14 @@ void Link::hst_switch()
 	owner_->hst(hst_bps_);
 }
 
+/* see link.h: the multiplexer's, which has no voice channel unless
+   start_v76() started it */
+void Link::close_voice()
+{
+	if (mode_ == Mode::Lapm)
+		mux_.close_voice();
+}
+
 /* we hang up: LAPM sends DISC, MNP LD; the detection phase ends;
    nothing in the other modes */
 void Link::disconnect()

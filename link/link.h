@@ -188,6 +188,9 @@ public:
 	   voice channel (the initiator opens one, the responder takes one,
 	   only then) */
 	virtual bool voice() { return false; }
+	/* with voice(): the initiator opens a voice channel itself (else it
+	   waits for the responder's, as the responder always does) */
+	virtual bool voice_opens() { return true; }
 	/* the voice channel is open (on) or closed */
 	virtual void voice_state(bool on) { (void)on; }
 	/* up to n samples (16 bit, 8000 a second) of the near end's speech
@@ -246,6 +249,9 @@ public:
 	void set_b2(B2 b2) { asked_.b2 = b2; }
 	/* we hang up: LAPM sends DISC, MNP LD */
 	void disconnect();
+	/* DSVD: the voice channel closed by us, the data going on (V.76's
+	   multiplexer; nothing on another call) */
+	void close_voice();
 	/* the data pump is not there (any more): marks out, nothing in */
 	void stop();
 	/* characters flow only while online (the DTE is in data mode) */
@@ -289,6 +295,8 @@ public:
 	s32 tx_buffered() const { return owner_->tx_buffered(); }
 	/* DSVD's voice, the owner's (see Owner) */
 	bool voice() const { return owner_->voice(); }
+	/* (see Owner) */
+	bool voice_opens() const { return owner_->voice_opens(); }
 	/* (see Owner) */
 	void voice_state(bool on) { owner_->voice_state(on); }
 	/* (see Owner) */

@@ -65,6 +65,7 @@ void Mux::start(bool initiator)
 	vdlci_ = -1;
 	vbusy_ = false;
 	vtimer_ = 0;
+	vwait_ = 0;
 	link_->logf("v76: %s.", initiator ? "initiator" : "responder");
 	link_->hdlc().set_framer(this, true);
 	if (initiator)
@@ -92,7 +93,7 @@ void Mux::opening()
 	lapm_->set_user_data(true, h245::user_data(m));
 	log_msg("out", static_cast<u8>(dlci_), m);
 	lapm_->open();
-	if (link_->voice()) {
+	if (link_->voice() && link_->voice_opens()) {
 		vtries_ = 0;
 		vdlci_ = dlci_ == DLCI_FIRST + 1 ? DLCI_FIRST + 2 : DLCI_FIRST + 1;
 		vlcn_ = static_cast<u16>(lcn_ + 1);
@@ -142,6 +143,16 @@ void Mux::clock(s32 bits)
 			}
 		}
 	}
+	if (vwait_ > 0 && (vwait_ -= bits) <= 0) {
+		vwait_ = 0;
+		if (vstate_ == VState::Closed && dlci_ >= 0) {
+			vtries_ = 0;
+			vdlci_ = dlci_ == DLCI_FIRST + 1 ? DLCI_FIRST + 2 :
+				DLCI_FIRST + 1;
+			vlcn_ = static_cast<u16>(lcn_ + 1);
+			open_voice();
+		}
+	}
 	if (vtimer_ <= 0 || (vtimer_ -= bits) > 0)
 		return;
 	vtimer_ = 0;
@@ -167,18 +178,24 @@ void Mux::voice_closed()
 		link_->voice_state(false);
 }
 
+/* (see v76.h) */
+void Mux::close_voice()
+{
+	if (vstate_ == VState::Closed)
+		return;
+	h245::Msg m;
+	m.type = h245::Type::Clc;
+	m.lcn = vlcn_;
+	log_msg("out", static_cast<u8>(vdlci_), m);
+	tx_unnum(static_cast<u8>(vdlci_), true, U_DISC | PF,
+		 h245::user_data(m));
+	voice_closed();
+}
+
 /* (see v76.h): nothing while no channel is open or opening */
 void Mux::disconnect()
 {
-	if (vstate_ != VState::Closed) {
-		h245::Msg m;
-		m.type = h245::Type::Clc;
-		m.lcn = vlcn_;
-		log_msg("out", static_cast<u8>(vdlci_), m);
-		tx_unnum(static_cast<u8>(vdlci_), true, U_DISC | PF,
-			 h245::user_data(m));
-		voice_closed();
-	}
+	close_voice();
 	if (dlci_ < 0)
 		return;
 	h245::Msg m;
@@ -402,6 +419,10 @@ void Mux::rx_open(Frame *f, u8 dlci)
 	   what we send */
 	dlci_ = dlci;
 	lcn_ = m.lcn;
+	/* with a voice path, a voice channel of ours if the initiator
+	   opens none within 1 s (one that waits for ours: a PBX's) */
+	if (link_->voice() && link_->voice_opens())
+		vwait_ = link_->tx_rate() > 0 ? link_->tx_rate() : 28800;
 	const h245::V76Params dflt;
 	const h245::V76Params &tx = c.has_rev ? c.rev : dflt;
 	lapm_->set_dlc(dlci, initiator_, tx.window, c.fwd.window,

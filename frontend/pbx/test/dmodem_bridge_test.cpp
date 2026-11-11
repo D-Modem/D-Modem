@@ -16,6 +16,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdio.h>
@@ -545,4 +546,280 @@ TEST_F(Bridge, ServerThatTakesNoMore)
 	EXPECT_TRUE(logged("cannot connect to") ||
 		    logged("did not take the call"));
 	EXPECT_LT(s, 30.0) << "seconds for the call to end";
+}
+
+/*
+ *    voice: a person to the profile's extension, back to data, DSVD
+ */
+
+/* a voice profile: a server at path as unix_profile(), voice to 200 at
+   default, listening listen s; DSVD and ASVD's voice there too if dsvd */
+static void voice_profile(struct dmbridge_profile *p, const std::string &path,
+			  int listen, bool dsvd)
+{
+	unix_profile(p, path, 30);
+	ASSERT_TRUE(dmbridge_profile_option(&host, p, "t", "voice", "200@default"));
+	ASSERT_TRUE(dmbridge_profile_option(&host, p, "t", "voice-listen",
+					    std::to_string(listen).c_str()));
+	ASSERT_TRUE(dmbridge_profile_option(&host, p, "t", "voice_dsvd",
+					    dsvd ? "yes" : "no"));
+}
+
+/* a frame of a voice (a pitch moving 100 to 250 Hz, its harmonics),
+   at sample i of the call */
+static void speech(short *x, long i)
+{
+	static double ph;
+	for (int k = 0; k < FRAME; k++, i++) {
+		double t = (double)i / DMODEM_RATE, v = 0;
+		double pitch = 175 + 75 * sin(2 * M_PI * t / 0.8);
+		ph += 2 * M_PI * pitch / DMODEM_RATE;
+		for (int h = 1; h * pitch < 3500; h++)
+			v += 3000.0 / h * sin(h * ph);
+		x[k] = (short)v;
+	}
+}
+
+/* a frame of V.25's calling tone (1300 Hz) */
+static void calling_tone(short *x, long i)
+{
+	for (int k = 0; k < FRAME; k++, i++)
+		x[k] = (short)(6000 * sin(2 * M_PI * 1300 * i / DMODEM_RATE));
+}
+
+/* a person calls: speaking into the silent line, the call goes to the
+   voice leg (VOICE) well before the modem would answer; there the
+   caller's speech is nothing, its modem's calling tone is DATA; after
+   dmbridge_call_resume() the modem answers on the same call and the
+   caller's modem (dialling now) connects to the server */
+TEST_F(Bridge, PersonToExtensionThenData)
+{
+	std::string path = socket_path("voice");
+	struct dmbridge_profile p;
+	struct dmbridge_call c;
+	Server srv;
+	short in[FRAME], out[FRAME], oa[FRAME];
+	long i = 0;
+	enum dmbridge_event ev = DMBRIDGE_RUN;
+
+	ASSERT_TRUE(srv.start(path));
+	voice_profile(&p, path, 3, false);
+	dmbridge_call_init(&c);
+	ASSERT_EQ(dmbridge_call_start(&c, &host, (void *)"v", &p, "v",
+				      DMODEM_LAW_ULAW, 0), 0);
+	/* listening: the modem silent */
+	for (; i < 3L * DMODEM_RATE && ev == DMBRIDGE_RUN; i += FRAME) {
+		speech(in, i);
+		dmodem_process(c.d, in, out, FRAME);
+		for (short s : out)
+			ASSERT_EQ(s, 0) << "the modem spoke while listening";
+		ev = dmbridge_call_step(&c, FRAME);
+	}
+	ASSERT_EQ(ev, DMBRIDGE_VOICE);
+	EXPECT_LT(i, DMODEM_RATE) << "samples before the voice leg";
+	EXPECT_STREQ(c.status, "VOICE");
+
+	/* the voice leg: speech goes on, then a calling tone */
+	for (long end = i + 2L * DMODEM_RATE; i < end; i += FRAME) {
+		speech(in, i);
+		dmodem_process(c.d, in, out, FRAME);
+		ASSERT_EQ(dmbridge_voice_step(&c, FRAME), DMBRIDGE_RUN);
+	}
+	ev = DMBRIDGE_RUN;
+	for (long end = i + DMODEM_RATE; i < end && ev == DMBRIDGE_RUN;
+	     i += FRAME) {
+		calling_tone(in, i);
+		dmodem_process(c.d, in, out, FRAME);
+		ev = dmbridge_voice_step(&c, FRAME);
+	}
+	ASSERT_EQ(ev, DMBRIDGE_DATA);
+
+	/* back to data: the modem answers, the caller's modem dials */
+	ASSERT_EQ(dmbridge_call_resume(&c), 0);
+	struct dmodem_config cfg = {};
+	int sa[2];
+	char init[64];
+	socketpair(AF_UNIX, SOCK_STREAM, 0, sa);
+	nonblock(sa[0]);
+	snprintf(init, sizeof(init), "ATE0Q1X3%s\r", line_ms);
+	cfg.init = init;
+	cfg.law = DMODEM_LAW_ULAW;
+	cfg.name = "caller";
+	cfg.dte_fd = sa[0];
+	struct dmodem *a = dmodem_create(&cfg);
+	dmodem_dial(a, "");
+	memset(in, 0, sizeof(in));
+	const char *env[] = { "DMODEM_CALLERID", "1", nullptr };
+	ev = DMBRIDGE_RUN;
+	for (int f = 0; f < 30 * 50 && ev != DMBRIDGE_END &&
+	     ev != DMBRIDGE_CONNECTED; f++) {
+		dmodem_process(a, out, oa, FRAME);
+		dmodem_process(c.d, oa, out, FRAME);
+		ev = dmbridge_call_step(&c, FRAME);
+	}
+	EXPECT_EQ(ev, DMBRIDGE_CONNECTED);
+	if (ev == DMBRIDGE_CONNECTED)
+		dmbridge_call_serve(&c, env);
+	dmbridge_call_hangup(&c);
+	dmbridge_call_end(&c);
+	dmodem_destroy(a);
+	close(sa[0]);
+	close(sa[1]);
+	srv.end();
+	unlink(path.c_str());
+}
+
+/* a modem calls a voice profile: it sends nothing before an answer tone,
+   so the line is quiet until the listening ends; then the modem answers
+   and they connect, with no voice leg */
+TEST_F(Bridge, ModemCallerToVoiceProfile)
+{
+	std::string path = socket_path("vmodem");
+	struct dmbridge_profile p;
+	std::atomic<int> ready{ 0 };
+	Server srv;
+	Call k;
+
+	ASSERT_TRUE(srv.start(path));
+	voice_profile(&p, path, 2, false);
+	k.id = 7;
+	k.name = "vmodem";
+	k.p = &p;
+	k.ready = &ready;
+	k.calls = 1;
+	run_call(&k);
+	srv.end();
+	unlink(path.c_str());
+	for (auto &f : k.failures)
+		ADD_FAILURE() << f;
+	EXPECT_STREQ(k.status, "REMOTE");
+	EXPECT_FALSE(logged("a person is calling"));
+	EXPECT_TRUE(logged("the modem answers"));
+}
+
+/* the caller's side of a DSVD voice channel: its state, a tone it
+   speaks, what it hears */
+struct Phone {
+	int on = 0, opened = 0;
+	long said = 0;
+	double heard = 0;
+};
+
+/* a DSVD caller (V.8 bis, DSVD offered, a voice path of its own) and the
+   bridge with DSVD to the extension: online, the caller's voice channel
+   opening is DSVD_OPEN; its speech comes out of dmbridge_dsvd_ear(), the
+   extension's (dmbridge_dsvd_mic()) reaches it; dmbridge_dsvd_close()
+   closes the channel at both ends and the data goes on */
+TEST_F(Bridge, DsvdVoiceToExtension)
+{
+	std::string path = socket_path("dsvd");
+	struct dmbridge_profile p;
+	struct dmbridge_call c;
+	Server srv;
+	Phone ph;
+	struct dmodem_voice v = {};
+	struct dmodem_config cfg = {};
+	short ab[FRAME] = {}, ba[FRAME] = {}, oa[FRAME], ob[FRAME];
+	int sa[2];
+	enum dmbridge_event ev = DMBRIDGE_RUN;
+	const char *env[] = { "DMODEM_CALLERID", "9", nullptr };
+
+	ASSERT_TRUE(srv.start(path));
+	voice_profile(&p, path, 3, true);
+	/* (the modulation V.8 picks: two D-Modems on G.711, V.91) */
+	p.init[0] = '\0';
+	socketpair(AF_UNIX, SOCK_STREAM, 0, sa);
+	nonblock(sa[0]);
+	nonblock(sa[1]);
+	cfg.init = "ATE0Q1X3+A8E=1,1,,1+DSVD=1\r";
+	cfg.law = DMODEM_LAW_ULAW;
+	cfg.name = "dsvd-caller";
+	cfg.dte_fd = sa[0];
+	struct dmodem *a = dmodem_create(&cfg);
+	v.state = [](void *arg, int on) {
+		Phone *q = (Phone *)arg;
+		q->on = on;
+		q->opened += on;
+	};
+	v.mic = [](void *arg, int16_t *pcm, int n) {
+		Phone *q = (Phone *)arg;
+		for (int k = 0; k < n; k++, q->said++)
+			pcm[k] = (int16_t)(8000 * sin(2 * M_PI * 440 *
+						    q->said / DMODEM_RATE));
+		return n;
+	};
+	v.ear = [](void *arg, const int16_t *pcm, int n) {
+		Phone *q = (Phone *)arg;
+		for (int k = 0; k < n; k++)
+			q->heard += (double)pcm[k] * pcm[k];
+	};
+	v.arg = &ph;
+	dmodem_set_voice(a, &v);
+
+	dmbridge_call_init(&c);
+	ASSERT_EQ(dmbridge_call_start(&c, &host, (void *)"d", &p, "d",
+				      DMODEM_LAW_ULAW, 0), 0);
+	dmodem_dial(a, "");
+	int16_t pcm[FRAME];
+	double ext_heard = 0;
+	bool opened = false, closed = false;
+	long frames_open = 0;
+	for (int f = 0; f < 90 * 50 && ev != DMBRIDGE_END; f++) {
+		dmodem_process(a, ba, oa, FRAME);
+		dmodem_process(c.d, ab, ob, FRAME);
+		memcpy(ab, oa, sizeof(ab));
+		memcpy(ba, ob, sizeof(ba));
+		dmodem_poll_dte(a);
+		ev = dmbridge_call_step(&c, FRAME);
+		if (ev == DMBRIDGE_CONNECTED)
+			ev = dmbridge_call_serve(&c, env);
+		ASSERT_NE(ev, DMBRIDGE_VOICE) << "a modem taken for a person";
+		if (ev == DMBRIDGE_DSVD_OPEN)
+			opened = true;
+		if (ev == DMBRIDGE_DSVD_CLOSED)
+			ADD_FAILURE() << "closed before we closed it";
+		if (!opened || closed)
+			continue;
+		/* the extension: hears the caller, speaks a tone */
+		int n = dmbridge_dsvd_ear(&c, pcm, FRAME);
+		for (int k = 0; k < n; k++)
+			ext_heard += (double)pcm[k] * pcm[k];
+		for (int k = 0; k < FRAME; k++)
+			pcm[k] = (int16_t)(8000 * sin(2 * M_PI * 1000 *
+				(frames_open * FRAME + k) / DMODEM_RATE));
+		dmbridge_dsvd_mic(&c, pcm, FRAME);
+		/* 3 s of talk, then the extension hangs up */
+		if (++frames_open == 150) {
+			dmbridge_dsvd_close(&c);
+			closed = true;
+		}
+		if (closed)
+			break;
+	}
+	ASSERT_TRUE(opened) << "no voice channel";
+	EXPECT_TRUE(closed);
+	EXPECT_EQ(ph.opened, 1);
+	EXPECT_GT(ext_heard, 1e9) << "the extension heard the caller";
+	EXPECT_GT(ph.heard, 1e9) << "the caller heard the extension";
+	/* the close reaches the caller; the data goes on */
+	for (int f = 0; f < 100; f++) {
+		dmodem_process(a, ba, oa, FRAME);
+		dmodem_process(c.d, ab, ob, FRAME);
+		memcpy(ab, oa, sizeof(ab));
+		memcpy(ba, ob, sizeof(ba));
+		ev = dmbridge_call_step(&c, FRAME);
+		EXPECT_NE(ev, DMBRIDGE_END);
+		EXPECT_NE(ev, DMBRIDGE_DSVD_CLOSED);
+	}
+	EXPECT_EQ(ph.on, 0) << "the caller's voice channel still open";
+	struct dmodem_status st;
+	dmodem_status(c.d, &st);
+	EXPECT_EQ(st.link, DMODEM_ONLINE);
+	dmbridge_call_hangup(&c);
+	dmbridge_call_end(&c);
+	dmodem_destroy(a);
+	close(sa[0]);
+	close(sa[1]);
+	srv.end();
+	unlink(path.c_str());
 }
