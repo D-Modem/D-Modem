@@ -105,5 +105,16 @@ $delete = $editing ? 'config.php?display=dmodem&action=delete&profile=' . urlenc
 	     _('Seconds for the modems to connect.'));
 	$row('fax', _('Take fax calls'), $check('fax', $p['fax']),
 	     _('A fax machine calling (its CNG tone, or a V.8 fax call) is received as a fax, into the fax directory of the settings, instead of by the modem.'));
+	$row('voice', _('Voice extension'), $text('voice', $p['voice'], ' placeholder="e.g. 7000"'),
+	     _('Where a person calling goes: an extension, or extension@context (from-internal when none), e.g. an IVR or a voicemail box. Empty: the modem answers every call. The modem answers once the extension hangs up, or once the caller\'s modem asks for data with its calling tone.'));
+	$row('voice_listen', _('Listen for a person'), $text('voice_listen', $p['voice_listen']),
+	     _('Seconds the modem listens before answering, to tell a person (speech) from a modem (silence, or its calling tone). 0: a person is not looked for.'));
+	$row('voice_dsvd', _('Modem voice (DSVD, ASVD)'),
+	     $select('voice_dsvd', $p['voice_dsvd'], [
+		     'no' => _('No'),
+		     'yes' => _('To the voice extension, when the caller opens it'),
+		     'open' => _('To the voice extension, opened at once'),
+	     ]),
+	     _('A modem with simultaneous voice and data (V.70 DSVD, V.61 ASVD) calling: its voice channel goes to the voice extension while the data goes on; the channel closes when the extension hangs up.'));
 	?>
 </form>

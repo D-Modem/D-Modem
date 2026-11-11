@@ -6,7 +6,8 @@
 
 add_executable(dmodem-ari dmodem_ari.cpp client.cpp json.cpp sip.cpp
 	${DMODEM_PBX_DIR}/dmodem_bridge.c)
-target_include_directories(dmodem-ari PRIVATE ${DMODEM_PBX_DIR})
+target_include_directories(dmodem-ari PRIVATE ${DMODEM_PBX_DIR}
+	${PROJECT_SOURCE_DIR}/dsp)
 target_compile_definitions(dmodem-ari PRIVATE _GNU_SOURCE)
 target_compile_options(dmodem-ari PRIVATE -Wall)
 find_package(Threads REQUIRED)

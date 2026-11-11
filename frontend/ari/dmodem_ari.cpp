@@ -68,6 +68,7 @@
 #include "client.h"
 #include "dmodem.h"
 #include "dmodem_bridge.h"
+#include "g711.h"
 #include "json.h"
 #include "sip.h"
 
@@ -390,7 +391,7 @@ struct Call {
 	std::string profile, options;   /* MODEM: Stasis(app,profile,options) */
 	std::string file, ident;        /* the faxes: Stasis(app,sendfax,file,
 					   ident) */
-	std::string state, caller, exten;
+	std::string state, caller, caller_name, exten, context;
 	std::atomic<bool> hungup{false};
 };
 
@@ -682,6 +683,283 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 		    t38 ? " over T.38" : "", st.remote_ident);
 }
 
+/*
+ *    voice: a person's call to an extension, a DSVD or ASVD caller's voice
+ */
+
+/* a channel of ours beside a call (the extension's Local channel, a
+   snoop): its StasisStart starts no call; started once in Stasis, up
+   once answered, gone once hung up */
+struct Leg {
+	std::atomic<bool> started{false}, up{false}, gone{false};
+};
+std::map<std::string, std::shared_ptr<Leg>> legs;
+
+bool media_started(const std::string &id, s16 ms);
+
+/* a channel id of ours, what it is for first */
+std::string new_id(const char *what)
+{
+	char b[48];
+	snprintf(b, sizeof(b), "dmodem-%s-%08lx%04lx", what,
+		 static_cast<unsigned long>(random()),
+		 static_cast<unsigned long>(random() & 0xffff));
+	return b;
+}
+
+/* a Leg for channel id, before it is made */
+std::shared_ptr<Leg> add_leg(const std::string &id)
+{
+	auto l = std::make_shared<Leg>();
+	std::lock_guard<std::mutex> lk(calls_lock);
+	legs[id] = l;
+	return l;
+}
+
+/* channel id's Leg forgotten */
+void forget_leg(const std::string &id)
+{
+	std::lock_guard<std::mutex> lk(calls_lock);
+	legs.erase(id);
+}
+
+/* true once leg l is in Stasis, within ms */
+bool leg_started(const Leg &l, s16 ms)
+{
+	for (s16 k = 0; k < ms / 10 && !l.started; k++)
+		usleep(10000);
+	return l.started;
+}
+
+/* the profile's voice extension (exten@context, exten alone in the
+   call's context; a channel to dial, one with a '/', as it is) on a
+   channel of ours, in Stasis at once and dialled, the caller's number
+   its caller ID: its id, "" if not */
+std::string ext_dial(const Call &c, const char *voice)
+{
+	std::string v = voice, endpoint;
+	if (v.find('/') != std::string::npos)
+		endpoint = v;
+	else
+		endpoint = "Local/" + v + (v.find('@') == std::string::npos ?
+					   "@" + c.context : "") + "/n";
+	std::string id = new_id("ext");
+	auto l = add_leg(id);
+	if (!ari_call("POST", "channels/create?endpoint=" +
+		      ari::url_encode(endpoint) + "&app=" + ari::url_encode(app) +
+		      "&appArgs=leg&channelId=" + ari::url_encode(id) +
+		      "&originator=" + ari::url_encode(c.id)) ||
+	    !leg_started(*l, 5000)) {
+		say("WARNING %s: no channel %s", c.name.c_str(),
+		    endpoint.c_str());
+		ari_call("DELETE", "channels/" + id);
+		forget_leg(id);
+		return std::string();
+	}
+	/* (a Local channel's other half has its connected line as its
+	   caller ID) */
+	set_var(id, "CONNECTEDLINE(num)", c.caller);
+	if (!c.caller_name.empty())
+		set_var(id, "CONNECTEDLINE(name)", c.caller_name);
+	if (!ari_call("POST", "channels/" + id + "/dial?timeout=60")) {
+		ari_call("DELETE", "channels/" + id);
+		forget_leg(id);
+		return std::string();
+	}
+	if (verbose >= 1)
+		say("%s: dmodem: voice to %s", c.name.c_str(), endpoint.c_str());
+	return id;
+}
+
+/* the extension's channel hung up (if it is not gone) and forgotten */
+void ext_end(const std::string &id)
+{
+	if (id.empty())
+		return;
+	ari_call("DELETE", "channels/" + id);
+	forget_leg(id);
+}
+
+/* the voice leg: the caller through to the extension in the call's
+   bridge, our line taken out of it into a bridge of its own with a
+   snoop of the caller's own audio (for the modem's ear, its calling
+   tones: none of the extension's); 1 when the leg is over (the
+   extension gone, or the caller's modem asking for data: the leg hung
+   up, our line back in the call's bridge), -1 if the call hung up */
+int voice_leg(Call &c, const struct dmbridge_profile &p,
+	      enum dmodem_law law, Line &line, struct dmbridge_call &bc)
+{
+	u8 in[MAX_SAMPLES], out[MAX_SAMPLES];
+	std::string ext = ext_dial(c, p.voice), snoop, bridge;
+	std::shared_ptr<Leg> el, sl;
+	ari::Json r;
+	bool ringing = false;
+	int res = 0;
+
+	if (ext.empty())
+		return c.hungup ? -1 : 1;
+	{
+		std::lock_guard<std::mutex> lk(calls_lock);
+		el = legs[ext];
+	}
+	snoop = new_id("snoop");
+	sl = add_leg(snoop);
+	if (!ari_call("POST", "channels/" + c.id + "/snoop?spy=in&app=" +
+		      ari::url_encode(app) + "&appArgs=snoop&snoopId=" +
+		      ari::url_encode(snoop)) || !leg_started(*sl, 5000) ||
+	    !ari_call("POST", "bridges?type=mixing", &r)) {
+		say("WARNING %s: no snoop on the call", c.name.c_str());
+		ari_call("DELETE", "channels/" + snoop);
+		forget_leg(snoop);
+		ext_end(ext);
+		return c.hungup ? -1 : 1;
+	}
+	bridge = r["id"].str();
+	ari_call("POST", "bridges/" + line.bridge + "/addChannel?channel=" +
+		 ari::url_encode(ext));
+	ari_call("POST", "bridges/" + line.bridge + "/removeChannel?channel=" +
+		 ari::url_encode(line.media));
+	ari_call("POST", "bridges/" + bridge + "/addChannel?channel=" +
+		 ari::url_encode(snoop + "," + line.media));
+	/* the caller hears it ring until it answers */
+	if (!el->up) {
+		ringing = ari_call("POST", "channels/" + c.id + "/ring");
+	}
+	while (!res) {
+		s16 n = next_block(c, line.rtp, law, in);
+		if (n <= 0) {
+			res = -1;
+			break;
+		}
+		dmodem_process_g711(bc.d, in, out, n);
+		line.rtp.send(out, n);
+		if (ringing && el->up) {
+			ari_call("DELETE", "channels/" + c.id + "/ring");
+			ringing = false;
+		}
+		if (el->gone) {
+			if (verbose >= 1)
+				say("%s: dmodem: the extension's leg ended: "
+				    "the modem answers", c.name.c_str());
+			res = 1;
+		} else if (dmbridge_voice_step(&bc, n) == DMBRIDGE_DATA) {
+			/* (the bridge's log says why) */
+			res = 1;
+		}
+	}
+	if (ringing)
+		ari_call("DELETE", "channels/" + c.id + "/ring");
+	ext_end(ext);
+	ari_call("DELETE", "channels/" + snoop);
+	forget_leg(snoop);
+	ari_call("DELETE", "bridges/" + bridge);
+	if (res > 0)
+		ari_call("POST", "bridges/" + line.bridge +
+			 "/addChannel?channel=" + ari::url_encode(line.media));
+	return res;
+}
+
+/* a DSVD or ASVD voice channel's leg: the extension on a channel of
+   ours, in a bridge with an external media channel whose RTP (mu-law)
+   is ours; made and taken down in threads of their own (ARI's requests
+   take time the line hasn't got) */
+struct DsvdLeg {
+	std::string ext, media, bridge;
+	std::shared_ptr<Leg> el;
+	Rtp rtp;
+	std::atomic<bool> ready{false}, failed{false};
+	std::thread maker;
+};
+
+/* (see DsvdLeg) the leg made: ready, or failed */
+void dsvd_make(DsvdLeg *d, const Call *c, std::string voice)
+{
+	ari::Json r;
+	s32 port;
+
+	d->ext = ext_dial(*c, voice.c_str());
+	if (d->ext.empty()) {
+		d->failed = true;
+		return;
+	}
+	{
+		std::lock_guard<std::mutex> lk(calls_lock);
+		d->el = legs[d->ext];
+	}
+	d->rtp.pt = 0;
+	port = d->rtp.open("127.0.0.1");
+	d->media = new_id("dsvd");
+	{
+		std::lock_guard<std::mutex> lk(calls_lock);
+		media_channels.emplace(d->media, false);
+	}
+	if (port < 0 ||
+	    !ari_call("POST", "channels/externalMedia?app=" +
+		      ari::url_encode(app) + "&channelId=" +
+		      ari::url_encode(d->media) + "&external_host=" +
+		      ari::url_encode("127.0.0.1:" + std::to_string(port)) +
+		      "&format=ulaw", &r) ||
+	    (!d->rtp.set_peer(r["channelvars"]["UNICASTRTP_LOCAL_ADDRESS"].str(),
+			      r["channelvars"]["UNICASTRTP_LOCAL_PORT"].str()) &&
+	     !d->rtp.set_peer(get_var(d->media, "UNICASTRTP_LOCAL_ADDRESS"),
+			      get_var(d->media, "UNICASTRTP_LOCAL_PORT"))) ||
+	    !media_started(d->media, 5000) ||
+	    !ari_call("POST", "bridges?type=mixing", &r)) {
+		d->failed = true;
+		return;
+	}
+	d->bridge = r["id"].str();
+	if (!ari_call("POST", "bridges/" + d->bridge + "/addChannel?channel=" +
+		      ari::url_encode(d->ext + "," + d->media))) {
+		d->failed = true;
+		return;
+	}
+	d->ready = true;
+}
+
+/* (see DsvdLeg) the leg taken down, d deleted */
+void dsvd_unmake(DsvdLeg *d)
+{
+	if (d->maker.joinable())
+		d->maker.join();
+	ext_end(d->ext);
+	if (!d->media.empty()) {
+		ari_call("DELETE", "channels/" + d->media);
+		std::lock_guard<std::mutex> lk(calls_lock);
+		media_channels.erase(d->media);
+	}
+	if (!d->bridge.empty())
+		ari_call("DELETE", "bridges/" + d->bridge);
+	delete d;
+}
+
+/* the leg's frames after n samples of the line: the extension's
+   speech to the voice channel, the far end's to it; false once the leg
+   has failed or gone */
+bool dsvd_move(DsvdLeg *d, struct dmbridge_call &bc, s16 n)
+{
+	u8 buf[MAX_SAMPLES];
+	int16_t pcm[MAX_SAMPLES];
+	s16 k;
+
+	if (d->failed || (d->ready && d->el->gone))
+		return false;
+	if (!d->ready)
+		return true;
+	while ((k = d->rtp.recv(buf, MAX_SAMPLES, 0)) > 0) {
+		for (s16 i = 0; i < k; i++)
+			pcm[i] = dsp::g711::ulaw2lin(buf[i]);
+		dmbridge_dsvd_mic(&bc, pcm, k);
+	}
+	k = static_cast<s16>(dmbridge_dsvd_ear(&bc, pcm, n));
+	if (k > 0) {
+		for (s16 i = 0; i < k; i++)
+			buf[i] = dsp::g711::lin2ulaw(pcm[i]);
+		d->rtp.send(buf, k);
+	}
+	return true;
+}
+
 /* the modem on the call's line until it ends (a fax machine that calls a
    profile with fax on: the fax receiver in its place; also when the
    other end goes over to T.38 before the modems are connected); its
@@ -694,6 +972,7 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 	u8 in[MAX_SAMPLES], out[MAX_SAMPLES];
 	std::string status;
 	bool orig = c.options.find('o') != std::string::npos, fax = false;
+	DsvdLeg *dsvd = nullptr;        /* a DSVD voice channel's leg */
 
 	dmbridge_call_init(&bc);
 	if (dmbridge_call_start(&bc, &host, who, &p, c.name.c_str(), law,
@@ -729,7 +1008,41 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 			/* a packet out for each packet in */
 			dmodem_process_g711(bc.d, in, out, n);
 			line.rtp.send(out, n);
+			if (dsvd && !dsvd_move(dsvd, bc, n)) {
+				/* the extension gone: the voice channel
+				   closed, the data going on */
+				dsvd_unmake(dsvd);
+				dsvd = nullptr;
+				dmbridge_dsvd_close(&bc);
+			}
 			ev = dmbridge_call_step(&bc, n);
+		}
+		if (ev == DMBRIDGE_VOICE) {
+			/* a person: to the extension until its leg is over,
+			   then the modem answers */
+			int r = voice_leg(c, p, law, line, bc);
+			if (r < 0) {
+				bc.status = "HANGUP";
+				break;
+			}
+			if (dmbridge_call_resume(&bc))
+				break;
+			continue;
+		}
+		if (ev == DMBRIDGE_DSVD_OPEN && !dsvd) {
+			/* a DSVD or ASVD caller's voice channel: its leg to
+			   the extension, made meanwhile */
+			dsvd = new DsvdLeg;
+			dsvd->maker = std::thread(dsvd_make, dsvd, &c,
+						  std::string(p.voice));
+			continue;
+		}
+		if (ev == DMBRIDGE_DSVD_CLOSED) {
+			if (dsvd) {
+				std::thread(dsvd_unmake, dsvd).detach();
+				dsvd = nullptr;
+			}
+			continue;
 		}
 		if (ev == DMBRIDGE_CONNECTED) {
 			char connected[24];
@@ -768,6 +1081,8 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 		if (ev == DMBRIDGE_END)
 			break;
 	}
+	if (dsvd)
+		dsvd_unmake(dsvd);
 	dmbridge_call_hangup(&bc);
 	status = fax ? "FAX" : bc.status;
 	dmbridge_call_end(&bc);
@@ -988,6 +1303,13 @@ void event(const ari::Json &e)
 
 	if (type == "StasisStart") {
 		std::lock_guard<std::mutex> lk(calls_lock);
+		auto l = legs.find(id);
+		if (l != legs.end()) {
+			l->second->started = true;
+			if (ch["state"].str() == "Up")
+				l->second->up = true;
+			return;
+		}
 		auto m = media_channels.find(id);
 		if (m != media_channels.end()) {
 			m->second = true;       /* (a SIP leg: up) */
@@ -1006,6 +1328,8 @@ void event(const ari::Json &e)
 		c->state = ch["state"].str();
 		c->caller = ch["caller"]["number"].str();
 		c->exten = ch["dialplan"]["exten"].str();
+		c->context = ch["dialplan"]["context"].str();
+		c->caller_name = ch["caller"]["name"].str();
 		if (what == "sendfax" || what == "receivefax") {
 			c->kind = what == "sendfax" ? SENDFAX : RECEIVEFAX;
 			c->file = e["args"][1].str();
@@ -1026,6 +1350,16 @@ void event(const ari::Json &e)
 		auto it = calls.find(id);
 		if (it != calls.end())
 			it->second->hungup = true;
+		auto l = legs.find(id);
+		if (l != legs.end())
+			l->second->gone = true;
+	}
+	/* a leg of ours answered */
+	if (type == "ChannelStateChange" && ch["state"].str() == "Up") {
+		std::lock_guard<std::mutex> lk(calls_lock);
+		auto l = legs.find(id);
+		if (l != legs.end())
+			l->second->up = true;
 	}
 }
 

@@ -71,6 +71,9 @@ struct dmbridge_fax {
 	int t38;                /* over T.38 when the channel has it */
 };
 
+/* a profile's voice_dsvd "open" (see struct dmbridge_profile) */
+#define DMBRIDGE_DSVD_OPENS 2
+
 struct dmbridge_profile {
 	enum dmbridge_mode mode;
 	char host[256];
@@ -96,7 +99,10 @@ struct dmbridge_profile {
 	   (exten@context; empty: nowhere, the modem answers at once as
 	   ever); listen: the seconds the line is listened to before the
 	   modem answers, for speech; dsvd: the modem offers DSVD and ASVD
-	   (V.8 bis) and their voice channel goes there */
+	   (V.8 bis) and their voice channel goes there, the far end's to
+	   open (1), or ours too, opened as soon as the modems are
+	   connected (DMBRIDGE_DSVD_OPENS, the option's "open": a call to a
+	   DSVD modem with someone on the extension at once) */
 	char voice[128];
 	int voice_listen;
 	int voice_dsvd;
@@ -187,6 +193,11 @@ struct dmbridge_ring {
 	int16_t buf[DMODEM_RATE];
 	int head, len;
 };
+
+/* n samples into ring r, the oldest dropped to make room */
+void dmbridge_ring_put(struct dmbridge_ring *r, const int16_t *pcm, int n);
+/* up to max samples out of ring r: how many */
+int dmbridge_ring_get(struct dmbridge_ring *r, int16_t *pcm, int max);
 
 struct dmbridge_call {
 	struct dmodem *d;       /* the modem: the line's samples */

@@ -45,6 +45,36 @@ All the options are in [dmodem.conf.xml](../frontend/freeswitch/dmodem.conf.xml)
 modem on a call FreeSWITCH has placed, for example
 `originate sofia/gateway/trunk/5559999 &dmodem(isp,o)`.
 
+## People and modems on one number
+
+A profile with `voice` set listens for a few seconds before answering
+(`voice-listen`, 3 by default). If a person is calling, the call goes
+to that extension (on a loopback leg), for example an IVR or a
+voicemail box:
+
+```xml
+<profile name="bbs">
+  <param name="mode" value="tcp"/>
+  <param name="host" value="127.0.0.1"/>
+  <param name="port" value="2323"/>
+  <param name="voice" value="7000@default"/>
+  <param name="voice-dsvd" value="yes"/>
+</profile>
+```
+
+The person stays there until the extension hangs up, or until
+the caller's modem asks for data (its calling tone), and then the modem
+answers as usual. A caller whose modem sends no calling tone (most
+countries' modems wait in silence) stays with the extension until it
+hangs up, so give an IVR a way to end, such as a menu choice that hangs
+up.
+
+A modem that carries voice and data at once (V.70 DSVD or V.61 ASVD)
+can also have its voice channel sent to the extension while the data
+goes on: set `voice-dsvd` to `yes` (the caller opens the channel) or
+`open` (ours opens it). The channel closes when the extension hangs up,
+and the data carries on.
+
 ## What the modem can do
 
 It answers every common standard from 300 bit/s up to V.34 (33600

@@ -3227,6 +3227,7 @@ struct VoiceDte : Dte {
 	long talk = -1;         /* samples of tone, then quiet (-1: always) */
 	u32 rnd = 1;
 	bool on = false;
+	bool opens = true;      /* opens a voice channel itself */
 	int opened = 0, closed = 0;
 	std::vector<s16> heard;
 	/* the DTE called n, its tone */
@@ -3235,6 +3236,8 @@ struct VoiceDte : Dte {
 	int32_t tx_rate() override { return 28800; }
 	/* (it has a voice path) */
 	bool voice() override { return true; }
+	/* (see opens) */
+	bool voice_opens() override { return opens; }
 	/* the channel open or closed */
 	void voice_state(bool o) override {
 		on = o;
@@ -3283,8 +3286,10 @@ struct VoiceDte : Dte {
 struct VoicePair {
 	VoiceDte dc{"caller", 440}, da{"answerer", 700};
 	Link lc, la;
-	/* a DSVD call, the answerer the initiator */
-	VoicePair() {
+	/* a DSVD call, the answerer the initiator; it opens a voice
+	   channel if initiator_opens, else waits for the caller's */
+	explicit VoicePair(bool initiator_opens = true) {
+		da.opens = initiator_opens;
 		lc.init(&dc, true, lapm_config(0));
 		la.init(&da, false, lapm_config(0));
 		const char *v = getenv("LINK_DEBUG");
@@ -3349,6 +3354,40 @@ TEST(Link, V76Voice)
 	CHECK(!p.dc.on && !p.da.on && p.dc.closed == 1 && p.da.closed == 1,
 	      "the voice channel closed on the hang-up");
 	CHECK(p.dc.released && p.da.released, "released");
+}
+
+/* a voice channel the responder opens (the initiator, a PBX's, waits
+   for one: voice_opens() false), a second after the data channel: each
+   side hears the other's tone; the initiator closes it (its extension
+   gone), the data going on */
+TEST(Link, V76VoiceResponderOpens)
+{
+	VoicePair p(false);
+	p.run(14400);
+	CHECK(p.dc.up && p.da.up, "the data channel up");
+	CHECK(!p.dc.on && !p.da.on, "no voice channel yet");
+	p.run(28800 * 2);
+	CHECK(p.dc.on && p.da.on, "the voice channel open (%d, %d)", p.dc.on,
+	      p.da.on);
+	p.dc.heard.clear();
+	p.da.heard.clear();
+	p.run(28800 * 2);
+	const double c = p.dc.tone_share(700), a = p.da.tone_share(440);
+	printf("  voice: caller heard %zu samples (700 Hz %.0f %%), answerer "
+	       "%zu (440 Hz %.0f %%)\n", p.dc.heard.size(), 100 * c,
+	       p.da.heard.size(), 100 * a);
+	CHECK(c > 0.8 && a > 0.8, "each hears the other's tone");
+
+	p.la.close_voice();
+	p.run(28800);
+	CHECK(!p.dc.on && !p.da.on && p.dc.closed == 1 && p.da.closed == 1,
+	      "the voice channel closed (%d, %d)", p.dc.on, p.da.on);
+	p.dc.to_send = text(2000);
+	p.da.to_send = text(2000);
+	p.run(28800 * 2);
+	CHECK(p.dc.up && p.da.up && p.da.got == p.dc.to_send &&
+	      p.dc.got == p.da.to_send, "the data goes on (%zu, %zu)",
+	      p.da.got.size(), p.dc.got.size());
 }
 
 /* silence on the voice channel (G.729 Annex B, the audio header both

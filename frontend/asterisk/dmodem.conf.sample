@@ -39,6 +39,24 @@
 ;   fax = yes        a fax machine calling (its CNG tone) is received
 ;                    as a fax (into fax_dir) instead of by the modem
 ;
+; Voice, per profile:
+;   voice = exten@context   a person calling goes to this extension (an
+;                    IVR, a voicemail box, a phone; exten alone: in the
+;                    call's context; TECH/data: that channel).  The
+;                    modem answers once the extension's leg ends, or
+;                    once the caller's modem asks for data with its
+;                    calling tone (V.25 CT, V.8 CI, V.8bis CRe, fax
+;                    CNG).  None: the modem answers every call
+;   voice_listen = 3 seconds the modem listens first, to tell a person
+;                    (speech) from a modem (silence, a calling tone);
+;                    0: no person looked for
+;   voice_dsvd = no  a modem with simultaneous voice and data (V.70
+;                    DSVD, V.61 ASVD): yes: when it opens its voice
+;                    channel, the channel goes to the voice extension
+;                    while the data goes on, and closes when the
+;                    extension hangs up; open: ours opens it at once.
+;                    Not on a clear (ISDN data) call
+;
 ; The server or program sees nothing until the modems are connected.
 ;
 ; Fax, here for all, or per profile:

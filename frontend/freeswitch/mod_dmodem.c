@@ -357,6 +357,310 @@ static void silence_fn(void *obj, const void *in, void *out, int n,
 }
 
 /*
+ *    voice: a person's call to an extension, a DSVD or ASVD caller's voice
+ */
+
+/* the leg to the profile's voice extension, all of it in a thread of its
+   own: the call (which waits for the answer) and then the leg's frames,
+   read and written (a loopback leg's reads keep its clock), never
+   holding up the line's loop; linear samples through two rings */
+struct ext_leg {
+	switch_core_session_t *s;       /* the leg, once answered */
+	switch_channel_t *ch;
+	char *dial;
+	switch_event_t *vars;           /* the call's variables */
+	switch_codec_t codec;           /* L16 on the leg */
+	switch_codec_t line_codec;      /* L16 to the caller's line */
+	int line_codec_ok;
+	switch_mutex_t *mutex;
+	switch_thread_t *thread;
+	struct dmbridge_ring in, out;   /* from the leg, to it */
+	switch_call_cause_t cancel;     /* the call given up (ext_stop()) */
+	volatile int ready, gone, stop;
+};
+
+/* the leg's thread: the call, then the leg's frames into in, out's
+   samples (silence when short) back, until it hangs up or stop; the leg
+   hung up and let go at the end */
+static void *SWITCH_THREAD_FUNC ext_run(switch_thread_t *thread, void *obj)
+{
+	struct ext_leg *e = obj;
+	switch_core_session_t *s = NULL;
+	switch_call_cause_t cause = SWITCH_CAUSE_NONE;
+	int16_t pcm[LINE_MAX_SAMPLES];
+	int codec_ok = 0;
+	(void)thread;
+
+	if (switch_ivr_originate(NULL, &s, &cause, e->dial, 60, NULL, NULL,
+				 NULL, NULL, e->vars, SOF_NONE, &e->cancel,
+				 NULL) != SWITCH_STATUS_SUCCESS || !s) {
+		switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_WARNING,
+				  "dmodem: %s: %s\n", e->dial,
+				  switch_channel_cause2str(cause));
+		e->gone = 1;
+		return NULL;
+	}
+	codec_ok = switch_core_codec_init(&e->codec, "L16", NULL, NULL,
+		DMODEM_RATE, 20, 1, SWITCH_CODEC_FLAG_ENCODE |
+		SWITCH_CODEC_FLAG_DECODE, NULL,
+		switch_core_session_get_pool(s)) == SWITCH_STATUS_SUCCESS;
+	if (codec_ok)
+		switch_core_session_set_read_codec(s, &e->codec);
+	switch_mutex_lock(e->mutex);
+	e->s = s;
+	e->ch = switch_core_session_get_channel(s);
+	e->ready = codec_ok;
+	switch_mutex_unlock(e->mutex);
+	while (codec_ok && !e->stop && switch_channel_ready(e->ch)) {
+		switch_frame_t *f = NULL, wf = { 0 };
+		switch_status_t st;
+		int n = 160, k;
+
+		st = switch_core_session_read_frame(s, &f, SWITCH_IO_FLAG_NONE,
+						    0);
+		if (!SWITCH_READ_ACCEPTABLE(st))
+			break;
+		if (f && f->samples > 0 && f->samples <= LINE_MAX_SAMPLES)
+			n = (int)f->samples;
+		switch_mutex_lock(e->mutex);
+		if (f && f->data && f->datalen && !switch_test_flag(f, SFF_CNG))
+			dmbridge_ring_put(&e->in, f->data,
+					  (int)f->datalen / 2);
+		k = dmbridge_ring_get(&e->out, pcm, n);
+		switch_mutex_unlock(e->mutex);
+		memset(pcm + k, 0, (size_t)(n - k) * 2);
+		wf.codec = &e->codec;
+		wf.data = pcm;
+		wf.datalen = (uint32_t)n * 2;
+		wf.buflen = sizeof(pcm);
+		wf.samples = (uint32_t)n;
+		wf.rate = DMODEM_RATE;
+		switch_core_session_write_frame(s, &wf, SWITCH_IO_FLAG_NONE, 0);
+	}
+	switch_mutex_lock(e->mutex);
+	e->ready = 0;
+	e->ch = NULL;
+	e->s = NULL;
+	switch_mutex_unlock(e->mutex);
+	switch_channel_hangup(switch_core_session_get_channel(s),
+			      SWITCH_CAUSE_NORMAL_CLEARING);
+	if (codec_ok) {
+		switch_core_session_set_read_codec(s, NULL);
+		switch_core_codec_destroy(&e->codec);
+	}
+	switch_core_session_rwunlock(s);
+	e->gone = 1;
+	return NULL;
+}
+
+/* the leg over: the call given up or hung up, its thread joined */
+static void ext_stop(struct ext_leg *e)
+{
+	switch_status_t st;
+
+	if (!e->thread)
+		return;
+	e->stop = 1;
+	e->cancel = SWITCH_CAUSE_ORIGINATOR_CANCEL;
+	switch_mutex_lock(e->mutex);
+	if (e->ch)
+		switch_channel_hangup(e->ch, SWITCH_CAUSE_NORMAL_CLEARING);
+	switch_mutex_unlock(e->mutex);
+	switch_thread_join(&st, e->thread);
+	if (e->line_codec_ok)
+		switch_core_codec_destroy(&e->line_codec);
+	if (e->vars)
+		switch_event_destroy(&e->vars);
+	memset(e, 0, sizeof(*e));
+}
+
+/* the profile's voice extension called (exten@context: loopback/exten/
+   context, exten alone in the channel's own context; a dial string, one
+   with a '/', as it is) in the leg's thread, the caller's caller ID its;
+   0, or -1 if the thread did not start */
+static int ext_start(switch_core_session_t *session, const char *voice,
+		     struct ext_leg *e)
+{
+	switch_channel_t *channel = switch_core_session_get_channel(session);
+	switch_memory_pool_t *pool = switch_core_session_get_pool(session);
+	switch_threadattr_t *attr = NULL;
+	const char *at = strchr(voice, '@'), *v;
+
+	memset(e, 0, sizeof(*e));
+	if (strchr(voice, '/'))
+		e->dial = switch_core_session_strdup(session, voice);
+	else if (at)
+		e->dial = switch_core_session_sprintf(session,
+			"loopback/%.*s/%s", (int)(at - voice), voice, at + 1);
+	else
+		e->dial = switch_core_session_sprintf(session, "loopback/%s/%s",
+			voice, switch_str_nil(switch_channel_get_variable(
+				channel, "context")));
+	switch_event_create_plain(&e->vars, SWITCH_EVENT_CHANNEL_DATA);
+	if (e->vars) {
+		if ((v = switch_channel_get_variable(channel,
+						      "caller_id_number")))
+			switch_event_add_header_string(e->vars,
+				SWITCH_STACK_BOTTOM,
+				"origination_caller_id_number", v);
+		if ((v = switch_channel_get_variable(channel,
+						      "caller_id_name")))
+			switch_event_add_header_string(e->vars,
+				SWITCH_STACK_BOTTOM,
+				"origination_caller_id_name", v);
+		switch_event_add_header_string(e->vars, SWITCH_STACK_BOTTOM,
+			"dmodem_caller_uuid",
+			switch_core_session_get_uuid(session));
+	}
+	e->line_codec_ok = switch_core_codec_init(&e->line_codec, "L16", NULL,
+		NULL, DMODEM_RATE, 20, 1, SWITCH_CODEC_FLAG_ENCODE |
+		SWITCH_CODEC_FLAG_DECODE, NULL, pool) == SWITCH_STATUS_SUCCESS;
+	switch_mutex_init(&e->mutex, SWITCH_MUTEX_NESTED, pool);
+	switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session), SWITCH_LOG_INFO,
+			  "dmodem: voice to %s\n", e->dial);
+	switch_threadattr_create(&attr, pool);
+	if (switch_thread_create(&e->thread, attr, ext_run, e, pool) !=
+	    SWITCH_STATUS_SUCCESS) {
+		e->thread = NULL;
+		if (e->line_codec_ok)
+			switch_core_codec_destroy(&e->line_codec);
+		if (e->vars)
+			switch_event_destroy(&e->vars);
+		return -1;
+	}
+	return 0;
+}
+
+/* a G.711 octet as a linear sample */
+static int16_t g711_linear(unsigned char o, enum dmodem_law law)
+{
+	int t, seg;
+
+	if (law == DMODEM_LAW_ALAW) {
+		o ^= 0x55;
+		t = (o & 0x0F) << 4;
+		seg = (o & 0x70) >> 4;
+		if (seg == 0)
+			t += 8;
+		else
+			t = (t + 0x108) << (seg - 1);
+		return (int16_t)(o & 0x80 ? t : -t);
+	}
+	o = (unsigned char)~o;
+	t = (((o & 0x0F) << 3) + 0x84) << ((o & 0x70) >> 4);
+	return (int16_t)(o & 0x80 ? 0x84 - t : t - 0x84);
+}
+
+/* the voice leg: a person on the line through to the extension (e), its
+   speech back, the caller's DTMF too, the caller's audio also through
+   the modem for its calling tones; 1 when the leg is over (the extension
+   gone, or the caller's modem asking for data), -1 if the channel hung
+   up */
+static int voice_leg(struct line *l, struct dmbridge_call *c,
+		     struct ext_leg *e)
+{
+	int16_t pcm[LINE_MAX_SAMPLES];
+	unsigned char scratch[LINE_MAX_SAMPLES * 2];
+	long ring = 0;
+
+	for (;;) {
+		switch_frame_t *f = NULL, wf = { 0 };
+		switch_status_t st;
+		int n, k;
+
+		if (!switch_channel_ready(l->channel))
+			return -1;
+		if (e->gone) {
+			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(l->session),
+					  SWITCH_LOG_INFO,
+					  "dmodem: the extension's leg ended: "
+					  "the modem answers\n");
+			return 1;
+		}
+		st = switch_core_session_read_frame(l->session, &f,
+						    SWITCH_IO_FLAG_NONE, 0);
+		if (!SWITCH_READ_ACCEPTABLE(st))
+			return -1;
+		n = f && f->samples > 0 && f->samples <= LINE_MAX_SAMPLES ?
+			(int)f->samples : l->packet;
+		if (!f || switch_test_flag(f, SFF_CNG) || !f->datalen ||
+		    !f->data) {
+			memset(pcm, 0, (size_t)n * 2);
+			if (l->linear)
+				memset(scratch, 0, (size_t)n * 2);
+			else
+				memset(scratch, l->law == DMODEM_LAW_ALAW ?
+				       0xD5 : 0xFF, (size_t)n);
+		} else {
+			n = l->linear ? (int)f->datalen / 2 : (int)f->datalen;
+			if (n > LINE_MAX_SAMPLES)
+				n = LINE_MAX_SAMPLES;
+			memcpy(scratch, f->data, (size_t)(l->linear ? n * 2 : n));
+			for (k = 0; k < n; k++)
+				pcm[k] = l->linear ? ((int16_t *)f->data)[k] :
+					g711_linear(((unsigned char *)f->data)[k],
+						    l->law);
+		}
+		/* (the modem is on hook: what it gives back is silence) */
+		modem_fn(c->d, scratch, l->out, n, l->linear);
+		switch_mutex_lock(e->mutex);
+		dmbridge_ring_put(&e->out, pcm, n);
+		k = dmbridge_ring_get(&e->in, pcm, n);
+		switch_mutex_unlock(e->mutex);
+		memset(pcm + k, 0, (size_t)(n - k) * 2);
+		if (!e->ready) {
+			/* the extension not answered yet: its ringing,
+			   440 + 480 Hz 2 s on, 4 s off */
+			for (k = 0; k < n; k++, ring++) {
+				double t = (double)ring / DMODEM_RATE;
+				pcm[k] = ring % (6 * DMODEM_RATE) <
+					2 * DMODEM_RATE ? (int16_t)(2000 *
+					(sin(2 * M_PI * 440 * t) +
+					 sin(2 * M_PI * 480 * t))) : 0;
+			}
+		}
+		if (e->line_codec_ok) {
+			wf.codec = &e->line_codec;
+			wf.data = pcm;
+			wf.datalen = (uint32_t)n * 2;
+			wf.buflen = sizeof(pcm);
+			wf.samples = (uint32_t)n;
+			wf.rate = DMODEM_RATE;
+			switch_core_session_write_frame(l->session, &wf,
+							SWITCH_IO_FLAG_NONE, 0);
+		}
+		while (switch_channel_has_dtmf(l->channel)) {
+			switch_dtmf_t dtmf = { 0 };
+			switch_channel_dequeue_dtmf(l->channel, &dtmf);
+			switch_mutex_lock(e->mutex);
+			if (e->s)
+				switch_core_session_send_dtmf(e->s, &dtmf);
+			switch_mutex_unlock(e->mutex);
+		}
+		/* (the bridge's log says why) */
+		if (dmbridge_voice_step(c, n) == DMBRIDGE_DATA)
+			return 1;
+	}
+}
+
+/* a DSVD voice channel's leg after n samples of the line: the
+   extension's speech to the voice channel, the far end's to it */
+static void dsvd_move(struct dmbridge_call *c, struct ext_leg *e, int n)
+{
+	int16_t pcm[LINE_MAX_SAMPLES];
+	int k;
+
+	if (n > LINE_MAX_SAMPLES)
+		n = LINE_MAX_SAMPLES;
+	switch_mutex_lock(e->mutex);
+	k = dmbridge_ring_get(&e->in, pcm, n);
+	dmbridge_dsvd_mic(c, pcm, k);
+	k = dmbridge_dsvd_ear(c, pcm, n);
+	dmbridge_ring_put(&e->out, pcm, k);
+	switch_mutex_unlock(e->mutex);
+}
+
+/*
  *    fax
  */
 
@@ -768,6 +1072,9 @@ SWITCH_STANDARD_APP(dmodem_function)
 	char *argv[3] = { 0 }, *mydata, name[64];
 	const char *profile, *status = "ERROR";
 	int orig, line_ok = 0, t38_fax = 0, t38_ok;
+	/* a DSVD voice channel's leg */
+	struct ext_leg *dsvd = switch_core_session_alloc(session,
+							 sizeof(*dsvd));
 
 	dmbridge_call_init(&c);
 	mydata = switch_core_session_strdup(session, data ? data : "");
@@ -816,6 +1123,16 @@ SWITCH_STANDARD_APP(dmodem_function)
 			c.status = "HANGUP";
 			break;
 		}
+		if (dsvd->thread) {
+			/* the DSVD leg: gone (the voice channel closed), or
+			   its speech both ways */
+			if (dsvd->gone) {
+				ext_stop(dsvd);
+				dmbridge_dsvd_close(&c);
+			} else if (dsvd->ready) {
+				dsvd_move(&c, dsvd, n);
+			}
+		}
 		if (t38_ok && !c.online &&
 		    switch_channel_test_app_flag_key("T38", channel, CF_APP_T38)) {
 			t38_fax = 1;
@@ -823,6 +1140,33 @@ SWITCH_STANDARD_APP(dmodem_function)
 			ev = DMBRIDGE_FAX;
 		} else {
 			ev = dmbridge_call_step(&c, n);
+		}
+		if (ev == DMBRIDGE_VOICE) {
+			/* a person: to the extension until its leg is over,
+			   then the modem answers */
+			struct ext_leg *e = switch_core_session_alloc(session,
+								sizeof(*e));
+			int r = ext_start(session, p.b.voice, e) ? 1 :
+				voice_leg(&l, &c, e);
+			ext_stop(e);
+			if (r < 0) {
+				c.status = "HANGUP";
+				break;
+			}
+			if (dmbridge_call_resume(&c))
+				break;
+			continue;
+		}
+		if (ev == DMBRIDGE_DSVD_OPEN && !dsvd->thread) {
+			/* a DSVD or ASVD caller's voice channel: its leg to
+			   the extension */
+			if (ext_start(session, p.b.voice, dsvd))
+				dmbridge_dsvd_close(&c);
+			continue;
+		}
+		if (ev == DMBRIDGE_DSVD_CLOSED) {
+			ext_stop(dsvd);
+			continue;
 		}
 		if (ev == DMBRIDGE_CONNECTED) {
 			const char *cid = switch_channel_get_variable(channel,
@@ -875,6 +1219,7 @@ SWITCH_STANDARD_APP(dmodem_function)
 		if (ev == DMBRIDGE_END)
 			break;
 	}
+	ext_stop(dsvd);
 	dmbridge_call_hangup(&c);
 	status = c.status;
 	if (t38_ok)

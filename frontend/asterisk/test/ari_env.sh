@@ -69,7 +69,7 @@ EOT
 ari_start() {
 	[ -z "$ARI_SIP" ] || grep -q '^t38 = yes' "$2" ||
 		sed -i "s|^\[general\]|[general]\nt38 = yes\nsip_endpoint = dmodem\nsip_bind = 127.0.0.1:$ari_sip_port|" "$2"
-	"$build/ari/dmodem-ari" -c "$2" -v -u "http://127.0.0.1:$ari_port" \
+	"$build/ari/dmodem-ari" -c "$2" ${ARI_V:--v} -u "http://127.0.0.1:$ari_port" \
 		-U dmodem:dmodem > "$1/dmodem-ari.log" 2>&1 &
 	ari_pid=$!
 	i=0; until grep -q "app dmodem on" "$1/dmodem-ari.log"; do

@@ -195,7 +195,9 @@ int dmbridge_profile_option(const struct dmbridge_host *h,
 		if (p->voice_listen < 0 || p->voice_listen > 30)
 			p->voice_listen = 3;
 	} else if (dmbridge_option_is(name, "voice_dsvd")) {
-		p->voice_dsvd = h->is_true(value);
+		/* (open: ours opened at once, see dmodem_bridge.h) */
+		p->voice_dsvd = !strcasecmp(value, "open") ?
+			DMBRIDGE_DSVD_OPENS : h->is_true(value) != 0;
 	} else {
 		return 0;
 	}
@@ -706,8 +708,8 @@ done:
  *    the call
  */
 
-/* n samples into ring r, the oldest dropped to make room */
-static void ring_put(struct dmbridge_ring *r, const int16_t *pcm, int n)
+/* (see dmodem_bridge.h) */
+void dmbridge_ring_put(struct dmbridge_ring *r, const int16_t *pcm, int n)
 {
 	const int size = (int)(sizeof(r->buf) / sizeof(r->buf[0]));
 	for (int i = 0; i < n; i++) {
@@ -720,8 +722,8 @@ static void ring_put(struct dmbridge_ring *r, const int16_t *pcm, int n)
 	}
 }
 
-/* up to max samples out of ring r, how many */
-static int ring_get(struct dmbridge_ring *r, int16_t *pcm, int max)
+/* (see dmodem_bridge.h) */
+int dmbridge_ring_get(struct dmbridge_ring *r, int16_t *pcm, int max)
 {
 	const int size = (int)(sizeof(r->buf) / sizeof(r->buf[0]));
 	int n = r->len < max ? r->len : max;
@@ -749,27 +751,27 @@ static void voice_state(void *arg, int on)
 static int voice_mic(void *arg, int16_t *pcm, int n)
 {
 	struct dmbridge_call *c = arg;
-	return ring_get(&c->mic, pcm, n);
+	return dmbridge_ring_get(&c->mic, pcm, n);
 }
 
 /* (see voice_state()): the far end's, for the extension */
 static void voice_ear(void *arg, const int16_t *pcm, int n)
 {
 	struct dmbridge_call *c = arg;
-	ring_put(&c->ear, pcm, n);
+	dmbridge_ring_put(&c->ear, pcm, n);
 }
 
 /* (see dmodem_bridge.h) */
 int dmbridge_dsvd_ear(struct dmbridge_call *c, int16_t *pcm, int max)
 {
-	return ring_get(&c->ear, pcm, max);
+	return dmbridge_ring_get(&c->ear, pcm, max);
 }
 
 /* (see dmodem_bridge.h) */
 void dmbridge_dsvd_mic(struct dmbridge_call *c, const int16_t *pcm, int n)
 {
 	if (c->dsvd_on)
-		ring_put(&c->mic, pcm, n);
+		dmbridge_ring_put(&c->mic, pcm, n);
 }
 
 /* (see dmodem_bridge.h) */
@@ -820,6 +822,7 @@ int dmbridge_call_start(struct dmbridge_call *c,
 	struct dmodem_config cfg = { 0 };
 	struct dmodem_voice v = { 0 };
 	char init[256];
+	int voice;
 
 	c->h = h;
 	c->call = call;
@@ -843,16 +846,18 @@ int dmbridge_call_start(struct dmbridge_call *c,
 	   is there already: no dial tone to wait for */
 	/* (DSVD's and ASVD's voice to the extension: V.8 bis offering
 	   both) */
+	/* an ISDN data call: the clear channel, its octets as they are
+	   (no one to speak on it: no voice) */
+	cfg.clear = p->clear == DMBRIDGE_CLEAR_YES ||
+		(p->clear == DMBRIDGE_CLEAR_AUTO && c->digital);
+	voice = *p->voice && !cfg.clear;
 	snprintf(init, sizeof(init), "ATE0Q1S0=0S2=255X3%s%s\r",
-		 *p->voice && p->voice_dsvd ? "+A8E=1,1,,1+DSVD=1+ASVD=1" : "",
+		 voice && p->voice_dsvd ? "+A8E=1,1,,1+DSVD=1+ASVD=1" : "",
 		 p->init);
 	cfg.name = name;
 	cfg.law = law;
 	cfg.dte_fd = c->dte[0];
 	cfg.init = init;
-	/* an ISDN data call: the clear channel, its octets as they are */
-	cfg.clear = p->clear == DMBRIDGE_CLEAR_YES ||
-		(p->clear == DMBRIDGE_CLEAR_AUTO && c->digital);
 	if (cfg.clear)
 		log_line(h, call, DMBRIDGE_INFO,
 			 "a clear 64 kbit/s channel (%s)",
@@ -862,20 +867,20 @@ int dmbridge_call_start(struct dmbridge_call *c,
 		log_line(h, call, DMBRIDGE_WARNING, "no modem");
 		return -1;
 	}
-	if (*p->voice && p->voice_dsvd) {
+	if (voice && p->voice_dsvd) {
 		v.state = voice_state;
 		v.mic = voice_mic;
 		v.ear = voice_ear;
 		v.arg = c;
-		/* (the caller asks for voice; we never do) */
-		v.wait = 1;
+		/* (the far end asks for voice; we do only with open) */
+		v.wait = p->voice_dsvd != DMBRIDGE_DSVD_OPENS;
 		dmodem_set_voice(c->d, &v);
 	}
 	drain(c->dte[1]);
 	if (orig) {
 		dmodem_dial(c->d, "");
 		c->deadline = (long long)p->timeout * DMODEM_RATE;
-	} else if (*p->voice && p->voice_listen > 0) {
+	} else if (voice && p->voice_listen > 0) {
 		/* a person or a modem: the line listened to first, the
 		   modem silent (dmbridge_call_step()) */
 		c->listen_until = (long long)p->voice_listen * DMODEM_RATE;
