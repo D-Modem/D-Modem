@@ -1102,8 +1102,17 @@ void dmbridge_call_end(struct dmbridge_call *c)
 	c->d = NULL;
 	if (c->fd >= 0)
 		close(c->fd);
-	if (c->connecting >= 0)
-		close(c->connecting);   /* (the thread closes what it gets) */
+	if (c->connecting >= 0) {
+		/* the connect thread's send fails from now on (it closes
+		   what it got); a descriptor it has sent already is ours */
+		int fd;
+		shutdown(c->connecting, SHUT_RD);
+		while (recv(c->connecting, &fd, sizeof(fd), MSG_DONTWAIT) ==
+		       (ssize_t)sizeof(fd))
+			if (fd >= 0)
+				close(fd);
+		close(c->connecting);
+	}
 	if (c->pid > 0)
 		end_exec(c->h, c->pid);
 	if (c->dte[0] >= 0)
