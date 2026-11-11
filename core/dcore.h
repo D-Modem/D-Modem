@@ -243,6 +243,9 @@ enum class Result {
 	/* adaptive answer (+FAA=1): the call is a fax call, or a data
 	   call (with ATV0 88 and 89, D-Modem's own numbers) */
 	Fax = 9, Data = 10,
+	/* Rockwell's and US Robotics' voice mode (#CLS=8): the line taken
+	   for voice, where V.253's is OK (with ATV0 90, D-Modem's own) */
+	Vcon = 11,
 };
 
 /* the call (for programs that embed the modem) */
@@ -541,6 +544,8 @@ private:
 	s16 voice_set_device(u16 device);
 	void voice_unroute();
 	void voice_init();
+	/* the # voice settings' defaults (#VTD, #VSD, ...) */
+	void hash_init();
 	void fax_process(s16 *in, s16 *out, s32 n);
 	s16 fax_start();
 	void fax_engine_delete();
@@ -626,7 +631,11 @@ private:
 	s16 at_PMH(char *p, s16 *len);
 	s16 at_FCLASS(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);
-	s16 at_voice(char *p, s16 *len);
+	s16 at_voice(char *p, s16 *len, bool hash = false);
+	s16 at_hash(char *p, s16 *len);
+	s16 at_CLS(char *p, s16 *len);
+	s16 at_hash_vls(char *p, s16 *len);
+	s16 at_hash_format(char *p, s16 *len);
 	s16 at_VSM(char *p, s16 *len);
 	s16 at_fax(char *p, s16 *len);
 	s16 at_F34(char *p, s16 *len);
@@ -853,6 +862,16 @@ private:
 	/* +VSM's silence compression sensitivity and expansion, taken
 	   and kept (the modem compresses no silence) */
 	u8 vsm_scs_ = 0, vsm_sel_ = 0;
+	/* Rockwell's and US Robotics' voice dialect: voice mode entered
+	   with #CLS=8 (its results VCON, its #VTS in 100 ms); #VLS's
+	   device; #VSM=129, US Robotics' ADPCM (G.726) for #VBS=4; the
+	   kept # settings (hash_settings in at.cpp); the next OK a VCON
+	   (the line taken: ATA, ATD, #VLS) */
+	bool hash_voice_ = false;
+	u16 hash_vls_ = 0;
+	bool usr_adpcm_ = false;
+	u32 hash_kept_[8][3] = {};
+	bool vcon_next_ = false;
 	bool local_phone_off_ = false;  /* local_phone() */
 	/* the elements of a +VTS string, played in turn: a DTMF digit
 	   (its character), a hook flash, or a tone of f1 and f2 Hz (0:

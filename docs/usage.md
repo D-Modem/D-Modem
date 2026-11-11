@@ -120,6 +120,14 @@ modulated signals (CI, V.21 preamble, the modulations in use) and the far
 end's hook flash are logged and not played: the audio carries the
 former, and no signal of a line stands for the latter.
 
+Software written for Rockwell's or US Robotics' voice modems (Unimodem/V,
+vgetty's `Rockwell` and `US_Robotics` drivers) can use their older
+commands instead: `AT#CLS=8`, `#VLS`, `#VBS`/`#VSR` (8-bit or 16-bit
+linear), `#VSM=129` (US Robotics' ADPCM, G.726 at 32 kbit/s, also
+`AT+VSM=133`), `#VTX`, `#VRX` and `#VTS`, with `VCON` for the line taken.
+Rockwell's own 2-, 3- and 4-bit ADPCM and US Robotics' GSM are not
+there: give vgetty `rec_compression 8`.
+
 ## Receiving calls
 With `-L` (listen), dmodemd registers with the SIP server, so that calls to the account reach the modem: it reports `RING`, and answers on `ATA` or by itself after `ATS0=n` rings.  With `AT+VCID=1` (or `AT#CID=1`) the caller's number and name follow the first `RING` as caller ID does on a phone line (`DATE`, `TIME`, `NMBR`, `NAME`), taken from the INVITE's P-Asserted-Identity or From header; a withheld caller (the Privacy header, an anonymous URI) is `P`.  Dialing works as before in this mode.
 

@@ -3,8 +3,8 @@
  * Copyright (C) 2026 D-Modem Authors
  *
  *    voice_codec_test.cpp - +VSM's sample formats (voice_codec.h): the
- *                           table, each coding's octets, IMA ADPCM on a
- *                           tone
+ *                           table, each coding's octets, IMA ADPCM and
+ *                           G.726 on a tone
  *
  */
 
@@ -53,9 +53,10 @@ std::vector<s16> tone(double f, int n, double a = 8000)
 /* the formats: V.253's numbers and Conexant's, the rates each runs at */
 TEST(VoiceCodec, Formats)
 {
-	for (unsigned cml : { 0u, 1u, 4u, 5u, 128u, 129u, 130u, 131u, 132u })
+	for (unsigned cml : { 0u, 1u, 4u, 5u, 128u, 129u, 130u, 131u, 132u,
+			       133u })
 		EXPECT_NE(format(cml), nullptr) << cml;
-	for (unsigned cml : { 2u, 3u, 6u, 7u, 8u, 127u, 133u, 255u })
+	for (unsigned cml : { 2u, 3u, 6u, 7u, 8u, 127u, 134u, 255u })
 		EXPECT_EQ(format(cml), nullptr) << cml;
 	EXPECT_TRUE(runs_at(1, 8000));
 	EXPECT_TRUE(runs_at(129, 11025));
@@ -141,4 +142,43 @@ TEST(VoiceCodec, ImaAdpcm)
 		p += static_cast<double>(in[i]) * in[i];
 	}
 	EXPECT_GT(10 * log10(p / e), 20.0);     /* SNR, dB */
+}
+
+/* G.726 at 32 kbit/s (US Robotics' ADPCM): packed as IMA ADPCM, the
+   first sample in the low nibble; a tone and speech-like noise come
+   back with G.721's quality once the quantizer has adapted, and the
+   decoder's state follows the encoder's (two decoders agree) */
+TEST(VoiceCodec, G726)
+{
+	Codec c;
+	u8 b[2];
+
+	c.reset(G726_32);
+	EXPECT_EQ(c.encode(4000, b), 0);
+	ASSERT_EQ(c.encode(4000, b), 1);
+	EXPECT_EQ(b[0] & 0x08, 0);              /* both up */
+	EXPECT_EQ(b[0] & 0x80, 0);
+	c.reset(G726_32);
+	EXPECT_EQ(c.encode(-4000, b), 0);
+	ASSERT_EQ(c.encode(-4000, b), 1);
+	EXPECT_NE(b[0] & 0x08, 0);              /* the first down */
+
+	for (int f : { 300, 1000, 2500 }) {
+		std::vector<s16> in = tone(f, 8000, 8000), out =
+			round_trip(G726_32, in);
+		ASSERT_EQ(out.size(), in.size());
+		double e = 0, p = 0;
+		for (size_t i = 800; i < in.size(); i++) {
+			double d = out[i] - in[i];
+			e += d * d;
+			p += static_cast<double>(in[i]) * in[i];
+		}
+		EXPECT_GT(10 * log10(p / e), 25.0) << f << " Hz";
+	}
+	const Format *g = format(133);
+	ASSERT_NE(g, nullptr);
+	EXPECT_EQ(g->coding, G726_32);
+	EXPECT_EQ(g->bps, 4);
+	EXPECT_TRUE(runs_at(133, 8000));
+	EXPECT_FALSE(runs_at(133, 7200));
 }

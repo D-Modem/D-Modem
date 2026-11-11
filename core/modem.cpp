@@ -136,7 +136,7 @@ static const char *const cause_text[] = {
 /* the result codes in words, by Result */
 static const char *const result_text[] = {
 	"OK", "CONNECT", "RING", "NO CARRIER", "ERROR", "", "NO DIALTONE",
-	"BUSY", "NO ANSWER", "FAX", "DATA",
+	"BUSY", "NO ANSWER", "FAX", "DATA", "VCON",
 };
 
 /* CONNECT's number with ATV0 for a rate (Smart Link's ST56 numbers,
@@ -463,6 +463,9 @@ void Modem::voice_init()
 	voice_info_.ring_never = 10;
 	voice_events_ = 0;
 	vsm_scs_ = vsm_sel_ = 0;
+	hash_vls_ = 0;
+	usr_adpcm_ = false;
+	hash_init();
 }
 
 /*
@@ -2500,6 +2503,12 @@ void Modem::report(Result r)
 
 	/* (a configurator on the DTE's screen ends first: a RING) */
 	conf_close();
+	/* #CLS=8's line taken (ATA, ATD, #VLS=1): VCON for its OK */
+	if (vcon_next_ && r != Result::Ring) {
+		if (r == Result::Ok)
+			r = Result::Vcon;
+		vcon_next_ = false;
+	}
 	logf("result: %s\n", result_text[static_cast<s16>(r)]);
 	if (sregs_[SREG_QUIET])
 		return;
@@ -2579,7 +2588,7 @@ void Modem::report(Result r)
 		line = result_text[static_cast<s16>(r)];
 	} else {
 		line = dec(r == Result::Fax ? 88 : r == Result::Data ? 89 :
-			   static_cast<s16>(r));
+			   r == Result::Vcon ? 90 : static_cast<s16>(r));
 	}
 	puts(line);
 	crlf();
