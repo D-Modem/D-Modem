@@ -927,8 +927,10 @@ bool UsbLine::start_isos()
 	   transfers each way in flight, ISO_TRANSFERS by default; each is
 	   ISO_PACKETS ms of the codec's samples queued at the device, so a
 	   modem thread that stalls longer than all of them (a far echo's
-	   search) leaves its FIFO dry) */
-	iso_transfers_ = ISO_TRANSFERS;
+	   search) leaves its FIFO dry; a SmartUSB56 10 by default, 50 ms:
+	   with 3 a phone's stalls left its FIFO dry in V.34's training and
+	   the remote gave up on it) */
+	iso_transfers_ = chip_->smart() ? 10 : ISO_TRANSFERS;
 	if (const char *e = getenv("DMODEM_USB_TRANSFERS")) {
 		long v = strtol(e, nullptr, 10);
 		if (v >= ISO_TRANSFERS && v <= MAX_TRANSFERS)
