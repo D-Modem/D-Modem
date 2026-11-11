@@ -423,10 +423,72 @@
       {{\large\bfseries D-Modem}\quad{\color{dmmuted}AT Command Reference}\\[4pt]
        {\small\color{dmmuted}Version \dmversion\ \textbullet\ \dmdate}\\[10pt]
        {\small\color{dmmuted}\texttt{https://github.com/D-Modem/D-Modem}}\\[4pt]
-       {\footnotesize\color{dmmuted}Copyright \textcopyright\ the D-Modem
-        Authors.  Available under the GNU Affero General Public License,
-        version~3 only, or a commercial licence.}};
+       {\footnotesize\color{dmmuted}\dmccby{dmmuted}\quad Copyright
+        \textcopyright\ the D-Modem Authors.  This document is licensed
+        under CC BY 4.0.  The D-Modem software is available under the
+        GNU AGPL, version~3 only, or a commercial licence.}};
   \end{tikzpicture}}
+% the Creative Commons BY badge, drawn (no image file), in colour #1
+% (inside a cover's node, a picture in it takes the node's anchor, text
+% width and text colour: its nodes set their own)
+\tikzset{dmccby/.style={#1,text=#1,anchor=center,text width={},
+  align=none,inner sep=0pt}}
+\newcommand{\dmccby}[1]{\tikz[baseline=-0.6ex]{%
+  \draw[#1,line width=0.5pt,rounded corners=1.5pt] (0,-0.17) rectangle
+    (0.9,0.17);
+  \draw[#1,line width=0.5pt] (0.17,0) circle (0.12);
+  \node[dmccby=#1,font=\fontsize{4.5}{5}\selectfont\bfseries]
+    at (0.17,0) {cc};
+  \node[dmccby=#1,font=\fontsize{5.5}{6}\selectfont\bfseries]
+    at (0.6,0) {BY};}}
+% the licence page, first after the cover: the document's licence
+% (CC BY 4.0), the software's, no warranty, the network, names
+\newcommand{\licencepage}{%
+  \clearpage\thispagestyle{empty}%
+  \pdfbookmark[1]{Licence}{licence}%
+  {\small\setlength{\parskip}{5pt}\setlength{\parindent}{0pt}%
+  {\large\bfseries Licence}\par\medskip
+  Copyright \textcopyright\ 2026 the D-Modem Authors.\par
+  \textbf{This document} is licensed under the Creative Commons Attribution
+  4.0 International License (CC BY 4.0)\,\dmccby{dmnavy}.  You may
+  copy, redistribute, adapt and build on it, for any purpose and
+  commercially too, as long as you give appropriate credit (``D-Modem AT
+  Command Reference, \textcopyright\ the D-Modem Authors''), link to the
+  licence, and say whether you made changes.  The licence's full text is
+  at \url{https://creativecommons.org/licenses/by/4.0/}.\par
+  \textbf{The D-Modem software} this document describes is licensed
+  separately, under either of two licences:
+  \begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The GNU Affero General Public License, version 3 only}
+    (AGPL-3.0-only).  Its full text is in the file
+    \texttt{COPYING} in D-Modem's source, and at
+    \url{https://www.gnu.org/licenses/agpl-3.0.html}.
+  \item \textbf{A commercial licence from the D-Modem Authors}, for uses
+    that cannot meet the AGPL's terms.  Contact Neo-Desktop
+    (\url{https://github.com/Neo-Desktop}) for its terms.
+  \end{itemize}
+  \texttt{LICENSING.md} in the source says which licence covers each
+  part, and lists the third-party parts that keep their own licences.
+  The document's CC BY 4.0 licence does not extend to the
+  software.\par
+  \textbf{No warranty.} D-Modem and this document are provided ``as is'',
+  without warranty of any kind, express or implied, including warranties
+  of merchantability and fitness for a particular purpose, to the extent
+  the law allows.  See sections 15 and 16 of the AGPL, and section 5
+  of CC BY 4.0.  The commercial licence states its own terms.\par
+  \textbf{Connecting to a network.} You are responsible for any approval
+  your country requires before equipment is connected to a telephone
+  network, and for complying with the rules of the networks you call
+  over.  D-Modem's country settings (\texttt{AT+GCI}) only match the
+  line behaviour expected in a country.  They are not a type
+  approval.\par
+  \textbf{Names.} ITU-T Recommendations are cited by number for
+  reference.  Hayes, Rockwell, U.S.~Robotics and all other product and
+  company names, logos and trademarks mentioned in this document are
+  trademarks or registered trademarks of their respective owners, and any
+  material of theirs that is quoted or referred to remains their
+  copyright.  They are used only to describe compatibility.  No
+  endorsement by, or affiliation with, their owners is implied.\par}}
 
 \begin{document}
 % the title page: the band down past the middle of the page, faint
@@ -460,7 +522,15 @@
     at ([xshift=1.5cm,yshift=-13.2cm]current page.north west)
     {{\large\bfseries Version \dmversion}\\[4pt]
      {\normalsize\color{dmgrey}\docedition}};
+  \node[anchor=south west,text=dmgrey,align=left,inner sep=0pt,
+    text width=11.8cm]
+    at ([xshift=1.5cm,yshift=1.4cm]current page.south west)
+    {\footnotesize\dmccby{dmgrey}\quad Copyright \textcopyright\ the
+     D-Modem Authors.  This document is licensed under CC BY 4.0.
+     The D-Modem software is available under the GNU AGPL,
+     version~3 only, or a commercial licence.};
 \end{tikzpicture}
+\licencepage
 \frontmatter
 
 \pdfbookmark[1]{\contentsname}{contents}
