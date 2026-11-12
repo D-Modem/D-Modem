@@ -177,6 +177,13 @@ const s16 EV_ENDS = 3;
 /* start()'s copy of the configuration */
 Config cfg_;
 std::string user_, password_, domain_, dns_;
+
+/* no account (sip.h's Config::user): no registration, From anonymous,
+   only URIs dialled */
+bool anonymous_()
+{
+	return user_.empty() || domain_.empty();
+}
 s32 log_level = 4;
 
 dmd::LineRecorder rec;
@@ -2207,8 +2214,12 @@ struct Request {
 };
 
 /* SIP's credentials, ours whatever the realm */
-int on_auth(char **user, char **pass, const char *, void *)
+int on_auth(char **user, char **pass, const char *, void *arg)
 {
+	/* (arg: a URI dialled at another host than the account's, which
+	   our credentials are not for) */
+	if (anonymous_() || arg)
+		return EACCES;  /* no credentials: the 401 or 407 stands */
 	int err = str_dup(user, user_.c_str());
 	return err ? err : str_dup(pass, password_.c_str());
 }
@@ -2833,7 +2844,9 @@ void on_invite(const struct sip_msg *msg, void *)
 	c->ip = ip_of(&msg->dst);
 	cur = c;
 	err = sipsess_accept(&c->sess, sock_, msg, 180, "Ringing",
-			     REL100_DISABLED, user_.c_str(), "application/sdp",
+			     REL100_DISABLED,
+			     anonymous_() ? "dmodem" : user_.c_str(),
+			     "application/sdp",
 			     nullptr, on_auth, nullptr, false, on_offer,
 			     on_answer, on_estab, nullptr, nullptr, on_close, c,
 			     nullptr);
@@ -2856,11 +2869,45 @@ void on_invite(const struct sip_msg *msg, void *)
    closed) */
 void do_dial(const std::string &number, int fd)
 {
-	std::string uri = "sip:" + dial_user(number.c_str()) + "@" + domain_;
-	std::string from = "sip:" + user_ + "@" + domain_;
+	std::string uri = dial_uri(number.c_str(), domain_);
+	bool anon = anonymous_();
+	/* (RFC 3323's anonymous From, when there is no account) */
+	std::string from = anon ? "sip:anonymous@anonymous.invalid" :
+				  "sip:" + user_ + "@" + domain_;
+	const char *contact = anon ? "dmodem" : user_.c_str();
+	/* a URI of its own at another host: the account's credentials
+	   kept from it */
+	bool foreign = false;
+	if (!anon && dial_is_uri(number.c_str())) {
+		size_t at = uri.rfind('@');
+		std::string host = uri.substr(at == std::string::npos ?
+					      uri.find(':') + 1 : at + 1);
+		host = host.substr(0, host.find_first_of(";>?"));
+		std::string dom = domain_;
+		for (char &ch : host)
+			ch = static_cast<char>(
+				tolower(static_cast<unsigned char>(ch)));
+		for (char &ch : dom)
+			ch = static_cast<char>(
+				tolower(static_cast<unsigned char>(ch)));
+		/* (host[:port], 5060 when it has none) */
+		for (std::string *h : {&host, &dom}) {
+			size_t colon = h->rfind(':');
+			if (colon == std::string::npos ||
+			    h->find(']', colon) != std::string::npos)
+				*h += ":5060";
+		}
+		foreign = host != dom;
+	}
 	Call *c;
 	int err;
 
+	if (uri.empty()) {
+		say(1, "dial %s: no SIP account, so only a SIP URI "
+		    "(sip:user@host) can be dialled", number.c_str());
+		dmd::fd_close(fd);
+		return;
+	}
 	if (cur) {
 		say(3, "dial %s: the line is busy", number.c_str());
 		dmd::fd_close(fd);
@@ -2872,9 +2919,12 @@ void do_dial(const std::string &number, int fd)
 		return;
 	}
 	say(3, "call %" PRIu32 ": dialling %s", c->serial, uri.c_str());
-	err = sipsess_connect(&c->sess, sock_, uri.c_str(), nullptr,
-			      from.c_str(), user_.c_str(), nullptr, 0,
-			      "application/sdp", on_auth, nullptr, false,
+	err = sipsess_connect(&c->sess, sock_, uri.c_str(),
+			      anon ? "Anonymous" : nullptr, from.c_str(),
+			      contact, nullptr, 0,
+			      "application/sdp", on_auth,
+			      foreign ? reinterpret_cast<void *>(1) : nullptr,
+			      false,
 			      nullptr, on_desc, on_offer, on_answer,
 			      on_progress, on_estab, nullptr, nullptr,
 			      on_close, c, nullptr);
@@ -3143,7 +3193,10 @@ bool init()
 		say(1, "SIP: %s", strerror(err));
 		return false;
 	}
-	if (cfg_.listen) {
+	if (cfg_.listen && anonymous_()) {
+		say(3, "anonymous: no registration; calls taken at our "
+		    "address, port %" PRId32, cfg_.port);
+	} else if (cfg_.listen) {
 		std::string uri = "sip:" + domain_;
 		std::string aor = "sip:" + user_ + "@" + domain_;
 		err = sipreg_alloc(&reg_, sip_, uri.c_str(), aor.c_str(),
@@ -3223,16 +3276,23 @@ bool config_from_env(Config &cfg, bool listen)
 	size_t at = s.rfind('@');
 	size_t colon = s.find(':');
 
+	/* SIP_LOGIN=anonymous: no account (sip.h) */
+	if (login && dcore::same_nocase(login, "anonymous")) {
+		user.clear();
+		password.clear();
+		domain.clear();
+	}
 	/* the password may have an @: the domain is after the last */
-	if (!login || at == std::string::npos ||
+	else if (!login || at == std::string::npos ||
 	    colon == std::string::npos || colon > at) {
 		fprintf(stderr, "error: SIP_LOGIN=user:password@domain "
-			"needed\n");
+			"(or SIP_LOGIN=anonymous) needed\n");
 		return false;
+	} else {
+		user = s.substr(0, colon);
+		password = s.substr(colon + 1, at - colon - 1);
+		domain = s.substr(at + 1);
 	}
-	user = s.substr(0, colon);
-	password = s.substr(colon + 1, at - colon - 1);
-	domain = s.substr(at + 1);
 	record = rec_base && *rec_base ? rec_base : "";
 
 	cfg.user = user.c_str();

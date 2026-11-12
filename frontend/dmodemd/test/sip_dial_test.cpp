@@ -39,6 +39,44 @@ TEST(DialUser, Names)
 	EXPECT_EQ(sip::dial_user("bbs-1"), "bbs-1");
 }
 
+/* a dial string that is a SIP URI of its own: sip:, sips:, user@host;
+   V.250's @ (digits after it) is not one */
+TEST(DialUri, Uris)
+{
+	EXPECT_TRUE(sip::dial_is_uri("sip:alice@example.com"));
+	EXPECT_TRUE(sip::dial_is_uri("SIP:alice@example.com"));
+	EXPECT_TRUE(sip::dial_is_uri("sips:bbs@example.com:5061"));
+	EXPECT_TRUE(sip::dial_is_uri("sip:192.0.2.7"));
+	EXPECT_TRUE(sip::dial_is_uri("alice@example.com"));
+	EXPECT_TRUE(sip::dial_is_uri("5551000@192.0.2.7"));
+	EXPECT_TRUE(sip::dial_is_uri("5551000@[2001:db8::1]"));
+	EXPECT_TRUE(sip::dial_is_uri("alice@example.com;"));
+	EXPECT_FALSE(sip::dial_is_uri("5551000"));
+	EXPECT_FALSE(sip::dial_is_uri("9@5551000"));
+	EXPECT_FALSE(sip::dial_is_uri("alice"));
+	EXPECT_FALSE(sip::dial_is_uri("@example.com"));
+	EXPECT_FALSE(sip::dial_is_uri("alice@"));
+	EXPECT_FALSE(sip::dial_is_uri(""));
+	EXPECT_FALSE(sip::dial_is_uri(nullptr));
+}
+
+/* the URI dialled: the dial string's own, else at the account's domain;
+   none for a number with no account (anonymous) */
+TEST(DialUri, Built)
+{
+	EXPECT_EQ(sip::dial_uri("sip:alice@example.com", ""),
+		  "sip:alice@example.com");
+	EXPECT_EQ(sip::dial_uri(" sip:alice@example.com;", "pbx.example"),
+		  "sip:alice@example.com");
+	EXPECT_EQ(sip::dial_uri("bbs@192.0.2.7", ""), "sip:bbs@192.0.2.7");
+	EXPECT_EQ(sip::dial_uri("T555-1000", "pbx.example"),
+		  "sip:5551000@pbx.example");
+	EXPECT_EQ(sip::dial_uri("alice", "pbx.example"),
+		  "sip:alice@pbx.example");
+	EXPECT_EQ(sip::dial_uri("5551000", ""), "");
+	EXPECT_EQ(sip::dial_uri("", "pbx.example"), "");
+}
+
 /* a caller's number (the URI's user part, a tel: URI's number, without
    parameters or escapes) and name (the display name without quotes) */
 TEST(CallerOf, NumberAndName)

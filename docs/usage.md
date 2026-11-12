@@ -6,6 +6,8 @@ Configure the SIP account in the SIP_LOGIN environment variable (`SIP_PORT` sets
 
     # export SIP_LOGIN=username:password@sip.example.com
 
+With no account, `SIP_LOGIN=anonymous` runs an anonymous user agent: nothing is registered, calls go out from `"Anonymous" <sip:anonymous@anonymous.invalid>` (RFC 3323) to a SIP URI dialled as it is (see [Dialing](#dialing)), and with `-L` calls that come straight to the machine's address and `SIP_PORT` are answered.  A far end that asks for credentials (401, 407) gets none, and the call ends.
+
 `SIP_LOG_LEVEL` sets how much the SIP user agent logs (a number, 4 by
 default; higher logs more), and `DMODEM_REC=<base>` records each call's
 line audio as it passes the modem, what it receives in `<base>.rx` and
@@ -134,7 +136,7 @@ With `-L` (listen), dmodemd registers with the SIP server, so that calls to the 
     # ./build/dmodemd/dmodemd -L
 
 ## Dialing
-Finally, dial the number of the target system.  The call goes to `sip:<number>@<domain>` of `SIP_LOGIN`, the number's digits (and `*`, `#`, `+`): `ATDT`, `ATDP`, pauses (`,`, `W`) and the dashes and brackets of a formatted number are left out, and anything else is taken as a SIP user's name (`ATDalice`).  Below shows a connection to the NIST atomic clock: 
+Finally, dial the number of the target system.  The call goes to `sip:<number>@<domain>` of `SIP_LOGIN`, the number's digits (and `*`, `#`, `+`): `ATDT`, `ATDP`, pauses (`,`, `W`) and the dashes and brackets of a formatted number are left out, and anything else is taken as a SIP user's name (`ATDalice`).  A SIP URI is dialled as it is, with or without an account: `ATDsip:bbs@example.com`, `ATDsips:bbs@example.com:5061`, or `user@host` (`ATDbbs@203.0.113.7`, `ATD5551000@pbx.example.com`), a host's name or address after the last `@` (V.250's `@`, wait for quiet answer, has digits after it).  An account's credentials go only to its own host: a URI at another host that asks for them gets none.  A number with no account (`SIP_LOGIN=anonymous`) has no domain to go to, and ends at once in `NO CARRIER`.  A trailing `;` (`ATDsip:bbs@example.com;`) is a voice call's, as for a number.  (`ATDL` redials, so a user whose name starts with an L is dialled with its `sip:`, `ATDsip:lisa@example.com`.)  Below shows a connection to the NIST atomic clock: 
 
     atd303-494-4774 
     CONNECT 9600 
