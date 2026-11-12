@@ -19,6 +19,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include <stdarg.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -451,6 +452,45 @@ static int tcp_done(int pending, int *fd)
 		return 1;
 	}
 	return 0;
+}
+
+/* a connect the call no longer waits for: its result read when it comes
+   (the thread always sends one) and the connection closed, then the
+   socket; in a thread, as the connect can take its timeout */
+static void *tcp_reap(void *arg)
+{
+	int pending = (int)(intptr_t)arg, fd = -1;
+	ssize_t r;
+
+	fcntl(pending, F_SETFL, fcntl(pending, F_GETFL) & ~O_NONBLOCK);
+	while ((r = recv(pending, &fd, sizeof(fd), MSG_WAITALL)) < 0 &&
+	       errno == EINTR)
+		;
+	if (r == (ssize_t)sizeof(fd) && fd >= 0)
+		close(fd);
+	close(pending);
+	return NULL;
+}
+
+/* the connect under way abandoned: tcp_reap() closes what it brings.
+   (Not shutdown(SHUT_RD) for the thread's send to fail: on macOS and
+   the BSDs that send still succeeds, its descriptor then lost, and the
+   server kept a connection open for ever.) */
+static void tcp_abandon(const struct dmbridge_host *h, int pending)
+{
+	int fd;
+
+	if (recv(pending, &fd, sizeof(fd), MSG_DONTWAIT) ==
+	    (ssize_t)sizeof(fd)) {
+		if (fd >= 0)
+			close(fd);
+		close(pending);
+		return;
+	}
+	if (start_thread(h, tcp_reap, (void *)(intptr_t)pending)) {
+		/* (no thread: the result waited for here) */
+		tcp_reap((void *)(intptr_t)pending);
+	}
 }
 
 /*
@@ -1102,17 +1142,8 @@ void dmbridge_call_end(struct dmbridge_call *c)
 	c->d = NULL;
 	if (c->fd >= 0)
 		close(c->fd);
-	if (c->connecting >= 0) {
-		/* the connect thread's send fails from now on (it closes
-		   what it got); a descriptor it has sent already is ours */
-		int fd;
-		shutdown(c->connecting, SHUT_RD);
-		while (recv(c->connecting, &fd, sizeof(fd), MSG_DONTWAIT) ==
-		       (ssize_t)sizeof(fd))
-			if (fd >= 0)
-				close(fd);
-		close(c->connecting);
-	}
+	if (c->connecting >= 0)
+		tcp_abandon(c->h, c->connecting);
 	if (c->pid > 0)
 		end_exec(c->h, c->pid);
 	if (c->dte[0] >= 0)

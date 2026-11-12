@@ -374,6 +374,9 @@ jobs:
 
   macos:
     runs-on: macos-latest
+    # (a hung test otherwise holds the runner, and main's next runs
+    # behind it, for six hours)
+    timeout-minutes: 60
     env:
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
