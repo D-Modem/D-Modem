@@ -298,7 +298,7 @@ if(NOT WIN32)
 		${PROJECT_SOURCE_DIR}/frontend/dmodemd)
 	target_compile_definitions(dmodem_bridge_test PRIVATE _GNU_SOURCE)
 	target_link_libraries(dmodem_bridge_test PRIVATE dmodem)
-	dmodem_gtest(dmodem_bridge_test LABELS quick)
+	dmodem_gtest(dmodem_bridge_test LABELS quick TIMEOUT 300)
 endif()
 # a point of sale transaction (SDLC frames through V.80) over V.29
 # FastPOS and V.22 fast connect
