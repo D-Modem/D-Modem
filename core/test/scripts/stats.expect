@@ -134,6 +134,7 @@
   22380 A: Precoding (Tx/Rx)                   ON/OFF\r\n
   22380 A: Shaping (Tx/Rx)                     ON/ON\r\n
   22380 A: Estimated SNR (dB)                  29.0\r\n
+  22380 A: Estimated Noise Level (dBm0)        -43.8\r\n
   22380 A: Receive Signal Power Level (dBm0)   -14.8\r\n
   22380 A: Transmit Signal Power Level (dBm0)  -15.0\r\n
   22380 A: Round Trip Delay (ms)               37\r\n
@@ -265,6 +266,7 @@
   26220 B: Precoding (Tx/Rx)                   OFF/ON\r\n
   26220 B: Shaping (Tx/Rx)                     ON/ON\r\n
   26220 B: Estimated SNR (dB)                  48.7\r\n
+  26220 B: Estimated Noise Level (dBm0)        -63.8\r\n
   26220 B: Receive Signal Power Level (dBm0)   -15.0\r\n
   26220 B: Transmit Signal Power Level (dBm0)  -15.1\r\n
   26220 B: Round Trip Delay (ms)               37\r\n
@@ -450,6 +452,7 @@
   41060 A: Protocol Negotiation Result         MNP\r\n
   41060 A: Data Compression Result             MNP5\r\n
   41060 A: Estimated SNR (dB)                  44.3\r\n
+  41060 A: Estimated Noise Level (dBm0)        -63.0\r\n
   41060 A: Receive Signal Power Level (dBm0)   -18.6\r\n
   41060 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
   41060 A: Carrier Frequency Offset (Hz)       0.0\r\n
@@ -589,6 +592,7 @@
   54700 A: Protocol Negotiation Result         NONE\r\n
   54700 A: Data Compression Result             NONE\r\n
   54700 A: Estimated SNR (dB)                  46.3\r\n
+  54700 A: Estimated Noise Level (dBm0)        -65.1\r\n
   54700 A: Receive Signal Power Level (dBm0)   -18.8\r\n
   54700 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
   54700 A: Carrier Frequency Offset (Hz)       0.0\r\n
@@ -634,6 +638,7 @@
   54700 B: Protocol Negotiation Result         NONE\r\n
   54700 B: Data Compression Result             NONE\r\n
   54700 B: Estimated SNR (dB)                  42.1\r\n
+  54700 B: Estimated Noise Level (dBm0)        -59.9\r\n
   54700 B: Receive Signal Power Level (dBm0)   -17.8\r\n
   54700 B: Transmit Signal Power Level (dBm0)  -17.8\r\n
   54700 B: Carrier Frequency Offset (Hz)       0.0\r\n

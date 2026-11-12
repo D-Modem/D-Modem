@@ -2693,9 +2693,14 @@ void Modem::call_stats()
 		if (d.have & DP_STATS_SNR)
 			decibels("Estimated SNR (dB)", d.snr);
 		if (stats_.samples) {
-			decibels("Receive Signal Power Level (dBm0)",
-				 10 * log10(stats_.rx_pow / stats_.samples /
-					    DP_DBM0_POWER + 1e-9));
+			double rx = 10 * log10(stats_.rx_pow / stats_.samples /
+					       DP_DBM0_POWER + 1e-9);
+			/* the noise the SNR implies, as Lucent's modems
+			   give it: the received power less the SNR */
+			if (d.have & DP_STATS_SNR)
+				decibels("Estimated Noise Level (dBm0)",
+					 rx - d.snr);
+			decibels("Receive Signal Power Level (dBm0)", rx);
 			decibels("Transmit Signal Power Level (dBm0)",
 				 10 * log10(stats_.tx_pow / stats_.samples /
 					    DP_DBM0_POWER + 1e-9));
