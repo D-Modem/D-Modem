@@ -409,6 +409,13 @@ if(DMODEM_DMODEMD)
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_clearmode PROPERTIES LABELS quick
 			TIMEOUT 60)
+		# SIP URIs dialled as they are, and the anonymous user
+		# agent (SIP_LOGIN=anonymous), against the script's own peer
+		dmodem_add_test(dmodemd_anonymous ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/anonymous_test.py
+			$<TARGET_FILE:dmodemd>)
+		set_tests_properties(dmodemd_anonymous PROPERTIES LABELS quick
+			TIMEOUT 60)
 		# V.150.1's modem relay (SIP_V150=yes) both ways, the
 		# script's own SIP peer and gateway (SSE, SPRT)
 		dmodem_add_test(dmodemd_v150 ${Python3_EXECUTABLE}

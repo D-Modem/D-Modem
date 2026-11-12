@@ -32,7 +32,14 @@
 namespace sip {
 
 struct Config {
-	const char *user;       /* account (SIP_LOGIN=user:password@domain) */
+	const char *user;       /* account (SIP_LOGIN=user:password@domain);
+				   NULL or "" with no domain: anonymous,
+				   no account (SIP_LOGIN=anonymous): no
+				   registration, calls dialled to a URI
+				   (ATDsip:alice@example.com) from
+				   "Anonymous" <sip:anonymous@
+				   anonymous.invalid>, and calls taken
+				   that come straight to our address */
 	const char *password;
 	const char *domain;     /* host[:port] of the registrar / proxy */
 	s32 port;               /* local UDP port (5060) */
@@ -113,6 +120,15 @@ void dial(const char *number, int audio_fd);
    DTMF characters only (5551000, 95551000); anything else is a name
    (ATDalice), taken as it is (sip_dial.cpp) */
 std::string dial_user(const char *dial);
+/* dial string dial is a SIP URI of its own, dialled as it is with no
+   account's domain: sip:alice@example.com, sips:..., or user@host
+   (ATDalice@bbs.example.com, ATD5551000@192.0.2.7), a host's name or
+   address after the last @ (V.250's @ has digits after it) */
+bool dial_is_uri(const char *dial);
+/* the URI that dial string dial calls: its own (dial_is_uri()), else
+   dial_user()'s user at the account's domain; "" when it has none (an
+   anonymous user agent, no account: only a URI can be dialled) */
+std::string dial_uri(const char *dial, const std::string &domain);
 void answer(int audio_fd);
 
 /* the caller of a call that rings, as caller ID gives it: a number and

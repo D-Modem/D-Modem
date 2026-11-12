@@ -36,6 +36,61 @@ std::string dial_user(const char *dial)
 	return user;
 }
 
+/* see sip.h */
+bool dial_is_uri(const char *dial)
+{
+	if (!dial)
+		return false;
+	std::string d = dial;
+	size_t a = d.find_first_not_of(' ');
+	if (a == std::string::npos)
+		return false;
+	d.erase(0, a);
+	std::string head = d.substr(0, 5);
+	for (char &c : head)
+		c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+	if (head.compare(0, 4, "sip:") == 0 || head == "sips:")
+		return true;
+	/* user@host: a host's name or address after the last @ (V.250's
+	   @, wait for quiet answer, has dialled digits after it) */
+	size_t at = d.rfind('@');
+	if (at == std::string::npos || at == 0 || at + 1 >= d.size())
+		return false;
+	bool named = false;
+	for (size_t i = at + 1; i < d.size(); i++) {
+		unsigned char c = static_cast<unsigned char>(d[i]);
+		if (c == ';' && i + 1 == d.size())
+			break;          /* ATD...; (voice) */
+		if (isalpha(c) || c == '.' || c == ':' || c == '[')
+			named = true;
+		else if (!isdigit(c) && c != '-' && c != ']' && c != '_')
+			return false;
+	}
+	return named;
+}
+
+/* see sip.h */
+std::string dial_uri(const char *dial, const std::string &domain)
+{
+	if (dial_is_uri(dial)) {
+		std::string d = dial;
+		size_t a = d.find_first_not_of(' ');
+		size_t b = d.find_last_not_of(" ;");
+		d = d.substr(a, b - a + 1);
+		std::string head = d.substr(0, 5);
+		for (char &c : head)
+			c = static_cast<char>(
+				tolower(static_cast<unsigned char>(c)));
+		if (head.compare(0, 4, "sip:") != 0 && head != "sips:")
+			d = "sip:" + d;
+		return d;
+	}
+	std::string user = dial_user(dial);
+	if (domain.empty() || user.empty())
+		return std::string();
+	return "sip:" + user + "@" + domain;
+}
+
 namespace {
 
 /* s in lower case */
