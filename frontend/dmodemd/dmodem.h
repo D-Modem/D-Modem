@@ -76,6 +76,13 @@ struct dmodem_status {
 					   silent), came before a
 					   connection: hand the call to a
 					   dmodem_fax */
+	/* who is calling, from what came before a connection (since the
+	   last dmodem_listen()): ms of a person's speech, and a calling
+	   modem's tone (V.25's CT, V.8's CI, V.8 bis's CRe) heard (1); a
+	   program that answers silently first (the modem on hook) tells a
+	   person from a modem by them */
+	int32_t caller_speech_ms;
+	int caller_modem;
 };
 
 struct dmodem;
@@ -119,12 +126,39 @@ int  dmodem_poll_dte(struct dmodem *d);
 void dmodem_status(struct dmodem *d, struct dmodem_status *s);
 /* hang up (as ATH) */
 void dmodem_hangup(struct dmodem *d);
+/* dmodem_status()'s caller_speech_ms and caller_modem from nothing
+   again */
+void dmodem_listen(struct dmodem *d);
 /* a ring of a call to the modem, for a program whose line tells it of
    calls (a PBX's, a CAPI controller's test): RING to the DTE (+CRING
    with AT+CRC=1), and the answer with S0; again for each ring (every 6
    s or so).  first: the call's first ring, its caller's number (NULL:
    withheld) reported after it with AT+VCID=1 */
 void dmodem_ring(struct dmodem *d, int first, const char *number);
+/* DSVD's (V.70) and ASVD's (V.61) voice: the program's path for the
+   voice channel the other modem opens beside the data.  state(arg, 1)
+   when the channel opens and (arg, 0) when it closes; mic() gives up to
+   n samples (16 bit, 8000 a second) of our speech, how many it had;
+   ear() takes n samples of the far end's.  All three are called from
+   dmodem_process().  Set it before the call (+DSVD=1 or +ASVD=1 then
+   accepts a voice channel); NULL: none, as at the start, and a voice
+   channel the other modem asks for is refused */
+struct dmodem_voice {
+	void (*state)(void *arg, int on);
+	int (*mic)(void *arg, int16_t *pcm, int n);
+	void (*ear)(void *arg, const int16_t *pcm, int n);
+	void *arg;
+	/* 1: a DSVD voice channel only when the other modem opens one
+	   (V.76 has the answerer open the channels: it would open the
+	   voice channel at the start otherwise) */
+	int wait;
+};
+void dmodem_set_voice(struct dmodem *d, const struct dmodem_voice *v);
+/* a DSVD call's voice channel closed from our end (state(arg, 0)
+   follows), the data going on; nothing on another call (ASVD's voice
+   has no closing of its own) */
+void dmodem_voice_close(struct dmodem *d);
+
 /* the log: 0 errors only, higher for more */
 void dmodem_set_debug(int level);
 /* the log lines go to fn (NULL: stderr); for all the modems, set it

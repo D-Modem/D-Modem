@@ -526,6 +526,12 @@ jobs:
               BBS_LINGER=1 timeout 300 frontend/asterisk/test/run.sh AT+MS=34 bbsexec
               ANSWER='AT+MS=132\;A' EXPECT='ANSWERER .*DMODEMRATE=14400/14400' timeout 300 frontend/asterisk/test/run.sh
               ARI=1 timeout 300 frontend/asterisk/test/run.sh
+              timeout 300 frontend/asterisk/test/voice.sh ivr
+              timeout 300 frontend/asterisk/test/voice.sh wait
+              timeout 300 frontend/asterisk/test/voice.sh dsvd
+              ARI=1 timeout 300 frontend/asterisk/test/voice.sh ivr
+              ARI=1 timeout 300 frontend/asterisk/test/voice.sh wait
+              ARI=1 timeout 300 frontend/asterisk/test/voice.sh dsvd
           # SIP (D-Modem); CODEC=clearmode: an ISDN data call in RFC 4040's
           # CLEARMODE (codec_clearmode), X.75 on D-Modem's clear channel
           - shard: sip
@@ -672,6 +678,9 @@ jobs:
               timeout 300 frontend/freeswitch/test/sip.sh
               INCOMING=1 timeout 300 frontend/freeswitch/test/sip.sh
               BBS_CONNECT_DELAY=15 timeout 300 frontend/freeswitch/test/sip.sh
+              timeout 300 frontend/freeswitch/test/voice.sh ivr
+              timeout 300 frontend/freeswitch/test/voice.sh wait
+              timeout 300 frontend/freeswitch/test/voice.sh dsvd
           # (about seven minutes each)
           - shard: fax
             run: timeout 1200 frontend/freeswitch/test/fax.sh

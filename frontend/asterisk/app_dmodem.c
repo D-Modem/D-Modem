@@ -37,8 +37,10 @@
 #include "asterisk/format_cache.h"
 #include "asterisk/transcap.h"
 #include "asterisk/frame.h"
+#include "asterisk/indications.h"
 #include "asterisk/localtime.h"
 #include "asterisk/logger.h"
+#include "asterisk/max_forwards.h"
 #include "asterisk/module.h"
 #include "asterisk/pbx.h"
 #include "asterisk/paths.h"
@@ -86,6 +88,15 @@
 			reads and writes its octets in that format.  The link layer on
 			the clear channel is X.75 unless the profile's
 			<literal>init</literal> says otherwise (<literal>AT+B2</literal>).</para>
+			<para>With <literal>voice=exten@context</literal> in the profile,
+			the modem listens first (<literal>voice_listen</literal> seconds):
+			a person calling is put through to that extension (an IVR, a
+			voicemail box), and the modem answers once the extension's leg
+			ends, or once the caller's modem asks for data with its calling
+			tone.  With <literal>voice_dsvd=yes</literal> (or
+			<literal>open</literal>), a DSVD (V.70) or ASVD (V.61) modem's
+			voice channel goes to the extension while the data goes on, and
+			closes when the extension hangs up.</para>
 			<para>Sets these variables on exit:</para>
 			<variablelist>
 				<variable name="DMODEMSTATUS">
@@ -616,6 +627,206 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	return res;
 }
 
+/*
+ *    voice: a person's call to an extension, a DSVD or ASVD caller's voice
+ */
+
+/* the profile's voice extension (exten@context, or exten in the
+   channel's own context) called on a Local channel, the caller's caller
+   ID and variables its, fmt its audio both ways; NULL if not */
+static struct ast_channel *ext_call(struct ast_channel *chan,
+				    const char *voice, struct ast_format *fmt)
+{
+	struct ast_format_cap *cap;
+	struct ast_channel *ext;
+	char tech[64] = "Local", dest[256];
+	const char *slash = strchr(voice, '/');
+	int cause = 0;
+
+	if (slash && (size_t)(slash - voice) < sizeof(tech)) {
+		/* TECH/data: that channel, e.g. PJSIP/7000 */
+		snprintf(tech, sizeof(tech), "%.*s", (int)(slash - voice),
+			 voice);
+		snprintf(dest, sizeof(dest), "%s", slash + 1);
+	} else if (strchr(voice, '@'))
+		snprintf(dest, sizeof(dest), "%s/n", voice);
+	else
+		snprintf(dest, sizeof(dest), "%s@%s/n", voice,
+			 ast_channel_context(chan));
+	cap = ast_format_cap_alloc(AST_FORMAT_CAP_FLAG_DEFAULT);
+	if (!cap)
+		return NULL;
+	ast_format_cap_append(cap, fmt, 0);
+	ext = ast_request(tech, cap, NULL, chan, dest, &cause);
+	ao2_ref(cap, -1);
+	if (!ext) {
+		ast_log(LOG_WARNING, "%s: no %s/%s: %s\n",
+			ast_channel_name(chan), tech, dest,
+			ast_cause2str(cause));
+		return NULL;
+	}
+	ast_channel_lock_both(chan, ext);
+	ast_connected_line_copy_from_caller(ast_channel_connected(ext),
+					    ast_channel_caller(chan));
+	ast_channel_inherit_variables(chan, ext);
+	ast_channel_datastore_inherit(chan, ext);
+	ast_max_forwards_decrement(ext);
+	ast_channel_language_set(ext, ast_channel_language(chan));
+	ast_channel_req_accountcodes(ext, chan,
+				     AST_CHANNEL_REQUESTOR_BRIDGE_PEER);
+	ast_channel_unlock(ext);
+	ast_channel_unlock(chan);
+	if (ast_set_read_format(ext, fmt) || ast_set_write_format(ext, fmt) ||
+	    ast_call(ext, dest, 0)) {
+		ast_log(LOG_WARNING, "%s: cannot call %s/%s\n",
+			ast_channel_name(chan), tech, dest);
+		ast_hangup(ext);
+		return NULL;
+	}
+	ast_verb(3, "%s: DModem: voice to %s/%s\n", ast_channel_name(chan),
+		 tech, dest);
+	return ext;
+}
+
+/* the extension's ringing in band on the (answered) channel, or not */
+static void ext_ringback(struct ast_channel *chan, int on)
+{
+	struct ast_tone_zone_sound *ts;
+
+	if (!on) {
+		ast_playtones_stop(chan);
+		return;
+	}
+	ts = ast_get_indication_tone(ast_channel_zone(chan), "ring");
+	if (ts) {
+		ast_playtones_start(chan, 0, ts->data, 0);
+		ast_tone_zone_sound_unref(ts);
+	}
+}
+
+/* a frame of the extension's leg (NULL: it is gone): 0 while it goes on,
+   -1 when it has ended (hung up, its dialplan over); voice frames to the
+   channel when to_chan, the ringing as tones */
+static int ext_frame(struct ast_channel *chan, struct ast_frame *f,
+		     int to_chan)
+{
+	if (!f)
+		return -1;
+	if (f->frametype == AST_FRAME_CONTROL) {
+		switch (f->subclass.integer) {
+		case AST_CONTROL_HANGUP:
+			return -1;
+		case AST_CONTROL_RINGING:
+			if (to_chan)
+				ext_ringback(chan, 1);
+			break;
+		case AST_CONTROL_ANSWER:
+		case AST_CONTROL_PROGRESS:
+			if (to_chan)
+				ext_ringback(chan, 0);
+			break;
+		case AST_CONTROL_BUSY:
+		case AST_CONTROL_CONGESTION:
+			return -1;
+		default:
+			break;
+		}
+	} else if (f->frametype == AST_FRAME_VOICE && to_chan) {
+		ext_ringback(chan, 0);
+		ast_write(chan, f);
+	}
+	return 0;
+}
+
+/* the voice leg: a person on the line through to the extension (ext),
+   its audio back, the caller's DTMF too, the caller's audio also through
+   the modem for its calling tones; 1 when the leg is over (the extension
+   gone, or the caller's modem asking for data: the leg hung up), -1 if
+   the channel hung up */
+static int voice_leg(struct ast_channel *chan, struct ast_channel *ext,
+		     struct dmbridge_call *c, struct ast_format *fmt)
+{
+	unsigned char scratch[LINE_MAX_SAMPLES];
+	int res = 0;
+
+	while (!res) {
+		struct ast_channel *cs[2] = { chan, ext }, *w;
+		struct ast_frame *f;
+		int ms = IDLE_MS;
+
+		w = ast_waitfor_n(cs, 2, &ms);
+		if (!w) {
+			if (ms < 0)
+				res = -1;
+			continue;
+		}
+		f = ast_read(w);
+		if (w == ext) {
+			if (ext_frame(chan, f, 1) < 0) {
+				ast_verb(3, "%s: DModem: the extension's leg "
+					 "ended: the modem answers\n",
+					 ast_channel_name(chan));
+				res = 1;
+			}
+		} else if (!f) {
+			res = -1;
+		} else if (f->frametype == AST_FRAME_VOICE &&
+			   f->datalen > 0 &&
+			   ast_format_cmp(f->subclass.format, fmt) ==
+			   AST_FORMAT_CMP_EQUAL) {
+			int n = f->datalen < LINE_MAX_SAMPLES ? f->datalen :
+				LINE_MAX_SAMPLES;
+			ast_write(ext, f);
+			dmodem_process_g711(c->d, f->data.ptr, scratch, n);
+			/* (the bridge's log says why) */
+			if (dmbridge_voice_step(c, n) == DMBRIDGE_DATA)
+				res = 1;
+		} else if (f->frametype == AST_FRAME_DTMF_BEGIN ||
+			   f->frametype == AST_FRAME_DTMF_END) {
+			ast_write(ext, f);
+		}
+		if (f)
+			ast_frfree(f);
+	}
+	ext_ringback(chan, 0);
+	ast_hangup(ext);
+	return res;
+}
+
+/* the DSVD leg's frame (ext's, f; NULL: it is gone): its speech to the
+   voice channel; -1 when the leg has ended */
+static int dsvd_frame(struct ast_channel *chan, struct dmbridge_call *c,
+		      struct ast_frame *f)
+{
+	if (ext_frame(chan, f, 0) < 0)
+		return -1;
+	if (f->frametype == AST_FRAME_VOICE && f->datalen > 0 &&
+	    ast_format_cmp(f->subclass.format, ast_format_slin) ==
+	    AST_FORMAT_CMP_EQUAL)
+		dmbridge_dsvd_mic(c, f->data.ptr, f->datalen / 2);
+	return 0;
+}
+
+/* the voice channel's far end speech, n samples (the line's), to the
+   DSVD leg */
+static void dsvd_ear(struct ast_channel *ext, struct dmbridge_call *c, int n)
+{
+	int16_t pcm[AST_FRIENDLY_OFFSET / 2 + LINE_MAX_SAMPLES];
+	struct ast_frame wf = { .frametype = AST_FRAME_VOICE, .src = app };
+
+	if (n > LINE_MAX_SAMPLES)
+		n = LINE_MAX_SAMPLES;
+	n = dmbridge_dsvd_ear(c, pcm + AST_FRIENDLY_OFFSET / 2, n);
+	if (n <= 0)
+		return;
+	wf.subclass.format = ast_format_slin;
+	wf.data.ptr = pcm + AST_FRIENDLY_OFFSET / 2;
+	wf.offset = AST_FRIENDLY_OFFSET;
+	wf.datalen = n * 2;
+	wf.samples = n;
+	ast_write(ext, &wf);
+}
+
 /* peer_address: the address the call came from by SIP ("" if not SIP or
    not known), for the BBS to place a caller with no caller ID */
 static void peer_address(struct ast_channel *chan, char *buf, size_t len)
@@ -644,6 +855,7 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 	struct dmbridge_call c;
 	enum dmodem_law law;
 	struct ast_format *fmt, *clear_fmt = NULL;
+	struct ast_channel *ext = NULL; /* a DSVD voice channel's leg */
 	char *parse, name[64];
 	const char *status = "ERROR";
 	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];
@@ -697,16 +909,30 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 
 	for (;;) {
 		const struct ast_control_t38_parameters *tp;
+		struct ast_channel *cs[2] = { chan, ext }, *w;
 		struct ast_frame *f;
 		enum dmbridge_event ev;
-		int n = ast_waitfor(chan, IDLE_MS), k = 0;
+		int n = IDLE_MS, k = 0;
 
-		if (n < 0) {
+		w = ast_waitfor_n(cs, ext ? 2 : 1, &n);
+		if (!w && n < 0) {
 			c.status = "HANGUP";
 			res = -1;
 			break;
 		}
-		if (n == 0) {
+		if (w && w == ext) {
+			/* the DSVD leg: its speech to the voice channel */
+			f = ast_read(ext);
+			if (dsvd_frame(chan, &c, f) < 0) {
+				ast_hangup(ext);
+				ext = NULL;
+				dmbridge_dsvd_close(&c);
+			}
+			if (f)
+				ast_frfree(f);
+			continue;
+		}
+		if (!w) {
 			/* nothing from the line (no clock on the channel,
 			   silence suppression): keep the modem going on
 			   silence */
@@ -749,7 +975,40 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			ast_frfree(f);
 		}
 
+		if (ext && k)
+			dsvd_ear(ext, &c, k);
 		ev = t38_fax ? DMBRIDGE_FAX : dmbridge_call_step(&c, k);
+		if (ev == DMBRIDGE_VOICE) {
+			/* a person: to the extension until its leg is over,
+			   then the modem answers */
+			struct ast_channel *leg = ext_call(chan, p.voice, fmt);
+			int r = leg ? voice_leg(chan, leg, &c, fmt) : 1;
+			if (r < 0) {
+				c.status = "HANGUP";
+				res = -1;
+				break;
+			}
+			if (dmbridge_call_resume(&c))
+				break;
+			continue;
+		}
+		if (ev == DMBRIDGE_DSVD_OPEN && !ext) {
+			/* a DSVD or ASVD caller's voice channel: its leg to
+			   the extension, linear audio both ways */
+			ext = ext_call(chan, p.voice, ast_format_slin);
+			if (!ext)
+				dmbridge_dsvd_close(&c);
+			continue;
+		}
+		if (ev == DMBRIDGE_DSVD_CLOSED) {
+			if (ext) {
+				ast_verb(3, "%s: DModem: the voice channel "
+					 "closed\n", name);
+				ast_hangup(ext);
+				ext = NULL;
+			}
+			continue;
+		}
 		if (ev == DMBRIDGE_CONNECTED) {
 			char connected[24], peer[128];
 			const char *env[] = {
@@ -790,6 +1049,8 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 		if (ev == DMBRIDGE_END)
 			break;
 	}
+	if (ext)
+		ast_hangup(ext);
 	dmbridge_call_hangup(&c);
 	status = c.status;
 	ast_verb(3, "%s: DModem done: %s\n", name, status);

@@ -8,7 +8,8 @@
  *                         sample rates the modem runs at, and what is
  *                         neither (speech, noise, a dial tone's level
  *                         too low); the answer tones; a calling fax
- *                         machine's CNG (CngDetect)
+ *                         machine's CNG (CngDetect); who is calling
+ *                         (CallerListen)
  *
  */
 #include <gtest/gtest.h>
@@ -327,5 +328,64 @@ TEST(CallTone, Cng)
 			  0u);
 		EXPECT_EQ(cng_bursts(1100, 1200, 3500, 4000, -15, 0, srate),
 			  0u);
+	}
+}
+
+/* who is calling, from what the caller sends to a line answered
+   silently (CallerListen): speech-like sound is speech and no modem; V.25's
+   CT, V.8's CI (V.21's low channel, bits at 300 bit/s), V.8 bis's CRe
+   and CNG (in V.21's band) are a machine and no speech; quiet is
+   neither */
+TEST(CallTone, CallerListen)
+{
+	const int srate = 8000;
+	auto run = [](CallerListen &d, double ms,
+		      double (*x)(double t, long i)) {
+		for (long i = 0; i < (long)(ms * srate / 1000); i++)
+			d.sample((float)x((double)i / srate, i));
+	};
+	CallerListen d;
+
+	/* a second of a voice: a pitch moving 100 to 250 Hz, its
+	   harmonics to 3.5 kHz */
+	d.init(srate);
+	run(d, 1000, [](double t, long) {
+		static double ph;
+		double pitch = 175 + 75 * sin(2 * M_PI * t / 0.8), x = 0;
+		ph += 2 * M_PI * pitch / srate;
+		for (int k = 1; k * pitch < 3500; k++)
+			x += 3000.0 / k * sin(k * ph);
+		return x;
+	});
+	EXPECT_GE(d.speech_ms(), 700);
+	EXPECT_FALSE(d.modem);
+
+	struct { const char *name; double (*x)(double, long); bool modem; }
+	cases[] = {
+		{ "CT", [](double t, long) {
+			return fmod(t, 2.5) < 0.6 ?
+				6000 * sin(2 * M_PI * 1300 * t) : 0; }, true },
+		{ "CI", [](double t, long i) {
+			/* bits of a fixed pattern at 300 bit/s, FSK */
+			static double ph;
+			int bit = (0x5A3C >> ((i / 27) % 16)) & 1;
+			ph += 2 * M_PI * (bit ? 980 : 1180) / srate;
+			(void)t;
+			return 6000 * sin(ph); }, true },
+		{ "CRe", [](double t, long) {
+			return 4000 * (sin(2 * M_PI * 1375 * t) +
+				       sin(2 * M_PI * 2002 * t)); }, true },
+		{ "CNG", [](double t, long) {
+			return fmod(t, 3.5) < 0.5 ?
+				6000 * sin(2 * M_PI * 1100 * t) : 0; }, true },
+		{ "quiet", [](double t, long) {
+			return 20 * sin(2 * M_PI * 300 * t); }, false },
+	};
+	for (const auto &c : cases) {
+		SCOPED_TRACE(c.name);
+		d.init(srate);
+		run(d, 3000, c.x);
+		EXPECT_EQ(d.modem, c.modem);
+		EXPECT_LT(d.speech_ms(), 100);
 	}
 }

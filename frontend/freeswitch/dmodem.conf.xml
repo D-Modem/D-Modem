@@ -65,6 +65,9 @@
       <param name="timeout" value="60"/>      seconds for the modems to connect, then for the server (tcp, unix) to take the call
       <param name="jitter-buffer" value="60"/> ms, as in settings
       <param name="fax" value="true"/>        and the fax settings, as above
+      <param name="voice" value="7000@default"/>  a person calling goes to this extension (exten@context, exten in the call's context, or a dial string with a /); the modem answers when its leg ends or the caller's modem asks for data
+      <param name="voice-listen" value="3"/>  seconds listening for a person first (0: none looked for)
+      <param name="voice-dsvd" value="false"/> true: a DSVD (V.70) or ASVD (V.61) modem's voice channel to the voice extension while the data goes on; open: ours opens it at once
     </profile>
     -->
   </profiles>

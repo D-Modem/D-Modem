@@ -31,6 +31,12 @@ For the generated files, the code and the tests, see
   server, a program such as `pppd`, or a login. Each profile appears as
   a destination ("D-Modem") you can pick in inbound routes, IVRs, time
   conditions and so on.
+- **People and modems on one number.** Give a profile a **Voice
+  extension** (an IVR, a voicemail box or a phone). A person calling the
+  profile is put through to it; a modem is answered as usual. The modem
+  answers once the extension hangs up or the caller's modem asks for
+  data. **Modem voice** sends a DSVD or ASVD modem's voice channel to
+  the same extension while the data goes on.
 - **Fax.** The fax destination (on unless you turn it off in the
   settings) has D-Modem answer as a fax machine and save faxes to a
   folder.

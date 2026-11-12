@@ -39,6 +39,8 @@ struct dmodem final : public dcore::Host {
 	/* a calling fax machine's CNG (on the line before the modem's
 	   own detector, which runs as it answers) */
 	dsp::CngDetect cng;
+	/* a person's speech or a calling modem's tones, as cng */
+	dsp::CallerListen listen;
 
 	/* the line is the caller's: nothing to start */
 	s16 start(dcore::Modem &) override { return 0; }
@@ -64,6 +66,31 @@ struct dmodem final : public dcore::Host {
 	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
 		int ret = dmd::fd_write(dte_fd, buf, n);
 		return ret < 0 ? 0 : ret;
+	}
+	/* the program's voice path (dmodem_set_voice()); state NULL: none */
+	struct dmodem_voice voice = {};
+	/* (see voice) */
+	bool dsvd_voice(dcore::Modem &) override {
+		return voice.state != nullptr;
+	}
+	/* (see voice) */
+	bool dsvd_voice_opens(dcore::Modem &) override { return !voice.wait; }
+	/* (see voice) */
+	void dsvd_voice_state(dcore::Modem &, bool on) override {
+		if (voice.state)
+			voice.state(voice.arg, on ? 1 : 0);
+	}
+	/* (see voice) */
+	s16 dsvd_mic(dcore::Modem &, s16 *pcm, s16 n) override {
+		if (!voice.mic)
+			return 0;
+		int k = voice.mic(voice.arg, pcm, n);
+		return static_cast<s16>(k < 0 ? 0 : k > n ? n : k);
+	}
+	/* (see voice) */
+	void dsvd_ear(dcore::Modem &, const s16 *pcm, s16 n) override {
+		if (voice.ear)
+			voice.ear(voice.arg, pcm, n);
 	}
 	/* the clock: the samples processed so far, in ms */
 	u64 now_ms() override {
@@ -136,6 +163,7 @@ struct dmodem *dmodem_create_rate(const struct dmodem_config *cfg,
 	   the core finds out a V.8 fax call too */
 	o.fax_detect = true;
 	d->cng.init(rate);
+	d->listen.init(rate);
 	d->m = new dcore::Modem(*d, o);
 	if (!d->m->ok()) {
 		delete d->m;
@@ -193,6 +221,25 @@ int dmodem_dial(struct dmodem *d, const char *number)
 	return dmodem_command(d, cmd);
 }
 
+/* see dmodem.h */
+void dmodem_set_voice(struct dmodem *d, const struct dmodem_voice *v)
+{
+	d->voice = v ? *v : dmodem_voice{};
+}
+
+/* see dmodem.h */
+void dmodem_voice_close(struct dmodem *d)
+{
+	d->m->dsvd_close_voice();
+	d->m->poll();
+}
+
+/* see dmodem.h */
+void dmodem_listen(struct dmodem *d)
+{
+	d->listen.init(d->rate);
+}
+
 /* ATH: the core's hangup(), its events run */
 void dmodem_hangup(struct dmodem *d)
 {
@@ -209,9 +256,9 @@ void dmodem_ring(struct dmodem *d, int first, const char *number)
 	d->m->poll();
 }
 
-/* n samples of the line: the CNG detector while not online, the core
-   (silence out while on hook); the clock moves by n samples and the
-   timers run */
+/* n samples of the line: the CNG and caller detectors while not
+   online, the core (silence out while on hook); the clock moves by n
+   samples and the timers run */
 void dmodem_process(struct dmodem *d, const s16 *in, s16 *out,
 		    s32 n)
 {
@@ -220,8 +267,10 @@ void dmodem_process(struct dmodem *d, const s16 *in, s16 *out,
 	/* a fax machine calling, while there is no connection */
 	if (m->link_state() != dcore::LinkState::Online) {
 		s32 i;
-		for (i = 0; i < n; i++)
+		for (i = 0; i < n; i++) {
 			d->cng.sample(in[i]);
+			d->listen.sample(in[i]);
+		}
 	}
 	if (m->started())
 		m->process(in, out, n);
@@ -291,4 +340,6 @@ void dmodem_status(struct dmodem *d, struct dmodem_status *s)
 		s->tx_pending++;
 	s->fax_caller = d->cng.bursts > 0 || d->cng.run_ms() >= 400 ||
 		m->fax_caller();
+	s->caller_speech_ms = d->listen.speech_ms();
+	s->caller_modem = d->listen.modem;
 }

@@ -61,6 +61,14 @@ D-Modem for Asterisk. Nothing of D-Modem is loaded into Asterisk.
 If the connection to Asterisk drops, it reconnects a second later, and
 calls already in progress carry on.
 
+## People and modems on one number
+
+A profile with `voice = exten@context` (and `voice_listen`,
+`voice_dsvd`) works as it does with `DModem()`; see
+[asterisk.md](asterisk.md). The extension's leg joins the call's
+bridge while dmodem-ari listens to the caller alone, and leaves it when
+the extension hangs up or the caller's modem asks for data.
+
 ## Faxes
 
 `Stasis(dmodem,receivefax,<file>)` receives a fax and

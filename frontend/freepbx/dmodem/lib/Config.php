@@ -19,6 +19,9 @@ class Config
 	/* the clear 64 kbit/s channel (an ISDN data call): for a call with
 	   a digital bearer or in CLEARMODE (auto), every call, or none */
 	const CLEARS = ['auto', 'yes', 'no'];
+	/* a DSVD or ASVD modem's voice channel: none, to the extension,
+	   opened by ours at once */
+	const VOICE_DSVD = ['no', 'yes', 'open'];
 	/* what answers the calls: dmodem-ari beside Asterisk through Stasis()
 	   (the default), or app_dmodem's DModem() in an Asterisk that built
 	   it itself (LICENSING.md: a built app_dmodem isn't distributed) */
@@ -76,6 +79,9 @@ class Config
 			'answer' => '',
 			'timeout' => 60,
 			'fax' => true,
+			'voice' => '',
+			'voice_listen' => 3,
+			'voice_dsvd' => 'no',
 		];
 	}
 
@@ -179,6 +185,16 @@ class Config
 				$e[$k] = _('AT commands, starting with AT');
 		if (!self::intIn($p['timeout'], 5, 600))
 			$e['timeout'] = _('From 5 to 600 seconds');
+		if ($p['voice'] !== '' && !preg_match(
+			'/^[A-Za-z0-9_*#+.-]{1,40}(@[A-Za-z0-9_.-]{1,79})?$/',
+			$p['voice']))
+			$e['voice'] = _('An extension, or extension@context');
+		if (!self::intIn($p['voice_listen'], 0, 30))
+			$e['voice_listen'] = _('From 0 to 30 seconds');
+		if (!in_array($p['voice_dsvd'], self::VOICE_DSVD, true))
+			$e['voice_dsvd'] = _('no, yes or open');
+		if ($p['voice'] === '' && $p['voice_dsvd'] !== 'no')
+			$e['voice_dsvd'] = _('The voice channel goes to the voice extension: set one');
 		return $e;
 	}
 
@@ -232,6 +248,13 @@ class Config
 			return $v ? 'yes' : 'no';
 		$v = preg_replace('/[\x00\r\n]+/', ' ', (string)$v);
 		return str_replace(';', '\\;', $v);
+	}
+
+	/* a profile's voice extension as dmodem.conf has it: a bare
+	   extension is FreePBX's, in from-internal */
+	public static function voiceTarget($v)
+	{
+		return strpos($v, '@') === false ? $v . '@from-internal' : $v;
 	}
 
 	/* "name = value" */
@@ -298,6 +321,12 @@ class Config
 				$o[] = self::line('answer', $p['answer']);
 			$o[] = self::line('timeout', (int)$p['timeout']);
 			$o[] = self::line('fax', (bool)$p['fax']);
+			if ($p['voice'] !== '') {
+				$o[] = self::line('voice', self::voiceTarget($p['voice']));
+				$o[] = self::line('voice_listen', (int)$p['voice_listen']);
+				if ($p['voice_dsvd'] !== 'no')
+					$o[] = self::line('voice_dsvd', $p['voice_dsvd']);
+			}
 		}
 		return implode("\n", $o) . "\n";
 	}

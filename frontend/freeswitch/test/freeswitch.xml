@@ -27,6 +27,8 @@
         <load module="mod_dialplan_xml"/>
         <load module="mod_sofia"/>
         <load module="mod_spandsp"/>
+        <load module="mod_loopback"/>
+        <load module="mod_sndfile"/>
         <load module="mod_dmodem"/>
       </modules>
     </configuration>
@@ -132,6 +134,38 @@
           <param name="law" value="alaw"/>
           <param name="answer" value="$${bbs_answer}"/>
         </profile>
+        <!-- voice.sh: the BBS with a person's call to an extension
+             first (voice-ivr, voice-wait), or DSVD's voice channel to
+             one (voice-dsvd); the DSVD caller's voice channel opened by
+             it, to talk -->
+        <profile name="voice-ivr">
+          <param name="mode" value="tcp"/>
+          <param name="host" value="127.0.0.1"/>
+          <param name="port" value="2323"/>
+          <param name="voice" value="ivr@modem-in"/>
+          <param name="voice-listen" value="4"/>
+        </profile>
+        <profile name="voice-wait">
+          <param name="mode" value="tcp"/>
+          <param name="host" value="127.0.0.1"/>
+          <param name="port" value="2323"/>
+          <param name="voice" value="wait@modem-in"/>
+          <param name="voice-listen" value="4"/>
+        </profile>
+        <profile name="voice-dsvd">
+          <param name="mode" value="tcp"/>
+          <param name="host" value="127.0.0.1"/>
+          <param name="port" value="2323"/>
+          <param name="voice" value="hear@modem-in"/>
+          <param name="voice-dsvd" value="yes"/>
+        </profile>
+        <profile name="dsvdterm">
+          <param name="mode" value="tcp"/>
+          <param name="host" value="127.0.0.1"/>
+          <param name="port" value="2324"/>
+          <param name="voice" value="talk@modem-in"/>
+          <param name="voice-dsvd" value="open"/>
+        </profile>
         <!-- the same BBS as a program on the pty -->
         <profile name="bbsexec">
           <param name="mode" value="exec"/>
@@ -175,6 +209,65 @@
           <action application="set" data="fax_enable_t38=$${fax_t38}"/>
           <action application="answer"/>
           <action application="rxfax" data="$${run}/spandsp.tif"/>
+        </condition>
+      </extension>
+
+      <!-- voice.sh: the caller speaks, then its modem calls (with DSVD:
+           calls at once); the answerer's extensions: ivr records 2 s of
+           the caller and ends, wait stays, hear listens, talk speaks -->
+      <extension name="voice-answer">
+        <condition field="destination_number" expression="^voice-(\w+)$">
+          <action application="dmodem" data="voice-$1"/>
+          <action application="log" data="INFO ANSWERER dmodem_status=${dmodem_status} dmodem_rate=${dmodem_rate}"/>
+          <action application="hangup"/>
+        </condition>
+      </extension>
+      <extension name="speak-caller">
+        <condition field="destination_number" expression="^speak-caller$">
+          <action application="playback" data="$${run}/speech.wav"/>
+          <action application="dmodem" data="term,o"/>
+          <action application="hangup"/>
+        </condition>
+      </extension>
+      <extension name="dsvd-caller">
+        <condition field="destination_number" expression="^dsvd-caller$">
+          <action application="dmodem" data="dsvdterm,o"/>
+          <action application="hangup"/>
+        </condition>
+      </extension>
+      <extension name="ivr">
+        <condition field="destination_number" expression="^ivr$">
+          <action application="answer"/>
+          <action application="log" data="INFO IVR answered for ${caller_id_number}"/>
+          <action application="record" data="$${run}/heard.wav 2"/>
+          <action application="log" data="INFO IVR done"/>
+          <action application="hangup"/>
+        </condition>
+      </extension>
+      <extension name="ivr-wait">
+        <condition field="destination_number" expression="^wait$">
+          <action application="answer"/>
+          <action application="log" data="INFO IVR answered for ${caller_id_number}"/>
+          <action application="sleep" data="30000"/>
+          <action application="hangup"/>
+        </condition>
+      </extension>
+      <extension name="hear">
+        <condition field="destination_number" expression="^hear$">
+          <action application="answer"/>
+          <action application="log" data="INFO IVR answered for ${caller_id_number}"/>
+          <action application="record" data="$${run}/heard.wav 3"/>
+          <action application="log" data="INFO IVR done"/>
+          <action application="hangup"/>
+        </condition>
+      </extension>
+      <extension name="talk">
+        <condition field="destination_number" expression="^talk$">
+          <action application="answer"/>
+          <action application="log" data="INFO TALK answered"/>
+          <action application="playback" data="$${run}/speech.wav"/>
+          <action application="sleep" data="30000"/>
+          <action application="hangup"/>
         </condition>
       </extension>
 

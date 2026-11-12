@@ -136,7 +136,8 @@ same($p['fax'], true, 'fax checked: on');
 
 dmodem_post($m, ['action' => 'save_profile', 'original' => '', 'name' => 'ppp',
 		 'mode' => 'exec', 'command' => 'exec /usr/sbin/pppd nodetach noauth local; echo x',
-		 'law' => 'auto', 'timeout' => '45']);
+		 'law' => 'auto', 'timeout' => '45', 'voice' => '7000',
+		 'voice_dsvd' => 'open']);
 same($m->errors, [], 'profile ppp saved');
 
 $bad = [
@@ -153,6 +154,11 @@ $bad = [
 	'law' => ['law' => 'g729'],
 	'clear' => ['clear' => 'maybe'],
 	'description' => ['description' => "two\nlines"],
+	'voice' => ['voice' => '70 00'],
+	'voice ' => ['voice' => '7000@a b'],
+	'voice_listen' => ['voice' => '7000', 'voice_listen' => '31'],
+	'voice_dsvd' => ['voice' => '7000', 'voice_dsvd' => 'maybe'],
+	'voice_dsvd ' => ['voice_dsvd' => 'yes'],
 ];
 foreach ($bad as $field => $over) {
 	dmodem_post($m, array_merge($bbs, ['name' => 'other'], $over));
@@ -197,6 +203,9 @@ same($c['general']['fax_ecm'], 'no', 'fax_ecm no');
 same($c['general']['fax_ident'], '+1 555 0100', 'fax_ident');
 same($c['general']['fax_max_rate'], '9600', 'fax_max_rate');
 ok(!isset($c['ppp']['header']), 'exec has no header');
+same($c['ppp']['voice'] . ' ' . $c['ppp']['voice_listen'] . ' ' . $c['ppp']['voice_dsvd'],
+     '7000@from-internal 3 open', 'voice: a bare extension in from-internal, listen 3 s, DSVD open');
+ok(!isset($c['bbs']['voice']) && !isset($c['bbs']['voice_dsvd']), 'no voice extension: no voice lines');
 same($c['menu']['handoff'] . ' ' . $c['menu']['header'], 'yes yes', 'handoff and header on the unix profile');
 ok(!isset($c['bbs']['handoff']) && !isset($c['ppp']['handoff']), 'handoff only for unix');
 dmodem_post($m, ['action' => 'delete', 'profile' => 'menu']);

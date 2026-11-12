@@ -151,6 +151,11 @@ public:
 	   host's own audio; without one a DSVD call has its data channel
 	   alone, an ASVD call data alone */
 	virtual bool dsvd_voice(Modem &m) { (void)m; return false; }
+	/* with dsvd_voice(): a DSVD call's voice channel opened by us
+	   when V.76 has us open the channels (the initiator); false: only
+	   the other modem's is taken (a PBX that calls an extension when
+	   the caller asks for voice) */
+	virtual bool dsvd_voice_opens(Modem &m) { (void)m; return true; }
 	/* the voice channel is open (on): the voice path's audio from now
 	   on through dsvd_mic() and dsvd_ear(); or closed */
 	virtual void dsvd_voice_state(Modem &m, bool on) { (void)m; (void)on; }
@@ -336,6 +341,10 @@ public:
 	   fax call, T.38): with +FAA=1 the modem has gone over to class 1,
 	   with Options::fax_detect it waits for the program to take it */
 	bool fax_caller() const { return fax_caller_; }
+	/* a DSVD call's voice channel closed from our end (the program's
+	   voice path has gone), the data going on; nothing on another
+	   call */
+	void dsvd_close_voice();
 	/* the device reports an error */
 	void error();
 

@@ -210,7 +210,7 @@
 
 % one command: "name---title" in a tinted strip (a link target and a
 % bookmark under its section, as cmd:<key>), then what it does; on the
-% next page unless the strip and some of its text fit (straight after a
+% next page unless the strip and nine lines of its text fit (straight after a
 % heading, the heading keeps them with it)
 \newtcolorbox{cmdstrip}{enhanced,colback=dmtint,colframe=dmred,
   boxrule=0pt,leftrule=3pt,arc=0pt,outer arc=0pt,left=6pt,right=6pt,
@@ -219,7 +219,7 @@
 \makeatletter
 % \begin{command}{key}{name}{title}
 \newenvironment{command}[3]
-  {\par\dm@start{5\baselineskip}{\dm@stripskip}%
+  {\par\dm@start{9\baselineskip}{\dm@stripskip}%
    \begin{cmdstrip}\hypertarget{cmd:#1}{}\dm@mark{s}%
      \bookmark[dest={cmd:#1},rellevel=1,keeplevel]{#2 - #3}%
      \textbf{\color{dmredtext}\cmd{#2}\,---\,#3}\end{cmdstrip}\nopagebreak
@@ -423,10 +423,72 @@
       {{\large\bfseries D-Modem}\quad{\color{dmmuted}AT Command Reference}\\[4pt]
        {\small\color{dmmuted}Version \dmversion\ \textbullet\ \dmdate}\\[10pt]
        {\small\color{dmmuted}\texttt{https://github.com/D-Modem/D-Modem}}\\[4pt]
-       {\footnotesize\color{dmmuted}Copyright \textcopyright\ the D-Modem
-        Authors.  Available under the GNU Affero General Public License,
-        version~3 only, or a commercial licence.}};
+       {\footnotesize\color{dmmuted}\dmccby{dmmuted}\quad Copyright
+        \textcopyright\ the D-Modem Authors.  This document is licensed
+        under CC BY 4.0.  The D-Modem software is available under the
+        GNU AGPL, version~3 only, or a commercial licence.}};
   \end{tikzpicture}}
+% the Creative Commons BY badge, drawn (no image file), in colour #1
+% (inside a cover's node, a picture in it takes the node's anchor, text
+% width and text colour: its nodes set their own)
+\tikzset{dmccby/.style={#1,text=#1,anchor=center,text width={},
+  align=none,inner sep=0pt}}
+\newcommand{\dmccby}[1]{\tikz[baseline=-0.6ex]{%
+  \draw[#1,line width=0.5pt,rounded corners=1.5pt] (0,-0.17) rectangle
+    (0.9,0.17);
+  \draw[#1,line width=0.5pt] (0.17,0) circle (0.12);
+  \node[dmccby=#1,font=\fontsize{4.5}{5}\selectfont\bfseries]
+    at (0.17,0) {cc};
+  \node[dmccby=#1,font=\fontsize{5.5}{6}\selectfont\bfseries]
+    at (0.6,0) {BY};}}
+% the licence page, first after the cover: the document's licence
+% (CC BY 4.0), the software's, no warranty, the network, names
+\newcommand{\licencepage}{%
+  \clearpage\thispagestyle{empty}%
+  \pdfbookmark[1]{Licence}{licence}%
+  {\small\setlength{\parskip}{5pt}\setlength{\parindent}{0pt}%
+  {\large\bfseries Licence}\par\medskip
+  Copyright \textcopyright\ 2026 the D-Modem Authors.\par
+  \textbf{This document} is licensed under the Creative Commons Attribution
+  4.0 International License (CC BY 4.0)\,\dmccby{dmnavy}.  You may
+  copy, redistribute, adapt and build on it, for any purpose and
+  commercially too, as long as you give appropriate credit (``D-Modem AT
+  Command Reference, \textcopyright\ the D-Modem Authors''), link to the
+  licence, and say whether you made changes.  The licence's full text is
+  at \url{https://creativecommons.org/licenses/by/4.0/}.\par
+  \textbf{The D-Modem software} this document describes is licensed
+  separately, under either of two licences:
+  \begin{itemize}[nosep,leftmargin=1.2em]
+  \item \textbf{The GNU Affero General Public License, version 3 only}
+    (AGPL-3.0-only).  Its full text is in the file
+    \texttt{COPYING} in D-Modem's source, and at
+    \url{https://www.gnu.org/licenses/agpl-3.0.html}.
+  \item \textbf{A commercial licence from the D-Modem Authors}, for uses
+    that cannot meet the AGPL's terms.  Contact Neo-Desktop
+    (\url{https://github.com/Neo-Desktop}) for its terms.
+  \end{itemize}
+  \texttt{LICENSING.md} in the source says which licence covers each
+  part, and lists the third-party parts that keep their own licences.
+  The document's CC BY 4.0 licence does not extend to the
+  software.\par
+  \textbf{No warranty.} D-Modem and this document are provided ``as is'',
+  without warranty of any kind, express or implied, including warranties
+  of merchantability and fitness for a particular purpose, to the extent
+  the law allows.  See sections 15 and 16 of the AGPL, and section 5
+  of CC BY 4.0.  The commercial licence states its own terms.\par
+  \textbf{Connecting to a network.} You are responsible for any approval
+  your country requires before equipment is connected to a telephone
+  network, and for complying with the rules of the networks you call
+  over.  D-Modem's country settings (\texttt{AT+GCI}) only match the
+  line behaviour expected in a country.  They are not a type
+  approval.\par
+  \textbf{Names.} ITU-T Recommendations are cited by number for
+  reference.  Hayes, Rockwell, U.S.~Robotics and all other product and
+  company names, logos and trademarks mentioned in this document are
+  trademarks or registered trademarks of their respective owners, and any
+  material of theirs that is quoted or referred to remains their
+  copyright.  They are used only to describe compatibility.  No
+  endorsement by, or affiliation with, their owners is implied.\par}}
 
 \begin{document}
 % the title page: the band down past the middle of the page, faint
@@ -460,11 +522,20 @@
     at ([xshift=1.5cm,yshift=-13.2cm]current page.north west)
     {{\large\bfseries Version \dmversion}\\[4pt]
      {\normalsize\color{dmgrey}\docedition}};
+  \node[anchor=south west,text=dmgrey,align=left,inner sep=0pt,
+    text width=11.8cm]
+    at ([xshift=1.5cm,yshift=1.4cm]current page.south west)
+    {\footnotesize\dmccby{dmgrey}\quad Copyright \textcopyright\ the
+     D-Modem Authors.  This document is licensed under CC BY 4.0.
+     The D-Modem software is available under the GNU AGPL,
+     version~3 only, or a commercial licence.};
 \end{tikzpicture}
+\licencepage
 \frontmatter
 
 \pdfbookmark[1]{\contentsname}{contents}
-\tableofcontents
+% (a size down: the contents on one page)
+{\small\tableofcontents}
 
 \section{Introduction}
 
@@ -1769,12 +1840,13 @@ directions' rates (sent in its \std{MP} sequences).
 \item +MS=[\p{mod}][,[\p{automode}][,[\p{min}][,[\p{max}]]]]
 \item +MS? (gives \rc{92,1,300,56000}; \cmd{200,1,300,56000} at 48000
   Hz and more)
-\item +MS=? (gives \rc{(21,22,23,26,126,226,27,29,229,122,32,132,232,168,}\allowbreak
+\item +MS=?\\
+  gives \rc{(21,22,23,26,126,226,27,29,229,122,32,132,232,168,}\allowbreak
 \rc{128,61,33,34,103,18,45,110,5,12,212,201,202,208,}\allowbreak
 \rc{56,90,91,92,150,200,255,64),(0,1),}\allowbreak
 \rc{(300-56000),}\allowbreak
-\rc{(300-56000)}, the
-  modulations the program has)
+\rc{(300-56000)}:
+  the modulations the program has
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{Always.}
@@ -2753,6 +2825,8 @@ the connection before it.  A \std{PEP} call's is \rc{CONNECT FAST}, as a
 Telebit's, and its number is that of the rate it receives at.  Each
 rate's number is in the table below; a rate not in it is 1.
 
+% (the table whole, on one page)
+\needspace{17\baselineskip}
 \begin{vtable}{8}{|R{0.07\textwidth}|R{0.04\textwidth}|R{0.07\textwidth}|R{0.04\textwidth}|R{0.07\textwidth}|R{0.04\textwidth}|R{0.07\textwidth}|R{0.04\textwidth}|}{CONNECT Rates and Their Numbers}
   {\thd{Rate} & \thd{n} & \thd{Rate} & \thd{n} & \thd{Rate} & \thd{n} & \thd{Rate} & \thd{n}}
 75 & 80 & 24000 & 19 & 37333 & 51 & 50666 & 58 \\ \hline
@@ -3469,8 +3543,8 @@ the blanks in its quotes kept (\cmdl[plusMV18AM]{AT+MV18AM="GA"}): sent in the
 probes, and on answering with \cmdl[plusMV18S]{+MV18S}'s \p{msg}.  \cmdl[plusMV18AM]{+MV18P}
 (2 to 7) is kept: the probes go in the order above.
 \begin{syntax}
-\item +MV18AM="\p{text}", +MV18AM?, +MV18AM=? (gives
-  \rc{+MV18AM: (63)(32-126)})
+\item +MV18AM="\p{text}", +MV18AM?, +MV18AM=?\\
+  =? gives \rc{+MV18AM: (63)(32-126)}
 \item +MV18P=\p{n}, +MV18P? (gives \rc{+MV18P: 2}), +MV18P=?
 \end{syntax}
 \begin{results}
@@ -3488,8 +3562,8 @@ listens on these tones.  \cmdl[Z]{Z} sets the US \std{TTY}'s
 \begin{syntax}
 \item +MBAUDOT=[\p{rate}][,[\p{mark}][,[\p{space}][,[\p{code}]]]]
 \item +MBAUDOT? (gives \rc{+MBAUDOT: 45,1400,1800,0})
-\item +MBAUDOT=? (gives
-  \rc{+MBAUDOT: (45,50,75,100),(300-3400),(300-3400),(0,1)})
+\item +MBAUDOT=?\\
+  gives \rc{+MBAUDOT: (45,50,75,100),(300-3400),(300-3400),(0,1)}
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{Always.}

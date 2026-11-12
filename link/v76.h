@@ -69,6 +69,10 @@ public:
 	/* we hang up: the voice channel's DISC, then the data channel's
 	   (CloseLogicalChannel) */
 	void disconnect() override;
+	/* the voice channel closed by us, the data channel going on: its
+	   CloseLogicalChannel in a DISC (the owner hears); nothing if none
+	   is open or opening */
+	void close_voice();
 	/* (LinkProto) the data channel's, its LAPM's */
 	void push_rest() override;
 	/* (see push_rest()) */
@@ -81,8 +85,8 @@ public:
 	/* the voice channel's DLCI, -1 while it has none (or it is not
 	   open yet) */
 	s16 voice_dlci() const { return vstate_ == VState::Open ? vdlci_ : -1; }
-	/* bits have gone out (the voice channel's pace and its SABME's
-	   timer) */
+	/* bits have gone out (the voice channel's pace, its SABME's timer,
+	   the responder's wait for the initiator's) */
 	void clock(s32 bits);
 
 	/* the HDLC framer's side */
@@ -132,6 +136,9 @@ private:
 	s32 vrx_credit_ = 0;            /* and the far end's, in silence */
 	bool vsil_ = false;             /* the far end is silent */
 	s32 vtimer_ = 0;                /* our SABME's answer, in bits */
+	/* the responder's wait for the initiator's voice channel, in bits
+	   (0: none): then it opens one itself */
+	s32 vwait_ = 0;
 	s16 vtries_ = 0;
 	g729::Encoder enc_;
 	g729::Decoder dec_;

@@ -255,6 +255,11 @@ struct LinkOwner final : public dlink::Owner {
 	bool voice() override {
 		return m_.host_.dsvd_voice(m_) || m_.dsvd_path_;
 	}
+	/* (see voice()): the program's path always opens one */
+	bool voice_opens() override {
+		return !m_.host_.dsvd_voice(m_) ||
+			m_.host_.dsvd_voice_opens(m_);
+	}
 	/* (see voice()) */
 	void voice_state(bool on) override {
 		m_.logf("DSVD: voice channel %s\n", on ? "open" : "closed");
@@ -2093,6 +2098,13 @@ bool Modem::asvd_offered() const
 {
 	const u32 *a = kept("+ASVD");
 	return a && a[0] == 1 && v8bis_call();
+}
+
+/* see dcore.h */
+void Modem::dsvd_close_voice()
+{
+	if (link_)
+		link_->close_voice();
 }
 
 /* see dcore.h */
