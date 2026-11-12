@@ -88,6 +88,7 @@
   19720 A: Protocol Negotiation Result         LAPM\r\n
   19720 A: Data Compression Result             V42bis\r\n
   19720 A: Estimated SNR (dB)                  77.2\r\n
+  19720 A: Estimated Noise Level (dBm0)        -93.8\r\n
   19720 A: Receive Signal Power Level (dBm0)   -16.5\r\n
   19720 A: Transmit Signal Power Level (dBm0)  -16.9\r\n
   19720 A: Round Trip Delay (ms)               55\r\n

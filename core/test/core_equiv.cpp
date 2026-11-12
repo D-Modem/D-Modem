@@ -100,6 +100,7 @@ static bool measurement(const std::string &line, std::string *field,
 {
 	static const char *const fields[] = {
 		"Estimated SNR (dB)",
+		"Estimated Noise Level (dBm0)",
 		"Receive Signal Power Level (dBm0)",
 		"Transmit Signal Power Level (dBm0)",
 		"Near Echo Level (dBm0)",
