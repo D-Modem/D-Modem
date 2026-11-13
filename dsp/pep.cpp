@@ -61,17 +61,17 @@ const s32 WAIT_CALLER = 4800, WAIT_ANSWERER = 7200;
 const s32 BLK = 128, HOP = 32;
 const float TONES_ON = 0.6f, TONES_OFF = 0.35f;
 const s16 TONES_HITS = 3;
-/* micro turns (D-Modem's for Telebit's micro packets, 88 baud): the
-   gap, 24 ms of the tones, then short epochs of 64 samples and 26 of
-   guard (90, 88.9 baud): one of the comb (its timing), MS_DATA of one
-   packet; their carriers 125 Hz apart at odd multiples of 62.5 Hz,
-   312.5 to 3312.5 Hz (the T3000's micro epochs' grid, its bins 8, 24,
-   40 ...: the waveform's period 128 samples, any 64 of it a window), 16
-   times the power (the long epoch's power on a 16th of the
-   carriers), so 2 bits more than the loading's there, 6 at most; the
-   window from 13 samples in */
+/* micro turns (D-Modem's for Telebit's micro packets): the gap, 24 ms
+   of the tones, then short epochs of 64 samples and 56 of guard (120,
+   66.7 baud: the T3000's DSP's type 0 short epoch): one of the comb
+   (its timing), MS_DATA of one packet; their carriers 125 Hz apart at
+   odd multiples of 62.5 Hz, 312.5 to 3312.5 Hz (the T3000's micro
+   epochs' grid, its bins 8, 24, 40 ...: the waveform's period 128
+   samples, any 64 of it a window), 16 times the power (the long
+   epoch's power on a 16th of the carriers), so 2 bits more than the
+   loading's there, 6 at most; the window from the guard's middle */
 const s32 PRE_SHORT = 192;
-const s32 MS_N = 64, MS_G = 26, MS_EP = MS_N + MS_G, MS_W = 13;
+const s32 MS_N = 64, MS_G = 56, MS_EP = MS_N + MS_G, MS_W = 28;
 const s16 MS_DATA = 3, MS_STEP = 16, MS_LO = 2, MS_HI = 26;
 /* short bin j's bin (see above) */
 inline s16 ms_bin(s16 j)

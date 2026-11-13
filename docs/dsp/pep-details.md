@@ -29,8 +29,8 @@ the rest below is still unchecked against a Telebit.
 | Sample rate | 8000 Hz (9600 resampled to it) | '227 |
 | FFT | 1024 points, 128 ms | '227 |
 | Carriers | 511, bins 1 to 511, 7.8125 Hz apart | '227, S71/S73/S76 |
-| Guard | the symbol's first 64 samples (8 ms) repeated after it | '227 |
-| Epoch | 1088 samples, 136 ms, 7.35 baud | '227, Ballard |
+| Guard | the symbol's first 61 samples repeated after it (64 in Telebit's documents) | the T3000, T2000 recordings |
+| Epoch | 1085 samples, 135.6 ms, 7.37 baud | the T3000, T2000 recordings |
 | Bits a carrier | 0, 2, 4, 5 or 6, Telebit's constellations | '227, Ballard, the T3000 |
 | 0 dBR | -9 dBm0 | '227 |
 
@@ -101,16 +101,17 @@ quiet level (the far side in a turn whose tones were missed).
 
 ## Micro turns (D-Modem's own)
 
-Telebit's micro packets run at 88.26 baud on a few carriers; their
-layout is unknown. D-Modem's micro turn is 20 ms of silence, 24 ms of
-both tones (`PRE_SHORT`), then four short epochs of 64 samples and 26
-of guard (90 samples, 88.9 baud): one short comb, then three data
+Telebit's documents give its micro packets 88.26 baud on a few
+carriers; the T3000's DSP has a short epoch of 64 samples and 56 of
+guard (120 samples, 66.7 baud) on 32 carriers. D-Modem's micro turn is
+20 ms of silence, 24 ms of both tones (`PRE_SHORT`), then four of those
+short epochs: one short comb, then three data
 epochs of one packet. A short epoch uses every 16th carrier (125 Hz
 apart, at odd multiples of 62.5 Hz from 312.5 to 3312.5 Hz, as the
 T3000's micro epochs do), 4 times the long epoch's amplitude (16 times
 the power, as the long epoch's power is spread over 16 times as many
 carriers), so each takes 2 bits more than the final loading gives that
-carrier, 6 at most. The short symbol is the first 90 samples of the
+carrier, 6 at most. The short symbol is the first 120 samples of the
 1024 point IFFT with only those bins (their period 128, so any 64 of
 them a window), so the long comb's channel
 applies to it unchanged.
@@ -203,11 +204,28 @@ are surely the small and micro packets. A micro epoch's carriers use the
 long loading's bits at those bins. D-Modem's micro turns now use the
 T3000's bins (8 + 16j, 312.5 to 3312.5 Hz) instead of every 16th bin.
 
+**Epoch lengths** (0x8D38 writes a guard, then the block). The 32
+carrier epoch is a 64 sample block and 56 of guard (120 samples), the
+64 carrier one a 128 sample block and 53 of guard (181). The long epoch
+is 1024 and 61 (1085) when only long epochs are sent, and is cut to
+1080 (9 short ones of 120) or stretched to 1086 (6 of 181) when it is
+mixed with short ones, so both kinds stay on one grid. D-Modem's long
+and micro epochs now have these lengths (1085 and 120; they were 1088
+and 90).
+
+**Data mode.** The 68000 hands the DSP one epoch at a time: a word with
+a long-epoch flag and a 4-bit tag, then the octets; the DSP sends what it
+received back the same way. An epoch holds a whole number of octets,
+the sum of its carriers' bits rounded up to octets. There is no
+scrambler between the octets and the mapper. A received tag of 3 ends
+the far side's turn. The tag rides on the timing tones' carriers.
+
 **The timing tones' carriers** never carry the packet's bits: each
 carries 2 bits of a 4-bit field given with each epoch (bin 184 its bits
 0 and 1, bin 216 bits 2 and 3), the same in every epoch type. The
-68000 gives the field with each block of octets it hands the DSP; what
-it means is not known yet. D-Modem still sends them as pilots.
+68000 gives the field with each block of octets it hands the DSP; 3
+marks the last epoch of a turn (the other values are not known). D-Modem
+still sends them as pilots.
 
 **The comb.** The training comb is every carrier at one amplitude; the
 T3000 sends it two ways, all at phase 0 and with bins 1 to 451 turned by
@@ -226,15 +244,19 @@ with the LFSR's phases; the comb at phase 0; 3 silent epochs; 1085
 samples of 2125 Hz; the comb at phase 0; an epoch with the carriers
 fit for 2 bits at 180 degrees (the patent's); one more with 16 bits on
 its first 16 such carriers as well; 3 silent epochs. The other side's is
-the same with 9 combs and a few steps in another order. Which side is
-the caller, what the 16 bits say and the levels are not settled yet.
+the same with 9 combs and a few steps in another order. The answerer
+sends first: the 68000 picks the script from whether it dialled (ATD).
+The 16 bits are the constant 0xF001 in this firmware; the levels are not
+settled yet.
 
 **Not found.** No CRC: neither the DSP's program nor the 68000's PEP
 code computes one (the 68000's has a CRC-16 of the 0x8005 family, seed
 0x0707, that nothing calls). The packets' header, acknowledgements and
-retransmission are not in the 68000's PEP code either, which mostly runs
-a start-up check (it sends "TELEBIT 2 bit test message." on the 2 bit
-carriers), so the packet layer is still to be found.
+retransmission are not in this firmware at all: its 68000's PEP code
+only sends "TELEBIT 2 bit test message." and two other canned frames,
+and what it receives goes nowhere (the T3000 was sold without PEP). The
+packet layer needs a T2500's or WorldBlazer's firmware, or a recording
+decoded to bits.
 
 ## What the T2000 recordings show
 

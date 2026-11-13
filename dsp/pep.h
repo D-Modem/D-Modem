@@ -13,8 +13,9 @@
  *    (docs/dsp/pep-details.md).  This modem takes their numbers:
  *
  *    the ensemble: a 1024 point FFT at 8000 Hz, its 511 carriers 7.8125
- *              Hz apart; an epoch is the 1024 samples and their first 64
- *              again after them (the patent's guard), 136 ms, 7.35 baud;
+ *              Hz apart; an epoch is the 1024 samples and their first 61
+ *              again after them (the guard; 1085 samples, 135.6 ms, 7.37
+ *              baud, as a T3000's DSP and a T2000's recordings have it);
  *              0, 2, 4, 5 or 6 bits a carrier, in Telebit's
  *              constellations (a T3000's firmware's: the quadrant in the
  *              two lowest bits, 5 bits a cross)
@@ -66,8 +67,8 @@ namespace pep {
 
 const s32 FS = 8000;            /* the ensemble's sample rate */
 const s32 N = 1024;             /* the FFT */
-const s32 GUARD = 64;           /* the first 8 ms repeated after it */
-const s32 EPOCH = N + GUARD;    /* 136 ms */
+const s32 GUARD = 61;           /* the first 61 samples repeated after it */
+const s32 EPOCH = N + GUARD;    /* 1085 samples, 135.6 ms */
 const s16 CARRIERS = 511;       /* bins 1 to 511 */
 const s16 TONE1 = 184;          /* 1437.5 Hz: the timing tones' bins */
 const s16 TONE2 = 216;          /* 1687.5 Hz */
