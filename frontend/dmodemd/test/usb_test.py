@@ -169,7 +169,7 @@ def check(what, cond):
 try:
     p = subprocess.run(run + usb_dte.dte_args(dmodemd) + usb_dte.realtime() + ["--usb=2:9", "-r", rate, "dmodem40"],
                        env=env_for("1001"), capture_output=True, text=True, timeout=60)
-    check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56, pico-serial Line or WB, Agere or Apple USB modem at 2:9" in p.stderr)
+    check("no SmartUSB56 at 2:9", p.returncode != 0 and "no SmartUSB56, pico-serial Line or WB, Agere, Apple or Conexant USB modem at 2:9" in p.stderr)
 
     def log_of(m):
         m.log.flush()

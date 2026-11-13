@@ -22,6 +22,7 @@ For every chip, option and setting, see
 | **pico-serial WB**, a stick for a bare pair of wires (not a phone line) | `dmodemd --usb=auto` | tested on a simulated pair |
 | **Agere USB 2.0 soft modem** | `dmodemd --usb=auto` | being brought up: see [its own page](agere-usb.md) |
 | **Apple USB Modem** (A1101, for Macs) | `dmodemd --usb=auto` | tested on simulated hardware: see [its own page](apple-usb-modem.md) |
+| **Conexant USB HSF modems** (the "Cadmus 2" bridge, USB `0572:1300` and others; plain boards, not SmartDAA ones) | `DMODEM_CD2_FIRMWARE=c2firmware.h dmodemd --usb=auto` | tested on simulated hardware: see [the details](hardware-details.md#conexant-usb-hsf-modems) |
 
 The PC modems (`-a`) use Linux's own sound drivers (ALSA), so they work
 on Linux only. The USB modems need no kernel driver at all: `dmodemd`

@@ -106,7 +106,7 @@ their owners and are licensed by them, not under this repository's terms
 | Agere | `agere/agrsm_core.o` | Agere SoftModem 2.1.40, from agrsm-20070804 | 16 Nov 2005, GCC 3.3.5 (Debian) | none to be had (below) |
 | SM56 | `sm56/sm56.ko` | Motorola sm56-06.09.05 for Fedora Core 3 (2.6.9-1.667) | 17 May 2005, GCC 3.4.2 (Fedora Core 3) | `usr/tmp/sm56.ko` of `sm56-06.09.05-1-fc3-2.6.9-1.667.i686.rpm` |
 | PCTel | `pctel/dsp.o`, `pctel/control.o` | pctel-0.9.7-9 (Linux driver K2.4.7.V92.001) | pumps 21 Jun 2001, GCC 2.95.3; controller dated 26 Mar 2003, GCC 2.96 (Red Hat 7.1) | `src/lib/amr/dsp.a`, `src/lib/control.a` of pctel-0.9.7-9-rht-6 |
-| HSF | `hsf/hsfengine.o`, `hsfmc97ich.o`, `hsfsoar.o`, `hsfmc97ich.inf`, `hsf.cty` | Linuxant hsfmodem-7.80.02.06oem | 10 May 2010, GCC 3.4.6 (Red Hat) | `modules/imported/<name>-i386.O`, `nvm/inf/hsfmc97ich.inf`, `nvm/inf/hsf.cty` of `hsfmodem-7.80.02.06oem.tar.gz` |
+| HSF | `hsf/hsfengine.o`, `hsfmc97ich.o`, `hsfsoar.o`, `hsfusbcd2.o`, `hsfmc97ich.inf`, `hsfcadmus2.inf`, `hsfcadmus2smart.inf`, `hsf.cty` | Linuxant hsfmodem-7.80.02.06oem | 10 May 2010, GCC 3.4.6 (Red Hat) | `modules/imported/<name>-i386.O`, `nvm/inf/<name>.inf`, `nvm/inf/hsf.cty` of `hsfmodem-7.80.02.06oem.tar.gz` |
 | Intel | `intel/537core.lib`, `intel/wwh_dflt.c` | Intel537EP 2.37.50.1 for Fedora Core 1 SMP (core "Release 4.65 - Jan 17 2004") | 17 Jan 2004, GCC 3.2 (its IPP parts Intel C++ 7.0 Beta) | `coredrv/537core.lib`, `coredrv/wwh_dflt.c` of `intel-537ep_secure-2.37.50.1-fc1-smp.tgz` |
 | Broadcom | `broadcom/BCMSM.sys`, `broadcom/BCMSMwxp.inf` | BCM V.92 56K Modem 3.4.19, Dell's "V.92 Soft Modem (Data Fax) Driver" A05 | 26 Jul 2002, Microsoft linker 7.0 | the hashes in the package's catalog, signed by Microsoft (WHQL, 31 Jul 2002) |
 | ESS | `ess/es56hpi.sys`, `ess/mdmzn.inf` | ESS ES56H-PI modem driver 5.43.070 (`ess54370.exe`, for Windows 98 to XP) | 24 Mar 2003, Microsoft linker 5.12 | the hashes in the package's catalog, signed by Microsoft (WHQL, 2 Apr 2003) |
@@ -169,8 +169,14 @@ The files' SHA-256 hashes, and what each was compared with:
   `b6c18aab4585498700b401b0948161f25ee18e6863af48b2b2f35b0536b60c25`;
   `hsfsoar.o`:
   `3be23c8e6d6ee8f6bc92b89913590ad4828cf2013ba4cf9abc3be854c22ecde9`;
+  `hsfusbcd2.o`:
+  `19d1fdf623415c6ec88b0fd3b61e15f9561267631b8f8bb1542dd6366d381970`;
   `hsfmc97ich.inf`:
   `0d7401ddcefd2c362adcdc19fb0b828312983a8e3970c2389596e2ad271a970c`;
+  `hsfcadmus2.inf`:
+  `346fd4a7260ad7cd03b590a5cb6c6466454f8d6b5cf9aaa2003cbde053ca7f81`;
+  `hsfcadmus2smart.inf`:
+  `22a8566aac63280ffd085c2d9b374d9b58c613778a0e11425d88d36daa8a4c35`;
   `hsf.cty`:
   `bf205eda7dc753a416c347179e2058cdb1a15f053afbc609fe25995ca00eba34`.
   - The tarball
@@ -769,6 +775,9 @@ of the time they did.
 | `HSF_ADC=<on\|off>:<channel>:<reading>,...` | its monitor ADC's readings on and off hook (none by default; see [hardware-details.md](hardware-details.md)) |
 | `HSF_KEEP8=1` | keeps the "8 samples" flag (below) |
 | `HSF_NVM=<dir>` | the `.inf` and `.cty` from that directory |
+| `HSF_CD2_PLAIN=1` | `half_hsf_usb`: a Cadmus 2 board without the SmartDAA (and its `.inf`, `hsfcadmus2.inf`) |
+| `HSF_INF=<file>` | `half_hsf_usb`: another `.inf` |
+| `HSF_CODEC_RATE=<Hz>` | the codec's rate (`half_hsf_usb`: 16000) |
 
 | HSF `AT+MS=` / ours | HSF caller → open answerer | open caller → HSF answerer |
 |---|---|---|
@@ -779,6 +788,20 @@ of the time they did.
 | V21, V23C, V22B, V32B (automode) / 34 (V.8) | CONNECT: V.21, V.23, V.22bis, V.32bis | CONNECT: V.21, V.23, V.22bis, V.32bis |
 | V90 / 90 (V.90, the open modem digital) | CONNECT 52000/33600 | - |
 | V92 / 92 (V.92, PCM upstream) | CONNECT 52000/41333 | - |
+
+**The USB back end.** `half_hsf_usb` is the same modem on its USB back
+end (`hsfusbcd2`, for Conexant's "Cadmus 2" USB bridge: 0572:1300 and
+the others) in place of the ICH one. The harness provides Linuxant's
+`OsUsb*` layer and a model of the bridge (`hw/cadmus2.hpp`): it runs the
+module's scripts (byte code the module sends with vendor request 2: the
+bridge's registers, the codec's words, the line side's registers) and
+sends their replies on the interrupt pipe. The line's samples go in
+frames of 128 bytes (64 samples, 16 bit, 16000 Hz) each way, and a
+transmitted frame completes as the codec plays it. Modelled as a
+SmartDAA board, its calls go as the ICH's do (`hsf_usb_*`: V.21 to V.34,
+both ways). As a board with only the codec (`HSF_CD2_PLAIN=1`) it calls
+at V.22bis and below; above, its receiver fails, it seems for want of
+the real codec's filters, which the module allows for.
 
 Other HSF tests: our forced V.21, V.23, V.22 and V.22bis callers against
 its automode (`hsf_low_*`); V.90 with our INFO0d lost

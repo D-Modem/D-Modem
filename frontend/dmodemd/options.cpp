@@ -94,8 +94,8 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "its controls (hw:<card> of -a's)", "-a's", false },
 	{ 0, "usb", Takes::Text, true,
 	  "the line a Smart Link SmartUSB56, a pico-serial Line or WB, an "
-	  "Agere USB modem or an Apple USB Modem (auto, or <bus>:<address>), "
-	  "not SIP; list: those "
+	  "Agere USB modem, an Apple USB Modem or a Conexant USB HSF modem "
+	  "(auto, or <bus>:<address>), not SIP; list: those "
 	  "there are", "none", false },
 	{ 0, "usb-leds", Takes::Nothing, false,
 	  "a SmartUSB56's carrier and data LEDs (GPIO 6 and 13) lit, on a "

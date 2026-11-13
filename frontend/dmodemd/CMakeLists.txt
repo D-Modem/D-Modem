@@ -81,10 +81,11 @@ if(DMODEM_DMODEMD)
 	# place, linked into it (where there is no LD_PRELOAD to put it in
 	# front of libusb: Windows, macOS; DMODEM_TEST_BUILTIN_FAKES on
 	# Linux); usb_test.py, pico_line_test.py, pico_wb_test.py,
-	# agere_test.py and apple_test.py run it with "-" for the fake
+	# agere_test.py, apple_test.py and cadmus2_test.py run it with "-"
+	# for the fake
 	function(dmodem_usb_fake fake main)
 		add_executable(dmodemd_fake_${fake} ${main} usb_line.cpp
-			usb_agere.cpp usb_apple.cpp usb_wb.cpp si3056.cpp test/fake_${fake}.cpp)
+			usb_agere.cpp usb_apple.cpp usb_cadmus2.cpp usb_wb.cpp si3056.cpp test/fake_${fake}.cpp)
 		target_compile_definitions(dmodemd_fake_${fake} PRIVATE
 			DMODEM_USB)
 		target_include_directories(dmodemd_fake_${fake} SYSTEM PRIVATE
@@ -163,7 +164,7 @@ if(DMODEM_DMODEMD)
 	# devices on WinUSB, docs/windows.md)
 	if((WIN32 OR APPLE) AND DMODEM_USB)
 		include(libusb)
-		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_apple.cpp usb_wb.cpp si3056.cpp)
+		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_apple.cpp usb_cadmus2.cpp usb_wb.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE dmodem_libusb)
 		set(_usb_headers
@@ -204,7 +205,7 @@ if(DMODEM_DMODEMD)
 			set(_usb_builtin_fakes ON)
 		endif()
 	elseif(LIBUSB_FOUND)
-		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_apple.cpp usb_wb.cpp si3056.cpp)
+		target_sources(dmodemd PRIVATE usb_line.cpp usb_agere.cpp usb_apple.cpp usb_cadmus2.cpp usb_wb.cpp si3056.cpp)
 		target_compile_definitions(dmodemd PRIVATE DMODEM_USB)
 		target_link_libraries(dmodemd PRIVATE PkgConfig::LIBUSB)
 		# test/usb_test.py: two dmodemd on fake SmartUSB56s
@@ -245,6 +246,14 @@ if(DMODEM_DMODEMD)
 			dmodem_flags(dmodem_fake_apple EXTRA NOOPT)
 			target_include_directories(dmodem_fake_apple PRIVATE
 				${LIBUSB_INCLUDE_DIRS})
+			# test/cadmus2_test.py: on fake Conexant USB HSF
+			# modems (test/fake_cadmus2.cpp, the bridge
+			# dsp/test/hw/cadmus2.hpp's)
+			add_library(dmodem_fake_cadmus2 SHARED
+				test/fake_cadmus2.cpp)
+			dmodem_flags(dmodem_fake_cadmus2 EXTRA NOOPT)
+			target_include_directories(dmodem_fake_cadmus2 PRIVATE
+				${LIBUSB_INCLUDE_DIRS})
 			# (the fakes linked in libusb's place too, as macOS's
 			# tests have them: their own tests, *_builtin)
 			option(DMODEM_TEST_BUILTIN_FAKES
@@ -258,7 +267,7 @@ if(DMODEM_DMODEMD)
 		message(STATUS "dmodemd: no libusb (libusb-1.0-0-dev): no --usb")
 	endif()
 	if(_usb_builtin_fakes)
-		foreach(_f st7554 pico_line pico_wb agere apple)
+		foreach(_f st7554 pico_line pico_wb agere apple cadmus2)
 			dmodem_usb_fake(${_f} main.cpp ${_usb_headers})
 		endforeach()
 	endif()
@@ -510,6 +519,14 @@ if(DMODEM_DMODEMD)
 			set_tests_properties(dmodemd_apple PROPERTIES
 				TIMEOUT 300 COST 1000)
 			set_property(TEST dmodemd_apple APPEND PROPERTY LABELS alsa)
+			dmodem_add_test(dmodemd_cadmus2 ${Python3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/test/cadmus2_test.py
+				$<TARGET_FILE:dmodemd>
+				$<TARGET_FILE:line_exchange>
+				$<TARGET_FILE:dmodem_fake_cadmus2>)
+			set_tests_properties(dmodemd_cadmus2 PROPERTIES
+				TIMEOUT 300 COST 1000)
+			set_property(TEST dmodemd_cadmus2 APPEND PROPERTY LABELS alsa)
 		endif()
 		# the same with the fakes linked in (macOS's; on Linux with
 		# DMODEM_TEST_BUILTIN_FAKES, as dmodemd_*_builtin)
@@ -524,7 +541,8 @@ if(DMODEM_DMODEMD)
 				pico_line:pico_line_test:pico_line:line_exchange
 				pico_wb:pico_wb_test:pico_wb:wb_pair
 				agere:agere_test:agere:line_exchange
-				apple:apple_test:apple:line_exchange)
+				apple:apple_test:apple:line_exchange
+				cadmus2:cadmus2_test:cadmus2:line_exchange)
 				string(REPLACE ":" ";" _t ${_t})
 				list(GET _t 0 _name)
 				list(GET _t 1 _script)

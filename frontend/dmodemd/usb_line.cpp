@@ -360,7 +360,8 @@ bool UsbLine::find(const char *dev)
 		bool wb = wb_device(d.idVendor, d.idProduct);
 		bool agere = agere_device(d.idVendor, d.idProduct);
 		bool apple = apple_device(d.idVendor, d.idProduct);
-		if (!st7554 && !stick && !wb && !agere && !apple)
+		bool cd2 = cadmus2_device(d.idVendor, d.idProduct);
+		if (!st7554 && !stick && !wb && !agere && !apple && !cd2)
 			continue;
 		found++;
 		if (!any && (libusb_get_bus_number(list[i]) != bus ||
@@ -368,7 +369,7 @@ bool UsbLine::find(const char *dev)
 			continue;
 		chip_ = stick ? stick_chip(*this) : wb ? wb_chip(*this) :
 			agere ? agere_chip(*this) : apple ? apple_chip(*this) :
-			st7554_chip(*this);
+			cd2 ? cadmus2_chip(*this) : st7554_chip(*this);
 		name_ = chip_->name();
 		int err = libusb_open(list[i], &h_);
 		if (err < 0) {
@@ -406,11 +407,12 @@ bool UsbLine::find(const char *dev)
 	if (!h_ && !found)
 		ERR("no Smart Link SmartUSB56 (USB 0483:7554), pico-serial "
 		    "Line (1209:0002), pico-serial WB (1209:0003), Agere USB "
-		    "modem (047e:2892, 047e:2828) or Apple USB Modem (05ac:1401, "
-		    "05ac:8220)%s%s\n", any ? "" : " at ", any ? "" : dev);
+		    "modem (047e:2892, 047e:2828), Apple USB Modem (05ac:1401, "
+		    "05ac:8220) or Conexant USB HSF modem (0572:1300 and others)%s%s\n",
+		    any ? "" : " at ", any ? "" : dev);
 	else if (!h_ && found && !any)
-		ERR("no SmartUSB56, pico-serial Line or WB, Agere or Apple USB "
-		    "modem at %s (%d elsewhere)\n", dev, found);
+		ERR("no SmartUSB56, pico-serial Line or WB, Agere, Apple or "
+		    "Conexant USB modem at %s (%d elsewhere)\n", dev, found);
 	return h_ != nullptr;
 }
 
@@ -422,7 +424,7 @@ u32 UsbLine::line_rate(const char *dev, u32 rate, bool given)
 	libusb_device **list;
 	int bus = -1, addr = -1;
 	bool any = !dev || !*dev || !strcmp(dev, "auto");
-	bool agere = false, wb = false;
+	bool agere = false, wb = false, cd2 = false;
 
 	if ((!any && !parse_dev(dev, &bus, &addr)) || libusb_init(&ctx) < 0)
 		return rate;
@@ -438,12 +440,14 @@ u32 UsbLine::line_rate(const char *dev, u32 rate, bool given)
 			(d.idVendor == ST7554_VENDOR && d.idProduct == ST7554_PRODUCT) ||
 			(d.idVendor == STICK_VENDOR && d.idProduct == STICK_PRODUCT) ||
 			wb_device(d.idVendor, d.idProduct) ||
-			apple_device(d.idVendor, d.idProduct);
+			apple_device(d.idVendor, d.idProduct) ||
+			cadmus2_device(d.idVendor, d.idProduct);
 		if (!ours || (!any && (libusb_get_bus_number(list[i]) != bus ||
 				       libusb_get_device_address(list[i]) != addr)))
 			continue;
 		agere = agere_device(d.idVendor, d.idProduct);
 		wb = wb_device(d.idVendor, d.idProduct);
+		cd2 = cadmus2_device(d.idVendor, d.idProduct);
 		break;
 	}
 	if (n >= 0)
@@ -457,7 +461,10 @@ u32 UsbLine::line_rate(const char *dev, u32 rate, bool given)
 		DBG("pico-serial WB: 96000 Hz, its rate (-r for another)\n");
 		return 96000;
 	}
-	return agere ? 8000 : rate;
+	/* (its samples at 16000 Hz, converted) */
+	if (cd2 && rate != 9600)
+		DBG("Conexant USB HSF modem: 9600 Hz, its rate (not %" PRIu32 ")\n", rate);
+	return agere ? 8000 : cd2 ? 9600 : rate;
 }
 
 /* see usb_line.h */
@@ -488,7 +495,8 @@ s16 UsbLine::list()
 		bool wb = wb_device(d.idVendor, d.idProduct);
 		bool agere = agere_device(d.idVendor, d.idProduct);
 		bool apple = apple_device(d.idVendor, d.idProduct);
-		if (!st7554 && !stick && !wb && !agere && !apple)
+		bool cd2 = cadmus2_device(d.idVendor, d.idProduct);
+		if (!st7554 && !stick && !wb && !agere && !apple && !cd2)
 			continue;
 		found++;
 		err = libusb_open(devs[i], &h);
@@ -500,7 +508,8 @@ s16 UsbLine::list()
 		       d.idProduct, stick ? "pico-serial Line" :
 		       wb ? "pico-serial WB" :
 		       agere ? "Agere USB modem" :
-		       apple ? "Apple USB Modem" : "SmartUSB56",
+		       apple ? "Apple USB Modem" :
+		       cd2 ? "Conexant USB HSF modem" : "SmartUSB56",
 		       err == 0 ? "ready" : libusb_strerror(err),
 #ifdef _WIN32
 		       err == LIBUSB_ERROR_NOT_SUPPORTED ?
@@ -513,8 +522,9 @@ s16 UsbLine::list()
 	if (!found)
 		printf("no SmartUSB56 (0483:7554), pico-serial Line "
 		       "(1209:0002), pico-serial WB (1209:0003), Agere USB "
-		       "modem (047e:2892, 047e:2828) or Apple USB Modem "
-		       "(05ac:1401, 05ac:8220)\n");
+		       "modem (047e:2892, 047e:2828), Apple USB Modem "
+		       "(05ac:1401, 05ac:8220) or Conexant USB HSF modem "
+		       "(0572:1300 and others)\n");
 #ifdef _WIN32
 	else if (usbdk)
 		printf("(through UsbDk)\n");
@@ -668,6 +678,10 @@ bool UsbLine::open(const char *dev, u32 rate)
 	frame_ear_.assign(frame_, 0);
 	/* (slusb, Smart Link's kernel driver, if it is there) */
 	libusb_set_auto_detach_kernel_driver(h_, 1);
+	if (!chip_->load()) {
+		close();
+		return false;
+	}
 	if ((err = libusb_claim_interface(h_, 0)) < 0) {
 		ERR("%s: its interface: %s\n", name_, libusb_strerror(err));
 		close();

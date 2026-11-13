@@ -25,7 +25,7 @@ Courier's options written in.
 | `agere/agrsm_core.o` | Agere Systems | agrsm-20070804 (Agere SoftModem 2.1.40) |
 | `sm56/sm56.ko` | Motorola, Inc. | sm56-06.09.05 for Fedora Core 3 |
 | `pctel/dsp.o`, `pctel/control.o` | PCTel, Inc. | pctel-0.9.7-9-rht-6 |
-| `hsf/hsfengine.o`, `hsf/hsfmc97ich.o`, `hsf/hsfsoar.o`, `hsf/hsfmc97ich.inf`, `hsf/hsf.cty` | Conexant Systems (formerly Rockwell Semiconductor Systems) | Linuxant's hsfmodem-7.80.02.06oem |
+| `hsf/hsfengine.o`, `hsf/hsfmc97ich.o`, `hsf/hsfsoar.o`, `hsf/hsfusbcd2.o`, `hsf/hsfmc97ich.inf`, `hsf/hsfcadmus2.inf`, `hsf/hsfcadmus2smart.inf`, `hsf/hsf.cty` | Conexant Systems (formerly Rockwell Semiconductor Systems) | Linuxant's hsfmodem-7.80.02.06oem |
 | `intel/537core.lib`, `intel/wwh_dflt.c` | Intel Corporation | Intel537EP 2.37.50.1 for Fedora Core 1 (Intel's licence, `intel/license.txt`) |
 | `broadcom/BCMSM.sys`, `broadcom/BCMSMwxp.inf` | Broadcom Corporation | Dell's "V.92 Soft Modem (Data Fax) Driver" A05 (BCM V.92 56K Modem 3.4.19) |
 | `ess/es56hpi.sys`, `ess/mdmzn.inf` | ESS Technology, Inc. | ESS's ES56H-PI modem driver 5.43.070 (`ess54370.exe`) |

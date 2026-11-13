@@ -83,6 +83,13 @@ public:
 	virtual int release(int n) { return n == 0 ? 0 : LIBUSB_ERROR_NOT_FOUND; }
 	/* interface n's alternate setting alt */
 	virtual int set_alt(int n, int alt) = 0;
+	/* configuration c (-1: unconfigured): only the Cadmus 2's
+	   firmware asks; none by default */
+	virtual int set_config(int c)
+	{
+		(void)c;
+		return LIBUSB_ERROR_NOT_SUPPORTED;
+	}
 	/* its configuration (static: never freed) */
 	virtual libusb_config_descriptor *config() = 0;
 	/* the active one: config() by default */
@@ -104,8 +111,8 @@ public:
 	virtual int poll_fd() const = 0;
 	/* what the device has done since, its transfers completed */
 	virtual void run() = 0;
-	/* a synchronous interrupt transfer (only the Apple USB Modem's
-	   line asks): none by default */
+	/* a synchronous interrupt transfer (the Apple USB Modem's line
+	   and the Cadmus 2's start-up ask): none by default */
 	virtual int interrupt(unsigned char endpoint, unsigned char *data,
 			      int length, int *transferred)
 	{
@@ -304,6 +311,12 @@ int LIBUSB_CALL libusb_set_interface_alt_setting(libusb_device_handle *,
 						 int n, int alt)
 {
 	return fake_usb::device().set_alt(n, alt);
+}
+
+/* its configuration (Device::set_config()) */
+int LIBUSB_CALL libusb_set_configuration(libusb_device_handle *, int c)
+{
+	return fake_usb::device().set_config(c);
 }
 
 /* nothing to clear: 0 */

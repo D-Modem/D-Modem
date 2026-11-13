@@ -191,7 +191,7 @@ def text(n, seed):
 try:
     p = once(["--usb=2:9", "dmodem40"])
     check("nothing at 2:9", p.returncode != 0 and
-          "no SmartUSB56, pico-serial Line or WB, Agere or Apple USB modem at 2:9" in p.stderr)
+          "no SmartUSB56, pico-serial Line or WB, Agere, Apple or Conexant USB modem at 2:9" in p.stderr)
     p = subprocess.run(run + ["--usb", "list"], env=env_for("1001"), capture_output=True,
                        text=True, timeout=60)
     check("--usb list: the WB stick", "1209:0003 pico-serial WB: ready" in p.stdout)
