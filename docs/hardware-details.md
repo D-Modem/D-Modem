@@ -835,7 +835,7 @@ Not covered yet:
 ATI3 says `Conexant USB HSF (Cadmus 2)`. Which codec word does what
 (the hook's bit, the speaker's) is read from what the module sends, not
 from a datasheet. It has been tested against a fake bridge
-([below](#conexant-usb-hsf-modems-1)), not on a real one.
+([below](#the-conexant-usb-hsf-modems)), not on a real one.
 
 ### Not covered
 
@@ -1173,7 +1173,7 @@ does not answer, a rate it has not, the country's registers, and the
 same calls as the pico-serial Line's test
 ([apple-usb-modem-details.md](apple-usb-modem-details.md#testing-without-hardware)).
 
-### Conexant USB HSF modems
+### The Conexant USB HSF modems
 
 `frontend/dmodemd/test/cadmus2_test.py` (ctest's `dmodemd_cadmus2`,
 label `alsa`) runs two Conexant USB HSF modems at 16000 Hz.
