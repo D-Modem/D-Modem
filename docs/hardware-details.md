@@ -837,6 +837,44 @@ ATI3 says `Conexant USB HSF (Cadmus 2)`. Which codec word does what
 from a datasheet. It has been tested against a fake bridge
 ([below](#the-conexant-usb-hsf-modems)), not on a real one.
 
+### Conexant USB HCF modems
+
+Conexant's HCF ("host controlled") USB modems, such as the Phoebe Pocket
+56K (USB `1690:0103`, Conexant's `WINACUSB.sys`), are not soft modems:
+the data pump runs in the modem's own DSP, and the host runs the rest
+(AT commands, V.42, fax). The open driver for them drives that pump from
+D-Modem. Its first step is `dmodem-hcf-probe`, which brings the DSP up
+and says what it found:
+
+    dmodem-hcf-probe                          # the pipes, the DSP's ID
+    dmodem-hcf-probe --driver WINACUSB.sys    # and its code downloaded
+
+How it works is what `WINACUSB.sys` does, read from the driver (the
+code is ours):
+
+- The modem's interface 0 has eight endpoints, used in the order its
+  descriptor lists them: register writes, the line side, the DSP's code,
+  the T-buffer, the data to send, the status, the GPIO and the LEDs.
+- The DSP is the RC-series data pump's register interface. Register
+  writes go as `[tag, register, value]` triples. The status comes as
+  records of the registers, then pairs of the status register and a
+  received data octet.
+- The start: GPIO mode bit 3 resets the modem interface, then register
+  0x1a bit 7 resets the DSP. Its records then carry its ID block: the
+  signature `0451 49a5` and the chip (`3731` L8371, `3733` L8373,
+  `3734` L8374).
+- The DSP's RAM code is Conexant's and not ours to ship. It is read from
+  the user's own `WINACUSB.sys` by the names its symbols give
+  (`_CTL_DATA_L8371DP`, `_SPX_DATA_L8371DP`, ...), in the driver's
+  "DRAM" form. Each module goes down after ABCODE (register 0x14) 0x4f
+  (CTL) or 0x5f (SPX), with its address in registers 0x16/0x17 and its
+  octets on the code's pipe. The DSP then reports a checksum, which must
+  be the module's.
+
+It has been tested against a fake modem
+([below](#the-conexant-usb-hcf-modem-probe)), not on a real one. The
+dial, the training and the data path are not done yet.
+
 ### Not covered
 
 These are not covered yet, because Linux has no driver that gives their
@@ -1186,3 +1224,15 @@ rings. It checks the firmware's upload (a stand-in of the same size, in
 the rate, no ring at the start, and a call: rings, an answer at the
 second, V.34 both ways and a line of text each way, the hang-up and the
 device unplugged.
+
+### The Conexant USB HCF modem probe
+
+`frontend/dmodemd/test/hcf_probe_test.py` (ctest's `dmodem_hcf_probe`,
+label `quick`) runs `dmodem-hcf-probe` on
+`frontend/dmodemd/test/fake_hcf.cpp`, a fake `1690:0103` whose DSP is
+the register interface alone. It checks the pipes, the reset and the ID
+block, a DSP that gives no signature, and the code's download from
+stand-in images and from a stand-in driver with symbols: each module at
+its address in the driver's order, a wrong checksum and a missing
+module said. The fake's checksum is the sum of the octets; the real
+DSP's is not known.

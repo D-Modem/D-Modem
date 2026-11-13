@@ -266,6 +266,44 @@ if(DMODEM_DMODEMD)
 	else()
 		message(STATUS "dmodemd: no libusb (libusb-1.0-0-dev): no --usb")
 	endif()
+	# dmodem-hcf-probe: a Conexant HCF USB modem's DSP (the Phoebe
+	# Pocket 56K) brought up, its code downloaded from the user's own
+	# copy of Conexant's driver (hcf_probe.cpp, hcf_usb.cpp,
+	# hcf_image.cpp): the first step of the open driver for its pump
+	if(((WIN32 OR APPLE) AND DMODEM_USB) OR LIBUSB_FOUND)
+		add_executable(dmodem-hcf-probe hcf_probe.cpp hcf_usb.cpp
+			hcf_image.cpp)
+		if((WIN32 OR APPLE) AND DMODEM_USB)
+			target_link_libraries(dmodem-hcf-probe PRIVATE
+				dmodem_libusb)
+		else()
+			target_link_libraries(dmodem-hcf-probe PRIVATE
+				PkgConfig::LIBUSB)
+		endif()
+		dmodem_flags(dmodem-hcf-probe EXTRA)
+		install(TARGETS dmodem-hcf-probe RUNTIME
+			DESTINATION ${CMAKE_INSTALL_BINDIR})
+		# test/hcf_probe_test.py: on a fake one (test/fake_hcf.cpp,
+		# LD_PRELOAD: Linux's)
+		if(DMODEM_TESTS AND LIBUSB_FOUND AND NOT APPLE)
+			add_library(dmodem_fake_hcf SHARED test/fake_hcf.cpp)
+			dmodem_flags(dmodem_fake_hcf EXTRA NOOPT)
+			target_include_directories(dmodem_fake_hcf PRIVATE
+				${LIBUSB_INCLUDE_DIRS})
+			find_package(Python3 COMPONENTS Interpreter QUIET)
+			if(Python3_Interpreter_FOUND)
+				dmodem_add_test(dmodem_hcf_probe
+					${Python3_EXECUTABLE}
+					${CMAKE_CURRENT_SOURCE_DIR}/test/hcf_probe_test.py
+					$<TARGET_FILE:dmodem-hcf-probe>
+					$<TARGET_FILE:dmodem_fake_hcf>)
+				set_tests_properties(dmodem_hcf_probe PROPERTIES
+					TIMEOUT 60)
+				set_property(TEST dmodem_hcf_probe APPEND PROPERTY
+					LABELS quick)
+			endif()
+		endif()
+	endif()
 	if(_usb_builtin_fakes)
 		foreach(_f st7554 pico_line pico_wb agere apple cadmus2)
 			dmodem_usb_fake(${_f} main.cpp ${_usb_headers})
