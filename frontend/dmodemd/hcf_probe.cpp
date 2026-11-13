@@ -31,6 +31,7 @@
 
 namespace {
 
+/* the usage on stderr, exit 2 */
 void usage()
 {
 	fprintf(stderr,
@@ -40,6 +41,7 @@ void usage()
 	exit(2);
 }
 
+/* an endpoint type's name */
 const char *type_name(uint8_t t)
 {
 	switch (t) {
@@ -52,6 +54,7 @@ const char *type_name(uint8_t t)
 
 } // namespace
 
+/* the probe (see the top) */
 int main(int argc, char **argv)
 {
 	int log = 0, seconds = 2;

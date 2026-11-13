@@ -58,6 +58,7 @@ constexpr unsigned field(unsigned reg, unsigned shift, unsigned mask)
 {
 	return mask << 16 | shift << 8 | reg;
 }
+/* the whole of register reg */
 constexpr unsigned reg_byte(unsigned reg) { return field(reg, 0, 0xff); }
 
 /* a few of the interface memory's */
@@ -100,8 +101,11 @@ public:
 		uint8_t ep = 0, type = 0;
 		uint16_t max = 0;
 	};
+	/* its pipes, in order */
 	const std::vector<Pipe> &pipes() const { return pipes_; }
+	/* its vendor ID */
 	uint16_t vid() const { return vid_; }
+	/* its product ID */
 	uint16_t pid() const { return pid_; }
 
 	/* the GPIO octets (pipe 6) */

@@ -16,7 +16,9 @@ namespace hcf {
 
 namespace {
 
+/* the little-endian 16 bits at p */
 uint16_t u16(const uint8_t *p) { return (uint16_t)(p[0] | p[1] << 8); }
+/* the little-endian 32 bits at p */
 uint32_t u32(const uint8_t *p)
 {
 	return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 |
@@ -148,6 +150,7 @@ bool image_at(const std::vector<uint8_t> &d, const Pe &pe,
 
 } // namespace
 
+/* see hcf_image.h */
 const Module *Image::find(uint16_t id) const
 {
 	for (const Module &m : modules)
@@ -156,6 +159,7 @@ const Module *Image::find(uint16_t id) const
 	return nullptr;
 }
 
+/* see hcf_image.h */
 bool parse(std::vector<uint8_t> data, unsigned unit, Image &img,
 	   std::string &err)
 {
@@ -196,6 +200,7 @@ bool parse(std::vector<uint8_t> data, unsigned unit, Image &img,
 	return true;
 }
 
+/* see hcf_image.h */
 const char *chip_name(uint16_t chip)
 {
 	switch (chip) {
@@ -206,6 +211,7 @@ const char *chip_name(uint16_t chip)
 	}
 }
 
+/* see hcf_image.h */
 bool from_driver(const std::string &path, uint16_t chip, Images &imgs,
 		 std::string &err)
 {
@@ -234,6 +240,7 @@ bool from_driver(const std::string &path, uint16_t chip, Images &imgs,
 	return true;
 }
 
+/* see hcf_image.h */
 bool from_files(const std::string &ctl, const std::string &spx,
 		Images &imgs, std::string &err)
 {
@@ -253,6 +260,7 @@ bool from_files(const std::string &ctl, const std::string &spx,
 	return true;
 }
 
+/* see hcf_image.h (the sets as DP_DnldNoNEWCNoDelay has them) */
 std::vector<Load> download_set(uint16_t chip, int set)
 {
 	const bool C = false, S = true;

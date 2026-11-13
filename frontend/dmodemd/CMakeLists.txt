@@ -284,8 +284,8 @@ if(DMODEM_DMODEMD)
 		install(TARGETS dmodem-hcf-probe RUNTIME
 			DESTINATION ${CMAKE_INSTALL_BINDIR})
 		# test/hcf_probe_test.py: on a fake one (test/fake_hcf.cpp,
-		# LD_PRELOAD)
-		if(DMODEM_TESTS AND LIBUSB_FOUND)
+		# LD_PRELOAD: Linux's)
+		if(DMODEM_TESTS AND LIBUSB_FOUND AND NOT APPLE)
 			add_library(dmodem_fake_hcf SHARED test/fake_hcf.cpp)
 			dmodem_flags(dmodem_fake_hcf EXTRA NOOPT)
 			target_include_directories(dmodem_fake_hcf PRIVATE

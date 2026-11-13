@@ -251,6 +251,7 @@ void make_config()
 
 /* the device on libusb's bus (fake_libusb.h) */
 struct Hcf final : fake_usb::Device {
+	/* its log on stderr with FAKE_HCF_LOG */
 	Hcf() : Device("FAKE_HCF_LOG") {}
 
 	/* the settings from the environment */
@@ -273,8 +274,10 @@ struct Hcf final : fake_usb::Device {
 		d->bNumConfigurations = 1;
 	}
 
+	/* address 5 */
 	uint8_t address() const override { return 5; }
 
+	/* opened, the DSP held in reset (LIBUSB_ERROR_BUSY if open) */
 	int open() override
 	{
 		if (fake.open)
@@ -284,8 +287,10 @@ struct Hcf final : fake_usb::Device {
 		return 0;
 	}
 
+	/* closed */
 	void close() override { fake.open = false; }
 
+	/* interface 0 claimed */
 	int claim(int n) override
 	{
 		if (n != 0)
@@ -296,6 +301,7 @@ struct Hcf final : fake_usb::Device {
 		return 0;
 	}
 
+	/* interface 0 released */
 	int release(int n) override
 	{
 		if (n != 0 || !fake.claimed)
@@ -304,11 +310,13 @@ struct Hcf final : fake_usb::Device {
 		return 0;
 	}
 
+	/* (alternate setting 0 alone) */
 	int set_alt(int n, int a) override
 	{
 		return n == 0 && a == 0 ? 0 : LIBUSB_ERROR_NOT_FOUND;
 	}
 
+	/* the configuration (make_config()), static */
 	libusb_config_descriptor *config() override
 	{
 		make_config();
@@ -338,14 +346,17 @@ struct Hcf final : fake_usb::Device {
 		return 0;
 	}
 
+	/* t off its queue, done as cancelled in run() */
 	int cancel(libusb_transfer *t) override
 	{
 		return fake_usb::cancel_from(t, { &fake.status_q, &fake.out_q,
 						  &fake.in_q }, fake.cancelled);
 	}
 
+	/* nothing to poll */
 	int poll_fd() const override { return -1; }
 
+	/* what the device has done (run()) */
 	void run() override { ::run(); }
 };
 

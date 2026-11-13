@@ -53,6 +53,7 @@ const Known KNOWN[] = {
 	{ 0x1690, 0x0103 },             /* Phoebe Pocket 56K (usb0103.inf) */
 };
 
+/* ms milliseconds of sleep */
 void sleep_ms(int ms)
 {
 	std::this_thread::sleep_for(std::chrono::milliseconds(ms));
@@ -60,6 +61,7 @@ void sleep_ms(int ms)
 
 } // namespace
 
+/* see hcf_usb.h */
 bool known(uint16_t vid, uint16_t pid)
 {
 	for (const Known &k : KNOWN)
@@ -68,11 +70,13 @@ bool known(uint16_t vid, uint16_t pid)
 	return false;
 }
 
+/* closed (close()) */
 Usb::~Usb()
 {
 	close();
 }
 
+/* the host's copy of the registers as after a reset, none to send */
 void Usb::defaults()
 {
 	memcpy(regs_, DEFAULTS, sizeof DEFAULTS);
@@ -80,6 +84,7 @@ void Usb::defaults()
 	memset(dirty_, 0, sizeof dirty_);
 }
 
+/* see hcf_usb.h */
 bool Usb::open(uint16_t vid, uint16_t pid, std::string &err)
 {
 	if (libusb_init(&ctx_) != 0) {
@@ -176,6 +181,7 @@ bool Usb::open(uint16_t vid, uint16_t pid, std::string &err)
 	return true;
 }
 
+/* see hcf_usb.h: the status reads cancelled, the interface released */
 void Usb::close()
 {
 	if (h_) {
@@ -200,6 +206,7 @@ void Usb::close()
 	}
 }
 
+/* a status read done: its records taken, the read again */
 void Usb::status_done(libusb_transfer *t)
 {
 	Usb *u = (Usb *)t->user_data;
@@ -219,6 +226,7 @@ void Usb::status_done(libusb_transfer *t)
 	libusb_free_transfer(t);
 }
 
+/* a status record r of n octets into the host's copy (see hcf_usb.h) */
 void Usb::record(const uint8_t *r, size_t n)
 {
 	records_++;
@@ -251,6 +259,7 @@ void Usb::record(const uint8_t *r, size_t n)
 	}
 }
 
+/* an OUT transfer done */
 void Usb::out_done(libusb_transfer *t)
 {
 	Usb *u = (Usb *)t->user_data;
@@ -260,6 +269,7 @@ void Usb::out_done(libusb_transfer *t)
 	libusb_free_transfer(t);
 }
 
+/* n octets at p out on pipe, waited for (2 s at most): false if the device is gone */
 bool Usb::out(int pipe, const uint8_t *p, size_t n)
 {
 	if (gone_ || !h_)
@@ -285,6 +295,7 @@ bool Usb::out(int pipe, const uint8_t *p, size_t n)
 	return until([this] { return out_busy_ == 0; }, 2000) && !gone_;
 }
 
+/* see hcf_usb.h */
 bool Usb::gpio(uint8_t gpout, uint8_t enable, uint8_t mode)
 {
 	gpio_[0] = gpout;
@@ -299,6 +310,7 @@ bool Usb::gpio(uint8_t gpout, uint8_t enable, uint8_t mode)
 	return out(P_GPIO, gpio_, sizeof gpio_);
 }
 
+/* see hcf_usb.h */
 unsigned Usb::get(unsigned f) const
 {
 	unsigned reg = f & 0x7f, shift = (f >> 8) & 7, mask = (f >> 16) & 0xff;
@@ -307,6 +319,7 @@ unsigned Usb::get(unsigned f) const
 	return (regs_[reg] & mask) >> shift;
 }
 
+/* see hcf_usb.h */
 void Usb::set(unsigned f, unsigned value)
 {
 	unsigned reg = f & 0x7f, shift = (f >> 8) & 7, mask = (f >> 16) & 0xff;
@@ -328,6 +341,7 @@ void Usb::set(unsigned f, unsigned value)
 	}
 }
 
+/* see hcf_usb.h */
 bool Usb::flush()
 {
 	std::vector<uint8_t> b;
@@ -361,6 +375,7 @@ bool Usb::flush()
 	return out(P_REG, b.data(), b.size());
 }
 
+/* see hcf_usb.h */
 bool Usb::run(int ms)
 {
 	auto end = std::chrono::steady_clock::now() +
@@ -375,6 +390,7 @@ bool Usb::run(int ms)
 	return true;
 }
 
+/* see hcf_usb.h */
 bool Usb::until(const std::function<bool()> &cond, int ms)
 {
 	auto end = std::chrono::steady_clock::now() +
@@ -390,6 +406,7 @@ bool Usb::until(const std::function<bool()> &cond, int ms)
 	}
 }
 
+/* see hcf_usb.h */
 bool Usb::reset(Id &id, std::string &err)
 {
 	/* the modem interface (ResetAsicModemInterface) */
@@ -429,6 +446,7 @@ bool Usb::reset(Id &id, std::string &err)
 	return true;
 }
 
+/* see hcf_usb.h */
 bool Usb::download(const Image &img, const Module &m, bool spx,
 		   std::string &err, unsigned *sum)
 {
