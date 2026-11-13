@@ -254,8 +254,9 @@ code computes one (the 68000's has a CRC-16 of the 0x8005 family, seed
 0x0707, that nothing calls). The packets' header, acknowledgements and
 retransmission are not in this firmware at all: its 68000's PEP code
 only sends "TELEBIT 2 bit test message." and two other canned frames,
-and what it receives goes nowhere (the T3000 was sold without PEP). The
-packet layer needs a T2500's or WorldBlazer's firmware, or a recording
+and what it receives goes nowhere. The T3000's manual says it speaks
+PEP, so a later firmware probably added the packet layer. It needs a
+later T3000's, a T2500's or a WorldBlazer's firmware, or a recording
 decoded to bits.
 
 ## What the T2000 recordings show
