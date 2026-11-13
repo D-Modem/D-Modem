@@ -26,6 +26,7 @@ The variables D-Modem's programs read, and those its PBX modules set for the pro
 | `DMODEM_USB_TX_GAIN` | read | [The Agere USB 2.0 soft modem: technical details](../agere-usb-details.md), [The Agere USB 2.0 soft modem](../agere-usb.md), [Softmodem hardware: dmodemd on ALSA and USB: technical details](../hardware-details.md) | `frontend/dmodemd/usb_line.cpp` |
 | `DMODEM_UUID` | set for a program | [mod_dmodem: a data modem on a FreeSWITCH channel: technical details](../freeswitch-details.md) | `frontend/freeswitch/mod_dmodem.c` |
 | `SIP_CLEARMODE` | read | [ISDN: the clear 64 kbit/s channel: technical details](../isdn-details.md), [ISDN: the clear 64 kbit/s channel](../isdn.md) | `frontend/dmodemd/sip.cpp` |
+| `SIP_DNS` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_JITTER` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_LOGIN` | read | [Building](../building.md), [Softmodem hardware: dmodemd on ALSA and USB: technical details](../hardware-details.md), [Code review (October 2026): technical details](../review-details.md), [Using dmodemd](../usage.md), [D-Modem on Windows: technical details](../windows-details.md), [D-Modem on Windows](../windows.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_LOG_LEVEL` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
@@ -33,5 +34,6 @@ The variables D-Modem's programs read, and those its PBX modules set for the pro
 | `SIP_RED` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_SRTP` | read | [ISDN: the clear 64 kbit/s channel: technical details](../isdn-details.md), [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_T38` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
+| `SIP_TCP` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_V150` | read | [Building and testing the DSP: technical details](../testing-details.md), [Using dmodemd](../usage.md), [Modem relay (V.150.1): technical details](../v150-details.md), [Modem relay (V.150.1)](../v150.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_V152` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |

@@ -77,6 +77,28 @@ TEST(DialUri, Built)
 	EXPECT_EQ(sip::dial_uri("", "pbx.example"), "");
 }
 
+/* the host that NAPTR and SRV find (RFC 3263): a name with no port */
+TEST(ServiceHost, Rfc3263)
+{
+	bool srv = true;
+	EXPECT_EQ(sip::service_host("sip:bbs@example.com", &srv),
+		  "example.com");
+	EXPECT_FALSE(srv);
+	EXPECT_EQ(sip::service_host("sip:example.com"), "example.com");
+	EXPECT_EQ(sip::service_host("sip:5551000@pbx.example.com;user=phone"),
+		  "pbx.example.com");
+	EXPECT_EQ(sip::service_host("sip:bbs@example.com;transport=tcp",
+				    &srv), "example.com");
+	EXPECT_TRUE(srv);
+	EXPECT_EQ(sip::service_host("<sip:bbs@example.com>"), "example.com");
+	EXPECT_EQ(sip::service_host("sip:bbs@example.com:5060"), "");
+	EXPECT_EQ(sip::service_host("sip:bbs@192.0.2.7"), "");
+	EXPECT_EQ(sip::service_host("sip:bbs@[2001:db8::1]"), "");
+	EXPECT_EQ(sip::service_host("sip:bbs@example.com;maddr=192.0.2.7"),
+		  "");
+	EXPECT_EQ(sip::service_host("bbs@example.com"), "");
+}
+
 /* a caller's number (the URI's user part, a tel: URI's number, without
    parameters or escapes) and name (the display name without quotes) */
 TEST(CallerOf, NumberAndName)

@@ -2919,6 +2919,14 @@ void do_dial(const std::string &number, int fd)
 		return;
 	}
 	say(3, "call %" PRIu32 ": dialling %s", c->serial, uri.c_str());
+	{
+		bool srv_only = false;
+		std::string host = service_host(uri, &srv_only);
+		if (!host.empty())
+			say(3, "call %" PRIu32 ": %s found by DNS: %s, then "
+			    "A/AAAA (RFC 3263)", c->serial, host.c_str(),
+			    srv_only ? "SRV" : "NAPTR, else SRV");
+	}
 	err = sipsess_connect(&c->sess, sock_, uri.c_str(),
 			      anon ? "Anonymous" : nullptr, from.c_str(),
 			      contact, nullptr, 0,
@@ -3101,6 +3109,17 @@ bool add_transport(const char *ifname, const struct sa *a, void *arg)
 	}
 	added->push_back(l);
 	say(4, "SIP on %s (%s)", addr_of(&l).c_str(), ifname);
+	/* (and TCP's, for a host whose NAPTR or SRV records name it; UDP
+	   alone if it can't be had) */
+	if (cfg_.tcp) {
+		err = sip_transp_add(sip_, SIP_TRANSP_TCP, &l);
+		if (err)
+			say(3, "SIP over TCP on %s (%s): %s",
+			    addr_of(&l).c_str(), ifname, strerror(err));
+		else
+			say(4, "SIP over TCP on %s (%s)",
+			    addr_of(&l).c_str(), ifname);
+	}
 	return false;
 }
 
@@ -3199,6 +3218,10 @@ bool init()
 	} else if (cfg_.listen) {
 		std::string uri = "sip:" + domain_;
 		std::string aor = "sip:" + user_ + "@" + domain_;
+		std::string host = service_host(uri);
+		if (!host.empty())
+			say(3, "registration with %s: found by DNS: NAPTR, "
+			    "else SRV, then A/AAAA (RFC 3263)", host.c_str());
 		err = sipreg_alloc(&reg_, sip_, uri.c_str(), aor.c_str(),
 				   nullptr, aor.c_str(), REG_EXPIRES,
 				   user_.c_str(), nullptr, 0, 0, on_auth,
@@ -3261,7 +3284,7 @@ void queue(s16 id, Request *r)
 /* see sip.h */
 bool config_from_env(Config &cfg, bool listen)
 {
-	static std::string user, password, domain, record;
+	static std::string user, password, domain, record, dns;
 	const char *login = getenv("SIP_LOGIN");
 	const char *port = getenv("SIP_PORT");
 	const char *rec_base = getenv("DMODEM_REC");
@@ -3272,6 +3295,8 @@ bool config_from_env(Config &cfg, bool listen)
 	const char *v150 = getenv("SIP_V150");
 	const char *red = getenv("SIP_RED");
 	const char *jitter = getenv("SIP_JITTER");
+	const char *tcp = getenv("SIP_TCP");
+	const char *dns_env = getenv("SIP_DNS");
 	std::string s = login ? login : "";
 	size_t at = s.rfind('@');
 	size_t colon = s.find(':');
@@ -3348,6 +3373,12 @@ bool config_from_env(Config &cfg, bool listen)
 			    std::string_view(v150) == "1" ||
 			    dcore::same_nocase(v150, "on") ||
 			    dcore::same_nocase(v150, "true"));
+	cfg.tcp = !tcp || !(dcore::same_nocase(tcp, "no") ||
+			    std::string_view(tcp) == "0" ||
+			    dcore::same_nocase(tcp, "off") ||
+			    dcore::same_nocase(tcp, "false"));
+	dns = dns_env ? dns_env : "";
+	cfg.dns = dns.empty() ? nullptr : dns.c_str();
 	return true;
 }
 
