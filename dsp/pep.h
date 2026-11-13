@@ -68,7 +68,9 @@ namespace pep {
 const s32 FS = 8000;            /* the ensemble's sample rate */
 const s32 N = 1024;             /* the FFT */
 const s32 GUARD = 61;           /* the first 61 samples repeated after it */
-const s32 EPOCH = N + GUARD;    /* 1085 samples, 135.6 ms */
+const s32 EPOCH = N + GUARD;    /* 1085 samples, 135.6 ms: the start-up's */
+const s32 T_GUARD = 56;
+const s32 T_EPOCH = N + T_GUARD;        /* 1080, a turn's: 9 micro epochs */
 const s16 CARRIERS = 511;       /* bins 1 to 511 */
 const s16 TONE1 = 184;          /* 1437.5 Hz: the timing tones' bins */
 const s16 TONE2 = 216;          /* 1687.5 Hz */
@@ -205,8 +207,9 @@ private:
 	void tx_turn();
 	void tx_epoch_tones(s32 len);
 	void tx_epoch_comb(float sign, float gain,
-			   const std::vector<u8> *mask);
-	void tx_epoch_data(const PepLoading &l, const std::vector<u8> &oct);
+			   const std::vector<u8> *mask, s32 len);
+	void tx_epoch_data(const PepLoading &l, const std::vector<u8> &oct,
+			   s32 len);
 	void tx_samples(const std::vector<cf> &X, s32 len);
 	std::vector<u8> make_packet(u8 type, u8 seq, const u8 *pay, s32 n,
 				    u8 left, s32 cap);

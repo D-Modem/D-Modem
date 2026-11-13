@@ -209,9 +209,10 @@ carrier epoch is a 64 sample block and 56 of guard (120 samples), the
 64 carrier one a 128 sample block and 53 of guard (181). The long epoch
 is 1024 and 61 (1085) when only long epochs are sent, and is cut to
 1080 (9 short ones of 120) or stretched to 1086 (6 of 181) when it is
-mixed with short ones, so both kinds stay on one grid. D-Modem's long
-and micro epochs now have these lengths (1085 and 120; they were 1088
-and 90).
+mixed with short ones, so both kinds stay on one grid. A T2000's
+recordings show the same: 1085 in the start-up, 1080 in every data
+turn. D-Modem's start-up epochs are 1085, its turns' 1080 and its micro
+epochs 120 (they were 1088, 1088 and 90).
 
 **Data mode.** The 68000 hands the DSP one epoch at a time: a word with
 a long-epoch flag and a 4-bit tag, then the octets; the DSP sends what it
@@ -267,16 +268,21 @@ measured:
 
 - The answerer sends 3.1 s of plain 2100 Hz and 70 ms of silence before
   PEP's tones.
-- The epoch is 1024 samples at 8000 Hz plus a guard of about 61 (64 in
-  Telebit's documents; the lossy audio makes it rough), the guard a
-  copy of the symbol's start after it. The comb (E0) is the same both
-  ways, and so are the 9 training epochs.
+- The epoch is 1024 samples at 8000 Hz plus a guard, the guard a copy
+  of the symbol's start after it: 1085 samples in the start-up, 1080
+  (56 of guard) in every data turn, simplex or duplex, as the T3000's
+  firmware does when long epochs are mixed with micro ones. The comb
+  (E0) is the same both ways, and so are the 9 training epochs.
 - The T2000's carriers end at bin 434 (3390.6 Hz).
 - A turn starts with one E0 epoch and no tones; on the 2-bit link the
   data is QPSK times E0's phases.
-- Long turns are about 1.8 s. An idle line is a 46 ms burst each way
-  every 120 ms, about a dozen carriers each; their epoch could not be
-  found.
+- Long turns are about 1.8 s: some 390 samples, then 13 epochs of
+  1080. An idle line is a 360 sample burst each way every 960 samples
+  (120 ms): three micro epochs of 120 (64 and a guard of 56, the
+  carriers at odd multiples of 62.5 Hz, so the guard is the symbol's
+  start negated), the first a flat comb, the next two with about a
+  dozen strong carriers at 0 or 180 degrees to it. Both sides send the
+  same bursts, and every burst is the same.
 
 No turn was decoded to bits, so the packets, the scrambler and the
 loading record of a real Telebit are still unknown.

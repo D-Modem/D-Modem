@@ -44,7 +44,7 @@ const s16 PHASES = 2;
 const s32 TURN_GAP = 160;
 const s32 PRE_LEN = 256;
 /* the window's place in an epoch: the middle of the guard */
-const s32 W_OFF = GUARD / 2;
+const s32 W_OFF = T_GUARD / 2;
 /* after our own signal, the input is ours again after this (its echo) */
 const s32 ECHO_GAP = 80;
 /* and the noise measured from this much after it */
@@ -413,9 +413,10 @@ void PepModem::tx_epoch_tones(s32 len)
 	tx_samples(X, len);
 }
 
-/* a comb epoch: every carrier (or those of mask) times sign, gain */
+/* a comb epoch of len samples: every carrier (or those of mask) times
+   sign, gain */
 void PepModem::tx_epoch_comb(float sign, float gain,
-			     const std::vector<u8> *mask)
+			     const std::vector<u8> *mask, s32 len)
 {
 	std::vector<cf> X(comb_);
 	for (s16 k = 1; k <= CARRIERS; k++) {
@@ -424,12 +425,13 @@ void PepModem::tx_epoch_comb(float sign, float gain,
 			s = -s;
 		X[static_cast<size_t>(k)] *= s * sign;
 	}
-	tx_samples(X, EPOCH);
+	tx_samples(X, len);
 }
 
-/* an epoch of a packet's octets on l, the first bit the least
-   significant, carrier by carrier up; the pilots at the comb's */
-void PepModem::tx_epoch_data(const PepLoading &l, const std::vector<u8> &oct)
+/* an epoch (len samples) of a packet's octets on l, the first bit the
+   least significant, carrier by carrier up; the pilots at the comb's */
+void PepModem::tx_epoch_data(const PepLoading &l, const std::vector<u8> &oct,
+			     s32 len)
 {
 	std::vector<cf> X(CARRIERS + 1, cf(0, 0));
 	s32 pos = 0, nbits = static_cast<s32>(oct.size()) * 8;
@@ -449,7 +451,7 @@ void PepModem::tx_epoch_data(const PepLoading &l, const std::vector<u8> &oct)
 		X[static_cast<size_t>(k)] = tb_map(b, v) *
 			l.gain[static_cast<size_t>(k)];
 	}
-	tx_samples(X, EPOCH);
+	tx_samples(X, len);
 }
 
 /* the bits of a micro turn's carriers (by short bin j, MS_LO to MS_HI)
@@ -531,9 +533,9 @@ void PepModem::tx_start_tones_comb(s16 combs, s16 phases,
 {
 	tx_epoch_tones(EPOCH);
 	for (s16 i = 0; i < combs; i++)
-		tx_epoch_comb(i & 1 ? 1 : -1, 1, nullptr);
+		tx_epoch_comb(i & 1 ? 1 : -1, 1, nullptr, EPOCH);
 	for (s16 i = 0; i < phases; i++)
-		tx_epoch_comb(1, PHASE_GAIN, mask);
+		tx_epoch_comb(1, PHASE_GAIN, mask, EPOCH);
 }
 
 /* a packet of type with seq, n octets of pay, left epochs after it in
@@ -660,14 +662,14 @@ void PepModem::tx_turn()
 
 	out_.insert(out_.end(), static_cast<size_t>(TURN_GAP), 0.0f);
 	tx_epoch_tones(PRE_LEN);
-	tx_epoch_comb(tx_final_on_ ? -1 : 1, 1, nullptr);
+	tx_epoch_comb(tx_final_on_ ? -1 : 1, 1, nullptr, T_EPOCH);
 	for (size_t i = 0; i < ps.size(); i++) {
 		const P &p = ps[i];
 		const u8 *d = p.pay ? p.pay->data() : nullptr;
 		s32 n = p.pay ? static_cast<s32>(p.pay->size()) : 0;
 		tx_epoch_data(l, make_packet(p.type, p.seq, d, n,
 					     static_cast<u8>(ps.size() - 1 - i),
-					     cap));
+					     cap), T_EPOCH);
 	}
 	turns_tx_++;
 	wait_until_ = tx_end_ + (cfg_.calling ? WAIT_CALLER : WAIT_ANSWERER);
@@ -756,12 +758,12 @@ void PepModem::rx_run()
 			rx_phase_epochs();
 			break;
 		case RX_SYNC:
-			if (t_ < static_cast<s64>(at_) + EPOCH + 2 * GUARD)
+			if (t_ < static_cast<s64>(at_) + T_EPOCH + 2 * GUARD)
 				return;
 			rx_turn_sync();
 			break;
 		case RX_EPOCHS:
-			if (t_ < static_cast<s64>(at_) + EPOCH + 2 * GUARD)
+			if (t_ < static_cast<s64>(at_) + T_EPOCH + 2 * GUARD)
 				return;
 			rx_turn_epoch();
 			break;
@@ -1155,9 +1157,9 @@ void PepModem::rx_phase_epochs()
 	start_link();
 	out_.insert(out_.end(), static_cast<size_t>(TURN_GAP), 0.0f);
 	tx_epoch_tones(PRE_LEN);
-	tx_epoch_comb(1, 1, nullptr);
+	tx_epoch_comb(1, 1, nullptr, T_EPOCH);
 	for (s16 p = 0; p < PHASES; p++)
-		tx_epoch_comb(1, PHASE_GAIN, &mask_both_);
+		tx_epoch_comb(1, PHASE_GAIN, &mask_both_, T_EPOCH);
 	wait_until_ = tx_end_ + WAIT_ANSWERER;
 }
 
@@ -1195,7 +1197,7 @@ void PepModem::rx_turn_sync()
 	for (s16 k = 1; k <= CARRIERS; k++)
 		H_[static_cast<size_t>(k)] = 0.5f * H_[static_cast<size_t>(k)] +
 			0.5f * sign * C[k];
-	at_ += EPOCH * r_;
+	at_ += T_EPOCH * r_;
 	rx_left_ = ph_ == PH_C_WAIT6 ? PHASES :
 		   static_cast<s16>(cfg_.turn_max);
 	rx_got_ = 0;
@@ -1255,7 +1257,7 @@ void PepModem::rx_turn_epoch()
 			phase_acc_[static_cast<size_t>(k)] += Y[k] *
 				std::conj(comb_[static_cast<size_t>(k)] *
 					  H_[static_cast<size_t>(k)]);
-		at_ += EPOCH * r_;
+		at_ += T_EPOCH * r_;
 		if (--rx_left_ <= 0) {
 			/* the answerer's word is the link's: on every
 			   carrier we can tell its phase on (1 bit), not
@@ -1350,13 +1352,13 @@ void PepModem::rx_turn_epoch()
 		     dt, ph, s.c_str());
 	}
 	/* late by dt: the next window earlier, the far clock faster */
-	r_ -= 0.05 * dt / EPOCH;
+	r_ -= 0.05 * dt / T_EPOCH;
 	at_ -= 0.5 * dt;
 	rx_got_++;
 
 	scramble(oct.data(), oct.size());
 	bool ok = rx_packet(oct);
-	at_ += EPOCH * r_;
+	at_ += T_EPOCH * r_;
 	if (ok) {
 		rx_left_ = static_cast<s16>(oct[3]);
 		if (rx_final_on_ && !rx_final_seen_) {
@@ -1675,13 +1677,13 @@ void PepModem::check_up()
 /* see pep.h */
 s32 PepModem::tx_rate() const
 {
-	return static_cast<s32>(s64{tx_final_.total} * FS / EPOCH);
+	return static_cast<s32>(s64{tx_final_.total} * FS / T_EPOCH);
 }
 
 /* see pep.h */
 s32 PepModem::rx_rate() const
 {
-	return static_cast<s32>(s64{rx_final_.total} * FS / EPOCH);
+	return static_cast<s32>(s64{rx_final_.total} * FS / T_EPOCH);
 }
 
 /* see pep.h */
@@ -1695,7 +1697,7 @@ s32 PepModem::duplex_rate(bool rx) const
 {
 	const PepLoading &l = rx ? rx_final_ : tx_final_;
 	s64 pay = s64{std::max(0, l.octets() - OVERHEAD)} * 8 * cfg_.turn_max;
-	s64 turn = TURN_GAP + PRE_LEN + EPOCH + s64{cfg_.turn_max} * EPOCH;
+	s64 turn = TURN_GAP + PRE_LEN + T_EPOCH + s64{cfg_.turn_max} * T_EPOCH;
 	return static_cast<s32>(pay * FS / (2 * turn + static_cast<s64>(rtd_)));
 }
 
