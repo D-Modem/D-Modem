@@ -64,13 +64,20 @@ const s16 TONES_HITS = 3;
 /* micro turns (D-Modem's for Telebit's micro packets, 88 baud): the
    gap, 24 ms of the tones, then short epochs of 64 samples and 26 of
    guard (90, 88.9 baud): one of the comb (its timing), MS_DATA of one
-   packet; their carriers every 16th bin (125 Hz) from 375 to 3375 Hz,
-   16 times the power (the long epoch's power on a 16th of the
+   packet; their carriers 125 Hz apart at odd multiples of 62.5 Hz,
+   312.5 to 3312.5 Hz (the T3000's micro epochs' grid, its bins 8, 24,
+   40 ...: the waveform's period 128 samples, any 64 of it a window), 16
+   times the power (the long epoch's power on a 16th of the
    carriers), so 2 bits more than the loading's there, 6 at most; the
    window from 13 samples in */
 const s32 PRE_SHORT = 192;
 const s32 MS_N = 64, MS_G = 26, MS_EP = MS_N + MS_G, MS_W = 13;
-const s16 MS_DATA = 3, MS_STEP = 16, MS_LO = 3, MS_HI = 27;
+const s16 MS_DATA = 3, MS_STEP = 16, MS_LO = 2, MS_HI = 26;
+/* short bin j's bin (see above) */
+inline s16 ms_bin(s16 j)
+{
+	return static_cast<s16>(j * MS_STEP + MS_STEP / 2);
+}
 const float MS_BOOST = 4;
 const s32 MS_LEN = (1 + MS_DATA) * MS_EP;
 /* the receiver's search for the short comb from the tones' end
@@ -123,6 +130,113 @@ inline bool in_window(u8 b, u8 a) { return seq_diff(b, a) < WINDOW; }
 
 /* the bits a carrier may take, fewest first */
 const s16 STEPS[] = { 0, 2, 4, 5, 6 };
+
+/* Telebit's constellations, as the T3000's PEP DSP program (firmware
+   LA3.00, its mapper at PM 0x8B26) has them: of a carrier's b bits v,
+   the two lowest the quadrant (bit 1 x negative, bit 0 y negative), the
+   rest the point in it, from a nested table of the first quadrant's
+   (odd coordinates; its first 4 are 16-QAM's, 16 64-QAM's, 64
+   256-QAM's; each axis Gray coded: 1, 3, 7, 5, 15, 13, 9, 11); 5 and 7
+   bits the cross constellations through tables of their own into it,
+   3 an eight point star (docs/dsp/pep-details.md) */
+const s8 TB_QUAD[64][2] = {
+	{1, 1}, {1, 3}, {3, 1}, {3, 3}, {1, 7}, {1, 5}, {3, 7}, {3, 5},
+	{7, 1}, {7, 3}, {5, 1}, {5, 3}, {7, 7}, {7, 5}, {5, 7}, {5, 5},
+	{1, 15}, {1, 13}, {3, 15}, {3, 13}, {1, 9}, {1, 11}, {3, 9}, {3, 11},
+	{7, 15}, {7, 13}, {5, 15}, {5, 13}, {7, 9}, {7, 11}, {5, 9}, {5, 11},
+	{15, 1}, {15, 3}, {13, 1}, {13, 3}, {15, 7}, {15, 5}, {13, 7}, {13, 5},
+	{9, 1}, {9, 3}, {11, 1}, {11, 3}, {9, 7}, {9, 5}, {11, 7}, {11, 5},
+	{15, 15}, {15, 13}, {13, 15}, {13, 13}, {15, 9}, {15, 11}, {13, 9},
+	{13, 11},
+	{9, 15}, {9, 13}, {11, 15}, {11, 13}, {9, 9}, {9, 11}, {11, 9}, {11, 11},
+};
+const u8 TB_CROSS32[8] = { 0, 1, 2, 3, 10, 5, 11, 7 };
+const u8 TB_CROSS128[32] = {
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+	40, 41, 42, 43, 20, 21, 22, 23, 44, 45, 46, 47, 28, 29, 30, 31,
+};
+const s8 TB_STAR[8][2] = {
+	{1, 1}, {-1, 1}, {1, -1}, {-1, -1}, {0, 3}, {-3, 0}, {3, 0}, {0, -3},
+};
+
+/* the points of b bits (2 to 8), at a mean power of 1, by value */
+const std::vector<cf> &tb_points(s16 b)
+{
+	static std::vector<cf> pts[9];
+	std::vector<cf> &p = pts[b];
+	if (!p.empty())
+		return p;
+	s32 n = 1 << b;
+	p.resize(static_cast<size_t>(n));
+	double e = 0;
+	for (s32 v = 0; v < n; v++) {
+		float x, y;
+		if (b == 3) {
+			x = TB_STAR[v][0];
+			y = TB_STAR[v][1];
+		} else {
+			s32 i = v >> 2;
+			if (b == 5)
+				i = TB_CROSS32[i];
+			else if (b == 7)
+				i = TB_CROSS128[i];
+			x = TB_QUAD[i][0];
+			y = TB_QUAD[i][1];
+			if (v & 2)
+				x = -x;
+			if (v & 1)
+				y = -y;
+		}
+		p[static_cast<size_t>(v)] = cf(x, y);
+		e += x * x + y * y;
+	}
+	float sc = static_cast<float>(1 / std::sqrt(e / n));
+	for (cf &z : p)
+		z *= sc;
+	return p;
+}
+
+/* Telebit's point of b bits v */
+cf tb_map(s16 b, u32 v)
+{
+	return tb_points(b)[v & ((1u << b) - 1)];
+}
+
+/* the value of the point of b bits nearest z */
+u32 tb_slice(s16 b, cf z)
+{
+	const std::vector<cf> &p = tb_points(b);
+	u32 best = 0;
+	float d = 1e30f;
+	for (size_t v = 0; v < p.size(); v++) {
+		float e = std::norm(z - p[v]);
+		if (e < d) {
+			d = e;
+			best = static_cast<u32>(v);
+		}
+	}
+	return best;
+}
+
+/* the SNR (ratio) b bits need, as VwbQam::snr_needed() counts it: the
+   points' mean power (1) against their half distance's squared, times
+   q^2 / 2 */
+float tb_snr_needed(s16 b, float q = 4.75f)
+{
+	/* the squares' (and BPSK's) are VwbQam's */
+	if (b < 3 || !(b & 1))
+		return VwbQam::snr_needed(b, q);
+	static float dmin[9];
+	float &d = dmin[b];
+	if (d == 0) {
+		const std::vector<cf> &p = tb_points(b);
+		d = 1e30f;
+		for (size_t i = 0; i < p.size(); i++)
+			for (size_t j = i + 1; j < p.size(); j++)
+				d = std::min(d, std::norm(p[i] - p[j]));
+	}
+	return q * q / (d / 4) / 2;
+}
 
 } // namespace
 
@@ -189,7 +303,8 @@ void PepModem::init(const Config &c, Source src, Sink sink)
 	in_.init(8 * 8192);
 	scale_ = REF_RMS * std::sqrt(std::pow(10.0f, -2.7f) / 2);
 	/* the comb: every carrier at -27 dBR, Newman's phases (a low peak
-	   to mean ratio) */
+	   to mean ratio; the T3000's own, an LFSR's, peak 10 dB higher:
+	   docs/dsp/pep-details.md) */
 	comb_.assign(CARRIERS + 1, cf(0, 0));
 	for (s16 k = 1; k <= CARRIERS; k++)
 		comb_[static_cast<size_t>(k)] = std::polar(1.0,
@@ -331,20 +446,20 @@ void PepModem::tx_epoch_data(const PepLoading &l, const std::vector<u8> &oct)
 			if (pos < nbits && (oct[static_cast<size_t>(pos / 8)] >>
 					    (pos % 8) & 1))
 				v |= 1u << j;
-		X[static_cast<size_t>(k)] = VwbQam::map(b, v) *
+		X[static_cast<size_t>(k)] = tb_map(b, v) *
 			l.gain[static_cast<size_t>(k)];
 	}
 	tx_samples(X, EPOCH);
 }
 
 /* the bits of a micro turn's carriers (by short bin j, MS_LO to MS_HI)
-   on loading l: 2 more than l's at bin 16 j, 6 at most, none where it
+   on loading l: 2 more than l's at its bin, 6 at most, none where it
    has none */
 void PepModem::micro_bits(const PepLoading &l, std::vector<u8> &b) const
 {
 	b.assign(MS_HI + 1, 0);
 	for (s16 j = MS_LO; j <= MS_HI; j++) {
-		u8 lb = l.bits[static_cast<size_t>(j * MS_STEP)];
+		u8 lb = l.bits[static_cast<size_t>(ms_bin(j))];
 		b[static_cast<size_t>(j)] = lb == 0 || lb == PILOT ? 0 :
 			static_cast<u8>(std::min<s16>(MAX_BITS, lb + 2));
 	}
@@ -361,16 +476,17 @@ s32 PepModem::micro_octets(const PepLoading &l) const
 	return n * MS_DATA / 8;
 }
 
-/* a short epoch of X (by bin, only every 16th used): its period of 64
-   (the IFFT's first 64), then their first 26 again */
+/* a short epoch of X (by bin, only ms_bin()'s used): the IFFT's first
+   MS_EP samples (its period 128, any 64 of them a window) */
 void PepModem::tx_short(const std::vector<cf> &X)
 {
 	std::vector<cf> a(N, cf(0, 0));
-	for (s16 k = MS_STEP; k <= CARRIERS; k += MS_STEP)
-		a[static_cast<size_t>(k)] = X[static_cast<size_t>(k)];
+	for (s16 j = 0; ms_bin(j) <= CARRIERS; j++)
+		a[static_cast<size_t>(ms_bin(j))] =
+			X[static_cast<size_t>(ms_bin(j))];
 	fft_.inverse(a.data());
 	for (s32 i = 0; i < MS_EP; i++)
-		out_.push_back(2 * scale_ * a[static_cast<size_t>(i % MS_N)].real());
+		out_.push_back(2 * scale_ * a[static_cast<size_t>(i)].real());
 	tx_end_ = t_ + static_cast<s64>(out_.size());
 	rx_ = RX_OFF;
 	rx_from_ = tx_end_ + ECHO_GAP;
@@ -386,14 +502,14 @@ void PepModem::tx_micro(const PepLoading &l, const std::vector<u8> &oct)
 	tx_epoch_tones(PRE_SHORT);
 	std::vector<cf> X(CARRIERS + 1, cf(0, 0));
 	for (s16 j = MS_LO; j <= MS_HI; j++)
-		X[static_cast<size_t>(j * MS_STEP)] = MS_BOOST *
-			comb_[static_cast<size_t>(j * MS_STEP)];
+		X[static_cast<size_t>(ms_bin(j))] = MS_BOOST *
+			comb_[static_cast<size_t>(ms_bin(j))];
 	tx_short(X);
 	s32 pos = 0, nbits = static_cast<s32>(oct.size()) * 8;
 	for (s16 e = 0; e < MS_DATA; e++) {
 		std::fill(X.begin(), X.end(), cf(0, 0));
 		for (s16 j = MS_LO; j <= MS_HI; j++) {
-			size_t k = static_cast<size_t>(j * MS_STEP);
+			size_t k = static_cast<size_t>(ms_bin(j));
 			u8 nb = b[static_cast<size_t>(j)];
 			if (!nb)
 				continue;
@@ -402,7 +518,7 @@ void PepModem::tx_micro(const PepLoading &l, const std::vector<u8> &oct)
 				if (pos < nbits && (oct[static_cast<size_t>(
 						pos / 8)] >> (pos % 8) & 1))
 					v |= 1u << i;
-			X[k] = VwbQam::map(nb, v) * l.gain[k] * MS_BOOST;
+			X[k] = tb_map(nb, v) * l.gain[k] * MS_BOOST;
 		}
 		tx_short(X);
 	}
@@ -711,7 +827,7 @@ void PepModem::window(double at, cf *Y, double r) const
 			static_cast<float>(-TWO_PI * k * W_OFF / N));
 }
 
-/* the short epoch at line time at: its bins every 16th (the rest 0),
+/* the short epoch at line time at: its bins ms_bin() (the rest 0),
    as window() gives a long one's (the same scale, from its start) */
 void PepModem::window_short(double at, cf *Y) const
 {
@@ -725,8 +841,8 @@ void PepModem::window_short(double at, cf *Y) const
 		cf c(0, 0);
 		for (s32 n = 0; n < MS_N; n++)
 			c += y[n] * std::polar(1.0f, static_cast<float>(
-				-TWO_PI * j * (n + MS_W) / MS_N));
-		Y[j * MS_STEP] = c * static_cast<float>(N / MS_N);
+				-TWO_PI * (j + 0.5) * (n + MS_W) / MS_N));
+		Y[ms_bin(j)] = c * static_cast<float>(N / MS_N);
 	}
 }
 
@@ -746,7 +862,7 @@ bool PepModem::rx_micro()
 		double e = 0;
 		cf prev(0, 0);
 		for (s16 j = MS_LO; j <= MS_HI; j++) {
-			size_t k = static_cast<size_t>(j * MS_STEP);
+			size_t k = static_cast<size_t>(ms_bin(j));
 			cf c = Y[k] * std::conj(comb_[k] * H_[k]);
 			if (j > MS_LO)
 				sum += std::complex<double>(c * std::conj(prev));
@@ -778,7 +894,7 @@ bool PepModem::rx_micro()
 	window_short(at, Y.data());
 	std::complex<double> cp(0, 0);
 	for (s16 j = MS_LO; j <= MS_HI; j++) {
-		size_t k = static_cast<size_t>(j * MS_STEP);
+		size_t k = static_cast<size_t>(ms_bin(j));
 		cp += std::complex<double>(Y[k] * std::conj(comb_[k] * H_[k] *
 							   MS_BOOST));
 	}
@@ -791,13 +907,13 @@ bool PepModem::rx_micro()
 	for (s16 e = 0; e < MS_DATA; e++) {
 		window_short(at + (1 + e) * MS_EP * r_, Y.data());
 		for (s16 j = MS_LO; j <= MS_HI; j++) {
-			size_t k = static_cast<size_t>(j * MS_STEP);
+			size_t k = static_cast<size_t>(ms_bin(j));
 			u8 nb = b[static_cast<size_t>(j)];
 			if (!nb)
 				continue;
 			cf z = Y[k] / H_[k] * rot /
 				(rx_final_.gain[k] * MS_BOOST);
-			u32 v = VwbQam::slice(nb, z);
+			u32 v = tb_slice(nb, z);
 			for (s16 i = 0; i < nb; i++, pos++)
 				if (pos < nbits && (v >> i & 1))
 					oct[static_cast<size_t>(pos / 8)] |=
@@ -1060,9 +1176,9 @@ void PepModem::decode(const cf *Z, const PepLoading &l, std::vector<u8> &oct,
 		if (!b)
 			continue;
 		float g = l.gain[static_cast<size_t>(k)];
-		u32 v = VwbQam::slice(b, Z[k] / g);
+		u32 v = tb_slice(b, Z[k] / g);
 		if (dec)
-			(*dec)[static_cast<size_t>(k)] = VwbQam::map(b, v) * g;
+			(*dec)[static_cast<size_t>(k)] = tb_map(b, v) * g;
 		for (s16 j = 0; j < b; j++, pos++)
 			if (pos < nbits && (v >> j & 1))
 				oct[static_cast<size_t>(pos / 8)] |=
@@ -1321,7 +1437,7 @@ double PepModem::noise(s16 k) const
 std::vector<u8> PepModem::capable(s16 b) const
 {
 	std::vector<u8> m(CARRIERS + 1, 0);
-	float need = VwbQam::snr_needed(b) *
+	float need = tb_snr_needed(b) *
 		std::pow(10.0f, cfg_.margin_db / 10);
 	for (s16 k = 1; k <= CARRIERS; k++) {
 		if (k == TONE1 || k == TONE2)
@@ -1350,7 +1466,7 @@ PepLoading PepModem::allocate() const
 	while (nsteps < 5 && STEPS[nsteps] <= cfg_.max_bits)
 		nsteps++;
 	auto need = [&](s16 k, s16 s) {
-		return VwbQam::snr_needed(STEPS[s]) * margin /
+		return tb_snr_needed(STEPS[s]) * margin /
 			snr[static_cast<size_t>(k)];
 	};
 	for (s16 k = 1; k <= CARRIERS; k++) {

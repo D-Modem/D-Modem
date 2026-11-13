@@ -26,8 +26,12 @@ understand D-Modem. Five recordings of a Telebit T2000's calls confirm
 the epoch, the comb, the timing tones and the start-up's order, and
 show the answer tone before PEP and the short turns of an idle line
 (see [the technical details](pep-details.md#what-the-t2000-recordings-show)),
-but no turn of them could be decoded to bits, so the packets of a real
-Telebit are still unknown.
+but no turn of them could be decoded to bits. A T3000's firmware has
+since given Telebit's constellations and the carriers of its micro
+packets, which D-Modem now uses, and its start-up's steps (see
+[what the firmware shows](pep-details.md#what-the-t3000s-firmware-shows)),
+but not yet its packets, so the packets of a real Telebit are still
+unknown.
 
 ## Using it
 

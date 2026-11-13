@@ -15,7 +15,9 @@
  *    the ensemble: a 1024 point FFT at 8000 Hz, its 511 carriers 7.8125
  *              Hz apart; an epoch is the 1024 samples and their first 64
  *              again after them (the patent's guard), 136 ms, 7.35 baud;
- *              0, 2, 4, 5 or 6 bits a carrier (QAM, each axis Gray coded)
+ *              0, 2, 4, 5 or 6 bits a carrier, in Telebit's
+ *              constellations (a T3000's firmware's: the quadrant in the
+ *              two lowest bits, 5 bits a cross)
  *    the start-up (the patent's eight steps): the answerer's epoch of
  *              1437.5 and 1687.5 Hz at -3 dBR each, then its comb of all
  *              carriers at -27 dBR; both measure the line's noise in
@@ -38,8 +40,10 @@
  *    the packet's header (type, length, sequence number, the epochs left
  *    in the turn, the far side's acknowledgements) and a scrambler on
  *    it.  So it talks to another D-Modem; a TrailBlazer would not
- *    understand it (no recording or firmware has been found to check
- *    against).
+ *    understand it (Telebit's packets are still unknown).  A T3000's
+ *    firmware (docs/dsp/pep-details.md) gave the
+ *    constellations and the micro packets' carriers, which this modem
+ *    uses, but not the packets.
  *
  */
 
