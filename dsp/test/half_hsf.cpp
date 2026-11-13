@@ -56,6 +56,7 @@
 #include <vector>
 
 #include "hw/ac97_codec.hpp"
+#include "hw/cadmus2.hpp"
 #include "hw/codec_line.hpp"
 #include "hw/ich.hpp"
 #include "hw/pci.hpp"
@@ -721,26 +722,15 @@ void OS(OsIoPortWritel)(unsigned p, u32 v) { hsf.io_out(p, v, 4); }
 struct UsbReq { int kind; void *ctx; byte req; word val, idx; std::vector<byte> data; };
 typedef void *HANDLE_T;
 
-/* the device, as far as it is known: it takes every request, answers
-   GET_INFORMATION with the HSF firmware running (byte 2 = 3), sends no
-   notifications, gives the line's samples (16 bit, little-endian, at
-   the codec's rate) and takes the module's */
-static std::vector<byte> cd2_notes;
+/* the device (hw/cadmus2.hpp): GET_INFORMATION with the HSF firmware
+   running (byte 2 = 3), the scripts run, their notifications; the
+   line's samples (16 bit, little-endian, at the codec's rate) to the
+   module and the module's taken */
+static Cadmus2 cd2dev;
 static void cd2_control(byte r, word val, word idx, const std::vector<byte> &d)
 {
-	(void)d;
-	/* a script run: its end, notified (reply code 1) */
-	if (r == 2 && !getenv("HSF_CD2_SILENT")) {
-		/* script 1 (the start): its reply, code 1, the firmware's
-		   version, a flag (1: ?), status 1 */
-		unsigned ver = 0x10, flag = 0;
-		if (const char *e = getenv("HSF_CD2_START"))
-			sscanf(e, "%x:%x", &ver, &flag);
-		byte n[] = {0xc1, 0x02, (byte)(idx & 0xff), (byte)(val >> 8),
-			    (byte)idx, (byte)(idx >> 8), 4, 0,
-			    1, (byte)ver, (byte)flag, 1};
-		cd2_notes.assign(n, n + sizeof(n));
-	}
+	if (r == 2)
+		cd2dev.script(val, idx, d);
 }
 static unsigned cd2_control_in(byte r, word val, word idx, byte *buf, unsigned n)
 {
@@ -752,10 +742,10 @@ static unsigned cd2_control_in(byte r, word val, word idx, byte *buf, unsigned n
 }
 static bool cd2_notification(std::vector<byte> &nt)
 {
-	if (cd2_notes.empty())
+	if (cd2dev.notes.empty())
 		return false;
-	nt.swap(cd2_notes);
-	cd2_notes.clear();
+	nt = cd2dev.notes.front();
+	cd2dev.notes.pop_front();
 	return true;
 }
 static std::vector<short> cd2_in;        /* the line's samples, to the host */
@@ -947,6 +937,7 @@ static void run_work()
 static void cd2_tick()
 {
 	run_work();
+	cd2dev.tick();
 	std::vector<UsbReq> done;
 	done.swap(cd2.ctl);
 	for (auto &q : done) {
