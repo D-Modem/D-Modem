@@ -40,14 +40,23 @@
  *      3d t n    wait n ms (t 0x1e; 0xf0 and 0xfe: n set by the host)
  *      26        push a                27 v      push v
  *      28        send what was pushed (the notification)
- *      2e 34 35 44 45 46 47, 2f/30/31/32/33 n: the streams and the
- *                interrupts (33 n: a = 0, nothing pending)
+ *      30 n      ask channel n (33 n: a = what came, 1, once)
+ *      2e 34 35 44 45 46 47, 2f/31/32 n: the streams and the
+ *                interrupts
  *
  *    B is the bridge's own registers (its GPIOs and its serial port to
- *    the codec: B[0x1a], B[0x1b] the word out, B[0x04] bit 5 ready), X
- *    and Y two register files behind it (the codec's and the line
- *    side's, it seems).  The meanings above are what the scripts' use of
- *    them suggests, not a datasheet's.
+ *    the codec: B[0x1a], B[0x1b] the word out, B[0x04] bit 5 ready;
+ *    B[0x20] bit 1 set on a SmartDAA board, which script 1 reports and
+ *    script 8 goes by), X and Y two register files behind it (the
+ *    codec's and the line side's, it seems).  The meanings above are
+ *    what the scripts' use of them suggests, not a datasheet's.
+ *
+ *    The line's samples go on the bulk pipes (0x81 in, 0x01 out) in
+ *    frames of 128 bytes: 64 samples, 16 bit little-endian, at 16000 Hz,
+ *    each way.  The module posts its receive requests a frame each, all
+ *    of its 4096 byte ring at once, and sends a frame for each frame it
+ *    receives (what half_hsf's calls showed: Conexant's own modem calls
+ *    from V.21 to V.34 through it, as a SmartDAA board).
  */
 
 #ifndef DMODEM_HW_CADMUS2_HPP
@@ -114,6 +123,7 @@ private:
 	};
 	std::vector<Ctx> ctx;
 	unsigned long long now = 0;
+	u8 pending[256] = {};
 
 	Ctx &slot(unsigned s)
 	{
@@ -209,10 +219,11 @@ private:
 			case 0x26: c.out.push_back(c.a); break;
 			case 0x27: c.out.push_back(r); len = 2; break;
 			case 0x28: send(c); break;
-			case 0x2f: case 0x30: case 0x31: case 0x32:
+			case 0x30: pending[r] = 1; len = 2; break;
+			case 0x33: c.a = pending[r]; pending[r] = 0; len = 2; break;
+			case 0x2f: case 0x31: case 0x32:
 				len = 2;
 				break;
-			case 0x33: c.a = 0; len = 2; break;
 			case 0x2e: case 0x34: case 0x35:
 			case 0x44: case 0x45: case 0x46: case 0x47:
 				break;

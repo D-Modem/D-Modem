@@ -49,6 +49,7 @@
 #include <string.h>
 #include <ucontext.h>
 
+#include <deque>
 #include <fstream>
 #include <map>
 #include <string>
@@ -729,6 +730,19 @@ typedef void *HANDLE_T;
 static Cadmus2 cd2dev;
 static void cd2_control(byte r, word val, word idx, const std::vector<byte> &d)
 {
+	static bool once;
+	if (!once) {
+		once = true;
+		cd2dev.dbg = hsf.dbg;
+		/* a SmartDAA board (B[0x20] bit 1, which script 1
+		   reports), or with HSF_CD2_PLAIN one with only the codec,
+		   which the module sets up through its words; that one
+		   calls at V.22bis and below, and its receiver fails above
+		   (the real codec's filters, it seems, which the model has
+		   not) */
+		if (!getenv("HSF_CD2_PLAIN"))
+			cd2dev.B[0x20] |= 2;
+	}
 	if (r == 2)
 		cd2dev.script(val, idx, d);
 }
@@ -749,13 +763,25 @@ static bool cd2_notification(std::vector<byte> &nt)
 	return true;
 }
 static std::vector<short> cd2_in;        /* the line's samples, to the host */
-static void cd2_tx(const byte *p, unsigned n) { (void)p; (void)n; }
+static std::deque<short> cd2_out;       /* the module's samples, to the line */
+enum { CD2_TX_ROOM = 64, CD2_RX_ROOM = 256 };
+static void cd2_tx(const byte *p, unsigned n)
+{
+	for (unsigned i = 0; i + 1 < n; i += 2)
+		cd2_out.push_back((short)(p[i] | p[i + 1] << 8));
+}
+/* a receive transfer (the module's are 128 bytes, a frame): n / 2 of
+   the line's samples, once there are as many */
 static unsigned cd2_rx(byte *p, unsigned n)
 {
-	if (cd2_in.size() * 2 < n)
+	unsigned k = n / 2;
+	if (cd2_in.size() < k)
 		return 0;
-	memcpy(p, cd2_in.data(), n);
-	cd2_in.erase(cd2_in.begin(), cd2_in.begin() + n / 2);
+	for (unsigned i = 0; i < k; i++) {
+		p[2 * i] = (byte)cd2_in[i];
+		p[2 * i + 1] = (byte)((unsigned short)cd2_in[i] >> 8);
+	}
+	cd2_in.erase(cd2_in.begin(), cd2_in.begin() + k);
 	return n;
 }
 
@@ -769,8 +795,8 @@ static struct Cd2 {
 	bool notify_armed = false;
 	std::vector<UsbReq> ctl;                    /* to complete */
 	std::vector<std::pair<byte *, unsigned>> rxq;  /* buffers given */
-	std::vector<unsigned> txq;                  /* lengths sent */
-	unsigned long long n_ctl = 0, n_rx = 0, n_tx = 0;
+	std::deque<std::pair<const byte *, unsigned>> txq;  /* sent, not yet taken */
+	unsigned long long n_ctl = 0, n_rx = 0, n_tx = 0, n_over = 0, n_under = 0;
 	byte handles[8];
 } cd2;
 
@@ -808,6 +834,8 @@ void OS(OsUsbWaitForControlRequestCompletion)(void *h)
 	while (!cd2.ctl.empty())
 		hsf.run_time(1);
 }
+/* a transmit request: always one (the module drops its frame when
+   there is none); the bridge takes the data as its codec plays it */
 void *OS(OsUsbGetTxRequest)(void *h) { (void)h; return &cd2.handles[1]; }
 void OS(OsUsbReturnUnusedRequest)(void *h) { (void)h; }
 void OS(OsUsbResetPipes)(void *h) { (void)h; LOG("usb: ResetPipes\n"); }
@@ -881,9 +909,9 @@ int OS(OsUsbMakeDataTransmitRequest)(void *h, void *req, void *buf, u32 n)
 {
 	(void)h; (void)req;
 	if (cd2.n_tx++ < 4 || hsf.dbg > 2)
-		hexlog("tx", (byte *)buf, n > 64 ? 64 : n);
-	cd2_tx((byte *)buf, n);
-	cd2.txq.push_back(n);
+		hexlog("tx", (byte *)buf, n);
+	cd2.txq.emplace_back((const byte *)buf, n);
+
 	return 1;
 }
 
@@ -946,13 +974,17 @@ static void cd2_tick()
 			cd2.ctldone(cd2.upper, q.ctx, q.req, q.val, q.idx);
 		}
 	}
-	std::vector<unsigned> tx;
-	tx.swap(cd2.txq);
-	for (unsigned n : tx)
+	/* a bulk OUT completes when the bridge takes it, which it does as
+	   its codec plays: room for about 4 ms */
+	while (!cd2.txq.empty() && cd2_out.size() < CD2_TX_ROOM) {
+		auto b = cd2.txq.front();
+		cd2.txq.pop_front();
+		cd2_tx(b.first, b.second);
 		if (cd2.txdone) {
 			stack_clear();
-			cd2.txdone(cd2.upper, n);
+			cd2.txdone(cd2.upper, b.second);
 		}
+	}
 	/* the device's notifications */
 	std::vector<byte> nt;
 	while (cd2.notify_armed && cd2.notify && cd2_notification(nt)) {
@@ -971,6 +1003,8 @@ static void cd2_rx_fill()
 		if (!n)
 			break;
 		cd2.rxq.erase(cd2.rxq.begin());
+		if (hsf.dbg > 1)
+			LOG("usb: rx %u bytes given\n", n);
 		stack_clear();
 		cd2.rx(cd2.upper, b.first, n);
 	}
@@ -1662,21 +1696,38 @@ short Hsf::line_sample(short in)
 {
 	unsigned long long ms0 = ms();
 #if HSF_USB
-	static std::vector<short> out_q;
 	short out = codec_line_sample(in, (double)line_rate / codec_rate,
-				      [this](short adc) {
+				      [](short adc) {
 		cd2_in.push_back(adc);
+		/* the bridge's own buffer: no older samples than it holds
+		   while the module has not asked for them */
+		if (cd2_in.size() > CD2_RX_ROOM && cd2.rxq.empty()) {
+			cd2.n_over++;
+			cd2_in.erase(cd2_in.begin(),
+				     cd2_in.end() - CD2_RX_ROOM);
+		}
 		short dac = 0;
-		(void)this;
+		if (cd2_out.empty())
+			cd2.n_under++;
+		else {
+			dac = cd2_out.front();
+			cd2_out.pop_front();
+		}
 		return dac;
 	});
 	line_n++;
 	if (ms() != ms0) {
+		if (dbg > 1 && ms() % 1000 == 0)
+			LOG("usb: %llu ms: line in %zu out %zu, transfers "
+			    "in %llu (%zu waiting) out %llu (%zu waiting), "
+			    "samples lost %llu, missing %llu\n", ms(),
+			    cd2_in.size(), cd2_out.size(), cd2.n_rx,
+			    cd2.rxq.size(), cd2.n_tx, cd2.txq.size(),
+			    cd2.n_over, cd2.n_under);
 		cd2_rx_fill();
 		cd2_tick();
 		run_timers();
 	}
-	(void)out_q;
 	return out;
 #else
 	short out = codec_line_sample(in, (double)line_rate / codec_rate,
@@ -1722,6 +1773,13 @@ int Hsf::start()
 	int r;
 
 	keep8 = env("KEEP8") != nullptr;
+#if HSF_USB
+	/* the bridge's codec: 16000 Hz, as the module's tones are (its 2100
+	   and 1800 Hz come out so), each way */
+	codec_rate = 16000;
+#endif
+	if (env("CODEC_RATE"))
+		codec_rate = (unsigned)atoi(env("CODEC_RATE"));
 	/* HSF_ADC=<on|off>:<channel>:<code>,...: the ADC's readings */
 	if (const char *a = env("ADC")) {
 		adc_on = true;
@@ -1750,7 +1808,8 @@ int Hsf::start()
 
 #if HSF_USB
 	snprintf(path, sizeof(path), "%s/%s", dir,
-		 env("INF") ? env("INF") : "hsfcadmus2.inf");
+		 env("INF") ? env("INF") : env("CD2_PLAIN") ?
+		 "hsfcadmus2.inf" : "hsfcadmus2smart.inf");
 #else
 	snprintf(path, sizeof(path), "%s/hsfmc97ich.inf", dir);
 #endif

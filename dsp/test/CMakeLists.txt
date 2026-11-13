@@ -637,7 +637,8 @@ target_link_libraries(interop_call PRIVATE interop_driver)
 set(_progs "HALF_SMARTLINK=\"$<TARGET_FILE:half_smartlink>\""
 	"HALF_OPEN=\"$<TARGET_FILE:half_open>\""
 	"HALF_OPEN8=\"$<TARGET_FILE:half_open8>\"")
-foreach(_p agere sm56 spandsp pctel hsf broadcom intel ess hda courier)
+foreach(_p agere sm56 spandsp pctel hsf hsf_usb broadcom intel ess hda
+		courier)
 	if(TARGET half_${_p})
 		string(TOUPPER ${_p} _u)
 		list(APPEND _progs "HALF_${_u}=\"$<TARGET_FILE:half_${_p}>\"")

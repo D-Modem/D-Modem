@@ -72,6 +72,9 @@ const std::map<std::string, const char *> &programs()
 #ifdef HALF_HSF
 		{ "hsf", HALF_HSF },
 #endif
+#ifdef HALF_HSF_USB
+		{ "hsf_usb", HALF_HSF_USB },
+#endif
 #ifdef HALF_BROADCOM
 		{ "broadcom", HALF_BROADCOM },
 #endif
@@ -1202,6 +1205,23 @@ std::vector<Call> calls()
 		if (h.open_calls)
 			add("hsf", std::string("hsf_") + h.ms + "_open_calls",
 			    "open", "hsf", o,
+			    { "NET=9600:8000:ulaw", "PROTO_B=" + a });
+	}
+	/* the same modem on its USB back end (half_hsf_usb: hsfusbcd2 and a
+	   Cadmus 2 bridge with a SmartDAA, hw/cadmus2.hpp), each way */
+	for (auto h : { Hsf{ "V21,0", "21", true, false },
+			Hsf{ "V22B", "122", true, true },
+			Hsf{ "V32B,0", "132", true, true },
+			Hsf{ "V34", "34", true, true } }) {
+		std::string a = std::string("ATX3;AT+MS=") + h.n;
+		std::string o = std::string("ATX3;AT+MS=") + h.ms;
+		if (h.hsf_calls)
+			add("hsf", std::string("hsf_usb_") + h.ms + "_hsf_calls",
+			    "hsf_usb", "open", a,
+			    { "NET=8000:9600:ulaw", "PROTO_B=" + o });
+		if (h.open_calls)
+			add("hsf", std::string("hsf_usb_") + h.ms + "_open_calls",
+			    "open", "hsf_usb", o,
 			    { "NET=9600:8000:ulaw", "PROTO_B=" + a });
 	}
 	for (std::string law : { "ulaw", "alaw" })
