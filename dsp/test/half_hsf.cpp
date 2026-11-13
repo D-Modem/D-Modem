@@ -91,6 +91,7 @@ u32 OS(ComCtrl_Write)(void *h, void *buf, u32 n);
 #define COMCTRL_CONTROL_PORTCONFIG      12
 
 #define HW_TYPE_ICH 2
+#define HW_TYPE_CADMUS2 9
 
 /* osresour_ex.h's OS_DEVNODE */
 struct devnode {
@@ -707,6 +708,283 @@ void OS(OsIoPortWritew)(unsigned p, word v) { hsf.io_out(p, v, 2); }
 void OS(OsIoPortWritel)(unsigned p, u32 v) { hsf.io_out(p, v, 4); }
 
 }
+
+#if HSF_USB
+/*
+ *    HSF_USB: the USB back end (hsfusbcd2, "Cadmus 2") in place of the
+ *    ICH one, on Linuxant's OsUsb* layer (osusb.c), which is here: the
+ *    device's firmware is taken as loaded (osusb.c's OsUsbFWDownload runs
+ *    before the module is called), and every transfer is logged
+ *    (HSF_DEBUG) while the device answers as hw/cadmus2.hpp has it
+ */
+
+struct UsbReq { int kind; void *ctx; byte req; word val, idx; std::vector<byte> data; };
+typedef void *HANDLE_T;
+
+/* the device, as far as it is known: it takes every request, answers
+   GET_INFORMATION with the HSF firmware running (byte 2 = 3), sends no
+   notifications, gives the line's samples (16 bit, little-endian, at
+   the codec's rate) and takes the module's */
+static std::vector<byte> cd2_notes;
+static void cd2_control(byte r, word val, word idx, const std::vector<byte> &d)
+{
+	(void)d;
+	/* a script run: its end, notified (reply code 1) */
+	if (r == 2 && !getenv("HSF_CD2_SILENT")) {
+		/* script 1 (the start): its reply, code 1, the firmware's
+		   version, a flag (1: ?), status 1 */
+		unsigned ver = 0x10, flag = 0;
+		if (const char *e = getenv("HSF_CD2_START"))
+			sscanf(e, "%x:%x", &ver, &flag);
+		byte n[] = {0xc1, 0x02, (byte)(idx & 0xff), (byte)(val >> 8),
+			    (byte)idx, (byte)(idx >> 8), 4, 0,
+			    1, (byte)ver, (byte)flag, 1};
+		cd2_notes.assign(n, n + sizeof(n));
+	}
+}
+static unsigned cd2_control_in(byte r, word val, word idx, byte *buf, unsigned n)
+{
+	(void)val; (void)idx;
+	memset(buf, 0, n);
+	if (r == 0 && n >= 4)
+		buf[2] = 3;
+	return n;
+}
+static bool cd2_notification(std::vector<byte> &nt)
+{
+	if (cd2_notes.empty())
+		return false;
+	nt.swap(cd2_notes);
+	cd2_notes.clear();
+	return true;
+}
+static std::vector<short> cd2_in;        /* the line's samples, to the host */
+static void cd2_tx(const byte *p, unsigned n) { (void)p; (void)n; }
+static unsigned cd2_rx(byte *p, unsigned n)
+{
+	if (cd2_in.size() * 2 < n)
+		return 0;
+	memcpy(p, cd2_in.data(), n);
+	cd2_in.erase(cd2_in.begin(), cd2_in.begin() + n / 2);
+	return n;
+}
+
+static struct Cd2 {
+	void *upper = nullptr;
+	int (*notify)(void *up, byte *p, unsigned n) = nullptr;
+	void (*rx)(void *up, byte *p, unsigned n) = nullptr;
+	void (*txdone)(void *up, unsigned n) = nullptr;
+	void (*ctldone)(void *up, void *ctx, byte req, word val, word idx) = nullptr;
+	void *ctl_event = nullptr;
+	bool notify_armed = false;
+	std::vector<UsbReq> ctl;                    /* to complete */
+	std::vector<std::pair<byte *, unsigned>> rxq;  /* buffers given */
+	std::vector<unsigned> txq;                  /* lengths sent */
+	unsigned long long n_ctl = 0, n_rx = 0, n_tx = 0;
+	byte handles[8];
+} cd2;
+
+static void hexlog(const char *what, const byte *p, unsigned n)
+{
+	if (!hsf.dbg)
+		return;
+	fprintf(stderr, "hsf usb %7llu ms: %s (%u):", hsf.ms(), what, n);
+	for (unsigned i = 0; i < n; i++)
+		fprintf(stderr, " %02x", p[i]);
+	fputc('\n', stderr);
+}
+
+extern "C" {
+
+HANDLE_T OS(OsUsbCreateInstance)(void *dev, void *upper, void *notify, void *rx,
+				 void *txdone, void *ctldone, void *restore)
+{
+	(void)restore;
+	LOG("usb: CreateInstance dev %p upper %p\n", dev, upper);
+	cd2.upper = upper;
+	cd2.notify = (int (*)(void *, byte *, unsigned))notify;
+	cd2.rx = (void (*)(void *, byte *, unsigned))rx;
+	cd2.txdone = (void (*)(void *, unsigned))txdone;
+	cd2.ctldone = (void (*)(void *, void *, byte, word, word))ctldone;
+	return dev;
+}
+void OS(OsUsbDestroyInstance)(void *h) { (void)h; LOG("usb: DestroyInstance\n"); cd2.upper = nullptr; }
+int OS(OsUsbIsStarted)(void *h) { (void)h; return 1; }
+void *OS(OsUsbWaitControlRequest)(void *h) { (void)h; return &cd2.handles[0]; }
+void *OS(OsUsbGetControlRequest)(void *h) { (void)h; return &cd2.handles[0]; }
+void OS(OsUsbWaitForControlRequestCompletion)(void *h)
+{
+	(void)h;
+	while (!cd2.ctl.empty())
+		hsf.run_time(1);
+}
+void *OS(OsUsbGetTxRequest)(void *h) { (void)h; return &cd2.handles[1]; }
+void OS(OsUsbReturnUnusedRequest)(void *h) { (void)h; }
+void OS(OsUsbResetPipes)(void *h) { (void)h; LOG("usb: ResetPipes\n"); }
+void OS(OsUsbResetPort)(void *h) { (void)h; LOG("usb: ResetPort\n"); }
+
+/* a vendor request to the interface, host to device; done (ctldone)
+   at the next ms */
+int OS(OsUsbMakeControlRequest)(void *h, void *req, void *ctx, byte r,
+				word val, word idx, void *buf, u32 n)
+{
+	(void)h; (void)req;
+	char what[64];
+	snprintf(what, sizeof(what), "ctl req %u val %04x idx %04x", r, val, idx);
+	hexlog(what, (byte *)buf, n);
+	UsbReq q{0, ctx, r, val, idx, std::vector<byte>((byte *)buf, (byte *)buf + n)};
+	cd2.ctl.push_back(q);
+	cd2.n_ctl++;
+	cd2_control(q.req, q.val, q.idx, q.data);
+	return 1;
+}
+
+/* a vendor request, now; dir 0 out, else in */
+int OS(OsUsbMakeControlRequestSync)(void *h, byte dir, byte r, word val,
+				    word idx, void *buf, u32 *n)
+{
+	(void)h;
+	char what[80];
+	snprintf(what, sizeof(what), "sync %s req %u val %04x idx %04x",
+		 dir ? "in" : "out", r, val, idx);
+	if (!dir) {
+		hexlog(what, (byte *)buf, *n);
+		std::vector<byte> d((byte *)buf, (byte *)buf + *n);
+		cd2_control(r, val, idx, d);
+	} else {
+		*n = cd2_control_in(r, val, idx, (byte *)buf, *n);
+		hexlog(what, (byte *)buf, *n);
+	}
+	return 1;
+}
+
+int OS(OsUsbMakeGetStringDescriptorRequestSync)(void *h, byte i, void *buf, u32 *n)
+{
+	(void)h; (void)buf;
+	LOG("usb: string descriptor %u\n", i);
+	*n = 0;
+	return 0;
+}
+
+/* the notification pipe armed */
+int OS(OsUsbMakeNotifyRequest)(void *h)
+{
+	(void)h;
+	if (!cd2.notify_armed && hsf.dbg > 1)
+		LOG("usb: notify armed\n");
+	cd2.notify_armed = true;
+	return 1;
+}
+
+/* a bulk IN request on the data pipe: filled from the line */
+int OS(OsUsbMakeDataReceiveRequest)(void *h, void *buf, u32 n)
+{
+	(void)h;
+	if (cd2.n_rx++ < 4 || hsf.dbg > 2)
+		LOG("usb: rx request %u bytes (%zu queued)\n", n, cd2.rxq.size());
+	cd2.rxq.push_back({(byte *)buf, n});
+	return 1;
+}
+
+/* a bulk OUT on the data pipe: to the line */
+int OS(OsUsbMakeDataTransmitRequest)(void *h, void *req, void *buf, u32 n)
+{
+	(void)h; (void)req;
+	if (cd2.n_tx++ < 4 || hsf.dbg > 2)
+		hexlog("tx", (byte *)buf, n > 64 ? 64 : n);
+	cd2_tx((byte *)buf, n);
+	cd2.txq.push_back(n);
+	return 1;
+}
+
+/* kernel threads (the module's work queues): one, run at each ms */
+struct Work { void (*fn)(void *); void *data; int queued; };
+static std::vector<Work *> work_q;
+static int thread_dummy;
+void *OS(OsThreadCreate)(const char *name, int prio, int *pid)
+{
+	(void)prio;
+	LOG("thread %s\n", name);
+	if (pid)
+		*pid = 1;
+	return &thread_dummy;
+}
+void OS(OsThreadDestroy)(void *t) { (void)t; }
+void OS(OsThreadScheduleInit)(void *w, void (*fn)(void *), void *data)
+{
+	Work *k = (Work *)w;
+	k->fn = fn;
+	k->data = data;
+	k->queued = 0;
+}
+int OS(OsThreadSchedule)(void *t, void *w)
+{
+	(void)t;
+	Work *k = (Work *)w;
+	if (k->queued)
+		return 0;
+	k->queued = 1;
+	work_q.push_back(k);
+	return 1;
+}
+void OS(OsThreadScheduleDone)(void) {}
+
+}
+
+/* the work queued, run */
+static void run_work()
+{
+	for (int guard = 0; !work_q.empty() && guard < 64; guard++) {
+		Work *k = work_q.front();
+		work_q.erase(work_q.begin());
+		k->queued = 0;
+		stack_clear();
+		k->fn(k->data);
+	}
+}
+
+/* each ms: the control requests done, the transmits done */
+static void cd2_tick()
+{
+	run_work();
+	std::vector<UsbReq> done;
+	done.swap(cd2.ctl);
+	for (auto &q : done) {
+		if (cd2.ctldone) {
+			stack_clear();
+			cd2.ctldone(cd2.upper, q.ctx, q.req, q.val, q.idx);
+		}
+	}
+	std::vector<unsigned> tx;
+	tx.swap(cd2.txq);
+	for (unsigned n : tx)
+		if (cd2.txdone) {
+			stack_clear();
+			cd2.txdone(cd2.upper, n);
+		}
+	/* the device's notifications */
+	std::vector<byte> nt;
+	while (cd2.notify_armed && cd2.notify && cd2_notification(nt)) {
+		hexlog("notify", nt.data(), nt.size());
+		stack_clear();
+		cd2.notify(cd2.upper, nt.data(), nt.size());
+	}
+}
+
+/* a receive buffer full: given back */
+static void cd2_rx_fill()
+{
+	while (!cd2.rxq.empty() && cd2.rx) {
+		auto b = cd2.rxq.front();
+		unsigned n = cd2_rx(b.first, b.second);
+		if (!n)
+			break;
+		cd2.rxq.erase(cd2.rxq.begin());
+		stack_clear();
+		cd2.rx(cd2.upper, b.first, n);
+	}
+}
+#endif
 
 /*
  *    NVM
@@ -1392,6 +1670,24 @@ void Hsf::interrupt()
 short Hsf::line_sample(short in)
 {
 	unsigned long long ms0 = ms();
+#if HSF_USB
+	static std::vector<short> out_q;
+	short out = codec_line_sample(in, (double)line_rate / codec_rate,
+				      [this](short adc) {
+		cd2_in.push_back(adc);
+		short dac = 0;
+		(void)this;
+		return dac;
+	});
+	line_n++;
+	if (ms() != ms0) {
+		cd2_rx_fill();
+		cd2_tick();
+		run_timers();
+	}
+	(void)out_q;
+	return out;
+#else
 	short out = codec_line_sample(in, (double)line_rate / codec_rate,
 				      [this](short adc) {
 		short dac = ich_sample(pcm_out, 0);
@@ -1415,6 +1711,7 @@ short Hsf::line_sample(short in)
 	if (ms() != ms0)
 		run_timers();
 	return out;
+#endif
 }
 
 /* the rdtsc trap, the NVM, the engine's init and the serial driver's
@@ -1460,7 +1757,12 @@ int Hsf::start()
 		return -1;
 	}
 
+#if HSF_USB
+	snprintf(path, sizeof(path), "%s/%s", dir,
+		 env("INF") ? env("INF") : "hsfcadmus2.inf");
+#else
 	snprintf(path, sizeof(path), "%s/hsfmc97ich.inf", dir);
+#endif
 	if (nvm.load(path))
 		return -1;
 	snprintf(path, sizeof(path), "%s/hsf.cty", dir);
@@ -1478,10 +1780,16 @@ int Hsf::start()
 	}
 	node.hwDev = pcidev;
 	node.hwInstNum = 0;
+#if HSF_USB
+	snprintf(node.hwInstName, sizeof(node.hwInstName), "USB-0572:1300");
+	snprintf(node.hwProfile, sizeof(node.hwProfile), "hsfusbcd2");
+	node.hwType = HW_TYPE_CADMUS2;
+#else
 	snprintf(node.hwInstName, sizeof(node.hwInstName),
 		 "PCI-8086:2416-8086:2416");
 	snprintf(node.hwProfile, sizeof(node.hwProfile), "hsfmc97ich");
 	node.hwType = HW_TYPE_ICH;
+#endif
 	node.hwIf = GetHwFuncs();
 	stack_clear();
 	hcom = OS(ComCtrl_Create)();

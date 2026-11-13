@@ -512,6 +512,30 @@ if(EXISTS "${DMODEM_HSF_DIR}/hsfengine.o")
 		-Wl,-z,noexecstack)
 	target_link_libraries(half_hsf PRIVATE ${DMODEM_LIBM})
 	message(STATUS "tests: the Conexant HSF soft modem: ${DMODEM_HSF_DIR}")
+	# the same with its USB back end (hsfusbcd2, "Cadmus 2") in place of
+	# the ICH one: half_hsf.cpp with HSF_USB
+	if(EXISTS "${DMODEM_HSF_DIR}/hsfusbcd2.o")
+		set(_o ${CMAKE_CURRENT_BINARY_DIR}/hsfusbcd2_r.o)
+		add_custom_command(OUTPUT ${_o}
+			COMMAND ${CMAKE_COMMAND} -DIN=${DMODEM_HSF_DIR}/hsfusbcd2.o
+				-DOUT=${_o} -DNAME=hsfusbcd2 -DWEAK=
+				-DOBJDUMP=${CMAKE_OBJDUMP} -DOBJCOPY=${CMAKE_OBJCOPY}
+				-P ${CMAKE_CURRENT_SOURCE_DIR}/hsf_obj.cmake
+			DEPENDS ${DMODEM_HSF_DIR}/hsfusbcd2.o hsf_obj.cmake
+			COMMENT "hsfusbcd2.o's sections renamed")
+		set(_hsfuo ${CMAKE_CURRENT_BINARY_DIR}/hsfengine_r.o
+			${CMAKE_CURRENT_BINARY_DIR}/hsfsoar_r.o ${_o})
+		add_executable(half_hsf_usb half_hsf.cpp modem_half.cpp ${_hsfuo})
+		set_source_files_properties(${_hsfuo} PROPERTIES
+			EXTERNAL_OBJECT TRUE GENERATED TRUE)
+		target_compile_definitions(half_hsf_usb PRIVATE HSF_USB=1
+			HSF_NVM_DIR="${DMODEM_HSF_DIR}")
+		target_compile_options(half_hsf_usb PRIVATE ${DMODEM_M32} -g -O1)
+		target_link_options(half_hsf_usb PRIVATE ${DMODEM_M32} -no-pie
+			-Wl,-z,noexecstack)
+		target_link_libraries(half_hsf_usb PRIVATE ${DMODEM_LIBM})
+		add_dependencies(half_hsf_usb half_hsf)
+	endif()
 endif()
 
 # Broadcom's V.92 soft modem for Windows as a peer (half_broadcom.cpp): its
