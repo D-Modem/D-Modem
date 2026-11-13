@@ -207,15 +207,16 @@ struct V22Scrambler {
 float rrc_pulse(float t, float alpha);
 
 /* rational sample rate converter L/M (polyphase FIR, 70 dB stop band,
-   cut off at 0.484 of the lower of the two rates) */
-#define RESAMPLER_MAX_TAPS 100
+   cut off at 3870 Hz: 0.484 of 8000 Hz) */
+#define RESAMPLER_MAX_TAPS 160
 struct Resampler {
 	s16 L, M, taps, t;
 	const float *h;         /* L * taps, phase major */
 	float hist[2 * RESAMPLER_MAX_TAPS];
 	s16 pos;
 
-	/* 8000 <-> 9600 Hz: (L, M) = (6, 5) or (5, 6) */
+	/* 8000 <-> 9600 Hz: (L, M) = (6, 5) or (5, 6); 9600 <-> 16000 Hz:
+	   (5, 3) or (3, 5) */
 	s16 init(s16 L, s16 M);
 	/* one input sample in; returns the number of outputs (0 to 2) */
 	s16 run(float x, float out[2]);

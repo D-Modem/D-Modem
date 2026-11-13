@@ -8,11 +8,12 @@ telephone line instead:
 - With `-a`, the line is a softmodem's codec, driven through ALSA (the
   Advanced Linux Sound Architecture, Linux's sound drivers).
 - With `--usb`, the line is a USB modem, driven through libusb. dmodemd
-  knows five kinds: a Smart Link SmartUSB56
+  knows six kinds: a Smart Link SmartUSB56
   ([below](#smart-link-smartusb56)), a pico-serial Line stick
   ([below](#pico-serial-line)), a pico-serial WB stick, an Agere USB
-  2.0 soft modem ([below](#agere-usb-20-soft-modem)) and an Apple USB
-  Modem ([below](#apple-usb-modem)).
+  2.0 soft modem ([below](#agere-usb-20-soft-modem)), an Apple USB
+  Modem ([below](#apple-usb-modem)) and a Conexant USB HSF modem
+  ([below](#conexant-usb-hsf-modems)).
 
 The WB stick is not for a telephone line: it sits on a bare copper pair
 and runs D-Modem's wideband mode. Any ALSA codec that runs at 96 kHz can
@@ -781,6 +782,61 @@ of it ([below](#the-apple-usb-modem)), not yet on a real one.
 [apple-usb-modem-details.md](apple-usb-modem-details.md) has the full
 protocol and where each part was found.
 
+### Conexant USB HSF modems
+
+Conexant's USB soft modems are built on its "Cadmus 2" USB bridge: USB
+`0572:1300` to `0572:1303`, `08e3:0111`, `0803:1300`, `0803:1301`,
+`145f:0106`, `148d:1671` and `148d:1672` (the IDs Conexant's Linux
+driver, hsfmodem's `hsfusbcd2` module, takes). dmodemd drives the bridge
+through libusb (`frontend/dmodemd/usb_cadmus2.cpp`), with its own modem
+in place of Conexant's.
+
+    lsusb -d 0572:                # Bus 001 Device 009: ID 0572:1300 Conexant Systems ...
+    DMODEM_CD2_FIRMWARE=/path/to/c2firmware.h dmodemd --usb=auto
+
+How it works is what the `hsfusbcd2` module does with it, as the
+interop harness showed by running the module itself against a simulated
+bridge (`half_hsf_usb`, [interop-details.md](interop-details.md)):
+
+- **Firmware:** the bridge starts with none (`GET_INFORMATION`, vendor
+  request 0, says so) and the host uploads it, 64 octets at a time
+  (vendor request 1) with the device unconfigured, then configures it
+  again once it says the firmware runs. The firmware is Conexant's
+  (`ROM_IMAGE[]` in hsfmodem's `modules/imported/include/c2firmware.h`,
+  7395 octets) and not ours to ship: `DMODEM_CD2_FIRMWARE` names that
+  file, or a file of its bare octets. A bridge already running it (a
+  second start, unplugged in between or not) needs none.
+- **Scripts:** the bridge runs small programs the host sends (vendor
+  request 2, `wValue` `0xff01`, or `0xff02` for the one that stays; `wIndex`
+  the slot), and what they report comes on its interrupt endpoint
+  (`0x82`). dmodemd sends the scripts the module sends a plain board,
+  byte for byte: the start, the codec's set-up words (`2004`, `a208`,
+  `f200`, `aae8`, `6040`, `35b4`), the monitor (slot 3), and the
+  streams' start.
+- **Hook:** the codec word `aac8` off hook, `aae8` on hook, as the module
+  writes them; pulse dialling the same.
+- **Samples:** bulk transfers, `0x81` in and `0x01` out, 64 samples (128
+  octets) each, 16-bit little-endian mono at 16000 Hz; a transfer out for
+  each one in. The modem runs at 9600 Hz (whatever `-r` says) and the
+  samples are converted both ways (`dsp::Resampler`, 3/5 and 5/3). The
+  module starts the streams only off hook; dmodemd runs them from the
+  start, as the other devices' are.
+- **Rings:** the monitor's report `08 01` (its channel 4), two or more of
+  them a ring.
+
+Not covered yet:
+
+- **SmartDAA boards** (the start's reply says which a board is): their
+  line side is behind other scripts, which have not been worked out.
+  dmodemd says so and stops.
+- Caller ID: on hook the samples are silence here.
+- The speaker (`35b7` and `35b4`, the module's `ATM`).
+
+ATI3 says `Conexant USB HSF (Cadmus 2)`. Which codec word does what
+(the hook's bit, the speaker's) is read from what the module sends, not
+from a datasheet. It has been tested against a fake bridge
+([below](#conexant-usb-hsf-modems-1)), not on a real one.
+
 ### Not covered
 
 These are not covered yet, because Linux has no driver that gives their
@@ -1116,3 +1172,17 @@ cord's notifications. It checks the interfaces found, a line side that
 does not answer, a rate it has not, the country's registers, and the
 same calls as the pico-serial Line's test
 ([apple-usb-modem-details.md](apple-usb-modem-details.md#testing-without-hardware)).
+
+### Conexant USB HSF modems
+
+`frontend/dmodemd/test/cadmus2_test.py` (ctest's `dmodemd_cadmus2`,
+label `alsa`) runs two Conexant USB HSF modems at 16000 Hz.
+`frontend/dmodemd/test/fake_cadmus2.cpp` is one (0572:1300) whose line
+is the exchange's: its bridge runs the scripts in the interop harness's
+interpreter (`dsp/test/hw/cadmus2.hpp`), the codec word `aaXX` is the
+exchange's hook, and its channel 4 comes every 40 ms while the line
+rings. It checks the firmware's upload (a stand-in of the same size, in
+`c2firmware.h`'s form), a missing firmware and a SmartDAA board said,
+the rate, no ring at the start, and a call: rings, an answer at the
+second, V.34 both ways and a line of text each way, the hang-up and the
+device unplugged.

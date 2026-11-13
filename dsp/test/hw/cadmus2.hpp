@@ -81,7 +81,12 @@ public:
 	std::vector<unsigned> codec_words;
 	/* the notifications to send */
 	std::deque<std::vector<u8>> notes;
+	/* a channel asked for (30 n) comes at once (else when raise()d);
+	   the samples flowing (44 starts them, 45 stops them: a guess) */
+	bool asked_comes = true;
+	bool streams = false;
 
+	/* its codec port ready */
 	Cadmus2()
 	{
 		B[0x04] = 0x20;         /* the codec port ready */
@@ -98,6 +103,9 @@ public:
 		c.live = true;
 		run(c);
 	}
+
+	/* channel n's event come (33 n sees it) */
+	void raise(unsigned n) { pending[n & 0xff] = 1; }
 
 	/* each ms: the scripts waiting, on */
 	void tick()
@@ -125,6 +133,7 @@ private:
 	unsigned long long now = 0;
 	u8 pending[256] = {};
 
+	/* slot s's script (a new one if there is none) */
 	Ctx &slot(unsigned s)
 	{
 		for (auto &c : ctx)
@@ -135,8 +144,10 @@ private:
 		return ctx.back();
 	}
 
+	/* c's octet i (past its end: 36, return) */
 	u8 at(Ctx &c, unsigned i) { return i < c.code.size() ? c.code[i] : 0x36; }
 
+	/* c's pushed octets as a notification */
 	void send(Ctx &c)
 	{
 		std::vector<u8> n = {0xc1, 0x02, (u8)c.slot, 0xff, (u8)c.slot,
@@ -219,13 +230,15 @@ private:
 			case 0x26: c.out.push_back(c.a); break;
 			case 0x27: c.out.push_back(r); len = 2; break;
 			case 0x28: send(c); break;
-			case 0x30: pending[r] = 1; len = 2; break;
+			case 0x30: if (asked_comes) pending[r] = 1; len = 2; break;
 			case 0x33: c.a = pending[r]; pending[r] = 0; len = 2; break;
 			case 0x2f: case 0x31: case 0x32:
 				len = 2;
 				break;
+			case 0x44: streams = true; break;
+			case 0x45: streams = false; break;
 			case 0x2e: case 0x34: case 0x35:
-			case 0x44: case 0x45: case 0x46: case 0x47:
+			case 0x46: case 0x47:
 				break;
 			default:
 				if (dbg)

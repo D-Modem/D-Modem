@@ -600,11 +600,12 @@ bool RingDetect::sample(float x)
 }
 
 /*
- *    8000 <-> 9600 Hz sample rate conversion through 48 kHz
+ *    8000 <-> 9600 Hz and 9600 <-> 16000 Hz sample rate conversion
+ *    through 48 kHz
  */
 #define RS_LEN  480     /* prototype taps at 48 kHz */
 
-static float rs_h6[RS_LEN], rs_h5[RS_LEN];
+static float rs_h6[RS_LEN], rs_h5[RS_LEN], rs_h3[RS_LEN];
 
 /* the modified Bessel function I0(x), by its power series (40 terms),
    for the Kaiser window */
@@ -635,26 +636,29 @@ static void rs_design(float *h, s16 L)
 	}
 }
 
-/* both prototype tables, once (std::call_once from Resampler::init) */
+/* the prototype tables, once (std::call_once from Resampler::init) */
 static void rs_tables(void)
 {
 	rs_design(rs_h6, 6);
 	rs_design(rs_h5, 5);
+	rs_design(rs_h3, 3);
 }
 
-/* up / down must be 6/5 (8000 -> 9600 Hz) or 5/6 (9600 -> 8000 Hz):
-   0, else -1; the shared tables are built on the first call */
+/* up / down must be 6/5 (8000 -> 9600 Hz), 5/6 (9600 -> 8000 Hz), 5/3
+   (9600 -> 16000 Hz) or 3/5 (16000 -> 9600 Hz): 0, else -1; the shared
+   tables are built on the first call */
 s16 Resampler::init(s16 up, s16 down)
 {
 	static std::once_flag once;
 	std::call_once(once, rs_tables);
-	if (!((up == 6 && down == 5) || (up == 5 && down == 6)))
+	if (!((up == 6 && down == 5) || (up == 5 && down == 6) ||
+	      (up == 5 && down == 3) || (up == 3 && down == 5)))
 		return -1;
 	*this = Resampler();
 	L = up;
 	M = down;
 	taps = RS_LEN / L;
-	h = L == 6 ? rs_h6 : rs_h5;
+	h = L == 6 ? rs_h6 : L == 5 ? rs_h5 : rs_h3;
 	return 0;
 }
 

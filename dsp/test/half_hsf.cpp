@@ -728,6 +728,7 @@ typedef void *HANDLE_T;
    line's samples (16 bit, little-endian, at the codec's rate) to the
    module and the module's taken */
 static Cadmus2 cd2dev;
+/* a control request to the bridge: a script (2) run */
 static void cd2_control(byte r, word val, word idx, const std::vector<byte> &d)
 {
 	static bool once;
@@ -746,6 +747,7 @@ static void cd2_control(byte r, word val, word idx, const std::vector<byte> &d)
 	if (r == 2)
 		cd2dev.script(val, idx, d);
 }
+/* a control request from the bridge: GET_INFORMATION (0), its firmware running */
 static unsigned cd2_control_in(byte r, word val, word idx, byte *buf, unsigned n)
 {
 	(void)val; (void)idx;
@@ -754,6 +756,7 @@ static unsigned cd2_control_in(byte r, word val, word idx, byte *buf, unsigned n
 		buf[2] = 3;
 	return n;
 }
+/* the bridge's next notification into nt: false if none */
 static bool cd2_notification(std::vector<byte> &nt)
 {
 	if (cd2dev.notes.empty())
@@ -765,6 +768,7 @@ static bool cd2_notification(std::vector<byte> &nt)
 static std::vector<short> cd2_in;        /* the line's samples, to the host */
 static std::deque<short> cd2_out;       /* the module's samples, to the line */
 enum { CD2_TX_ROOM = 64, CD2_RX_ROOM = 256 };
+/* the module's samples (n octets) to the line, mono */
 static void cd2_tx(const byte *p, unsigned n)
 {
 	for (unsigned i = 0; i + 1 < n; i += 2)
@@ -800,6 +804,7 @@ static struct Cd2 {
 	byte handles[8];
 } cd2;
 
+/* what's n octets at p, in hex, to the log */
 static void hexlog(const char *what, const byte *p, unsigned n)
 {
 	if (!hsf.dbg)
@@ -812,6 +817,7 @@ static void hexlog(const char *what, const byte *p, unsigned n)
 
 extern "C" {
 
+/* the USB layer's instance: the module's callbacks kept */
 HANDLE_T OS(OsUsbCreateInstance)(void *dev, void *upper, void *notify, void *rx,
 				 void *txdone, void *ctldone, void *restore)
 {
@@ -824,10 +830,15 @@ HANDLE_T OS(OsUsbCreateInstance)(void *dev, void *upper, void *notify, void *rx,
 	cd2.ctldone = (void (*)(void *, void *, byte, word, word))ctldone;
 	return dev;
 }
+/* (the instance gone) */
 void OS(OsUsbDestroyInstance)(void *h) { (void)h; LOG("usb: DestroyInstance\n"); cd2.upper = nullptr; }
+/* (always started) */
 int OS(OsUsbIsStarted)(void *h) { (void)h; return 1; }
+/* a control request: the one there is */
 void *OS(OsUsbWaitControlRequest)(void *h) { (void)h; return &cd2.handles[0]; }
+/* (see OsUsbWaitControlRequest) */
 void *OS(OsUsbGetControlRequest)(void *h) { (void)h; return &cd2.handles[0]; }
+/* (a control request done at once) */
 void OS(OsUsbWaitForControlRequestCompletion)(void *h)
 {
 	(void)h;
@@ -837,8 +848,11 @@ void OS(OsUsbWaitForControlRequestCompletion)(void *h)
 /* a transmit request: always one (the module drops its frame when
    there is none); the bridge takes the data as its codec plays it */
 void *OS(OsUsbGetTxRequest)(void *h) { (void)h; return &cd2.handles[1]; }
+/* (nothing to give back) */
 void OS(OsUsbReturnUnusedRequest)(void *h) { (void)h; }
+/* (logged) */
 void OS(OsUsbResetPipes)(void *h) { (void)h; LOG("usb: ResetPipes\n"); }
+/* (logged) */
 void OS(OsUsbResetPort)(void *h) { (void)h; LOG("usb: ResetPort\n"); }
 
 /* a vendor request to the interface, host to device; done (ctldone)
@@ -876,6 +890,7 @@ int OS(OsUsbMakeControlRequestSync)(void *h, byte dir, byte r, word val,
 	return 1;
 }
 
+/* a string descriptor: none (logged) */
 int OS(OsUsbMakeGetStringDescriptorRequestSync)(void *h, byte i, void *buf, u32 *n)
 {
 	(void)h; (void)buf;
@@ -919,6 +934,7 @@ int OS(OsUsbMakeDataTransmitRequest)(void *h, void *req, void *buf, u32 n)
 struct Work { void (*fn)(void *); void *data; int queued; };
 static std::vector<Work *> work_q;
 static int thread_dummy;
+/* a thread: none (its work runs on the harness's tick) */
 void *OS(OsThreadCreate)(const char *name, int prio, int *pid)
 {
 	(void)prio;
@@ -927,7 +943,9 @@ void *OS(OsThreadCreate)(const char *name, int prio, int *pid)
 		*pid = 1;
 	return &thread_dummy;
 }
+/* (see OsThreadCreate) */
 void OS(OsThreadDestroy)(void *t) { (void)t; }
+/* a work item: fn(data), not queued */
 void OS(OsThreadScheduleInit)(void *w, void (*fn)(void *), void *data)
 {
 	Work *k = (Work *)w;
@@ -935,6 +953,7 @@ void OS(OsThreadScheduleInit)(void *w, void (*fn)(void *), void *data)
 	k->data = data;
 	k->queued = 0;
 }
+/* work item w queued (once) for the next tick */
 int OS(OsThreadSchedule)(void *t, void *w)
 {
 	(void)t;
@@ -945,6 +964,7 @@ int OS(OsThreadSchedule)(void *t, void *w)
 	work_q.push_back(k);
 	return 1;
 }
+/* (nothing) */
 void OS(OsThreadScheduleDone)(void) {}
 
 }

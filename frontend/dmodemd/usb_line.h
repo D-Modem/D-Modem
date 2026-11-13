@@ -8,9 +8,11 @@
  *                 pico-serial WB stick (USB 1209:0003, a TLV320AIC3204
  *                 codec on a bare pair), an Agere USB 2.0 soft modem
  *                 (USB 047E:2892 or 047E:2828, an Agere "USS" ARM
- *                 controller with a Mercury codec) or an Apple USB Modem
+ *                 controller with a Mercury codec), an Apple USB Modem
  *                 (USB 05AC:1401 or 05AC:8220, Motorola's SM56 USB: a
- *                 Si3056 DAA) through libusb: no kernel driver
+ *                 Si3056 DAA) or a Conexant USB HSF modem (USB 0572:1300
+ *                 and others: the Cadmus 2 bridge) through libusb: no
+ *                 kernel driver
  *
  *    The ST7554 is a USB bridge to a codec and a DAA: its registers are
  *    vendor control requests, its samples isochronous transfers both
@@ -65,6 +67,14 @@
  *    registers are 3-octet encapsulated commands on a vendor interface.
  *    It hears the line on hook with the Si3056's on-hook line monitor
  *    (ONHM) set, so caller ID comes in the samples.
+ *
+ *    A Conexant USB HSF modem (docs/hardware-details.md, usb_cadmus2.cpp)
+ *    is Conexant's Cadmus 2 bridge: its firmware the host's (uploaded,
+ *    DMODEM_CD2_FIRMWARE, before its interfaces are claimed: the chip's
+ *    load()), its codec and hook driven by scripts the host sends
+ *    (vendor requests) whose reports come on its interrupt endpoint, its
+ *    samples bulk transfers each way at 16000 Hz, converted to and from
+ *    the modem's 9600.  On hook its samples are silence.
  *
  */
 #ifndef DMODEMD_USB_LINE_H
@@ -295,6 +305,8 @@ private:
 		virtual const char *a_name() const = 0;
 		/* the rate it runs at, rate asked for */
 		virtual u32 rate(u32 asked) { return asked; }
+		/* before its interfaces are claimed (the Cadmus 2's firmware) */
+		virtual bool load() { return true; }
 		/* its start-up, its interface claimed */
 		virtual bool open(u32 rate) = 0;
 		/* its transfers started (start_isos()'s, and on the SmartUSB56
@@ -352,11 +364,13 @@ private:
 	struct Wb;
 	struct Agere;
 	struct Apple;
+	struct Cadmus2;
 	static std::unique_ptr<Chip> st7554_chip(UsbLine &l);
 	static std::unique_ptr<Chip> stick_chip(UsbLine &l);
 	static std::unique_ptr<Chip> wb_chip(UsbLine &l);
 	static std::unique_ptr<Chip> agere_chip(UsbLine &l);
 	static std::unique_ptr<Chip> apple_chip(UsbLine &l);
+	static std::unique_ptr<Chip> cadmus2_chip(UsbLine &l);
 
 	bool find(const char *dev);
 	bool endpoints(s16 alt);
@@ -482,6 +496,9 @@ private:
 	   registers as read at the start, changed); its interfaces released
 	   at close() */
 	static bool apple_device(u16 vendor, u16 product);
+	/* a Conexant USB HSF modem's (usb_cadmus2.cpp): whether a USB ID
+	   is one */
+	static bool cadmus2_device(u16 vendor, u16 product);
 	bool open_apple(u32 rate);
 	bool apple_find_streams(u32 rate);
 	bool apple_cmd(u8 cmd, u8 reg, u8 value);

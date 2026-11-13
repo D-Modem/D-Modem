@@ -23,7 +23,7 @@ Every option `dmodemd` takes, from its option table (`frontend/dmodemd/options.c
 | `-L`, `--listen` |  |  |  | Register, and take calls in. |
 | `-a`, `--alsa` | text | `none` | not Windows | The line a modem codec's ALSA PCM (hw:1, hw:0,6), not SIP. |
 | `--alsa-ctl` | text | `-a's` | not Windows | Its controls (hw:&lt;card&gt; of -a's) |
-| `--usb` | text | `none` |  | The line a Smart Link SmartUSB56, a pico-serial Line or WB, an Agere USB modem or an Apple USB Modem (auto, or &lt;bus&gt;:&lt;address&gt;), not SIP; list: those there are. |
+| `--usb` | text | `none` |  | The line a Smart Link SmartUSB56, a pico-serial Line or WB, an Agere USB modem, an Apple USB Modem or a Conexant USB HSF modem (auto, or &lt;bus&gt;:&lt;address&gt;), not SIP; list: those there are. |
 | `--usb-leds` |  |  |  | A SmartUSB56's carrier and data LEDs (GPIO 6 and 13) lit, on a board that has them (Creative's Modem Blaster) |
 | `--usb-wake` |  |  |  | A ring on a SmartUSB56's line wakes the computer (its USB remote wakeup armed) |
 | `--usb-handset` |  |  |  | A SmartUSB56's handset detector (GPIO 2): the phone on its jack off or on hook, &lt;DLE&gt;H and &lt;DLE&gt;h in voice mode. |
