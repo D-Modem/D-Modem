@@ -138,7 +138,7 @@ target_link_libraries(vcvm_data_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_test_exe(k56flex_test k56flex_test.cpp ${S}/k56flex.cpp
 	${S}/k56flex_tables.cpp)
 dmodem_gtest(k56flex_test LABELS quick)
-dmodem_test_exe(x2_test x2_test.cpp ${S}/x2.cpp ${S}/k56flex.cpp
+dmodem_test_exe(x2_test x2_test.cpp ${S}/x2.cpp ${S}/x2_tables.cpp ${S}/k56flex.cpp
 	${S}/k56flex_tables.cpp)
 dmodem_gtest(x2_test LABELS quick)
 dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
