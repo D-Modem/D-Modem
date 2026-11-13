@@ -1002,6 +1002,38 @@ void PepModem::rx_comb_epochs()
 			H_[static_cast<size_t>(k)] += c / static_cast<float>(COMBS);
 		}
 	}
+	/* each epoch's own phase and timing against the mean taken out
+	   before its spread is counted: the noise moves the timing fitted
+	   above a little, and a phase that grows across the band is not
+	   the line's noise */
+	for (s16 j = 0; j < COMBS; j++) {
+		std::vector<cf> &C = Cs[static_cast<size_t>(j)];
+		std::complex<double> sb(0, 0);
+		for (s16 k = 2; k <= CARRIERS; k++)
+			sb += std::complex<double>(
+				C[static_cast<size_t>(k)] *
+				std::conj(H_[static_cast<size_t>(k)]) *
+				std::conj(C[static_cast<size_t>(k - 1)] *
+					  std::conj(H_[static_cast<size_t>(
+						  k - 1)])));
+		double slope = std::arg(sb);
+		std::complex<double> sa(0, 0);
+		for (s16 k = 1; k <= CARRIERS; k++)
+			sa += std::complex<double>(
+				C[static_cast<size_t>(k)] *
+				std::conj(H_[static_cast<size_t>(k)])) *
+				std::polar(1.0, -slope * k);
+		double a = std::arg(sa);
+		for (s16 k = 1; k <= CARRIERS; k++)
+			C[static_cast<size_t>(k)] *= std::polar(
+				1.0f, static_cast<float>(-(a + slope * k)));
+	}
+	std::fill(H_.begin(), H_.end(), cf(0, 0));
+	for (s16 j = 0; j < COMBS; j++)
+		for (s16 k = 1; k <= CARRIERS; k++)
+			H_[static_cast<size_t>(k)] +=
+				Cs[static_cast<size_t>(j)][static_cast<size_t>(k)] /
+				static_cast<float>(COMBS);
 	std::vector<double> d(CARRIERS + 1, 0);
 	for (s16 k = 1; k <= CARRIERS; k++)
 		for (s16 j = 0; j < COMBS; j++)
@@ -1047,6 +1079,21 @@ void PepModem::rx_noise()
 		for (s16 k = 1; k <= CARRIERS; k++)
 			nacc_[static_cast<size_t>(k)] +=
 				std::norm(y[static_cast<size_t>(k)]) / NOISES;
+	}
+	/* smoothed over 9 carriers as the comb's unsteadiness is: NOISES
+	   windows alone leave a carrier's noise uncertain by half, and a
+	   carrier near the 2 bits' SNR then falls either side of it */
+	std::vector<double> raw(nacc_);
+	for (s16 k = 1; k <= CARRIERS; k++) {
+		double sum = 0;
+		s16 m = 0;
+		for (s16 i = -4; i <= 4; i++)
+			if (k + i >= 1 && k + i <= CARRIERS && k + i != TONE1 &&
+			    k + i != TONE2) {
+				sum += raw[static_cast<size_t>(k + i)];
+				m++;
+			}
+		nacc_[static_cast<size_t>(k)] = sum / m;
 	}
 	/* a floor: the receiver's own quantisation */
 	for (s16 k = 1; k <= CARRIERS; k++)
