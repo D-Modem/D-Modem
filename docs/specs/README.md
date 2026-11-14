@@ -1,13 +1,12 @@
 # ITU-T Recommendations
 
-These are the standards (ITU-T "Recommendations") that D-Modem
-implements, and where each one lives in the code.
+This page gives the standards (ITU-T "Recommendations") that D-Modem
+implements, and the location of each one in the code.
 
-ITU-T publishes them free of charge at itu.int, but does not allow
-copies to be shared, so they are not in the repository. Run
-`docs/specs/fetch.sh` to download the current English edition of each
-into this folder (`fetch.sh V.34 T.30` fetches just those two). The
-"Local copy" links below then work.
+ITU-T publishes them free of charge at itu.int. But ITU-T does not let persons share
+copies. Thus, they are not in the repository. To download the current English edition of each
+standard into this folder, run `docs/specs/fetch.sh` (`fetch.sh V.34 T.30` downloads only those two).
+Then the "Local copy" links in the table operate.
 
 | Recommendation | Subject | In D-Modem | Local copy |
 |---|---|---|---|
@@ -68,23 +67,30 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.251](https://www.itu.int/rec/T-REC-V.251) | AT commands for V.8 and V.8 bis (`+A8E`) | `core/at.cpp`, `core/modem.cpp` | [V.251.pdf](V.251.pdf) |
 | [V.253](https://www.itu.int/rec/T-REC-V.253) | Voice AT commands | `dsp/dsp_glue.cpp` (voice) | [V.253.pdf](V.253.pdf) |
 
-G.729's software (its test vectors among it) is a separate download:
-`docs/specs/fetch_g729.sh` puts Annex A's and Annex B's test vectors in `g729a/`,
-where `link/test/g729a_test.cpp` checks D-Modem's coder against them
-bit for bit (the test is skipped without them). Only the vectors are
-used, as data; the reference code is not built.
+The software of G.729 (which includes its test vectors) is a separate download.
+`docs/specs/fetch_g729.sh` puts the test vectors of Annex A and Annex B in `g729a/`.
+There, `link/test/g729a_test.cpp` compares the coder of D-Modem with them,
+bit for bit. Without the vectors, the test does not run. D-Modem uses only the vectors,
+as data. The build does not build the reference code.
 
-V.42's Annex A, the alternative procedure (MNP 4), which D-Modem
-implements (`link/mnp.cpp`), was deleted from V.42 in 2002; it is in the
+Annex A of V.42 is the alternative procedure (MNP 4). D-Modem
+implements it (`link/mnp.cpp`). The ITU deleted it from V.42 in 2002. It is in the
 superseded V.42 (10/96), `T-REC-V.42-199610-S` at itu.int
 ([link-details.md](../link-details.md#mnp)).
 
-Microsoft's Unimodem Diagnostics Command Reference Specification,
-version 1.0 (2 July 1998), is here as [umud10.rtf](umud10.rtf): `AT#UD`
-(`core/modem.cpp`, `unimodem_diag()`) follows it.  Microsoft grants the
+The Unimodem Diagnostics Command Reference Specification of Microsoft,
+version 1.0 (2 July 1998), is in this folder as [umud10.rtf](umud10.rtf). `AT#UD`
+(`core/modem.cpp`, `unimodem_diag()`) obeys it. Microsoft grants the
 right to reproduce and distribute it for making hardware that complies
 with it.
 
-Not from the ITU: Bell 103 and Bell 212A (AT&T), Bell 202 caller ID (Telcordia
-GR-30), TIFF-F (RFC 3949), Contact ID (SIA DC-05, `dsp/dp_contactid.cpp`), fixed-line SMS (ETSI ES 201 912 protocol 1, `dsp/dp_sms.cpp`; its messages are 3GPP TS 23.040's SMS-SUBMIT and SMS-DELIVER in TS 23.038's alphabets, `dsp/sms_pdu.cpp`). Section references in the code and in these
-documents, such as "9.6.2/V.34", are to these editions.
+These standards do not come from the ITU:
+
+- Bell 103 and Bell 212A (AT&T).
+- Bell 202 caller ID (Telcordia GR-30).
+- TIFF-F (RFC 3949).
+- Contact ID (SIA DC-05, `dsp/dp_contactid.cpp`).
+- Fixed-line SMS (ETSI ES 201 912 protocol 1, `dsp/dp_sms.cpp`). Its messages are the SMS-SUBMIT and SMS-DELIVER of 3GPP TS 23.040, in the alphabets of TS 23.038 (`dsp/sms_pdu.cpp`).
+
+Section references in the code and in these
+documents, for example "9.6.2/V.34", refer to these editions.
