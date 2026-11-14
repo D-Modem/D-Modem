@@ -65,9 +65,11 @@ line.
 
 The modems can also change speed during a call. If the line becomes
 worse or better, the customer's modem asks for a new speed, as the
-SM56 modem does. The server can also start a speed change. The tests
-change the speed in both ways and when noise starts in the middle of
-a call, and the data stays correct.
+SM56 modem does. The server can also start a speed change. If the
+line becomes much worse, the modems retrain: they measure the line
+again and train again, without a new CONNECT. Either modem can start
+a retrain. The tests change the speed and retrain in both ways and
+when noise starts in the middle of a call, and the data stays correct.
 
 ## What is missing
 
@@ -77,9 +79,11 @@ a call, and the data stays correct.
 - The SM56 modem cannot train on a line with a digital pad. This is a
   fault in SM56 itself, not in D-Modem.
 - A-law with a real K56flex modem: written, but not tried.
-- Retrains during a call.
 - After a speed change, the SM56 modem does not receive our data
-  correctly. The cause is not known yet.
+  correctly. It then retrains, and after the retrain the data is
+  correct. In a retrain, the SM56 modem's training fails about half
+  the time, and the modems then retrain again. The probable cause is
+  in the SM56 modem: it keeps values that it changed in data mode.
 
 Conexant's modem driver, the other one in the test suite, turned out to
 have its K56flex support switched off, so it cannot help.

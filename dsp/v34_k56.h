@@ -486,7 +486,9 @@ s16 V34K56<P>::k56_start()
 	k56_pad = 0;
 	k56_rob = 0;
 	k56_reneg = 0;
-	k56_rn_test = 0;
+	/* (a test's renegotiation once a call, retrains or not) */
+	if (!self.connected)
+		k56_rn_test = 0;
 	k56_t0 = self.total;
 	/* PCM once INFO1a is out of the converters (their delay) */
 	self.pcm_tx = 0;
@@ -701,7 +703,15 @@ s16 V34K56<P>::k56_step(s32 c)
 			self.set_rates(self.rate_tx, self.rate_rx);
 			DSP_DBG("v34: K56flex renegotiated " RATE_FMT "\n",
 				self.rate_tx, self.rate_rx);
+		} else if (k56t.seg == K56_DATA && self.prx.ev_e &&
+			   self.retraining && self.connected) {
+			self.retraining = 0;
+			self.set_state(K4_DATA);
+			self.set_rates(self.rate_tx, self.rate_rx);
+			DSP_DBG("v34: K56flex retrained " RATE_FMT "\n",
+				self.rate_tx, self.rate_rx);
 		} else if (k56t.seg == K56_DATA && self.prx.ev_e) {
+			self.retraining = 0;
 			self.set_state(K4_DATA);
 			self.set_rates(self.rate_tx, self.rate_rx);
 			self.connected = 1;
@@ -713,8 +723,11 @@ s16 V34K56<P>::k56_step(s32 c)
 		}
 		break;
 	case K4_DATA:
-		/* the caller's S: its renegotiation; or ours (a test) */
-		if (self.prx.ev_reneg) {
+		/* the caller's tone B: its retrain; its S: its
+		   renegotiation; or ours (tests) */
+		if (self.rt_blocks >= 6 && !k56_reneg) {
+			self.retrain("tone B", RT_REMOTE);
+		} else if (self.prx.ev_reneg) {
 			self.prx.ev_reneg = 0;
 			if (!k56_reneg)
 				k56_reneg_start("the caller's", true);
@@ -722,6 +735,10 @@ s16 V34K56<P>::k56_step(s32 c)
 			   !k56_reneg) {
 			k56_rn_test = 1;
 			k56_reneg_start("test", false);
+		} else if (self.retrain_at && c >= self.retrain_at &&
+			   !self.retrains && !k56_reneg) {
+			/* test: DSP_V34_RETRAIN */
+			self.retrain("test");
 		}
 		break;
 	default:
@@ -752,6 +769,16 @@ template <class P>
 s16 V34K56<P>::k56_fail(const char *why)
 {
 	P &self = static_cast<P &>(*this);
+	/* (in a retrain: once more, as V.90's) */
+	if (self.retraining && self.connected) {
+		if (self.retrains >= 4) {
+			DSP_DBG("v34: K56flex: %s, %d retrains, giving up\n",
+				why, self.retrains);
+			return DPSTAT_ERROR;
+		}
+		self.retrain(why);
+		return 0;
+	}
 	if (!k56_reneg)
 		return self.fallback(why);
 	DSP_DBG("v34: K56flex renegotiation failed (%s)\n", why);
@@ -779,7 +806,9 @@ s16 V34K56<P>::k56c_start()
 	k56_rx = 1;
 	k56_quiet = 0;
 	k56_reneg = 0;
-	k56_rn_test = 0;
+	/* (a test's renegotiation once a call, retrains or not) */
+	if (!self.connected)
+		k56_rn_test = 0;
 	k56_rn_downs = 0;
 	k56_rn_from = 0;
 	k56_rn_cap = 13;
@@ -873,7 +902,7 @@ void V34K56<P>::k56c_reneg(const char *why, s16 cap, bool remote)
      up: 0.8 L(r + 1) + 0.2 L(r + 2), none at the top or from the
 	 rate a renegotiation went down to.
    3 checks in a row above the retrain limit, or a 6th renegotiation
-   down: a renegotiation to what the error allows; 4 above the down
+   down: a retrain; 4 above the down
    limit: down one rate; 17 below the up limit: up */
 template <class P>
 s16 V34K56<P>::k56c_watch()
@@ -903,16 +932,16 @@ s16 V34K56<P>::k56c_watch()
 	else
 		k56_rn_cnt = 0;
 	if (k56_rn_bad > 2) {
-		/* (SM56 retrains here) */
+		/* (SM56's cause 0x10) */
 		k56_rn_bad = k56_rn_cnt = 0;
 		k56_rn_from = 0;
-		k56c_reneg("errors", 13, false);
+		self.retrain("errors");
 	} else if (k56_rn_cnt > 3 && ++k56_rn_downs > 5) {
-		/* (SM56 retrains here too) */
+		/* (SM56's cause 0x23) */
 		k56_rn_cnt = 0;
 		k56_rn_downs = 0;
 		k56_rn_from = 0;
-		k56c_reneg("errors", 13, false);
+		self.retrain("too many renegotiations");
 	} else if (k56_rn_cnt > 3) {
 		k56_rn_cnt = 0;
 		k56_rn_from = static_cast<s16>(r - 1);
@@ -1011,7 +1040,19 @@ s16 V34K56<P>::k56c_step(s32 c)
 			DSP_DBG("v34: K56flex renegotiated " RATE_FMT
 				" (analogue modem)\n", self.rate_tx,
 				self.rate_rx);
+		} else if (t.seg == V34_TX_DATA && k56rx.ev_data &&
+			   self.retraining && self.connected) {
+			self.retraining = 0;
+			self.set_state(KC4_DATA);
+			self.set_rates(self.rate_tx, self.rate_rx);
+			k56_em = 0;
+			k56_em_n = 0;
+			k56_rn_bad = k56_rn_cnt = 0;
+			DSP_DBG("v34: K56flex retrained " RATE_FMT
+				" (analogue modem)\n", self.rate_tx,
+				self.rate_rx);
 		} else if (t.seg == V34_TX_DATA && k56rx.ev_data) {
+			self.retraining = 0;
 			self.set_state(KC4_DATA);
 			self.set_rates(self.rate_tx, self.rate_rx);
 			self.connected = 1;
@@ -1047,6 +1088,11 @@ s16 V34K56<P>::k56c_step(s32 c)
 				10 * log10f(k56rx.dpow /
 					    (k56rx.de_mse + 1e-6f)),
 				k56rx.dec.errors, k56rx.ppm());
+		/* the digital modem's retrain (its tone A) */
+		if (self.rt_blocks >= 6) {
+			self.retrain("tone A", RT_REMOTE);
+			break;
+		}
 		/* the digital modem's renegotiation (its R) */
 		if (k56rx.ev_reneg_r) {
 			k56rx.ev_reneg_r = 0;
@@ -1056,6 +1102,12 @@ s16 V34K56<P>::k56c_step(s32 c)
 		if (k56_rn_at && c >= k56_rn_at && !k56_rn_test) {
 			k56_rn_test = 1;
 			k56c_reneg("test", k56_rn_to, false);
+			break;
+		}
+		if (self.retrain_at && c >= self.retrain_at &&
+		    !self.retrains) {
+			/* test: DSP_V34_RETRAIN */
+			self.retrain("test");
 			break;
 		}
 		return k56c_watch();

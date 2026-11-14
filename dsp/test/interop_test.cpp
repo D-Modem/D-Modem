@@ -425,13 +425,35 @@ std::vector<Call> calls()
 	      "[0-9]+/56000 \\(analogue modem\\)",
 	      "EXPECT_B=(?s)K56flex renegotiation \\(test\\).*"
 	      "K56flex renegotiated 56000/" });
+	/* retrains (phase 2 again) in the data mode, by either modem */
+	add("open", "open_k56flex_retrain", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_V34_RETRAIN=2000c",
+	      "EXPECT_A=(?s)retrain 1 \\(test\\).*"
+	      "K56flex retrained [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)retrain 1 \\(tone B\\).*"
+	      "K56flex retrained 56000/" });
+	add("open", "open_k56flex_retrain_dm", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_V34_RETRAIN=2000a",
+	      "EXPECT_A=(?s)retrain 1 \\(tone A\\).*"
+	      "K56flex retrained [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)retrain 1 \\(test\\).*"
+	      "K56flex retrained 56000/" });
 	/* noise down from 4 s into the data mode: the analogue modem's
-	   watch on the error renegotiates to what it allows */
+	   watch on the error retrains (the error is over 4 times the
+	   limit), and the new training takes a lower rate */
 	add("open", "open_k56flex_noise", "open", "open8", "ATX3;AT+MS=56",
 	    { "NET=9600:8000:ulaw", "BULK=200000", "NET_NOISE=24:30",
 	      "NET_NOISE_DIR=ba",
-	      "EXPECT_A=(?s)K56flex renegotiation \\(errors\\).*"
-	      "K56flex renegotiated [0-9]+/4[0-9]000 \\(analogue modem\\)" });
+	      "EXPECT_A=(?s)retrain 1 \\(errors\\).*"
+	      "K56flex retrained [0-9]+/4[0-9]000 \\(analogue modem\\)" });
+	/* noise that grows slowly: renegotiations down, one rate at a
+	   time */
+	add("open", "open_k56flex_noise_ramp", "open", "open8",
+	    "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "NET_NOISE=24:30:20",
+	      "NET_NOISE_DIR=ba",
+	      "EXPECT_A=(?s)K56flex renegotiation \\(rate down\\).*"
+	      "K56flex renegotiated [0-9]+/5[0-9]000 \\(analogue modem\\)" });
 	add("open", "open_k56flex_alaw", "open", "open8", "ATX3;AT+MS=56",
 	    { "NET=9600:8000:alaw", "DSP_G711=alaw",
 	      "EXPECT_A=(?s)INFO1a: K56flex \\(0x5\\).*A-law.*"

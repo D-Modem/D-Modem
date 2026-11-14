@@ -489,9 +489,8 @@ More than 5 renegotiations down also cause a retrain.
 Our modems do the same (`dsp/v34_k56.h`):
 
 - The client (`k56c_watch()`) checks every 500 ms. L(r) is
-  d(r)² / (91.4 · 0.675), as in its rate rule (section 6). Our client
-  has no K56flex retrain yet. Where sm56 retrains, our client starts a
-  renegotiation to the rate that its error allows.
+  d(r)² / (91.4 · 0.675), as in its rate rule (section 6). Where sm56
+  retrains, our client also retrains (see "Retrains" below).
 - The client finds R in its data: two frames that agree with R2's first
   16 codes. It finds MARK from the descrambled bits, because the
   server sets the length of TRN2A. It asks for at most one rate less
@@ -509,7 +508,51 @@ mode then have about 10 times the error of the first data mode, and
 it retrains after about 4 s [seen with `SM56_TRACE=1`]. The cause is
 not known. sm56 keeps the code levels that it adapted in the first
 data mode (MOD + 0x4040, copied to + 0x3840) [inferred: a possible
-cause].
+cause]. After this retrain, the data is correct again (see "Retrains"
+below).
+
+### Retrains
+
+A retrain is phase 2 again, as in V.34 (11.5/V.34), and then phases 3
+and 4 as in a new call. The modem that starts it sends silence and
+then its tone (the client tone B, the server tone A). The other modem
+finds the tone in data mode and does the same. There is no new
+CONNECT [seen in our modems; sm56's retrain causes in
+`SC_A56_Data_setRtrnOrRnego`].
+
+Our modems (`dsp/v34_k56.h`, `V34Retrain::retrain()`):
+
+- The server finds the client's tone B in its upstream receiver in
+  data mode. The client finds the server's tone A on the PCM line.
+- The client retrains when its data error is more than 4 times the
+  down limit for 3 checks in a row, or at the 6th renegotiation down,
+  as sm56 does (causes `0x10` and `0x23`).
+- If a phase of a retrain fails (for example, no MP), the modem
+  retrains again. After 4 retrains it stops the call.
+- The time limit of a retrain is 30 s, because phase 3 is long.
+- `DSP_V34_RETRAIN=<ms>[a|c]` starts a retrain that far into the data
+  mode, for a test. A test renegotiation (`DSP_K56_RENEG`) occurs only
+  once in a call, also when there are retrains.
+
+Against sm56 [seen with `SM56_TRACE=1`]:
+
+- sm56 retrains with tone B, for example after our server's
+  renegotiation (cause `0x10`). Our server answers, and the call goes
+  back to data mode with correct data.
+- When our server starts the retrain, sm56 does not see our tone A as
+  a retrain. Its front end goes to the R search of a renegotiation
+  (state 16) and times out (cause `0x26` or `0x27`). Its V.34 part does
+  phase 2 again with us.
+- In the phase 3 and 4 of a retrain, sm56 fails about half the time.
+  Its front end stays in TRN2A (state 19) for more than 840 calls of
+  `SC_A56Phase4_Handler`, and it retrains with cause `0x21`. Our
+  modem then retrains again. `State_TRN2A_DecDir` takes its
+  references from the table at MOD + 0x3840, which sm56 copies from
+  the table that it adapted in data mode (+ 0x4040). The first
+  training uses the table from power-up [seen]. Thus the adapted table
+  is the probable cause of this fault and of the bad data after a
+  renegotiation [inferred]. We did not add the sm56 retrain tests to
+  the test suite, because they do not pass each time.
 
 ## 6. The client: D-Modem as the analogue modem
 
@@ -640,7 +683,10 @@ is 0.55 rms (77 dB below the signal). The tests:
 | `open_k56flex_pad6_rbs` | a 6 dB pad and robbed bits: J's octet `0x98`, 46000 |
 | `open_k56flex_reneg` | the client renegotiates to 50000, then its watch goes up to 56000 again; 200000 octets each way |
 | `open_k56flex_reneg_dm` | the server renegotiates (its R in the data) |
-| `open_k56flex_noise` | noise from 4 s into the data mode: the client renegotiates to 4x000, and the data has no more code errors |
+| `open_k56flex_noise` | noise from 4 s into the data mode: the error is more than 4 times the limit, the client retrains, and the new training gives 4x000 |
+| `open_k56flex_noise_ramp` | noise that increases during 20 s: the client renegotiates down one rate at a time |
+| `open_k56flex_retrain` | the client retrains (`DSP_V34_RETRAIN=2000c`), the server finds its tone B; 200000 octets each way |
+| `open_k56flex_retrain_dm` | the server retrains, the client finds its tone A |
 | `sm56_k56flex_rbs` | sm56 with robbed bits on the codes to it (`NET_RBS_TO=a`): its J's octet `0x04`, data on the grid of 24 |
 
 netsim's `NET_RBS_TO=a` (or `b`) puts `NET_PAD` and `NET_RBS` on the
@@ -657,8 +703,9 @@ on a padded line, with our server or with any other.
 
 ### Not done
 
-- 8000 Hz analogue lines and retrains.
-- sm56's data after a renegotiation (section 5).
+- 8000 Hz analogue lines.
+- sm56's data after a renegotiation, and sm56's training in a retrain
+  (section 5).
 
 ## 7. The firmwares
 
@@ -684,5 +731,6 @@ They show what the modems report about a call:
   TRN1C's real length: sm56 takes anything from about 4000 symbols on.
 - An A-law client: what sets its law, and whether the INFO1a codes 5 and 13 work. Not tested.
 - The meaning of INFO1a's x bit and of NS octets 3 to 7.
-- Retrains.
-- Why sm56's data after a renegotiation is wrong.
+- Why sm56's data after a renegotiation is wrong, and why its
+  training in a retrain fails about half the time. The table that it
+  adapts in data mode is the probable cause.
