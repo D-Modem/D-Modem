@@ -2,3 +2,4 @@
 *.pdf.part
 g729a/
 g729-soft.zip.part
+!umud10.pdf

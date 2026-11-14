@@ -80,7 +80,8 @@ superseded V.42 (10/96), `T-REC-V.42-199610-S` at itu.int
 ([link-details.md](../link-details.md#mnp)).
 
 Microsoft's Unimodem Diagnostics Command Reference Specification,
-version 1.0 (2 July 1998), is here as [umud10.rtf](umud10.rtf): `AT#UD`
+version 1.0 (2 July 1998), is here as [umud10.rtf](umud10.rtf) and as
+[umud10.pdf](umud10.pdf) (the same text, in PDF format): `AT#UD`
 (`core/modem.cpp`, `unimodem_diag()`) follows it.  Microsoft grants the
 right to reproduce and distribute it for making hardware that complies
 with it.
