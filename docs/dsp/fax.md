@@ -1,16 +1,16 @@
 # Fax
 
-D-Modem can work as a fax modem for fax programs on your computer, and
-as a complete fax machine of its own for the phone-system modules and
-libdmodem. Faxes can go over an ordinary phone call's audio or over the
-internet using T.38.
+D-Modem can operate as a fax modem for fax programs on your computer. It can
+also operate as a complete fax machine for the phone-system modules and
+libdmodem. Faxes can go over the audio of an ordinary phone call, or over the
+internet with T.38.
 
-For every command, frame and timing, see
+For each command, frame and timing, refer to
 [the technical details](fax-details.md).
 
 ## Fax modem for fax programs
 
-Fax programs (HylaFAX, efax, Windows Fax and Scan and so on) talk to a
+Fax programs (HylaFAX, efax, Windows Fax and Scan and other programs) communicate with a
 fax modem with one of three command sets. D-Modem has all of them:
 
 | Command set | Turn on with | Who does the fax protocol |
@@ -20,78 +20,86 @@ fax modem with one of three command sets. D-Modem has all of them:
 | **Class 2** | `AT+FCLASS=2` | the modem |
 | **Class 2.0** | `AT+FCLASS=2.0` | the modem (the standardised version of class 2) |
 
-Class 1 is the most widely supported and the most flexible. Classes 2
-and 2.0 suit simpler programs.
+Class 1 has the widest support and is the most flexible. Classes 2
+and 2.0 are applicable to simpler programs.
 
-The fax speeds are the usual ones: V.27ter (2400 and 4800 bit/s), V.29
+The fax speeds are the usual speeds: V.27ter (2400 and 4800 bit/s), V.29
 (7200 and 9600) and V.17 (up to 14400). In class 2 and 2.0, **V.34 fax**
-goes up to 33600 bit/s when the other machine has it too: set the
-highest speed to 13 with error correction on (for example
-`AT+FIS=1,13,0,2,0,2,0,0`). A machine without V.34 still gets the
-usual speeds. To poll (fetch a document) on V.34, send `AT+FSP=1`
-before dialling.
+goes up to 33600 bit/s when the other machine also has it. To use it, set the
+highest speed to 13 with error correction enabled (for example
+`AT+FIS=1,13,0,2,0,2,0,0`). A machine without V.34 gets the
+usual speeds. To poll (get a document) on V.34, send `AT+FSP=1`
+before you dial.
 
-In class 1.0 (`AT+FCLASS=1.0`), fax programs that know V.34 fax, such as
-HylaFAX, get it the same way: the modem says `+F34:` with the speed
-before its `CONNECT`, and the program sends and receives the pages at
+In class 1.0 (`AT+FCLASS=1.0`), fax programs that know V.34 fax (for example
+HylaFAX) get it in the same method. The modem sends `+F34:` with the speed
+before its `CONNECT`. Then the program sends and receives the pages at
 up to 33600 bit/s. `AT+F34=` sets the highest and lowest speed (in
-steps of 2400 bit/s; `AT+F34=0` turns V.34 off). With a machine that has
-no V.34, the call carries on as ordinary class 1.
+steps of 2400 bit/s). `AT+F34=0` disables V.34. With a machine that has
+no V.34, the call continues as ordinary class 1.
 
 ## Built-in fax machine
 
-D-Modem also has its own complete fax machine (the T.30 protocol), used
-by the [Asterisk](../asterisk.md), [FreeSWITCH](../freeswitch.md) and
-[dmodem-ari](../ari.md) fax applications and by libdmodem. It sends and
-receives TIFF fax files, and uses error correction mode when the other
-machine supports it, so pages arrive without damaged lines.
+D-Modem also has its own complete fax machine (the T.30 protocol). These
+items use it: the fax applications of [Asterisk](../asterisk.md), [FreeSWITCH](../freeswitch.md) and
+[dmodem-ari](../ari.md), and libdmodem. It sends and
+receives TIFF fax files. It uses error correction mode when the other
+machine supports it. Thus, pages arrive without damaged lines.
 
-With error correction on, the pages also go in **T.85** (JBIG) coding
-when the other machine takes it: a better compression than the usual
-MH coding, so a page of text takes about half the time on the line.
-Pages that come in T.85 are saved as ordinary fax TIFF files.
+When error correction is enabled, the pages also go in **T.85** (JBIG) coding
+if the other machine accepts it. This compression is better than the usual
+MH coding. Thus, a page of text takes about half the time on the line.
+The fax machine saves the pages that come in T.85 as ordinary fax TIFF files.
 
 It also sends and receives **colour and grey-scale** pages (T.42, JPEG
-coding), again with error correction on. A colour or grey page in the
-TIFF file to send (8-bit RGB or grey, uncompressed) goes in colour when
-the other machine takes it, in grey when it takes only grey, and as a
-black-and-white dithered page otherwise. A colour page that comes in is
-saved in colour in the received TIFF file; programs that take only
-black and white (class 2 fax software) get a dithered copy.
+coding), also with error correction enabled. A colour or grey page in the
+TIFF file to send (8-bit RGB or grey, uncompressed) goes in one of these forms:
 
-Pages with **few colours**, such as charts, diagrams and coloured text,
-go **without any loss** (T.43, JBIG coding of the colours) when the
-other machine takes that: the colours come out as they went in, and
-the page is far smaller than in JPEG (a bar chart of five colours: 199
+- In colour, if the other machine accepts colour.
+- In grey, if it accepts only grey.
+- As a black-and-white dithered page, if it accepts neither.
+
+The fax machine saves a received colour page in colour in the received TIFF file.
+Programs that accept only black and white (class 2 fax software) get a dithered copy.
+
+Pages with **few colours** (for example charts, diagrams and coloured text)
+go **without any loss** (T.43, JBIG coding of the colours) if the
+other machine accepts that. The colours come out as they went in, and
+the page is much smaller than in JPEG (a bar chart of five colours: 199
 octets instead of 25809). Photographs and other pages of many colours
-still go in JPEG. Pages that come in T.43 are saved like JPEG ones.
+go in JPEG. The fax machine saves the pages that come in T.43 as it saves JPEG pages.
 
 Pages with **text over a picture** go in **T.44** (mixed raster
-content) when the other machine takes it: the text's shapes are kept
+content) if the other machine accepts it. The shapes of the text stay
 sharp in black and white, and the picture goes in JPEG at half the
-resolution underneath. A page of text over a photo is far smaller than
-in JPEG (the test's page goes in about a quarter of the time) and its
-text comes out crisper. Pages that come in T.44 are saved like JPEG
-ones.
+resolution below the text. A page of text over a photo is much smaller than
+in JPEG (the page of the test takes about a quarter of the time), and its
+text is sharper. The fax machine saves the pages that come in T.44 as it saves JPEG
+pages.
 
 ### Binary files
 
-With error correction on, the fax machine can also send and receive
-**binary files** (T.434) in the same call as the pages: any file,
+When error correction is enabled, the fax machine can also send and receive
+**binary files** (T.434) in the same call as the pages. Any file,
 with its name and type, arrives exactly as it was sent. A program
-using libdmodem turns this on with `t30_config`'s `bft`; a machine that
-doesn't take files still gets the pages, and the files are left out.
+that uses libdmodem enables this with the `bft` field of `t30_config`. A machine that
+does not accept files gets the pages, and the files do not go.
 
 ## Fax over the internet (T.38)
 
-Fax tones do not survive many internet phone calls well. **T.38** sends
-the fax as data packets instead of sound. Both the built-in fax machine
-and the class 1 fax modem can use T.38, and a call can switch to it in
-the middle.
+On many internet phone calls, fax tones become damaged. **T.38** sends
+the fax as data packets instead of sound. The built-in fax machine
+and the class 1 fax modem can both use T.38. A call can change to it
+during the call.
 
 ## Testing
 
-The fax tests send pages through each fax speed on a simulated line, run
-two fax machines against each other (on audio and over T.38, with lost
-packets), and check D-Modem against spandsp's fax code and against other
-companies' fax modems. See [Building and testing](../testing.md).
+The fax tests do these checks:
+
+- They send pages through each fax speed on a simulated line.
+- They run two fax machines against each other (on audio and over T.38, with lost
+  packets).
+- They check D-Modem against the fax code of spandsp and against the fax modems of other
+  companies.
+
+Refer to [Building and testing](../testing.md).
