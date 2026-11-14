@@ -8,7 +8,7 @@ of V.42 Annex A.
 
 - A modem can send a frame while the other modem sends.
 - Each modem can have up to k LT frames that are not acknowledged.
-- The start and stop bits stay on each octet. Thus the efficiency is
+- The start and stop bits stay on each octet. Thus, the efficiency is
   about 84% (secondary source: Wikipedia).
 
 ## On the line
@@ -47,5 +47,5 @@ D-Modem supports MNP 2.
 - The `Link.MnpOctets` and `Link.MnpBitErrors` tests examine the data
   phase in framing mode 2.
 
-See [the technical details of the link layer](../link-details.md#mnp)
+Refer to [the technical details of the link layer](../link-details.md#mnp)
 for the timers and the retransmission rules.

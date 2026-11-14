@@ -6,7 +6,7 @@ modems. Microcom made it in the 1980s. Each step of the family is a
 Microcom added MNP 10EC later.
 
 This folder gives one page for each class. Each page tells what the
-class does, how it goes on the line, where the data comes from, and
+class does, how it operates on the line, where the data comes from, and
 what D-Modem does with it now.
 
 ## Summary of the classes
@@ -20,7 +20,7 @@ what D-Modem does with it now.
 | [MNP 5](mnp5.md) | Data compression: run-length and adaptive frequency coding | No | Supported |
 | [MNP 6](mnp6.md) | Universal Link Negotiation and statistical duplexing | No | Not supported |
 | [MNP 7](mnp7.md) | Enhanced data compression (Huffman coding with a Markov model) | No | Not supported |
-| MNP 8 | No product is known. See [MNP 7](mnp7.md#mnp-8). | No | Not applicable |
+| MNP 8 | No product is known. Refer to [MNP 7](mnp7.md#mnp-8). | No | Not applicable |
 | [MNP 9](mnp9.md) | MNP 7 on V.32, with better acknowledgements | No | Not supported |
 | [MNP 10](mnp10.md) | Adverse channel enhancements: line probes, packet size, rate shifts | No | Supported (from the DeskPorte firmware) |
 | [MNP 10EC](mnp10ec.md) | Enhanced Cellular: changes in the data pump for cellular calls | No | Link layer only. The data pump changes are not done. |
@@ -35,7 +35,7 @@ confusion between the numbers from 0 and the numbers from 1.
 The classes are not separate protocols on the line. All classes from 2
 to 10 use the same LR frame, and the LR parameters tell which class the
 call uses. The DeskPorte firmware calculates the class number for its
-connect message from the negotiated LR values (see
+connect message from the negotiated LR values (refer to
 [firmware-findings.md](firmware-findings.md#f1-the-class-number)):
 
 1. If the 0x10 bit of parameter 8 (MNP 10) is set, the class is 10.
@@ -63,7 +63,7 @@ for classes 2 to 4.
 
 Each class after class 3 adds parameters to the LR, or new frame types,
 or both. A modem skips an LR parameter that it does not know, by its
-length. Thus a newer modem can connect to an older modem: the two
+length. Thus, a newer modem can connect to an older modem: the two
 modems use the highest class that both have.
 
 ## Sources
@@ -91,7 +91,7 @@ answer them. A ROM from a Microcom modem of the late 1980s is the most
 probable source.
 
 - The LR parameter or bit that offers MNP 7. The DeskPorte does not
-  read the 0x02 bit of parameter 9 (see [firmware-findings.md](firmware-findings.md#f5-parameter-9)).
+  read the 0x02 bit of parameter 9 (refer to [firmware-findings.md](firmware-findings.md#f5-parameter-9)).
 - The MNP 7 code tables and the model of the Huffman coder.
 - The signals of Universal Link Negotiation (MNP 6), and the turnaround
   rules of statistical duplexing.
@@ -103,8 +103,8 @@ probable source.
 ## Related pages
 
 - [The data link layer](../link.md) and its
-  [technical details](../link-details.md#mnp): how D-Modem's MNP code
-  works, and its tests.
+  [technical details](../link-details.md#mnp): how the MNP code of D-Modem
+  operates, and its tests.
 - [Firmware findings](firmware-findings.md): the addresses in the
   DeskPorte ROM for each statement on these pages.
 - The MNP 10 and MNP 10EC protocol specification (the Claude Doc of the

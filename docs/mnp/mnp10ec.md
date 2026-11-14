@@ -18,13 +18,13 @@ The link layer adds very little to MNP 10:
   VI).
 
 The data pump changes are in the DSP code of the Rockwell chips, not
-in the controller firmware. Thus the DeskPorte ROM does not contain
+in the controller firmware. Thus, the DeskPorte ROM does not contain
 them.
 
 ## What the data pump changes probably do
 
 No document gives the data pump changes of MNP 10EC. The patents of
-the period give the methods that cellular modems used (see
+the period give the methods that cellular modems used (refer to
 `mnp10ec/patent-research.md` in the project files):
 
 - Transmit de-emphasis and receive post-emphasis, to cancel the
@@ -51,6 +51,6 @@ D-Modem has the link layer of MNP 10EC, but not the data pump changes.
   in the probes and the transmit level control.
 - `AT-SEC` is accepted, but has no effect.
 
-A cellular call to D-Modem is usually on a digital network now. Thus
+A cellular call to D-Modem is usually on a digital network now. Thus,
 the radio channel effects that MNP 10EC is for do not occur on most
 calls.

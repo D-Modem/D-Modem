@@ -52,7 +52,7 @@ Microcom gave about 2:1 on the best data and 1.6:1 on typical text
 - The DeskPorte accepts MNP 5 with any class. Its parser does not
   examine the framing mode or parameter 8 when it reads parameter 9.
 - The DeskPorte also uses the 0x04, 0x08 and 0x10 bits of parameter 9
-  for V.42bis in MNP (see
+  for V.42bis in MNP (refer to
   [firmware-findings.md](firmware-findings.md#f5-parameter-9)).
 
 ## D-Modem
@@ -79,6 +79,6 @@ Some modems use V.42bis compression on an MNP link in place of MNP 5:
   P2 = 32.
 
 D-Modem does not use V.42bis on an MNP link. It ignores parameter 0x0E
-and the V.42bis bits of parameter 9. Thus an MNP call between D-Modem
+and the V.42bis bits of parameter 9. Thus, an MNP call between D-Modem
 and the DeskPorte uses MNP 5, or no compression. A V.42 call between
 them uses V.42bis.

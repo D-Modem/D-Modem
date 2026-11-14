@@ -27,7 +27,7 @@ MNP 10 uses the frames of MNP 4, and adds these items:
 | Type 9 frame | `04 09 R N(R) N(k)` | An LA that also acknowledges a probe |
 
 Each modem calculates the result of the LR exchange from the two LRs.
-The result is the AND (or the lower value) of the two. Thus the two
+The result is the AND (or the lower value) of the two. Thus, the two
 modems get the same result.
 
 MNP 10 is active only with framing mode 3 (MNP 3 or higher). Type 8
@@ -63,9 +63,9 @@ is in `link/mnp10.cpp`, and the data pump side is
 `Modem::mnp10_shift()` in `core/modem.cpp`.
 
 - `S113` bit 0 (the default) offers MNP 10.
-- `AT-K`, `AT-Q`, `AT)M`, `AT@M`, `AT*H` and `AT:T19` work as on the
+- `AT-K`, `AT-Q`, `AT)M`, `AT@M`, `AT*H` and `AT:T19` operate as on the
   DeskPorte.
-- The default of `AT-K` is 0 in D-Modem (1 on the DeskPorte). Thus a
+- The default of `AT-K` is 0 in D-Modem (1 on the DeskPorte). Thus, a
   call between two D-Modems keeps V.42bis or V.44.
 - Between two D-Modems, LR parameter 0xC0 (D-Modem's own) lets the call
   move between all the modulations that both modems have. A DeskPorte
@@ -73,12 +73,12 @@ is in `link/mnp10.cpp`, and the data pump side is
 
 These items are not done:
 
-- link resume (LR parameter 0x82);
+- Link resume (LR parameter 0x82).
 - Microcom security (parameter 0x0B) and the asynchronous protocol
-  (parameter 0x80);
-- the data pump changes of [MNP 10EC](mnp10ec.md).
+  (parameter 0x80).
+- The data pump changes of [MNP 10EC](mnp10ec.md).
 
-See [the technical details of the link layer](../link-details.md#mnp-10-and-10ec)
+Refer to [the technical details of the link layer](../link-details.md#mnp-10-and-10ec)
 for the ladder of rates, the restart of the data pumps and the tests.
 
 ## What is not confirmed

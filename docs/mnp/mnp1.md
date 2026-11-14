@@ -19,7 +19,7 @@ modems with very small processors and little memory.
 V.42 Annex A does not give framing mode 1. It gives only the modes 2 and
 3, and it says that the responder answers with the lower framing mode.
 The DeskPorte firmware shows how class 1 fits into the same LR
-(see [firmware-findings.md](firmware-findings.md#f2-the-framing-mode-and-class-1)):
+(refer to [firmware-findings.md](firmware-findings.md#f2-the-framing-mode-and-class-1)):
 
 - An LR with parameter 2 = 1 asks for class 1.
 - An LR with no parameter 2 is also class 1. An LR with no parameter 3
@@ -43,7 +43,7 @@ D-Modem does not support MNP 1.
   DeskPorte. D-Modem uses framing mode 2. The DeskPorte uses framing
   mode 1.
 
-A modem that has only MNP 1 is very rare. Thus this gap is not
+A modem that has only MNP 1 is very rare. Thus, this gap is not
 important for most calls.
 
 ## What is necessary to support it
@@ -51,7 +51,7 @@ important for most calls.
 1. Accept framing mode 1 in `Mnp::rx_lr()`.
 2. Send the response LR with only the parameters that the initiator
    sent, as the DeskPorte does
-   (see [firmware-findings.md](firmware-findings.md#f6-the-response-lr)).
+   (refer to [firmware-findings.md](firmware-findings.md#f6-the-response-lr)).
 3. Send one frame at a time, and wait for the acknowledgement.
 4. Get a capture of a class 1 call from a real modem, to find the
    turnaround times.
