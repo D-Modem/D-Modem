@@ -2366,12 +2366,13 @@ gives \cmd{(0,1),(0-30)}.
 \begin{command}{mnp10}{-C, -K, -Q, )M, @M, *H, :T19}{\texorpdfstring{\texttt{MNP}}{MNP} 10}
 Microcom's \std{MNP~10}, offered in every \std{MNP} call (S113 bit 0, \emph{default}
 on): the link's packets grow and shrink with the line, and the call moves
-between modulations as the line gets better or worse.  With a \std{D-Modem} at
+between modulations as the line gets better or worse.  With a D-Modem at
 the other end (S113 bit 1, \emph{default} on) it moves between every
 modulation both have, \std{V.34} and \std{V.32bis} down to \std{V.21}; with
 other \std{MNP~10} modems within \std{V.34}, and within \std{V.32bis},
 \std{V.22bis} and \std{V.22}.
-\begin{vtable}
+\begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{\std{MNP~10} Commands}
+  {\thd{Command} & \thd{Function}}
 \cmdl[mnp10]{-K0} & A \std{V.42} call stays \std{V.42} (S107, \emph{default}). \\ \hline
 \cmdl[mnp10]{-K1}, \cmdl[mnp10]{-K2} & A \std{V.42} call whose other end offers it in its \std{XID} becomes \std{MNP~10}, in \std{HDLC} frames (it loses \std{V.42bis}). \\ \hline
 \cmdl[mnp10]{-Q0} & No rate below 4800 bit/s (S108). \\ \hline
