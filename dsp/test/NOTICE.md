@@ -14,10 +14,10 @@ D-Modem's own programs and libraries (dmodemd, libdmodem, the Asterisk and
 FreeSWITCH modules) neither contain nor link any of them; only the test
 programs in this directory load them.
 
-`usr/courier-nvram.bin` is not a copy of anyone's part: it was made with
-the emulated Courier (`half_courier`), by the firmware's own `AT&F` and
-`AT&W` on an erased part, with the settings records that enable the
-Courier's options written in.
+`usr/courier-nvram.bin` is not a copy of a part of a person or company.
+We made it with the emulated Courier (`half_courier`). The `AT&F` and
+`AT&W` commands of the firmware wrote it on an erased part. We also wrote
+the settings records that enable the options of the Courier into it.
 
 | File | Owner | From |
 |---|---|---|
@@ -34,10 +34,10 @@ Courier's options written in.
 
 ## The ITU's list of national tones
 
-`tones.cpp` is generated from the ITU's list of the tones used in
+A script makes `tones.cpp` from the list of the ITU of the tones in
 national networks (Annex to ITU Operational Bulletin No. 955, position on
-1 May 2010, after Recommendation E.180), which the ITU publishes freely
-at https://www.itu.int/dms_pub/itu-t/opb/sp/T-SP-E.180-2010-MSW-E.doc:
-each country's dial, ringing, busy and congestion tones and their
-cadences, as data. The list itself is not
-in this repository; `tones_gen.py` reads it.
+1 May 2010, after Recommendation E.180). The ITU publishes this list free
+of charge at https://www.itu.int/dms_pub/itu-t/opb/sp/T-SP-E.180-2010-MSW-E.doc.
+The list gives the dial, ringing, busy and congestion tones of each
+country and their cadences, as data. The list is not in this repository.
+`tones_gen.py` reads it.

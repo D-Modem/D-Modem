@@ -1,7 +1,12 @@
 # Contributing
 
-Contributions are welcome: issues, fixes and features alike.  Before
-sending a change, build it and run the quick tests (`ctest --test-dir build -L quick`; see [docs/building.md](docs/building.md)).
+We welcome contributions: issues, fixes and new features. Before you send
+a change, build it and run the quick tests
+(`ctest --test-dir build -L quick`). For more data, refer to
+[docs/building.md](docs/building.md).
+
+Write all technical documentation in ASD-STE100 Simplified Technical
+English. Follow [docs/STYLE.md](docs/STYLE.md).
 
 ## The contributor agreement
 
