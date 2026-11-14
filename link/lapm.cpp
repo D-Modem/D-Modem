@@ -68,6 +68,10 @@ static const u8 PI_ZSTD_SET = 0x60, PI_ZSTD_P0 = 0x61, PI_ZSTD_WIN = 0x62,
    and a PI 0xf1 of 6 that the Courier always sends, meaning unknown */
 static const u8 PI_HST_SET = 0xff, PI_HST_CAP = 0xc0, PI_HST_F1 = 0xf1;
 static const u8 HST_OPTS = 0x01, HST_F1 = 6;
+/* MNP 10's upgrade (-K1; a Microcom modem's XID): one parameter PI
+   0xff in the user data subfield holding "MNPI" (PI 1) then MNP's LR
+   parameters (Mnp::upgrade_params()) */
+static const u8 PI_MNPI = 0xff, PI_MNPI_ID = 0x01;
 
 /* the HDLC optional functions we send (PL 3; Note 1 of Table 11a: bit
    position 1 is the low-order bit of the first octet): the ISO bit
@@ -211,6 +215,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	state_ = IDLE;
 	config_ = was_up_ = reject_ = busy_ = peer_busy_ = false;
 	hst_pending_ = false;
+	mnp_agreed_ = mnp_pending_ = false;
 	v76_ = false;
 	fcs32_asked_ = fcs32_ = false;
 	no_zstd_ = false;
@@ -612,8 +617,23 @@ s16 Lapm::tx_xid(u8 addr)
 		p = put_param(p, PI_V44_P3T, c.v44_history, 2);
 		p = put_param(p, PI_V44_P3R, c.v44_history, 2);
 	}
+	bool user = v44;
+	if (mnp_upgrade() && (!response || mnp_agreed_)) {
+		if (!user)
+			*p++ = GI_USER;
+		user = true;
+		u8 *pl = p + 1;
+		*p++ = PI_MNPI;
+		p++;
+		*p++ = PI_MNPI_ID;
+		*p++ = 4;
+		memcpy(p, "MNPI", 4);
+		p += 4;
+		p += link_->mnp().upgrade_params(p, 120, !response);
+		*pl = static_cast<u8>(p - pl - 1);
+	}
 	if (c.hst && state_ == IDLE && !was_up_) {
-		if (!v44)
+		if (!user)
 			*p++ = GI_USER;
 		p = put_id(p, PI_HST_SET, "HST");
 		*p++ = PI_HST_CAP;
@@ -686,6 +706,10 @@ void Lapm::tx_complete(Frame *f)
 		hst_pending_ = false;
 		link_->hst_switch();
 	}
+	if (mnp_pending_ && tx_ctrl_ == ctrl_list_) {
+		mnp_pending_ = false;
+		link_->mnp_upgrade(false);
+	}
 }
 
 
@@ -733,6 +757,14 @@ void Lapm::rx_complete(Frame *f)
 		rx_super_cmd(f);
 	else
 		rx_super_rsp(f);
+}
+
+/* (see lapm.h) */
+bool Lapm::mnp_upgrade() const
+{
+	const Config &c = link_->cfg();
+	return c.mnp && c.mnp10 && c.mnp10_upgrade && !c.sync && !v76_ &&
+		state_ == IDLE && !was_up_ && !link_->hst_rate();
 }
 
 /* whether an I or S frame is for the data phase: not while disconnected
@@ -979,6 +1011,11 @@ void Lapm::rx_unnum_cmd(Frame *f)
 	case U_XID:
 		rx_xid(f, false);
 		tx_xid(rsp_addr_);
+		/* MNP 10 agreed: MNP once the response is out */
+		if (mnp_agreed_) {
+			mnp_pending_ = true;
+			break;
+		}
 		/* agreed: either FCS until the SABME says which */
 		if (state_ == IDLE && !was_up_) {
 			fcs32_ = fcs32_asked_ && link_->cfg().fcs32 && !v76_;
@@ -1056,6 +1093,12 @@ void Lapm::rx_unnum_rsp(Frame *f)
 		timer_stop();
 		/* HST both ways: a DM (F 0) as the Courier sends, then HST,
 		   where the SABME goes */
+		if (mnp_agreed_) {
+			/* MNP 10 agreed: the LRs' confirmation next */
+			mnp_agreed_ = false;
+			link_->mnp_upgrade(true);
+			return;
+		}
 		if (state_ == IDLE && !was_up_ && link_->hst_rate()) {
 			/* (with the 16-bit FCS: the 32-bit one is from the
 			   SABME on) */
@@ -1099,6 +1142,8 @@ void Lapm::rx_xid(Frame *f, bool response)
 	s16 p0 = 0;
 	s32 v44_p0 = 0, zstd_p0 = 0;
 	bool v44_set = false, zstd_set = false, hst_set = false;
+	const u8 *mnpi = nullptr;
+	s16 mnpi_len = 0;
 	u8 hst_opts = 0, hst_rates = 0;
 	r.zstd_dict = 0;
 	r.zstd_window = ZSTD_WINDOW_LOG;
@@ -1181,7 +1226,14 @@ void Lapm::rx_xid(Frame *f, bool response)
 			r.v44_history = std::min(r.v44_history, v);
 			break;
 		case PI_HST_SET:
-			hst_set = pl == 3 && !memcmp(pv, "HST", 3);
+			/* (PI_MNPI's too) */
+			if (pl == 3 && !memcmp(pv, "HST", 3))
+				hst_set = true;
+			else if (pl >= 6 && pv[0] == PI_MNPI_ID &&
+				 pv[1] == 4 && !memcmp(pv + 2, "MNPI", 4)) {
+				mnpi = pv + 6;
+				mnpi_len = static_cast<s16>(pl - 6);
+			}
 			break;
 		case PI_HST_CAP:
 			if (pl == 2) {
@@ -1220,6 +1272,18 @@ void Lapm::rx_xid(Frame *f, bool response)
 	r.zstd = zstd_set && zstd_p0;
 	if (r.zstd)
 		p0 = zstd_p0 & 3;
+	/* -K1 both: the MNP parameters agreed as an LR's (the responder's
+	   MNP from its start) */
+	mnp_agreed_ = false;
+	if (mnpi && mnp_upgrade()) {
+		link_->mnp().start(response);
+		mnp_agreed_ = link_->mnp().upgrade_rx(mnpi, mnpi_len,
+						      response);
+		link_->logf("ec: XID %s with MNP's parameters: %s.",
+			    response ? "response" : "command",
+			    mnp_agreed_ ? "MNP 10 from now on" :
+			    "not agreed, V.42 on");
+	}
 	r.comp = response ? swap_dirs(p0) : p0;
 	r.hst = hst_set && (hst_opts & 1) ? hst_rates : 0;
 	r.tx_win = static_cast<s16>(tx_win_);

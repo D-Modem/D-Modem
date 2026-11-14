@@ -1831,6 +1831,12 @@ escape 6 s in:
   `<peer>_34_dte_retrain_<peer>_calls`); and renegotiations with us
   calling Agere and Broadcom (`<peer>_34_dte_reneg_open_calls`). Each
   peer answers, and the data carries on whole.
+- V.32bis renegotiations by us against Agere, Broadcom and ESS calling
+  (`<peer>_132_dte_reneg_<peer>_calls`) and the Courier
+  (`courier_v32_dte_reneg`). None of them has V.32bis's renegotiation:
+  each answers our S with a retrain within about 200 ms, ours follows,
+  and the data carries on whole. Their own `ATO3` in V.32bis is a
+  retrain too.
 - Between two of ours: V.90 as the analogue modem
   (`open_v90a_dte_retrain`, `open_v90a_dte_reneg`) and as the digital
   modem (`open_v90_dte_reneg`); and V.92 with PCM upstream, as either

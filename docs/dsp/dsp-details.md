@@ -175,7 +175,9 @@ out. Each side then offers the rates its training quality supports:
 | below 16 dB | 4800 |
 
 A V.32bis call retrains by itself when its receiver's error rises to
-4 dB short of the SNR its rate was chosen at (7 dB for 4800).
+4 dB short of the SNR its rate was chosen at (7 dB for 4800). It changes
+rate without a retrain by V.32bis's rate renegotiation
+([v32terbo-details.md](v32terbo-details.md#rate-renegotiation)).
 
 ### How the QAM receiver works
 

@@ -146,8 +146,18 @@ const struct {
 	{ "&K", "4-6" }, { "&M", "0,4,5" }, { "&N", "0-14" }, { "&W", "0-1" },
 	{ "&Y", "0-1" }, { "\\G", "0-1" }, { "\\J", "0-1" }, { "\\K", "0-5" },
 	{ "\\Q", "0-3" }, { "\\R", "0-1" }, { "\\T", "0-255" },
-	{ "-C", "0-1" }, { "-K", "0-2" }, { "-Q", "0-1" }, { ")M", "0-2" },
-	{ "@M", "0-30" }, { "*H", "0-2" },
+	{ "-C", "0-1" },
+};
+
+/* MNP 10's commands (Microcom's): the name, the S-register, the values
+   taken */
+const struct {
+	const char *name;
+	s16 reg, lo, hi;
+} mnp10_cmds[] = {
+	{ "-K", SREG_MNP10_UPGRADE, 0, 2 }, { "-Q", SREG_MNP10_LOWEST, 0, 2 },
+	{ ")M", SREG_MNP10_CELLULAR, 0, 2 }, { "@M", SREG_MNP10_LEVEL, 0, 30 },
+	{ "*H", SREG_MNP10_START, 0, 2 }, { ":T19", SREG_MNP10_T19, 0, 1 },
 };
 
 /* the command at p is a taken one: *len its characters */
@@ -537,6 +547,7 @@ s16 Modem::at_command(char *cmd)
 
 		if (kept_command(p) >= 0) {
 			ret = at_kept(p, &len);
+		} else if (mnp10_command(p, &len, &ret)) {
 		} else if (taken(p, &len)) {
 			ret = 0;
 		} else {
@@ -801,6 +812,30 @@ s16 Modem::at_set_sreg(s16 num, char c, s16 lo, s16 hi, s16 *len)
 		return -1;
 	sregs_[num] = static_cast<unsigned char>(v);
 	return 0;
+}
+
+/* MNP 10's commands (mnp10_cmds): -K, -Q, )M, @M, *H, :T19 with their
+   number (none: 0); true if p is one (*ret 0, or -1 for a value out of
+   its range) */
+bool Modem::mnp10_command(const char *p, s16 *len, s16 *ret)
+{
+	for (const auto &c : mnp10_cmds) {
+		std::string_view name = c.name;
+		size_t n = name.size();
+		const char *e;
+		if (!starts_nocase(p, name))
+			continue;
+		u32 v = decimal(p + n, &e);
+		*len = static_cast<s16>(e - p);
+		if (v < static_cast<u32>(c.lo) || v > static_cast<u32>(c.hi)) {
+			*ret = -1;
+			return true;
+		}
+		sregs_[c.reg] = static_cast<unsigned char>(v);
+		*ret = 0;
+		return true;
+	}
+	return false;
 }
 
 /*
@@ -1192,6 +1227,8 @@ s16 Modem::at_ampV(char *p, s16 *len)
 	put("\\V" + dec(sregs_[SREG_CONNECT_PROTOCOL]));
 	put("%C" + dec(sregs_[SREG_COMP]));
 	put("%E" + dec(sregs_[SREG_LINE_QUALITY_CONTROL]));
+	for (const auto &c : mnp10_cmds)
+		put(c.name + dec(sregs_[c.reg]));
 	end();
 	for (unsigned char r : regs) {
 		put("S" + dec(r, 2) + ":" + dec(sregs_[r], 3));

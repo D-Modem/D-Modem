@@ -304,6 +304,20 @@ static s32 t404(s32 rate)
 /* bits more have gone out: the timers that run out */
 void Mnp::clock(s32 bits)
 {
+	/* MNP 10: nothing runs while the pumps change; ticks */
+	if (m10_ && phase_ == Phase::Data) {
+		if (sh_ == Sh::Pump)
+			return;
+		tick_bits_ += bits;
+		const s32 per = std::max<s32>(1, rate() / 80);
+		while (tick_bits_ >= per && phase_ == Phase::Data &&
+		       sh_ != Sh::Pump) {
+			tick_bits_ -= per;
+			m10_tick();
+		}
+		if (phase_ != Phase::Data)
+			return;
+	}
 	if (t_start_ > 0 && (t_start_ -= bits) <= 0) {
 		/* the initiator's LR after the marks */
 		t_start_ = 0;
@@ -432,13 +446,15 @@ Frame *Mnp::build_lr()
 	if (initiator_ || lr_opt_) {
 		b[n++] = 8;
 		b[n++] = 1;
-		b[n++] = static_cast<u8>(initiator_ ? our_opt_ : opt_);
+		b[n++] = static_cast<u8>(initiator_ ?
+			our_opt_ | (m10_offer_ ? 0x10 : 0) : opt_);
 	}
 	if (initiator_ ? our_mnp5_ : mnp5_) {
 		b[n++] = 9;
 		b[n++] = 1;
 		b[n++] = 1;
 	}
+	n = m10_lr(b, n);
 	return ctrl(n);
 }
 
@@ -515,12 +531,13 @@ Frame *Mnp::next_lt()
 		nxt_++;
 		lt_again_++;
 		link_->stats().tx_again++;
+		m10_lt_again();
 	} else {
 		if (static_cast<u8>(vs_ - una_) >= k_ || !can_send(vs_))
 			return nullptr;
 		s = &slot_[vs_ % MNP_MAX_K];
 		const s16 hdr = opt_ & 2 ? 3 : 5;
-		s16 n = link_->read_chars(s->buf + hdr, n401_);
+		s16 n = link_->read_chars(s->buf + hdr, lt_size());
 		if (n <= 0)
 			return nullptr;
 		u8 *b = s->buf;
@@ -573,16 +590,22 @@ Frame *Mnp::next_frame()
 	default:
 		return nullptr;
 	}
+	if (m10_ && sh_ == Sh::Pump)
+		return nullptr;
 	if (lna_due_) {
 		lna_due_ = false;
 		return build_lna();
 	}
+	if (m10_) {
+		if (Frame *f = m10_frame())
+			return f;
+	}
 	if (la_due_ || (unacked_ && unacked_ >= std::max(1, k_ / 2)))
-		return build_la();
+		return m10_ && t9_due_ ? build_t9() : build_la();
 	if (Frame *f = next_lt())
 		return f;
 	if (unacked_)
-		return build_la();
+		return m10_ && t9_due_ ? build_t9() : build_la();
 	return nullptr;
 }
 
@@ -602,6 +625,8 @@ Frame *Mnp::next_tx_frame()
    the LD releases the link */
 void Mnp::tx_complete(Frame *f)
 {
+	if (m10_)
+		m10_sent(f);
 	if (f != &ctrl_)
 		return;
 	switch (ctrl_buf_[1]) {
@@ -660,6 +685,8 @@ bool Mnp::rx_lr(const u8 *h, s16 len)
 	}
 	lr_opt_ = opt >= 0;
 	opt_ = opt < 0 ? 0 : opt & our_opt_ & 3;
+	if (opt >= 0 && m10_offer_)
+		opt_ = static_cast<s16>(opt_ | (opt & 0x10));
 	lr_n401_ = n401;
 	if (opt_ & 1)
 		n401 = MNP_MAX_INFO;
@@ -670,6 +697,11 @@ bool Mnp::rx_lr(const u8 *h, s16 len)
 	link_->logf("mnp: LR: framing mode %d, k %d, N401 %d, "
 		    "optimization %d%s.", mode_, k_, n401_, opt_,
 		    mnp5_ ? ", MNP 5" : "");
+	m10_rx_lr(h, len);
+	if (!m10_agree(initiator_)) {
+		ld_reason_ = 3;
+		return false;
+	}
 	return true;
 }
 
@@ -840,7 +872,7 @@ void Mnp::rx_frame(Frame *f, bool bit)
 			/* ours did not arrive */
 			lr_due_ = true;
 			t401_ = t401_est();
-		} else if (type == LA && !bit) {
+		} else if (type == LA && bit == upgraded_) {
 			data_phase();
 			const s16 nk = len == 4 ? b[3] : param(b, len, 2, 2);
 			if (nk >= 0)
@@ -859,6 +891,10 @@ void Mnp::rx_frame(Frame *f, bool bit)
 				link_->logf("mnp: LR in the data phase.");
 			break;
 		}
+		if (m10_ && sh_ == Sh::Pump)
+			break;
+		if (m10_)
+			m10_heard(type);
 		switch (type) {
 		case LT:
 			rx_lt(b, len, b + len, f->count - len);
@@ -868,6 +904,21 @@ void Mnp::rx_frame(Frame *f, bool bit)
 			break;
 		case LN:
 			rx_ln(b, len);
+			break;
+		case 8:
+			if (m10_)
+				rx_t8(b, len);
+			break;
+		case 9:
+			/* an LA with a probe's R after the type */
+			if (m10_ && (len == 5 || len == 9)) {
+				u8 la[8];
+				la[0] = static_cast<u8>(len - 2);
+				la[1] = LA;
+				memcpy(la + 2, b + 3, static_cast<size_t>(len - 3));
+				rx_la(la, static_cast<s16>(len - 1));
+				rx_ack(b[2]);
+			}
 			break;
 		default:
 			break;
@@ -947,6 +998,7 @@ void Mnp::data_phase()
 	link_->logf("mnp: data phase, %s frames.", bit_tx_ ? "HDLC" :
 		    "octet");
 	link_->cfg().mnp5 = mnp5_;
+	m10_start();
 	link_->negotiated();
 	link_->status(Status::Up);
 }
@@ -1015,6 +1067,12 @@ void Mnp::start(bool initiator)
 	n401_ = MNP_DFLT_INFO;
 	opt_ = 0;
 	mnp5_ = lr_opt_ = false;
+	m10_ = cell_ = ext_ = upgraded_ = false;
+	m10_seen_ = false;
+	sh_ = Sh::Idle;
+	nrungs_ = 0;
+	cur_ = -1;
+	tick_bits_ = 0;
 	vr_ = 1;
 	busy_ = false;
 	t401_ = t402_ = t404_ = t_start_ = 0;
@@ -1041,6 +1099,14 @@ void Mnp::init(Link *link, const Config &cfg)
 	our_n401_ = std::clamp<s16>(cfg.mnp_info, 1, MNP_MAX_INFO);
 	our_opt_ = cfg.mnp_opt & (our_n401_ == MNP_MAX_INFO ? 3 : 2);
 	our_mnp5_ = cfg.mnp5;
+	m10_offer_ = cfg.mnp10 && our_mode_ == 3;
+	cfg_cell_ = cfg.mnp10_cellular;
+	cfg_lowest_ = std::clamp<s16>(cfg.mnp10_lowest, 0, 2);
+	cfg_level_ = cfg.mnp10_level;
+	cfg_t19_ = cfg.mnp10_t19;
+	cfg_ext_ = cfg.mnp10_ext;
+	cfg_top_ = cfg.mnp10_top > 0 ? cfg.mnp10_top : 33600;
+	m10_ = false;
 	for (auto &s : slot_) {
 		s.frame = {};
 		s.frame.buf = s.buf;
@@ -1057,6 +1123,10 @@ void Mnp::exit()
 		link_->logf("mnp: %" PRId32 " LTs sent (%" PRId32 " again), %"
 			    PRId32 " received.",
 			    lt_sent_, lt_again_, lt_rcvd_);
+	if (link_ && m10_)
+		link_->logf("mnp10: %" PRId32 " rate shifts.", shifts_);
+	m10_ = false;
+	sh_ = Sh::Idle;
 	lt_sent_ = lt_again_ = lt_rcvd_ = 0;
 	phase_ = Phase::Idle;
 	t401_ = t402_ = t404_ = t_start_ = 0;

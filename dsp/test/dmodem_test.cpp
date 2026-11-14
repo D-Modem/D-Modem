@@ -443,11 +443,15 @@ INSTANTIATE_TEST_SUITE_P(FastConnect, DmodemPair, testing::Values(
 	pair("v22_normal", "\\N0S92=0+MS=22", 1, 20)), name);
 
 /* retrains in the middle of the data (V.42 carries on): by both modems,
-   by the answerer or the caller alone (the other one follows); V.34 rate
+   by the answerer or the caller alone (the other one follows); V.32bis
+   rate renegotiations (both at once, the answerer's, the caller's); V.34 rate
    renegotiations (to 19200 bit/s, then back up a step at a time while
    the margin allows), the other one answering */
 INSTANTIATE_TEST_SUITE_P(Retrain, DmodemPair, testing::Values(
 	pair("v32_retrain", "+MS=132", 1, 30, { { "DSP_V32_RETRAIN", "1500" } }),
+	pair("v32_reneg_both", "+MS=132", 1, 30, { { "DSP_V32_RENEG", "1500" } }),
+	pair("v32_reneg_a", "+MS=132", 1, 30, { { "DSP_V32_RENEG", "1500a" } }),
+	pair("v32_reneg_c", "+MS=132", 1, 30, { { "DSP_V32_RENEG", "1500c" } }),
 	pair("v34_retrain_both", "+MS=34", 1, 60, { { "DSP_V34_RETRAIN", "3000" } }),
 	pair("v34_retrain_a", "+MS=34", 1, 60, { { "DSP_V34_RETRAIN", "3000a" } }),
 	pair("v34_retrain_c", "+MS=34", 1, 60, { { "DSP_V34_RETRAIN", "3000c" } }),

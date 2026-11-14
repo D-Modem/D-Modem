@@ -27,9 +27,14 @@ When a call connects, the two modems agree on which one to use. D-Modem
 tries V.42 first and falls back to MNP, and to no error correction at
 all, if the other modem lacks them.
 
-MNP 10 and MNP 10EC, used by old cellular modems, are not supported:
-they were never published and there is nothing left to test them
-against. D-Modem still connects to such modems using V.42.
+An MNP call is also **MNP 10**, Microcom's protocol for bad lines, when
+the other modem has it: the packets grow and shrink with the line, and
+the call steps down to a slower modulation when errors pile up and back
+up when the line is clean again. Between two D-Modems the call can move
+between any modulations both have, from V.34 down to V.21 (V.22 to
+V.32bis, for instance). With `AT-K1` a V.42 call can turn into MNP 10.
+MNP 10EC's own cellular modulations are not supported; such a modem
+connects with V.42 or MNP 10.
 
 ## Compression
 
