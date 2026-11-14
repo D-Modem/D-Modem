@@ -1,64 +1,67 @@
 # Softmodem hardware: dmodemd on ALSA and USB: technical details
 
-This is the technical companion to [Softmodem hardware](hardware.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This page gives the technical data for [Softmodem hardware](hardware.md), which is the overview in plain English. Read the overview first. This page gives all the data: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
-Normally dmodemd's line is a SIP call. Two options give it a real
+Usually, the line of dmodemd is a SIP call. Two options give it a real
 telephone line instead:
 
-- With `-a`, the line is a softmodem's codec, driven through ALSA (the
-  Advanced Linux Sound Architecture, Linux's sound drivers).
-- With `--usb`, the line is a USB modem, driven through libusb. dmodemd
-  knows six kinds: a Smart Link SmartUSB56
+- With `-a`, the line is the codec of a softmodem, controlled through
+  ALSA (the Advanced Linux Sound Architecture, the sound drivers of
+  Linux).
+- With `--usb`, the line is a USB modem, controlled through libusb.
+  dmodemd knows six types: a Smart Link SmartUSB56
   ([below](#smart-link-smartusb56)), a pico-serial Line stick
   ([below](#pico-serial-line)), a pico-serial WB stick, an Agere USB
   2.0 soft modem ([below](#agere-usb-20-soft-modem)), an Apple USB
   Modem ([below](#apple-usb-modem)) and a Conexant USB HSF modem
   ([below](#conexant-usb-hsf-modems)).
 
-The WB stick is not for a telephone line: it sits on a bare copper pair
-and runs D-Modem's wideband mode. Any ALSA codec that runs at 96 kHz can
-do the same ([pico-serial WB](#pico-serial-wb-wideband-bare-pair)).
+The WB stick is not for a telephone line. It connects to a bare copper
+pair and runs the wideband mode of D-Modem. All ALSA codecs that run at
+96 kHz can do the same ([pico-serial WB](#pico-serial-wb-wideband-bare-pair)).
 
-In every case the modem itself is D-Modem's open DSP (digital signal
-processing) code, which runs on any processor architecture. The vendors'
-own programs for this hardware (Smart Link's slmodemd, Agere's agrsm and
-others like them) were closed, and mostly ran only on 32-bit x86 (i386).
-dmodemd can take their place.
+In all cases, the modem is the open DSP (digital signal processing)
+code of D-Modem, which runs on all processor architectures. The
+programs of the vendors for this hardware (the slmodemd of Smart Link,
+the agrsm of Agere and other similar programs) were closed, and mostly
+ran only on 32-bit x86 (i386). dmodemd can replace them.
 
     dmodemd -a hw:1 -r 9600
     dmodemd --usb=auto
 
 ## The hardware
 
-Linux still drives these modem codecs at the level a softmodem needs: a
-stream of samples each way, and switches for the hook and for the line
-monitor.
+Linux still controls these modem codecs at the level that a softmodem
+needs: a stream of samples in each direction, and switches for the hook
+and for the line monitor.
 
 | Kind | Kernel driver | Codecs |
 |---|---|---|
-| AC'97 modem (MC97, AMR and CNR risers; laptops of about 2000 to 2006) | `snd-intel8x0m` (Intel ICH to ICH7, AMD-768/8111, nForce, SiS 7013, ALi), `snd-atiixp-modem` (ATI IXP), `snd-via82xx-modem` (VIA) | any codec whose hook is the AC'97 modem GPIO: Silicon Labs Si3036/38, Agere, Motorola and others; Conexant's SmartDAA ([below](#conexant-ac97-codecs)) |
-| HD-audio modem (laptops of about 2005 to 2010) | `snd-hda-intel` with `snd-hda-codec-si3054` | Silicon Labs Si3054/3055 (163c:3055, 3155), Agere (11c1:3026, 3055, 3155), Motorola (1057:3055, 3057, 3155), SM56 (1543:3155), LG (1854:0018), a VIA board's (1106:3288) |
+| AC'97 modem (MC97, AMR and CNR risers; laptops of approximately 2000 to 2006) | `snd-intel8x0m` (Intel ICH to ICH7, AMD-768/8111, nForce, SiS 7013, ALi), `snd-atiixp-modem` (ATI IXP), `snd-via82xx-modem` (VIA) | all codecs whose hook is the AC'97 modem GPIO: Silicon Labs Si3036/38, Agere, Motorola and others; the SmartDAA of Conexant ([below](#conexant-ac97-codecs)) |
+| HD-audio modem (laptops of approximately 2005 to 2010) | `snd-hda-intel` with `snd-hda-codec-si3054` | Silicon Labs Si3054/3055 (163c:3055, 3155), Agere (11c1:3026, 3055, 3155), Motorola (1057:3055, 3057, 3155), SM56 (1543:3155), LG (1854:0018), the codec of a VIA board (1106:3288) |
 
-The codec appears as one of the sound card's PCM devices. Among the
-card's controls are two switches, "Off-hook Switch" and "Caller ID
-Switch". To find them:
+The codec shows as one of the PCM devices of the sound card. The
+controls of the card include two switches, "Off-hook Switch" and
+"Caller ID Switch". To find them:
 
     aplay -l                      # a "Modem" device: card 1, device 0 is hw:1
     amixer -c 1 controls | grep -i -e hook -e 'caller id'
 
 An HD-audio modem is a device of the audio card, for example `hw:0,6`.
 
-dmodemd needs the "Off-hook Switch": without it, it says the card is
-probably not a modem codec and stops. Without the "Caller ID Switch" it
-goes on, but warns that rings and caller ID may not be heard on hook.
+dmodemd must have the "Off-hook Switch". Without it, dmodemd tells you
+that the card is possibly not a modem codec, and stops. Without the
+"Caller ID Switch", it continues, but gives a warning that it possibly
+cannot receive rings and caller ID on hook.
 
 ### Si3054 line settings
 
 On an HD-audio Si3054 with a Si3018 line side, dmodemd also writes the
-country's line settings (from `-c` or `AT+GCI`) into the codec's DAA
-(data access arrangement, the line interface) registers. It reaches them
-through the kernel's HD-audio hwdep device (`/dev/snd/hwC<card>D<codec>`),
-which needs a kernel built with `CONFIG_SND_HDA_HWDEP`. The code is in
+line settings of the country (from `-c` or `AT+GCI`) into the DAA (data
+access arrangement, the line interface) registers of the codec. It gets
+access to them through the HD-audio hwdep device of the kernel
+(`/dev/snd/hwC<card>D<codec>`), which needs a kernel built with
+`CONFIG_SND_HDA_HWDEP`. The code is in
 `frontend/dmodemd/si3054.cpp`, `frontend/dmodemd/hda_codec.cpp` and
 `frontend/dmodemd/alsa_line.cpp`.
 
@@ -74,161 +77,168 @@ HD-audio columns). They are:
 | loop current limit | ILIM |
 
 They go into nodes 13, 15, 16 and 18 of the codec. Node 18 holds the
-spark quenching bits that OHS needs. dmodemd reads each register first
-and changes only the country's bits.
+spark quenching bits that OHS needs. dmodemd first reads each register,
+and changes only the bits of the country.
 
-- Where the table allows ACT 0 or 1 (the TBR21 countries, and Egypt),
-  dmodemd takes 1, the complex impedance.
-- RZ is cleared off hook, as the datasheet asks for pulse dialling, and
-  set again on hook.
-- The settings are written again before each off-hook, because the
-  kernel's driver resets the codec on resume.
-- A country that the table does not list gets the USA's settings.
+- Where the table permits ACT 0 or 1 (the TBR21 countries, and Egypt),
+  dmodemd uses 1, the complex impedance.
+- RZ is cleared off hook, as the datasheet specifies for pulse
+  dialling, and set again on hook.
+- dmodemd writes the settings again before each off-hook, because the
+  driver of the kernel resets the codec on resume.
+- A country that is not in the table gets the settings of the USA.
 
-dmodemd writes nothing, and logs `line settings: the kernel driver's`,
-in three cases:
+dmodemd writes nothing, and records `line settings: the kernel driver's`
+in the log, in three cases:
 
 - on an AC'97 modem;
 - on a kernel without the hwdep device;
-- on a codec whose chip ID (node 12) is not a Si3054 with a Si3018, such
-  as the other vendors' chips that the Si3054 driver binds.
+- on a codec whose chip ID (node 12) is not a Si3054 with a Si3018, for
+  example the chips of other vendors that the Si3054 driver binds.
 
-Those codecs keep the kernel driver's settings, which are the USA's.
+Those codecs keep the settings of the kernel driver, which are the
+settings of the USA.
 
 ### Conexant AC'97 codecs
 
-Conexant's (and Rockwell's) AC'97 modem codecs have vendor ID `CX` with
-a device ID 0x54xx, or `RS` with 0x53xx. They keep their hook in their
-SmartDAA, not in the AC'97 modem GPIO that the kernel's "Off-hook
-Switch" drives. The kernel does give their samples, so `-a` works with
-them, except for the hook.
+The AC'97 modem codecs of Conexant (and of Rockwell) have vendor ID
+`CX` with a device ID 0x54xx, or `RS` with 0x53xx. Their hook is in
+their SmartDAA, not in the AC'97 modem GPIO that the "Off-hook Switch"
+of the kernel controls. The kernel gives their samples, thus `-a`
+operates with them, but not for the hook.
 
-On an Intel ICH modem controller (`snd-intel8x0m`, on x86 Linux), dmodemd
-started as root also drives the hook in the SmartDAA. It reaches the
-codec's registers through the controller's I/O ports, under the codec
-access semaphore that the kernel's driver also respects
-(`frontend/dmodemd/ac97_ports.cpp`). It then logs `the hook in its SmartDAA`,
-with the line side's version. Without root, on another controller, or on
-another codec, it logs why, and the hook stays with the kernel's switch.
+On an Intel ICH modem controller (`snd-intel8x0m`, on x86 Linux), when
+you start dmodemd as root, it also controls the hook in the SmartDAA.
+It gets access to the registers of the codec through the I/O ports of
+the controller, under the codec access semaphore that the driver of the
+kernel also obeys (`frontend/dmodemd/ac97_ports.cpp`). Then it records
+`the hook in its SmartDAA` in the log,
+with the version of the line side. Without root, on a different
+controller, or on a different codec, it records the reason, and the
+switch of the kernel keeps the hook.
 
 The code is `frontend/dmodemd/cx_daa.cpp` and `frontend/dmodemd/cx_country.cpp`.
 
 #### How the SmartDAA's registers are reached
 
 The SmartDAA is two chips: the system side (SSD) in the codec, and the
-line side (LSD) beyond the isolation barrier. What dmodemd knows of them
-comes from Conexant's HSF driver for ICH modems (`hsfmc97ich.o` and its
-DAA library `hsfsoar.o`): from the code and from its debug messages.
+line side (LSD) on the other side of the isolation barrier. The data
+that dmodemd has about them comes from the HSF driver of Conexant for
+ICH modems (`hsfmc97ich.o` and its DAA library `hsfsoar.o`): from the
+code and from its debug messages.
 
-- **An SSD register** is a byte, numbered 0 to 63, reached through codec
-  register 0x7a. A write puts `(reg << 8) | value` into 0x7a. A read
-  writes `0x8000 | (reg << 8)` and then reads 0x7a's low byte; 0xffff
-  means there is no SSD. SSD register 3 needs a 40 µs wait before each
-  access.
-- **An LSD register** goes through SSD registers 1 to 3 and a status
-  register:
+- **An SSD register** is a byte, numbered 0 to 63, which is accessed
+  through codec register 0x7a. A write puts `(reg << 8) | value` into
+  0x7a. A read writes `0x8000 | (reg << 8)` and then reads the low byte
+  of 0x7a. 0xffff means that there is no SSD. SSD register 3 needs a
+  wait of 40 µs before each access.
+- **An LSD register** is accessed through SSD registers 1 to 3 and a
+  status register:
   - the byte to write goes into SSD register 2;
   - the command goes into SSD register 3: the LSD register in bits 5:0,
     and bit 7 set for a write;
   - the answer comes back in SSD register 1;
   - the status is SSD register 0 (register 4 on some SSDs). Bit 4 means
-    done and bit 3 an error; both are cleared before each command. Bit 2
-    toggles at each frame over the barrier, and bit 1 means the link is
-    up.
+    done and bit 3 an error. Both are cleared before each command.
+    Bit 2 toggles at each frame across the barrier, and bit 1 means that
+    the link is up.
 
-  A write to one of the line's control registers (0x03, 0x14, 0x15, 0x1c
-  to 0x25) first sets bit 1 of SSD register 0x17. One kind of SSD (SOAR's
-  kind 0x1a) uses bit 6 of the command for them instead. A write is good
-  when its answer is the byte written. The driver tries 5 times (LSD
-  register 0x17 only once).
+  A write to one of the control registers of the line (0x03, 0x14,
+  0x15, 0x1c to 0x25) first sets bit 1 of SSD register 0x17. One type
+  of SSD (type 0x1a of SOAR) uses bit 6 of the command for them instead.
+  A write is good when its answer is the written byte. The driver tries
+  5 times (LSD register 0x17 only one time).
 - **The hook** is LSD register 0x15, bits 7:6: 01 on hook, 10 off hook,
-  and 00 and 11 a dial pulse's make and break.
-- **The kinds of SSD.** The driver's library knows 39 kinds of SSD,
-  which differ in how they reach the LSD. Some prime SSD register 1
-  before each command (0x55 for a read, the byte's inverse for a write)
-  so that an absent LSD can be told. Some have the status in register 4.
-  Some send a read's command before clearing the status. The ICH driver
-  takes the kind from the codec's DAA type, the low byte of register
-  0x7e:
+  and 00 and 11 the make and break of a dial pulse.
+- **The kinds of SSD.** The library of the driver knows 39 types of
+  SSD. They are different in how they get access to the LSD. Some prime
+  SSD register 1 before each command (0x55 for a read, the inverse of
+  the byte for a write), so that they can find an absent LSD. Some have
+  the status in register 4. Some send the command of a read before they
+  clear the status. The ICH driver gets the type from the DAA type of
+  the codec, the low byte of register 0x7e:
 
   | DAA type | 0x20 | 0x21 | 0x22 | 0x23 | 0x28 | 0x29 | 0x30 | 0x31 | others |
   |---|---|---|---|---|---|---|---|---|---|
   | SSD kind | 5 | 0x0c | 0x13 | 0x15 | 0x0d | 0x12 | 0x17 | 0x20 | 5 |
 
-  Type 0x24's SSD is in the codec's own registers, not behind 0x7a.
-  dmodemd does the same (`cx_kind()`), and leaves a type 0x24 codec's
-  hook to the kernel.
+  The SSD of type 0x24 is in the registers of the codec, not behind
+  0x7a. dmodemd does the same (`cx_kind()`), and lets the kernel
+  control the hook of a type 0x24 codec.
 
 #### What Conexant's library writes
 
-The HSF interop harness (`half_hsf`, [interop.md](interop.md)) runs
-Conexant's library against a simulated SmartDAA of this kind (codec
-0x5429, SSD kind 0x12). The simulated LSD answers as above, reports
-version 5, and its register 2 reads 0x0f once powered. For the USA, the
-library then sets the line up with these LSD writes, in order:
+The HSF interop harness (`half_hsf`, [interop.md](interop.md)) runs the
+library of Conexant against a simulated SmartDAA of this type (codec
+0x5429, SSD type 0x12). The simulated LSD answers as above, reports
+version 5, and its register 2 reads 0x0f when it has power. For the
+USA, the library then sets up the line with these LSD writes, in
+sequence:
 
-- **Start:** 0x03 = 00 and 0x04 = 2f, then it waits for 0x02 to read
-  0x0f (the LSD powered). Then 0x20 = 00, 0x25 = 29, 0x24 = 28, 0x21 =
+- **Start:** 0x03 = 00 and 0x04 = 2f, then it waits until 0x02 reads
+  0x0f (the LSD has power). Then 0x20 = 00, 0x25 = 29, 0x24 = 28, 0x21 =
   80, 0x19 = 80, 0x08 = 00, 0x0a = d9, 0x0e = 00, 0x0c = 07, 0x12 = 00,
   0x10 = 00, 0x19 = c0, 0x1f = 08, 0x15 = 40 (on hook), 0x1c = 78, 0x14
   = e0, 0x07 = 04, 0x18 = 43, 0x19 = cb, 0x06 = 02. Then 0x0c = 06, 0x12
   = 60, 0x1c = 30, 0x0e = 00, 0x18 = 43, 0x10 = 00, 0x1c = 68, 0x1c =
   6a, 0x0c = 02, 0x0a = df, 0x10 = 00, 0x0e = 02, 0x10 = 00.
-- **ATA (going off hook):** 0x15 = 41, 0x12 = 40, 0x0e = 00, 0x14 = 20,
+- **ATA (off hook):** 0x15 = 41, 0x12 = 40, 0x0e = 00, 0x14 = 20,
   0x18 = 43, 0x10 = 00, 0x21 = 82, 0x1c = 32, 0x15 = 40, then 0x15 = 80
   (off hook) and 0x19 = 8b.
 
-Before the LSD start it writes SSD registers directly: 0x1c = 40, 0x17 =
+Before the LSD start, it writes SSD registers directly: 0x1c = 40, 0x17 =
 04, 0x14 = 08, 0x0b = 5f, 0x06 = c0, 0x19 = 20; 0x05, 0x04 and 0x07 to
 0x0a = 00; 0x0d = 10, 0x1e = 00, 0x19 = 28, 0x1c = 7f; 0x1a, 0x1b and
 0x1d = 00; 0x25 = 5a, 0x23 = 43, 0x24 = 80, 0x22 = 5a, 0x20 = 63, 0x21 =
 a8.
 
-The simulated LSD's status registers (0x16, 0x1a, 0x1e, 0x1f) read 0.
-On a real line the library may write other values where it adjusts to
-what it measures (the loop voltage, the drive).
+The status registers of the simulated LSD (0x16, 0x1a, 0x1e, 0x1f) read
+0. On a real line, the library can write other values where it adjusts
+to the values that it measures (the loop voltage, the drive).
 
-Two runs, with the simulated line side's registers starting at 0 and at
-0xff (`HSF_DAA_FILL=0xff`), show which bits each of the library's writes
-keeps. A third run, over two calls, shows its hang-up:
+Two runs show which bits each write of the library keeps. In the first
+run, the registers of the simulated line side start at 0, and in the
+second at 0xff (`HSF_DAA_FILL=0xff`). A third run, over two calls,
+shows its hang-up:
 
-- SSD register 0x14's bits 1:0 back to 0;
-- LSD 0x12's bits 6:5 = 11, 0x15 = 40, 0x19 = cb, 0x0e = 00, 0x21 = 80,
-  0x14's bits 7:2 = 111000, 0x18 = 43, 0x10 = 00, 0x1c's bits 6:0 = 6a,
+- bits 1:0 of SSD register 0x14 back to 0;
+- bits 6:5 of LSD 0x12 = 11, 0x15 = 40, 0x19 = cb, 0x0e = 00, 0x21 = 80,
+  bits 7:2 of 0x14 = 111000, 0x18 = 43, 0x10 = 00, bits 6:0 of 0x1c = 6a,
   0x10 = 00, 0x0e = 02, 0x10 = 00.
 
-Going off hook ends with SSD 0x14's bits 1:0 = 01.
+The off-hook sequence ends with bits 1:0 of SSD 0x14 = 01.
 
 #### What dmodemd does
 
-For a codec of kind 0x12, dmodemd does the same as the library
+For a codec of type 0x12, dmodemd does the same as the library
 (`CxDaa::power_up()`, `go_off_hook()`, `go_on_hook()`):
 
-- the SSD's writes;
-- the LSD's power-up, and reading its version (0 to 0x11, the versions
-  the library takes);
-- the line's writes, keeping the bits the library keeps;
-- the hook's sequences, including the 100 ms the library waits after
-  0x15 = 41.
+- the writes of the SSD;
+- the power-up of the LSD, and a read of its version (0 to 0x11, the
+  versions that the library accepts);
+- the writes of the line, which keep the bits that the library keeps;
+- the sequences of the hook, which include the 100 ms that the library
+  waits after 0x15 = 41.
 
-A dial pulse changes the hook bits alone. `cx_daa_test` checks the LSD
-writes against the library's, from both starting states.
+A dial pulse changes only the hook bits. `cx_daa_test` compares the LSD
+writes with the writes of the library, from the two start states.
 
-For the other kinds of SSD the setup is not known. dmodemd reads the
-line side's version and changes only the hook bits. That holds the line
-only if something else has set the line side up.
+For the other types of SSD, the setup is not known. dmodemd reads the
+version of the line side and changes only the hook bits. That holds the
+line only if a different program has set up the line side.
 
 #### The country and the board
 
-The country's and the board's parameters are Conexant's, just as the
-other backends' come from their datasheets. `cx_country.cpp` is
-generated from the HSF driver's files.
+The parameters of the country and of the board come from Conexant, in
+the same way as the parameters of the other backends come from their
+datasheets. `cx_country.cpp` is generated from the files of the HSF
+driver.
 
-- **The country.** Of the line settings above, only LSD 0x12's bits 6:5
-  change with the country. That was found by running the library for a
-  country from each of `hsf.cty`'s 14 `SMART_RELAYS` tables
+- **The country.** Of the line settings above, only bits 6:5 of LSD
+  0x12 change with the country. This was found when the library ran for
+  a country from each of the 14 `SMART_RELAYS` tables of `hsf.cty`
   (`HSF_COUNTRY=<T.35 code>`). The two bits are bits 7:6 of the low byte
-  of the table's off-hook and on-hook state words. There are three
+  of the off-hook and on-hook state words of the table. There are three
   settings:
 
   | Setting | On hook | Off hook |
@@ -237,15 +247,17 @@ generated from the HSF driver's files.
   | ITU (most countries) | 10 | 10 |
   | TBR21 (its countries) | 00 | 00 |
 
-  The table has all 242 of `hsf.cty`'s regions under their own names,
-  and also D-Modem's names for the three it names differently (BAHREIN,
-  SOUTHKOREA, UAE). `-c` and `+GCI` choose the row, as for the Si3054.
-  On hook, a new setting goes to the line side at once.
-- **The board.** dmodemd takes the `.inf`'s `SmartDAAParamsK3` block for
-  DAA types 0x22 to 0x24, 0x29, 0x30 and 0x31, and its `SmartDAAParams`
-  block for the others, as the ICH driver chooses (95 bytes each).
-  Changing each byte of the block in turn (`HSF_NVM` with an edited
-  `.inf`) showed that three bytes change the library's writes:
+  The table has all 242 regions of `hsf.cty` under their own names, and
+  also the names of D-Modem for the three regions that it names
+  differently (BAHREIN, SOUTHKOREA, UAE). `-c` and `+GCI` select the
+  row, as for the Si3054. On hook, a new setting goes to the line side
+  immediately.
+- **The board.** dmodemd uses the `SmartDAAParamsK3` block of the
+  `.inf` for DAA types 0x22 to 0x24, 0x29, 0x30 and 0x31, and its
+  `SmartDAAParams` block for the other types, as the ICH driver selects
+  (95 bytes each). A change of each byte of the block, one at a time
+  (`HSF_NVM` with an edited `.inf`), showed that three bytes change the
+  writes of the library:
 
   | Byte | Goes to |
   |---|---|
@@ -253,68 +265,68 @@ generated from the HSF driver's files.
   | 93 | SSD 0x0b |
   | 94 | SSD 0x06's bits 7:4 |
 
-  The others (its resistors and DC tables) change nothing on the line
-  sides dmodemd sets up. The library uses them only for a line side of
-  version 0x11, which it measures (below).
+  The other bytes (its resistors and DC tables) change nothing on the
+  line sides that dmodemd sets up. The library uses them only for a line
+  side of version 0x11, which it measures (below).
 
-`cx_daa_test` checks the writes against the library's for the USA,
-Germany and Canada, from both starting states.
+`cx_daa_test` compares the writes with the writes of the library for
+the USA, Germany and Canada, from the two start states.
 
 #### Line side versions
 
-The line side's version (LSD 0x22's bits 5:0) changes what the library
-does. Each version was tried with `HSF_LSD_VERSION` in the harness:
+The version of the line side (bits 5:0 of LSD 0x22) changes what the
+library does. Each version had a test with `HSF_LSD_VERSION` in the
+harness:
 
 | Version | What the library does |
 |---|---|
 | 1, and 3 to 0x0f | the setup above |
-| 2 | the same, except for three things: no writes to 0x24 and 0x25; 0x21's bit 7 clear in each of its writes (00 and 02, not 80 and 82); and 0x19's plain writes with bit 5 set (eb and ab, not cb and 8b) |
-| 0x10 and 0x11 | another setup altogether (0x1d, 0x1f = 30, 0x15 = c0 on hook and 00 off hook: the hook's bit 7 the other way round); for 0x11, the line is also measured (below) |
-| 0 | it reads the monitor ADC over and over |
+| 2 | the same, but with three differences: no writes to 0x24 and 0x25; bit 7 of 0x21 clear in each of its writes (00 and 02, not 80 and 82); and the plain writes of 0x19 with bit 5 set (eb and ab, not cb and 8b) |
+| 0x10 and 0x11 | a fully different setup (0x1d, 0x1f = 30, 0x15 = c0 on hook and 00 off hook: bit 7 of the hook is inverted); for 0x11, the library also measures the line (below) |
+| 0 | it reads the monitor ADC again and again |
 
-Version 2 is one that real line sides have: Conexant's own
-`hsfconfig --info` has shown `SmartDAA SSD=10 LSD=0x2` for an HSF PCI
-modem.
+Real line sides have version 2: the `hsfconfig --info` of Conexant has
+shown `SmartDAA SSD=10 LSD=0x2` for an HSF PCI modem.
 
-dmodemd does the library's setup for versions 1 to 0x0f, including
-version 2's differences (`cx_daa_test` checks version 2's writes too).
-For versions 0, 0x10 and 0x11 it reads the version and changes only the
-hook bits, with bit 7 the other way round for 0x10 and 0x11.
+dmodemd does the setup of the library for versions 1 to 0x0f, with the
+differences of version 2 (`cx_daa_test` also checks the writes of
+version 2). For versions 0, 0x10 and 0x11, it reads the version and
+changes only the hook bits, with bit 7 inverted for 0x10 and 0x11.
 
 #### The line side's monitor ADC
 
-- LSD 0x16's bits 6:4 choose the channel. Its bit 3 starts a conversion
-  and reads 1 when it is done.
+- Bits 6:4 of LSD 0x16 select the channel. Its bit 3 starts a
+  conversion and reads 1 when the conversion is done.
 - LSD 0x17 is the reading (8 bits, written back when read).
-- The library takes it as reading × 2000 / 255 mV plus an offset of 500
-  mV. For version 0x10 the offset is calibrated on channel 3, against a
-  reference it wants at 1350 to 1650 mV. Versions 0 and 2 have 4000 mV
-  for 255 (and version 0 7 bits).
+- The library calculates the value as reading × 2000 / 255 mV plus an
+  offset of 500 mV. For version 0x10, the offset is calibrated on
+  channel 3, against a reference that must be 1350 to 1650 mV. Versions
+  0 and 2 have 4000 mV for 255 (and version 0 has 7 bits).
 
-Only on version 0x11 does the library measure the line with it:
+The library measures the line with it only on version 0x11:
 
-- on hook, the battery on channel 1 (Vbatt = 28.2 × the reading's mV +
-  400; the factor comes from the board's resistors);
-- off hook, channel 0 (the receiver's DC offset), then channel 1 again
-  (the tip-ring voltage, from which it works out the loop's resistance,
-  current and power);
+- on hook, the battery on channel 1 (Vbatt = 28.2 × the mV of the
+  reading + 400; the factor comes from the resistors of the board);
+- off hook, channel 0 (the DC offset of the receiver), then channel 1
+  again (the tip-ring voltage, from which it calculates the resistance,
+  current and power of the loop);
 - a DAC (LSD 0x19), calibrated on channel 4 and then set so that the
-  tip-ring voltage meets the DC curve, and adjusted while the line
-  settles ("adaptive offhook").
+  tip-ring voltage agrees with the DC curve, and adjusted while the line
+  becomes stable ("adaptive offhook").
 
-dmodemd does none of this, since it does no version 0x11 setup.
+dmodemd does none of this, because it does no version 0x11 setup.
 
 None of the Conexant code has run on a real codec yet.
 
 ### HD-audio modems outside the Si3054 list
 
-`snd-hda-codec-si3054` binds only the vendor IDs listed above. A modem
-codec made to the same interface under another ID gets no driver, and so
-no ALSA device. `snd-hda-intel` can give such a codec the Si3054's
-vendor ID through its early patching (`CONFIG_SND_HDA_PATCH_LOADER`,
-enabled in most distributions' kernels), and the Si3054 driver then
-binds it. `hda-modem-setup` (installed beside dmodemd, on Linux) does
-this:
+`snd-hda-codec-si3054` binds only the vendor IDs given above. A modem
+codec made to the same interface under a different ID gets no driver,
+and thus no ALSA device. `snd-hda-intel` can give such a codec the
+vendor ID of the Si3054 through its early patching
+(`CONFIG_SND_HDA_PATCH_LOADER`, enabled in the kernels of most
+distributions). Then the Si3054 driver binds it. `hda-modem-setup`
+(installed with dmodemd, on Linux) does this:
 
     hda-modem-setup               # list the modem codecs
     sudo hda-modem-setup write    # the patch for those with no driver
@@ -325,46 +337,47 @@ The three actions:
 
 - **`list`** (the default) shows each codec with a modem function group
   (from `/sys/bus/hdaudio/devices`): its card and address, its IDs, its
-  driver, and whether it is in the Si3054 list.
-- **`write`** takes the modem codecs that have no driver and are not in
-  the list, or those named with `--codec hdaudioC<card>D<addr>`. For each
-  it writes a `[codec]` section, with `[vendor_id] 0x163c3055`, to
+  driver, and if it is in the Si3054 list.
+- **`write`** selects the modem codecs that have no driver and are not
+  in the list, or the codecs that you name with
+  `--codec hdaudioC<card>D<addr>`. For each, it writes a `[codec]`
+  section, with `[vendor_id] 0x163c3055`, to
   `/lib/firmware/dmodem-hda-modem.fw`. It also writes the module option
-  that loads the file for each such codec's card to
+  that loads the file for the card of each such codec to
   `/etc/modprobe.d/dmodem-hda-modem.conf`
-  (`options snd-hda-intel patch=...`). Before writing, it checks the
-  running kernel's configuration for the patch loader and the Si3054
-  driver. It warns if another file already gives `snd-hda-intel` a
-  `patch=` option, as only one takes effect.
-- **`remove`** deletes both files again.
+  (`options snd-hda-intel patch=...`). Before it writes, it checks the
+  configuration of the running kernel for the patch loader and the
+  Si3054 driver. It gives a warning if a different file already gives
+  `snd-hda-intel` a `patch=` option, because only one has an effect.
+- **`remove`** deletes the two files.
 
-The change takes effect the next time `snd-hda-intel` loads. If the
-module is in the initramfs, rebuild that first (`update-initramfs -u`,
-`dracut -f`).
+The change has an effect the next time that `snd-hda-intel` loads. If
+the module is in the initramfs, first build it again
+(`update-initramfs -u`, `dracut -f`).
 
-Only the driver can tell whether the codec really is Si3054-compatible,
-once it has bound it. At its init it checks the link to the line side
-chip and logs the chip's ID. "Link Frame Detect(FDT) is not ready" in
-`dmesg` means the codec is not compatible: run
-`sudo hda-modem-setup remove`, and reboot.
+Only the driver can tell if the codec is really Si3054-compatible,
+after it has bound it. At its init, it checks the link to the line side
+chip and records the ID of the chip in the log. "Link Frame
+Detect(FDT) is not ready" in `dmesg` means that the codec is not
+compatible: run `sudo hda-modem-setup remove`, and reboot.
 
-Conexant's HD-audio modems (`14f1:2bfa`, `14f1:2c06` and the others of
-vendor `14f1`) are of another kind. Their DAA is behind Conexant's own
-verbs, and this does not cover them.
+The HD-audio modems of Conexant (`14f1:2bfa`, `14f1:2c06` and the other
+modems of vendor `14f1`) are of a different type. Their DAA is behind
+the verbs of Conexant, and this procedure does not include them.
 
-`frontend/dmodemd/test/hda_modem_setup_test.py` (ctest's `hda_modem_setup`, label
+`frontend/dmodemd/test/hda_modem_setup_test.py` (`hda_modem_setup` of ctest, label
 `quick`) runs the helper on a fake sysfs and kernel configuration. The
-patch itself has not been tried on a real codec.
+patch has not had a test on a real codec.
 
 ### Smart Link SmartUSB56
 
-Smart Link's USB modem (the SmartUSB56, and the modems built on its
-ST7554 bridge, USB `0483:7554`) needs no kernel driver: dmodemd drives
-it through libusb. The ST7554 is a USB bridge to an STLC7550 codec and a
-DAA:
+The USB modem of Smart Link (the SmartUSB56, and the modems built on
+its ST7554 bridge, USB `0483:7554`) does not need a kernel driver:
+dmodemd controls it through libusb. The ST7554 is a USB bridge to an
+STLC7550 codec and a DAA:
 
 - its registers are vendor control requests;
-- its samples are isochronous transfers both ways;
+- its samples are isochronous transfers in the two directions;
 - its GPIOs are the hook and the ring detector.
 
 ```
@@ -372,157 +385,161 @@ lsusb -d 0483:7554            # Bus 001 Device 007: ID 0483:7554 ...
 dmodemd --usb=auto            # the first one; --usb=1:7 that one
 ```
 
-Started as root, dmodemd opens the device before it goes on as `nobody`.
-To start it as an ordinary user, give that user the device with a udev
-rule, for example `/etc/udev/rules.d/60-smartusb56.rules`:
+When you start dmodemd as root, it opens the device before it
+continues as `nobody`. To start it as an ordinary user, give that user
+the device with a udev rule, for example
+`/etc/udev/rules.d/60-smartusb56.rules`:
 
     SUBSYSTEM=="usb", ATTR{idVendor}=="0483", ATTR{idProduct}=="7554", MODE="0660", GROUP="dialout"
 
-If Smart Link's own kernel driver (`slusb`) is loaded, dmodemd detaches
-it from the device while it runs. dmodemd is built with `--usb` when
-pkg-config finds libusb-1.0 (the libusb-1.0-0-dev package).
-`dmodemd --usb list` lists the SmartUSB56s, pico-serial Lines and WBs
-and Agere modems there are, and whether each can be opened. On Windows
-dmodemd.exe drives them the same way, on WinUSB (or on libusbK or UsbDk
-on Windows 7 and 8, whose WinUSB cannot stream)
+If the kernel driver of Smart Link (`slusb`) is loaded, dmodemd
+detaches it from the device while it runs. The build includes `--usb`
+in dmodemd when pkg-config finds libusb-1.0 (the libusb-1.0-0-dev
+package). `dmodemd --usb list` gives the SmartUSB56s, pico-serial Lines
+and WBs and Agere modems that are there, and if each can open. On
+Windows, dmodemd.exe controls them in the same way, on WinUSB (or on
+libusbK or UsbDk on Windows 7 and 8, whose WinUSB cannot stream)
 ([windows.md](windows-details.md#usb-modems---usb)).
 
-The ST7554's register values and start-up are those of Smart Link's
-Linux driver for it (`drivers/st7554.c` of slmodem 2.9.11, under a BSD
-licence). The code is in `frontend/dmodemd/usb_line.cpp`:
+The register values and start-up of the ST7554 are those of the Linux
+driver of Smart Link for it (`drivers/st7554.c` of slmodem 2.9.11, under
+a BSD licence). The code is in `frontend/dmodemd/usb_line.cpp`:
 
 - **Samples.** S16 little-endian mono at 9600 Hz (the default) or 8000
   Hz, in isochronous packets of 1 ms. Three transfers of five packets
-  are in flight each way. Each OUT transfer is sent when an IN transfer
-  completes, with that IN transfer's packet lengths, so the playback
-  keeps to the codec's clock. The OUT transfers take the modem's queued
-  samples; the queue starts a frame and a half (30 ms) ahead. The
-  modem's clock is the codec's: the number of samples it has delivered.
-- **The hook.** GPIO 3, with the hook LED on GPIO 7. A hook flash clears
-  GPIO 3 for the flash's length.
+  are in flight in each direction. Each OUT transfer is sent when an IN
+  transfer completes, with the packet lengths of that IN transfer. Thus
+  the playback follows the clock of the codec. The OUT transfers take
+  the samples in the queue of the modem. The queue starts a frame and a
+  half (30 ms) in front. The clock of the modem is the clock of the
+  codec: the number of samples that it has delivered.
+- **The hook.** GPIO 3, with the hook LED on GPIO 7. A hook flash
+  clears GPIO 3 for the length of the flash.
 - **Rings.** The ring detector (GPIO 0) changes with the ring signal.
   Each change comes on the interrupt endpoint and is a pulse to the
-  core's `ring()`, which checks the cadence. A change that comes with a
-  FIFO underrun or overrun is not counted, since the ring bit can come
-  set with those whether the line rings or not.
-- **Caller ID.** On hook the codec hears nothing unless GPIO 5 (CID1)
-  connects it to the line. With `AT#CID=1`, dmodemd sets CID1 from the
-  first ring while the core's caller ID receiver listens, and clears it
-  before the hook changes, as Smart Link's Windows driver does (its
-  Linux driver never did). So caller ID is heard between the first two
-  rings.
-- **The codec.** Either an STLC7550, or an ST75951/2 "silicon DAA"
-  (`MONOLITHIC`, bit 14 of the GPIO status). The ST75951's control words
-  name one of its four registers; dmodemd starts it up as the Windows
-  driver does. The hook, ring and caller ID use the same GPIOs.
+  `ring()` of the core, which checks the cadence. dmodemd does not count
+  a change that comes with a FIFO underrun or overrun, because the ring
+  bit can come set with those when the line rings and when it does not.
+- **Caller ID.** On hook, the codec receives nothing unless GPIO 5
+  (CID1) connects it to the line. With `AT#CID=1`, dmodemd sets CID1
+  from the first ring while the caller ID receiver of the core listens,
+  and clears it before the hook changes, as the Windows driver of Smart
+  Link does (its Linux driver never did). Thus caller ID is received
+  between the first two rings.
+- **The codec.** An STLC7550, or an ST75951/2 "silicon DAA"
+  (`MONOLITHIC`, bit 14 of the GPIO status). The control words of the
+  ST75951 name one of its four registers. dmodemd starts it up as the
+  Windows driver does. The hook, ring and caller ID use the same GPIOs.
 - **LEDs.** The hook LED (GPIO 7) follows the hook. With `--usb-leds`,
-  dmodemd also drives two more LEDs, as Smart Link's Windows driver does
-  on boards whose INF says they have them (Creative's Modem Blaster V.92
-  USB):
-  - the carrier LED (GPIO 6), lit while the call is online;
-  - the data LED (GPIO 13), lit once data has passed in the call.
+  dmodemd also controls two more LEDs, as the Windows driver of Smart
+  Link does on boards whose INF specifies them (the Modem Blaster V.92
+  USB of Creative):
+  - the carrier LED (GPIO 6), on while the call is online;
+  - the data LED (GPIO 13), on when data has gone through in the call.
 
-  Both go off on hook. Without the option dmodemd leaves those GPIOs
-  alone, as another board may use them for something else.
-- **Wake on ring.** With `--usb-wake`, dmodemd arms the device's USB
-  remote wakeup (SET_FEATURE) if its configuration says it can wake, as
-  Smart Link's Windows driver does when the PC sleeps. The ring
-  detector's interrupt stays on while on hook, so a ring wakes the
-  computer. The kernel must allow it too:
-  - On Linux, dmodemd writes `enabled` to the device's
-    `/sys/bus/usb/devices/<bus>-<ports>/power/wakeup` while it is still
-    root. Started as a user, add `ATTR{power/wakeup}="enabled"` to the
-    udev rule above.
-  - On Windows, it is Device Manager's "Allow this device to wake the
-    computer".
+  The two go off on hook. Without the option, dmodemd does not change
+  those GPIOs, because a different board can use them for a different
+  function.
+- **Wake on ring.** With `--usb-wake`, dmodemd arms the USB remote
+  wakeup of the device (SET_FEATURE) if its configuration specifies that
+  it can wake, as the Windows driver of Smart Link does when the PC
+  sleeps. The interrupt of the ring detector stays on while on hook,
+  thus a ring wakes the computer. The kernel must also permit it:
+  - On Linux, dmodemd writes `enabled` to the
+    `/sys/bus/usb/devices/<bus>-<ports>/power/wakeup` of the device
+    while it is still root. If you start it as a user, add
+    `ATTR{power/wakeup}="enabled"` to the udev rule above.
+  - On Windows, it is "Allow this device to wake the computer" in
+    Device Manager.
 
-  The remote wakeup is cleared when dmodemd exits.
-- **Suspend and resume.** While the computer sleeps, the transfers fail.
-  dmodemd keeps them and, every second, sets the device up again (its
-  registers, the remote wakeup and the FIFO, since a resume may have
-  reset it) and submits them again. It gives up after 30 s, as for a
-  device that has gone. A call is lost across a sleep. The rings after
-  the one that woke the computer are heard as usual, so the modem can
-  still answer.
+  dmodemd clears the remote wakeup when it exits.
+- **Suspend and resume.** While the computer sleeps, the transfers
+  fail. dmodemd keeps them and, each second, sets up the device again
+  (its registers, the remote wakeup and the FIFO, because a resume can
+  reset it) and submits them again. It stops after 30 s, as for a
+  device that is not there. A call is lost across a sleep. dmodemd
+  receives the rings after the ring that woke the computer as usual,
+  thus the modem can still answer.
 - **The handset detector.** With `--usb-handset`, dmodemd enables the
-  interrupt of GPIO 2 (`GPIO_HANDSET` in Smart Link's Linux source; the
-  Windows driver enables it too, and does nothing with it). On each
-  change it reads the GPIO. Set means that the phone on the modem's
-  PHONE jack is off hook, as far as is known (no driver says). The core
-  reports it in voice mode as V.253's local phone event: `<DLE>H` off
-  hook and `<DLE>h` on hook. It lists event 8 in `+VLS=?`.
+  interrupt of GPIO 2 (`GPIO_HANDSET` in the Linux source of Smart Link;
+  the Windows driver also enables it, and does nothing with it). On each
+  change, it reads the GPIO. Set possibly means that the phone on the
+  PHONE jack of the modem is off hook (no driver tells). The core
+  reports it in voice mode as the local phone event of V.253: `<DLE>H`
+  off hook and `<DLE>h` on hook. It gives event 8 in `+VLS=?`.
 - **International line controls.** With `--usb-international`, dmodemd
-  drives three more outputs, as Smart Link's Windows driver does with its
-  `Options.International` (off in Creative's INF):
+  controls three more outputs, as the Windows driver of Smart Link does
+  with its `Options.International` (off in the INF of Creative):
   - **DP** (GPIO 10): set off hook; cleared on hook, together with RFC.
   - **DC** (GPIO 12): set off hook in France, Algeria and Tunisia, the
-    countries whose record asks for it (byte 90, bit 0, of Smart Link's
-    table). On an ST75951 it is the other way round: set off hook in
-    every other country.
+    countries whose record asks for it (byte 90, bit 0, of the table of
+    Smart Link). On an ST75951 it is the opposite: set off hook in all
+    other countries.
   - **RFC** (GPIO 8): set for 350 ms after each off-hook in Australia
-    (bit 1, "the Australian timer"), and all through pulse dialling.
-    During pulse dialling DP and RFC are left alone, and DC is cleared
-    on each break.
+    (bit 1, "the Australian timer"), and during all of pulse dialling.
+    During pulse dialling, dmodemd does not change DP and RFC, and
+    clears DC on each break.
 
-  What the three switch in the DAA is not known: only Smart Link's names
-  for them are. They are for a board built for these countries. The
-  country is the one set by `-c` or `+GCI`. dmodemd learns when pulse
-  dialling begins and ends from the call progress pump
-  (`MDMPRM_PULSE_DIALLING`).
+  The function of the three in the DAA is not known: only the names
+  that Smart Link gives them are known. They are for a board built for
+  these countries. The country is the one that `-c` or `+GCI` sets.
+  dmodemd gets the start and end of pulse dialling from the call
+  progress pump (`MDMPRM_PULSE_DIALLING`).
 - **The voice codec (a handset).** With `--usb-voice-codec=<law>`,
-  dmodemd takes alternate setting 3 instead of 1. Its second pair of
-  isochronous endpoints is the ST7554's SSI2 codec (Smart Link's
-  `K7554VoiceCodecInterface`: 8000 octets a second, powered up with
-  SSI_CTRL = 0x21, its period in register 6). In voice mode `+VLS=?` then
-  lists two more V.253 devices:
-  - **14** (`"H"`): the handset alone, the line on hook. The voice
-    engine's samples are the handset's: its microphone goes to `+VRX`,
-    and `+VTX` goes to its earpiece.
-  - **15** (`"HT"`): the handset on the call, off hook. The voice
-    engine's samples are the line's, and dmodemd mixes the handset in
-    both ways: the line and the modem's samples go to the earpiece, and
-    the microphone goes to the line and to `+VRX`.
+  dmodemd selects alternate setting 3 instead of 1. Its second pair of
+  isochronous endpoints is the SSI2 codec of the ST7554 (the
+  `K7554VoiceCodecInterface` of Smart Link: 8000 octets each second,
+  powered up with SSI_CTRL = 0x21, its period in register 6). In voice
+  mode, `+VLS=?` then gives two more V.253 devices:
+  - **14** (`"H"`): the handset alone, the line on hook. The samples of
+    the voice engine are the samples of the handset: its microphone goes
+    to `+VRX`, and `+VTX` goes to its earpiece.
+  - **15** (`"HT"`): the handset on the call, off hook. The samples of
+    the voice engine are the samples of the line, and dmodemd mixes the
+    handset in the two directions: the samples of the line and of the
+    modem go to the earpiece, and the microphone goes to the line and to
+    `+VRX`.
 
-  The two codecs' rates are bridged by linear interpolation. What the
-  octets are is not known: the Windows driver calls its format 3 and
+  Linear interpolation connects the rates of the two codecs. The format
+  of the octets is not known: the Windows driver calls its format 3 and
   never uses it, and streams this codec only from its test interface.
-  So the option takes `ulaw`, `alaw` or `linear` (signed 8-bit).
-  Creative's INF uses alternate setting 1, so the DE5671 may have no
-  codec there. A board whose alternate setting 3 lacks these endpoints is
-  refused.
-- **RHOM.** With `--usb-rhom`, dmodemd sets FIFO_CONTROL2's bit 15 (and
-  bit 7, the voice codec's, with `--usb-voice-codec`) while the modem
-  runs (from the line's start to its stop). This is what Smart Link's
-  Windows driver does with `Options.RHOM` (`ConfigureRHOM`,
-  `EnableRHOM`), which Creative's INF leaves off. A chip whose revision
-  (register 0) is below 0x200 never gets it, as on Windows. What RHOM
-  does is not known.
-- **The buzzer.** With `--usb-buzzer`, the modem's speaker is GPIO 11
-  (BUZEN). It is on whenever the core has the speaker on at any volume,
-  and off otherwise:
+  Thus the option accepts `ulaw`, `alaw` or `linear` (signed 8-bit).
+  The INF of Creative uses alternate setting 1, thus possibly the DE5671
+  has no codec there. dmodemd refuses a board whose alternate setting 3
+  does not have these endpoints.
+- **RHOM.** With `--usb-rhom`, dmodemd sets bit 15 of FIFO_CONTROL2
+  (and bit 7, the bit of the voice codec, with `--usb-voice-codec`)
+  while the modem runs (from the start of the line to its stop). The
+  Windows driver of Smart Link does this with `Options.RHOM`
+  (`ConfigureRHOM`, `EnableRHOM`), which the INF of Creative leaves off.
+  A chip whose revision (register 0) is less than 0x200 never gets it,
+  as on Windows. The function of RHOM is not known.
+- **The buzzer.** With `--usb-buzzer`, the speaker of the modem is
+  GPIO 11 (BUZEN). It is on when the core has the speaker on at any
+  volume, and off at other times:
   - ATM1 (the default): on from dialling or answering until the CONNECT;
   - ATM2: always on;
   - ATM0, or ATL0: never on.
 
-  This is what Smart Link's Windows driver does in `SetSpeakerVolume`
-  with `Options.Buzzer` (off in Creative's INF). A buzzer has no volume,
-  so ATL1 to ATL3 are the same. Not every board has one.
-- **Unplugged.** dmodemd says so and exits.
+  The Windows driver of Smart Link does this in `SetSpeakerVolume` with
+  `Options.Buzzer` (off in the INF of Creative). A buzzer has no volume,
+  thus ATL1 to ATL3 are the same. Not all boards have one.
+- **Unplugged.** dmodemd tells you and exits.
 
-Limits: the device's line settings are its own. dmodemd has not yet been
-tried on a real SmartUSB56. Caller ID and the ST75951 follow the Windows
-driver (read from its code, [smartusb56-windows.md](smartusb56-windows.md))
-and have been tested on the fake device only.
+Limits: the line settings of the device are its own. dmodemd has not yet
+had a test on a real SmartUSB56. Caller ID and the ST75951 follow the
+Windows driver (read from its code, [smartusb56-windows.md](smartusb56-windows.md))
+and have had a test only on the fake device.
 
 ### pico-serial Line
 
-The [pico-serial](https://github.com/D-Modem/hardware) project's
-phone-line stick ([SPEC-L.md](https://github.com/D-Modem/hardware/blob/HEAD/SPEC-L.md))
-is a USB-C stick with an RJ11 socket, made for D-Modem. It is a
-softmodem's line and nothing more: a Skyworks Si3056 DAA and its Si3018
-line side behind an RP2040 microcontroller, at 9600 Hz so that the open
-DSP's V.90 works. dmodemd drives it through libusb, as it does the
-SmartUSB56, and it needs no kernel driver.
+The phone-line stick of the [pico-serial](https://github.com/D-Modem/hardware)
+project ([SPEC-L.md](https://github.com/D-Modem/hardware/blob/HEAD/SPEC-L.md))
+is a USB-C stick with an RJ11 socket, made for D-Modem. It is only the
+line of a softmodem: a Skyworks Si3056 DAA and its Si3018 line side
+behind an RP2040 microcontroller, at 9600 Hz so that the V.90 of the
+open DSP operates. dmodemd controls it through libusb, as it does the
+SmartUSB56, and it does not need a kernel driver.
 
     lsusb -d 1209:0002            # Bus 001 Device 008: ID 1209:0002 ...
     dmodemd --usb=auto            # the first SmartUSB56 or stick; --usb=1:8 that one
@@ -532,81 +549,86 @@ A udev rule to start dmodemd as a user, for example
 
     SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="0002", MODE="0660", GROUP="dialout"
 
-Its protocol is its firmware's (`firmware/PROTOCOL.md`, "Line stick"),
-shaped like the ST7554's on purpose. The code is in
-`frontend/dmodemd/usb_line.cpp`:
+Its protocol is the protocol of its firmware (`firmware/PROTOCOL.md`,
+"Line stick"). It is intentionally similar to the protocol of the
+ST7554. The code is in `frontend/dmodemd/usb_line.cpp`:
 
 - **Samples.** S16 little-endian mono at 9600 Hz (the default) or 8000
-  Hz, isochronous both ways in interface 0's alternate setting 1.
-  Selecting that alternate setting starts them; the rate is set first
-  (`SET_RATE`). Each IN packet holds the samples that the stick's codec
-  gave in that millisecond, and each OUT transfer is sent with an IN
-  transfer's packet lengths, as for the ST7554.
-- **The hook.** A vendor request (`SET_HOOK`). The stick times a hook
-  flash itself (`HOOK_FLASH`, 1 to 2000 ms). Pulse dialling sends
-  `SET_HOOK` for each break and make, as the modem's frames are
+  Hz, isochronous in the two directions in alternate setting 1 of
+  interface 0. The selection of that alternate setting starts them. The
+  rate is set first (`SET_RATE`). Each IN packet holds the samples that
+  the codec of the stick gave in that millisecond. Each OUT transfer is
+  sent with the packet lengths of an IN transfer, as for the ST7554.
+- **The hook.** A vendor request (`SET_HOOK`). The stick itself times a
+  hook flash (`HOOK_FLASH`, 1 to 2000 ms). Pulse dialling sends
+  `SET_HOOK` for each break and make, while the frames of the modem are
   processed.
-- **Rings and caller ID.** On hook the stick's line monitor is on
-  (`SET_MONITOR`), so it hears the line: **caller ID** comes in its
+- **Rings and caller ID.** On hook, the line monitor of the stick is on
+  (`SET_MONITOR`), thus it receives the line: **caller ID** comes in its
   samples, as on an ALSA codec. Rings come from its ring detector. Each
-  change it counts arrives in an 8-octet event on the interrupt endpoint
-  and is a pulse to the core's `ring()`, as each change of the ST7554's
-  ring GPIO is.
-- **At start-up** dmodemd reads the stick's protocol version, firmware
-  version and line side (`GET_INFO`). It refuses a protocol version other
-  than 1. If the line side does not answer across the isolation barrier,
-  it says so and goes on. ATI3 says `pico-serial Line (Si3056)`.
-- **The country's line.** dmodemd writes the country's settings (from
-  `-c`, and again on each `AT+GCI`) into the DAA:
-  - the AC termination: ACT and ACT2 on the stick's Si3018 line side, or
-    ACIM on a Si3019;
+  change that it counts arrives in an 8-octet event on the interrupt
+  endpoint and is a pulse to the `ring()` of the core, as each change of
+  the ring GPIO of the ST7554 is.
+- **At start-up**, dmodemd reads the protocol version, firmware version
+  and line side of the stick (`GET_INFO`). It refuses a protocol version
+  other than 1. If the line side does not answer across the isolation
+  barrier, it tells you and continues. ATI3 shows
+  `pico-serial Line (Si3056)`.
+- **The country's line.** dmodemd writes the settings of the country
+  (from `-c`, and again on each `AT+GCI`) into the DAA:
+  - the AC termination: ACT and ACT2 on the Si3018 line side of the
+    stick, or ACIM on a Si3019;
   - the DC termination (DCV, MINI);
   - the TBR21 current limit (ILIM);
   - the ringer impedance and threshold (RZ, RT);
-  - the on-hook speed (OHS, OHS2, with Australia's spark quenching).
+  - the on-hook speed (OHS, OHS2, with the spark quenching of
+    Australia).
 
-  The values are the Si3056 datasheet's (Rev. 1.03, Table 15, "Country
-  Specific Register Settings"), in `frontend/dmodemd/si3056.cpp`. Each register
-  (16, 26, 31 and 59, and 30 on a Si3019) is read first (`DAA_READ`), and
-  only the country's bits change (`DAA_WRITE`). A change made while off
-  hook waits until the line is on hook again.
+  The values are from the Si3056 datasheet (Rev. 1.03, Table 15,
+  "Country Specific Register Settings"), in
+  `frontend/dmodemd/si3056.cpp`. dmodemd first reads each register (16,
+  26, 31 and 59, and 30 on a Si3019) (`DAA_READ`), and changes only the
+  bits of the country (`DAA_WRITE`). If you make a change while off
+  hook, it waits until the line is on hook again.
 
-  Countries the table has no row for (Algeria, Brunei, Estonia,
-  Lithuania, Sri Lanka, Tunisia, Turkey, Uruguay, Vietnam and most of the
-  ITU list's) keep the USA's settings, which are the Si3056's reset
-  values, and dmodemd's log says so (`-d1`). The datasheet's TBR21 row is
-  `-c CTR21EUROPE`.
-- **Unplugged.** dmodemd says so and exits.
+  Countries that have no row in the table (Algeria, Brunei, Estonia,
+  Lithuania, Sri Lanka, Tunisia, Turkey, Uruguay, Vietnam and most of
+  the ITU list) keep the settings of the USA, which are the reset values
+  of the Si3056. The log of dmodemd tells you this (`-d1`). The TBR21
+  row of the datasheet is `-c CTR21EUROPE`.
+- **Unplugged.** dmodemd tells you and exits.
 
 Limits:
 
 - The transmit and receive gains stay at their reset values (Table 15
-  lists none).
-- Australia keeps its Japan-mode DC termination throughout the call. The
-  datasheet's option of switching to FCC mode 500 ms after going off hook,
-  for a higher transmit level, is not taken.
-- The stick's USB ID is a pid.codes test PID until it has its own.
-- It has been tested against a fake of it ([below](#testing-without-hardware)),
-  not yet on a real one.
+  gives none).
+- Australia keeps its Japan-mode DC termination during all of the call.
+  The datasheet gives an option to change to FCC mode 500 ms after the
+  off-hook, for a higher transmit level. dmodemd does not use it.
+- The USB ID of the stick is a pid.codes test PID until it has its own.
+- It has had a test with a fake of it ([below](#testing-without-hardware)),
+  but not yet on a real stick.
 
 ### pico-serial WB (wideband, bare pair)
 
-pico-serial's wideband stick ([SPEC-WB.md](https://github.com/D-Modem/hardware/blob/HEAD/SPEC-WB.md))
-is the Line stick's sibling for a **bare copper pair**: a dry pair, an
-alarm or leased circuit, or a pair of your own between buildings. It is
-not for a telephone line. Two WB sticks talk to each other point to
-point through a wideband transformer, and sample the pair at 96 kHz
-instead of 9.6 kHz. They use a band of about 4 to 36 kHz.
+The wideband stick of pico-serial ([SPEC-WB.md](https://github.com/D-Modem/hardware/blob/HEAD/SPEC-WB.md))
+is the sibling of the Line stick for a **bare copper pair**: a dry
+pair, an alarm or leased circuit, or a pair of your own between
+buildings. It is not for a telephone line. Two WB sticks communicate
+point to point through a wideband transformer, and sample the pair at
+96 kHz instead of 9.6 kHz. They use a band of approximately 4 to 36 kHz.
 
-This is the line that D-Modem's wideband mode is for: V.wb, `AT+MS=VWB`
-([dsp/vwb.md](dsp/vwb.md)), at 48000 Hz and up (`-r 96000`). It runs
-with `AT&L1`, a leased line with no dial tone or ringing: `ATD` calls,
-and `ATA` or `ATS0=1` answers. In simulation it carries about 149
-kbit/s each way on a short pair, and about 70 kbit/s on 5 km.
+This is the line for the wideband mode of D-Modem: V.wb, `AT+MS=VWB`
+([dsp/vwb.md](dsp/vwb.md)), at 48000 Hz and higher (`-r 96000`). It
+runs with `AT&L1`, a leased line with no dial tone or ringing: `ATD`
+calls, and `ATA` or `ATS0=1` answers. In simulation, it carries
+approximately 149 kbit/s in each direction on a short pair, and
+approximately 70 kbit/s on 5 km.
 
-dmodemd drives the stick through libusb, as it drives the Line stick,
-and it needs no kernel driver. `--usb=auto` finds it beside the other USB
-modems. With no `-r` it runs at the stick's own 96000 Hz:
+dmodemd controls the stick through libusb, as it controls the Line
+stick, and it does not need a kernel driver. `--usb=auto` finds it
+together with the other USB modems. With no `-r`, it runs at the
+96000 Hz of the stick:
 
     lsusb -d 1209:0003            # Bus 001 Device 009: ID 1209:0003 ...
     dmodemd --usb=auto            # 96000 Hz; -r 48000 or -r 192000 for those
@@ -616,573 +638,603 @@ A udev rule to start dmodemd as a user, for example
 
     SUBSYSTEM=="usb", ATTR{idVendor}=="1209", ATTR{idProduct}=="0003", MODE="0660", GROUP="dialout"
 
-At the two ends of the pair, one end calls and the other answers by
-itself:
+At the two ends of the pair, one end calls and the other end answers
+automatically:
 
     AT&L1S0=1                     (the answering end, once)
     AT&L1                         (the calling end)
     ATD
     CONNECT 148656
 
-At 48000 Hz and up, V.wb is the modulation by default (`AT+MS?` says
-200), since no other runs there; `AT+MS=VWB` is not needed. A leased
-line has no hang-up signal of its own. When one end hangs up (`ATH`), the
-other sees `NO CARRIER` when V.42 tells it, or once the carrier has been
-gone for S7 seconds (`ATS7=10` for 10).
+At 48000 Hz and higher, V.wb is the modulation by default (`AT+MS?`
+shows 200), because no other modulation runs there. You do not need
+`AT+MS=VWB`. A leased line has no hang-up signal. When one end hangs up
+(`ATH`), the other end shows `NO CARRIER` when V.42 tells it, or when
+the carrier has been absent for S7 seconds (`ATS7=10` for 10).
 
-Its protocol is its firmware's (`firmware/PROTOCOL.md`, "WB stick", and
-`src/core/wb_proto.h`): the Line stick's USB device, with the WB stick's
-own requests. The code is in `frontend/dmodemd/usb_wb.cpp`, on top of
-`frontend/dmodemd/usb_line.cpp`'s transfers:
+Its protocol is the protocol of its firmware (`firmware/PROTOCOL.md`,
+"WB stick", and `src/core/wb_proto.h`): the USB device of the Line
+stick, with the own requests of the WB stick. The code is in
+`frontend/dmodemd/usb_wb.cpp`, on top of the transfers of
+`frontend/dmodemd/usb_line.cpp`:
 
-- **Samples.** S16 little-endian mono at 96000 Hz (48000 and 192000 Hz
-  too), isochronous both ways in interface 0's alternate setting 1,
-  which starts them. The packets are 1 ms, of up to 480 octets. Each IN
-  packet holds the samples the stick's codec gave in that millisecond,
-  and each OUT transfer is sent with an IN transfer's packet lengths, as
-  for the Line stick. `SET_RATE` (in kHz) is sent first. A rate the
-  stick does not have (`-r 8000` or `9600`) is refused.
-- **At start-up** dmodemd reads the stick's protocol version and board
-  (`GET_INFO`), and refuses a protocol version other than 1 or a board
-  that is not the WB stick's. It then turns any loopback off
-  (`SET_LOOPBACK`), streams the hybrid's input (`SET_INPUT`: the line
-  less our own signal, not the line itself), sets the rate and the gains,
-  turns the LINK LED off, and says so if the codec does not run
-  (`GET_STATUS`). ATI3 says `pico-serial WB (TLV320AIC3204)`.
+- **Samples.** S16 little-endian mono at 96000 Hz (also 48000 and
+  192000 Hz), isochronous in the two directions in alternate setting 1
+  of interface 0, which starts them. The packets are 1 ms, of up to 480
+  octets. Each IN packet holds the samples that the codec of the stick
+  gave in that millisecond. Each OUT transfer is sent with the packet
+  lengths of an IN transfer, as for the Line stick. `SET_RATE` (in kHz)
+  is sent first. dmodemd refuses a rate that the stick does not have
+  (`-r 8000` or `9600`).
+- **At start-up**, dmodemd reads the protocol version and board of the
+  stick (`GET_INFO`). It refuses a protocol version other than 1 or a
+  board that is not the WB stick. Then it turns off all loopback
+  (`SET_LOOPBACK`), streams the input of the hybrid (`SET_INPUT`: the
+  line minus our own signal, not the line itself), sets the rate and the
+  gains, turns off the LINK LED, and tells you if the codec does not run
+  (`GET_STATUS`). ATI3 shows `pico-serial WB (TLV320AIC3204)`.
 - **Gains.**
-  - `--usb-wb-tx-gain=<dB>` sets the transmit level: the codec's DAC
-    volume (`SET_TX_GAIN`), -63.5 to +24 dB in 0.5 dB steps.
-  - `--usb-wb-rx-gain=<dB>` sets the hybrid input's gain: its MicPGA
-    (`SET_RX_GAIN`), 0 to 47.5 dB.
+  - `--usb-wb-tx-gain=<dB>` sets the transmit level: the DAC volume of
+    the codec (`SET_TX_GAIN`), -63.5 to +24 dB in 0.5 dB steps.
+  - `--usb-wb-rx-gain=<dB>` sets the gain of the hybrid input: its
+    MicPGA (`SET_RX_GAIN`), 0 to 47.5 dB.
 
-  Both are 0 by default, the stick's own levels: about +3 dBm on the
-  line for a full-scale sine, which puts V.wb's signal (11 dB below full
-  scale) at about -8 dBm.
-- **The LINK LED** shows the modem's carrier: on while the call is
-  online (through a retrain too), off otherwise (`SET_CARRIER`). At the
-  end dmodemd gives it back to the stick, which lights it while its
-  samples run.
-- **No hook, ring or caller ID.** The modem's hook only starts and stops
-  the call. Nothing rings, and `ATS0=1` answers only with `AT&L1`.
-- **Events.** Over current on the line's drivers is logged as an error.
-  The codec's overflows (the transmit level or the hybrid's gain too
-  high) and the stick's underruns and overruns are logged at `-d1`.
-- **Unplugged.** dmodemd says so and exits.
+  The two are 0 by default, the levels of the stick: approximately
+  +3 dBm on the line for a full-scale sine. This puts the signal of V.wb
+  (11 dB below full scale) at approximately -8 dBm.
+- **The LINK LED** shows the carrier of the modem: on while the call is
+  online (also through a retrain), off at other times (`SET_CARRIER`).
+  At the end, dmodemd gives it back to the stick, which turns it on
+  while its samples run.
+- **No hook, ring or caller ID.** The hook of the modem only starts and
+  stops the call. Nothing rings, and `ATS0=1` answers only with
+  `AT&L1`.
+- **Events.** The log records over current on the line drivers as an
+  error. It records the overflows of the codec (the transmit level or
+  the gain of the hybrid too high) and the underruns and overruns of the
+  stick at `-d1`.
+- **Unplugged.** dmodemd tells you and exits.
 
-It has not yet been tried on a real stick or a real pair. It has been
-tested against a fake of the stick ([below](#testing-without-hardware))
-on a simulated pair, with the firmware's protocol as its sources have
-it. What is still to be checked on hardware:
+It has not yet had a test on a real stick or a real pair. It has had a
+test with a fake of the stick ([below](#testing-without-hardware)) on a
+simulated pair, with the protocol of the firmware as its sources give
+it. These items must still have a check on hardware:
 
-- **The stick's real delay.** Its codec's filters are not counted in
-  dmodemd's `io_delay`. V.wb measures its own echo and needs none.
-- **The levels.** The default gains (0 dB) are untried against a real
-  hybrid's residue and a real pair's loss; the receive gain may need
-  raising on a long pair.
-- **V.42 over the host's buffers.** dmodemd sends its samples 4672
-  samples ahead at 96 kHz, about 50 ms: a frame and a half of 20 ms,
-  15 ms of transfers, and the stick's own buffering. LAPM's window of 15
-  frames of 128 octets waits a round trip. In simulation, with that lead
-  at both ends, V.wb's 148656 bit/s carried 83 kbit/s each way through
-  V.42, against 137 kbit/s with no buffers.
-- **The USB ID.** The stick's USB ID is a pid.codes test PID until it
-  has its own.
+- **The real delay of the stick.** The filters of its codec are not
+  counted in the `io_delay` of dmodemd. V.wb measures its own echo and
+  does not need it.
+- **The levels.** The default gains (0 dB) have had no test against the
+  residue of a real hybrid and the loss of a real pair. On a long pair,
+  it is possibly necessary to increase the receive gain.
+- **V.42 through the buffers of the host.** dmodemd sends its samples
+  4672 samples in front at 96 kHz, approximately 50 ms: a frame and a
+  half of 20 ms, 15 ms of transfers, and the buffers of the stick. The
+  window of LAPM of 15 frames of 128 octets waits a round trip. In
+  simulation, with that lead at the two ends, the 148656 bit/s of V.wb
+  carried 83 kbit/s in each direction through V.42, against 137 kbit/s
+  with no buffers.
+- **The USB ID.** The USB ID of the stick is a pid.codes test PID until
+  it has its own.
 
-Any ALSA codec that runs at 96 kHz (`-a hw:N -r 96000`, through a line
-transformer) is a line for V.wb too. libdmodem runs it at any of the
+All ALSA codecs that run at 96 kHz (`-a hw:N -r 96000`, through a line
+transformer) are also a line for V.wb. libdmodem runs it at each of the
 three rates (`dmodem_create_rate()`).
 
 ### Agere USB 2.0 soft modem
 
-Agere's (later LSI's) USB soft modem, USB `047e:2892` (and `047e:2828`),
-is sold under other names too. It has no kernel driver: dmodemd drives it
-through libusb. It is an Agere USB controller with an ARM core in it,
-and behind that either a Mercury codec or a "Polaris" DAA. Its ROM
-streams the samples itself on isochronous endpoints, as Agere's Windows
-driver has it, so nothing is downloaded into it. It needs a USB 2.0
-(high speed) port; on a full speed port dmodemd says so and stops.
+The USB soft modem of Agere (later of LSI), USB `047e:2892` (and
+`047e:2828`), is also sold under other names. It has no kernel driver:
+dmodemd controls it through libusb. It is an Agere USB controller with
+an ARM core in it, and behind that a Mercury codec or a "Polaris" DAA.
+Its ROM itself streams the samples on isochronous endpoints, as in the
+Windows driver of Agere. Thus dmodemd does not download code into it.
+It needs a USB 2.0 (high speed) port. On a full speed port, dmodemd
+tells you and stops.
 
     lsusb -d 047e:                # Bus 001 Device 009: ID 047e:2892 ...
     dmodemd --usb=auto
 
-The line runs at 8000 Hz, whatever `-r` says. A udev rule
-(`/etc/udev/rules.d/60-agere-usb.rules`) lets dmodemd open it without
-root:
+The line runs at 8000 Hz, and dmodemd ignores the value of `-r`. A udev
+rule (`/etc/udev/rules.d/60-agere-usb.rules`) lets dmodemd open it
+without root:
 
     SUBSYSTEM=="usb", ATTR{idVendor}=="047e", ATTR{idProduct}=="2892", MODE="0660", GROUP="dialout"
 
-[agere-usb.md](agere-usb-details.md) has the full detail, read from the
-device's ROM and Agere's drivers. In short, `frontend/dmodemd/usb_agere.cpp`
-does this:
+[agere-usb.md](agere-usb-details.md) has all the data, read from the ROM
+of the device and the drivers of Agere. In summary,
+`frontend/dmodemd/usb_agere.cpp` does these steps:
 
-- **Start-up.** Interface 0's alternate setting 1 (isochronous IN and
-  OUT), the ROM's version, its GPIOs and clock, and its codec's
-  registers as Agere's drivers write them. Codec register 0xc0's bit 15
-  tells a Polaris from a Mercury. A Polaris gets its link pulsed up, its
-  calibration and its country's DAA registers. Then on hook. Then the
-  ROM's function table is put back as the ROM has it (any patch left by
-  an earlier driver is removed), the clock is raised, and the ROM's
-  stream is started (command 0x0c).
-- **Samples.** A packet each way every 2 microframes (4000 a second): a
-  header (the samples' count and a status word), then the samples.
-  Sixteen transfers of 24 packets are in flight each way. Each OUT
-  transfer carries 48 samples (2 a packet), the codec's own pace, with
-  one sample more or less now and then to follow the drift between the
-  USB's clock and the codec's.
+- **Start-up.** Alternate setting 1 of interface 0 (isochronous IN and
+  OUT), the version of the ROM, its GPIOs and clock, and the registers
+  of its codec as the drivers of Agere write them. Bit 15 of codec
+  register 0xc0 shows if it is a Polaris or a Mercury. A Polaris gets a
+  pulse to bring its link up, its calibration and the DAA registers for
+  its country. Then on hook. Then dmodemd restores the function table of
+  the ROM (it removes all patches from a previous driver), increases the
+  clock, and starts the stream of the ROM (command 0x0c).
+- **Samples.** A packet in each direction each 2 microframes (4000 each
+  second): a header (the count of the samples and a status word), then
+  the samples. Sixteen transfers of 24 packets are in flight in each
+  direction. Each OUT transfer carries 48 samples (2 in each packet), the
+  rate of the codec. Sometimes it has one sample more or less, to follow
+  the drift between the USB clock and the codec clock.
 - **Hook.** Codec register 0xc0: 0 is off hook on a Mercury, 1 on a
   Polaris. Pulse dialling and the hook flash break and make it.
-- **Rings.** Bit 0 of the IN packets' status word: a pulse to the core's
-  `ring()` for each packet that has it. On hook dmodemd also reads codec
-  register 0x0a8 every 100 ms, since a Polaris does not set the status
-  bit.
-- **Caller ID.** The codec hears the line on hook (a Polaris's caller ID
-  path is switched on while on hook), so caller ID comes in the samples.
-- **LEDs.** The OH LED (GPIO 4, lit while set) is lit off hook and
-  blinks fast while the line rings. The board's READY/DATA LED is not on
-  any GPIO dmodemd has found, so it is not driven.
-- **Unplugged.** dmodemd says so and exits.
+- **Rings.** Bit 0 of the status word of the IN packets: a pulse to the
+  `ring()` of the core for each packet that has it. On hook, dmodemd
+  also reads codec register 0x0a8 each 100 ms, because a Polaris does
+  not set the status bit.
+- **Caller ID.** The codec receives the line on hook (the caller ID path
+  of a Polaris is on while on hook), thus caller ID comes in the
+  samples.
+- **LEDs.** The OH LED (GPIO 4, on while set) is on off hook and
+  flashes quickly while the line rings. dmodemd has not found the
+  READY/DATA LED of the board on a GPIO, thus it does not control it.
+- **Unplugged.** dmodemd tells you and exits.
 
-ATI3 says `Agere USB 2.0 (Mercury)` for either codec. The modem has been
-tested against a fake of it ([below](#testing-without-hardware)), but
-does not yet work reliably on a real one: [agere-usb.md](agere-usb-details.md#bring-up)
-says what to look for, and what to send, on a run.
+ATI3 shows `Agere USB 2.0 (Mercury)` for the two codecs. The modem has
+had a test with a fake of it ([below](#testing-without-hardware)), but
+it is not yet reliable on a real one: [agere-usb.md](agere-usb-details.md#bring-up)
+tells what to look for, and what to send, after a run.
 
 ### Apple USB Modem
 
-Apple's USB modem for Macs (A1101, MA034Z/A), USB `05ac:1401` (and
-`05ac:8220`, which Apple's driver also takes), is Motorola's SM56 USB
-soft modem with a Silicon Labs Si3056 DAA. dmodemd drives it through
-libusb (`frontend/dmodemd/usb_apple.cpp`).
+The USB modem of Apple for Macs (A1101, MA034Z/A), USB `05ac:1401` (and
+`05ac:8220`, which the driver of Apple also accepts), is the SM56 USB
+soft modem of Motorola with a Silicon Labs Si3056 DAA. dmodemd controls
+it through libusb (`frontend/dmodemd/usb_apple.cpp`).
 
     lsusb -d 05ac:1401            # Bus 001 Device 007: ID 05ac:1401 Apple, Inc. Modem
     dmodemd --usb=auto
 
-It works as Apple's Mac OS X drivers do:
+It operates as the Mac OS X drivers of Apple do:
 
-- **Samples:** USB audio class 1, an isochronous stream each way
-  (interfaces 3 and 4, alternate setting 1), 16-bit mono at the `-r`
-  rate, set with `SET_CUR` on each endpoint. A rate the device does not
-  list is refused, with the ones it has.
-- **Hook:** CDC's `SET_HOOK_STATE` to interface 0 (Direct Line Control).
-- **Rings and the phone cord:** interface 0's interrupt notifications
-  (`RING_DETECT`, and 0x29 for the cord).
-- **DAA:** the Si3056's registers through 3-octet commands to interface
-  1 (`SEND_ENCAPSULATED_COMMAND`, a read's value with
+- **Samples:** USB audio class 1, an isochronous stream in each
+  direction (interfaces 3 and 4, alternate setting 1), 16-bit mono at
+  the `-r` rate, set with `SET_CUR` on each endpoint. dmodemd refuses a
+  rate that the device does not list, and gives the rates that it has.
+- **Hook:** the `SET_HOOK_STATE` of CDC to interface 0 (Direct Line
+  Control).
+- **Rings and the phone cord:** the interrupt notifications of interface
+  0 (`RING_DETECT`, and 0x29 for the cord).
+- **DAA:** the registers of the Si3056 through 3-octet commands to
+  interface 1 (`SEND_ENCAPSULATED_COMMAND`, the value of a read with
   `GET_ENCAPSULATED_RESPONSE`): the line side powered up, its link
-  checked, the on-hook line monitor for caller ID, the country's
-  registers (`-c`, `AT+GCI`).
+  checked, the on-hook line monitor for caller ID, the registers of the
+  country (`-c`, `AT+GCI`).
 
 A udev rule (`/etc/udev/rules.d/60-apple-usb-modem.rules`) lets dmodemd
 open it without root:
 
     SUBSYSTEM=="usb", ATTR{idVendor}=="05ac", ATTR{idProduct}=="1401", MODE="0660", GROUP="dialout"
 
-ATI3 says `Apple USB Modem (Si3056)`. It has been tested against a fake
-of it ([below](#the-apple-usb-modem)), not yet on a real one.
+ATI3 shows `Apple USB Modem (Si3056)`. It has had a test with a fake of
+it ([below](#the-apple-usb-modem)), but not yet on a real one.
 [apple-usb-modem-details.md](apple-usb-modem-details.md) has the full
-protocol and where each part was found.
+protocol and the source of each part.
 
 ### Conexant USB HSF modems
 
-Conexant's USB soft modems are built on its "Cadmus 2" USB bridge: USB
+The USB soft modems of Conexant use its "Cadmus 2" USB bridge: USB
 `0572:1300` to `0572:1303`, `08e3:0111`, `0803:1300`, `0803:1301`,
-`145f:0106`, `148d:1671` and `148d:1672` (the IDs Conexant's Linux
-driver, hsfmodem's `hsfusbcd2` module, takes). dmodemd drives the bridge
-through libusb (`frontend/dmodemd/usb_cadmus2.cpp`), with its own modem
-in place of Conexant's.
+`145f:0106`, `148d:1671` and `148d:1672` (the IDs that the Linux driver
+of Conexant, the `hsfusbcd2` module of hsfmodem, accepts). dmodemd
+controls the bridge through libusb (`frontend/dmodemd/usb_cadmus2.cpp`),
+with its own modem instead of the modem of Conexant.
 
     lsusb -d 0572:                # Bus 001 Device 009: ID 0572:1300 Conexant Systems ...
     DMODEM_CD2_FIRMWARE=/path/to/c2firmware.h dmodemd --usb=auto
 
-How it works is what the `hsfusbcd2` module does with it, as the
-interop harness showed by running the module itself against a simulated
-bridge (`half_hsf_usb`, [interop-details.md](interop-details.md)):
+The procedure is what the `hsfusbcd2` module does with it. The interop
+harness showed this when it ran the module against a simulated bridge
+(`half_hsf_usb`, [interop-details.md](interop-details.md)):
 
-- **Firmware:** the bridge starts with none (`GET_INFORMATION`, vendor
-  request 0, says so) and the host uploads it, 64 octets at a time
-  (vendor request 1) with the device unconfigured, then configures it
-  again once it says the firmware runs. The firmware is Conexant's
-  (`ROM_IMAGE[]` in hsfmodem's `modules/imported/include/c2firmware.h`,
-  7395 octets) and not ours to ship: `DMODEM_CD2_FIRMWARE` names that
-  file, or a file of its bare octets. A bridge already running it (a
-  second start, unplugged in between or not) needs none.
-- **Scripts:** the bridge runs small programs the host sends (vendor
-  request 2, `wValue` `0xff01`, or `0xff02` for the one that stays; `wIndex`
-  the slot), and what they report comes on its interrupt endpoint
-  (`0x82`). dmodemd sends the scripts the module sends a plain board,
-  byte for byte: the start, the codec's set-up words (`2004`, `a208`,
-  `f200`, `aae8`, `6040`, `35b4`), the monitor (slot 3), and the
-  streams' start.
-- **Hook:** the codec word `aac8` off hook, `aae8` on hook, as the module
-  writes them; pulse dialling the same.
-- **Samples:** bulk transfers, `0x81` in and `0x01` out, 64 samples (128
-  octets) each, 16-bit little-endian mono at 16000 Hz; a transfer out for
-  each one in. The modem runs at 9600 Hz (whatever `-r` says) and the
-  samples are converted both ways (`dsp::Resampler`, 3/5 and 5/3). The
-  module starts the streams only off hook; dmodemd runs them from the
-  start, as the other devices' are.
-- **Rings:** the monitor's report `08 01` (its channel 4), two or more of
-  them a ring.
+- **Firmware:** the bridge starts with no firmware (`GET_INFORMATION`,
+  vendor request 0, tells this) and the host uploads it, 64 octets at a
+  time (vendor request 1) with the device unconfigured. Then the host
+  configures it again when it reports that the firmware runs. The
+  firmware is from Conexant (`ROM_IMAGE[]` in the
+  `modules/imported/include/c2firmware.h` of hsfmodem, 7395 octets), and
+  we must not distribute it: `DMODEM_CD2_FIRMWARE` names that file, or a
+  file of its bare octets. A bridge that already runs it (a second
+  start, with or without an unplug between) does not need it.
+- **Scripts:** the bridge runs small programs that the host sends
+  (vendor request 2, `wValue` `0xff01`, or `0xff02` for the one that
+  stays; `wIndex` the slot). Their reports come on its interrupt
+  endpoint (`0x82`). dmodemd sends the scripts that the module sends to
+  a plain board, byte for byte: the start, the set-up words of the codec
+  (`2004`, `a208`, `f200`, `aae8`, `6040`, `35b4`), the monitor (slot 3),
+  and the start of the streams.
+- **Hook:** the codec word `aac8` off hook, `aae8` on hook, as the
+  module writes them; pulse dialling the same.
+- **Samples:** bulk transfers, `0x81` in and `0x01` out, 64 samples
+  (128 octets) each, 16-bit little-endian mono at 16000 Hz; one transfer
+  out for each transfer in. The modem runs at 9600 Hz (dmodemd ignores
+  the value of `-r`) and the samples are converted in the two directions
+  (`dsp::Resampler`, 3/5 and 5/3). The module starts the streams only
+  off hook. dmodemd runs them from the start, as for the other devices.
+- **Rings:** the report `08 01` of the monitor (its channel 4). Two or
+  more of them are a ring.
 
 Not covered yet:
 
-- **SmartDAA boards** (the start's reply says which a board is): their
-  line side is behind other scripts, which have not been worked out.
-  dmodemd says so and stops.
-- Caller ID: on hook the samples are silence here.
-- The speaker (`35b7` and `35b4`, the module's `ATM`).
+- **SmartDAA boards** (the reply to the start tells the type of a
+  board): their line side is behind other scripts, which are not known
+  yet. dmodemd tells you and stops.
+- Caller ID: on hook, the samples are silence here.
+- The speaker (`35b7` and `35b4`, the `ATM` of the module).
 
-ATI3 says `Conexant USB HSF (Cadmus 2)`. Which codec word does what
-(the hook's bit, the speaker's) is read from what the module sends, not
-from a datasheet. It has been tested against a fake bridge
-([below](#the-conexant-usb-hsf-modems)), not on a real one.
+ATI3 shows `Conexant USB HSF (Cadmus 2)`. The function of each codec
+word (the bit of the hook, the bit of the speaker) comes from what the
+module sends, not from a datasheet. It has had a test with a fake bridge
+([below](#the-conexant-usb-hsf-modems)), but not on a real one.
 
 ### Not covered
 
 These are not covered yet, because Linux has no driver that gives their
 samples:
 
-- HD-audio modems that are not Si3054-compatible, such as Conexant's.
-  (Compatible ones outside the Si3054 list can use `hda-modem-setup`,
-  [above](#hd-audio-modems-outside-the-si3054-list).)
+- HD-audio modems that are not Si3054-compatible, for example the
+  modems of Conexant. (Compatible modems outside the Si3054 list can use
+  `hda-modem-setup`, [above](#hd-audio-modems-outside-the-si3054-list).)
 - Modems with their own PCI controller: Smart Link SmartPCI, PCTel HSP,
   Lucent/Agere PCI, Conexant HSF PCI, Broadcom BCM4212.
 
-Smart Link's PCI modems are of two kinds:
+The PCI modems of Smart Link are of two types:
 
-- Those on an AC'97 controller (Intel ICH, VIA, SiS, ALi, ATI, nForce)
-  are AC'97 modem codecs, covered by `-a` above.
+- The modems on an AC'97 controller (Intel ICH, VIA, SiS, ALi, ATI,
+  nForce) are AC'97 modem codecs, which `-a` above covers.
 - The SmartPCI cards (SL1900, SL2800; PCI vendors 163c, 10a5, 2000 and
-  2003) have Smart Link's own controller. Its registers are documented
-  only in Smart Link's closed `amrlibs.o`, so there is no open driver to
-  start from.
+  2003) have the own controller of Smart Link. Only the closed
+  `amrlibs.o` of Smart Link documents its registers, thus there is no
+  open driver to start from.
 
 ## Options
 
 | Option | What it does |
 |---|---|
-| `-a <pcm>`, `--alsa=<pcm>` | The line is the codec's PCM (`hw:1`, `hw:0,6`, `plughw:...`): a telephone line, not SIP. |
-| `--alsa-ctl=<ctl>` | The codec's controls, if not the card's. By default `hw:<card>` for `hw:` and `plughw:` PCMs (`hw:1` for `hw:1,0` or `plughw:1,0`), and the PCM's own name otherwise. |
-| `--usb=<dev>` | The line is a SmartUSB56, pico-serial Line or WB, or Agere USB modem: `auto` (the first one), or `<bus>:<address>` as `lsusb` and `--usb list` show it. The line is a telephone line (a bare pair for the WB), not SIP. `--usb list` lists the devices and exits. |
-| `--misdn=<dev>` | The line is an ISDN basic rate interface through Linux's mISDN (its number, or its name such as `hfc-pci.1`), not SIP ([isdn.md](isdn.md)). |
-| `--misdn-msn=<msn>` | With `--misdn`: take calls for this MSN alone, and send it as our number. |
-| `--misdn-noflip` | With `--misdn`: take the B-channel's octets as the card gives them, not bit reversed. |
-| `--usb-leds` | Light a SmartUSB56's carrier and data LEDs (GPIO 6 and 13), as on Creative's Modem Blaster. Only for a board that has them. |
-| `--usb-wake` | Let a ring wake the computer: arm the SmartUSB56's USB remote wakeup (and on Linux, as root, enable the kernel's `power/wakeup` for it). |
-| `--usb-handset` | Use the SmartUSB56's handset detector (GPIO 2): the phone on its PHONE jack off or on hook gives `<DLE>H` and `<DLE>h` in voice mode. |
-| `--usb-voice-codec=<law>` | Use the SmartUSB56's second codec (SSI2, alternate setting 3) as a handset: `+VLS=14` and `15` in voice mode. Its octets are `ulaw`, `alaw` or `linear`. |
-| `--usb-buzzer` | Use the SmartUSB56's buzzer (GPIO 11, BUZEN) as the speaker: on while ATM/ATL have the speaker on, as Windows' `Options.Buzzer`. |
-| `--usb-rhom` | Set the SmartUSB56's RHOM bit (FIFO_CONTROL2 bit 15, and the voice codec's bit 7) while the modem runs, as Windows' `Options.RHOM`. Not below chip revision 0x200. |
-| `--usb-international` | Drive the SmartUSB56's international line controls (GPIO 8, 10 and 12) as Smart Link's Windows driver does: the country's DC bit, Australia's 350 ms after going off hook, and pulse dialling's. |
-| `--usb-wb-tx-gain=<dB>` | A pico-serial WB's transmit level: its DAC's volume, -63.5 to +24 dB in 0.5 dB steps (0, the default, is the stick's own). |
-| `--usb-wb-rx-gain=<dB>` | A pico-serial WB's hybrid input gain: its MicPGA, 0 (the default) to 47.5 dB in 0.5 dB steps. |
-| `-r <Hz>`, `--rate=<Hz>` | The codec's rate. 9600 (the default) or 8000 for the voice-band data pumps; an Agere USB modem always runs at 8000, whatever this says. 48000, 96000 or 192000 for the wideband mode on a bare pair (V.wb, [dsp/vwb.md](dsp/vwb.md)), on a line that has the rate: an ALSA codec, or a pico-serial WB (whose default is 96000), but not the SmartUSB56 or the Line stick. At those rates V.wb is the default modulation (`AT+MS=VWB`), the voice-band pumps are refused (`NO CARRIER`), and `ATD` dials nothing. Any other value is refused. |
+| `-a <pcm>`, `--alsa=<pcm>` | The line is the PCM of the codec (`hw:1`, `hw:0,6`, `plughw:...`): a telephone line, not SIP. |
+| `--alsa-ctl=<ctl>` | The controls of the codec, if they are not the controls of the card. By default `hw:<card>` for `hw:` and `plughw:` PCMs (`hw:1` for `hw:1,0` or `plughw:1,0`), and the name of the PCM for other PCMs. |
+| `--usb=<dev>` | The line is a SmartUSB56, pico-serial Line or WB, or Agere USB modem: `auto` (the first one), or `<bus>:<address>` as `lsusb` and `--usb list` show it. The line is a telephone line (a bare pair for the WB), not SIP. `--usb list` gives the devices and exits. |
+| `--misdn=<dev>` | The line is an ISDN basic rate interface through the mISDN of Linux (its number, or its name, for example `hfc-pci.1`), not SIP ([isdn.md](isdn.md)). |
+| `--misdn-msn=<msn>` | With `--misdn`: accept calls only for this MSN, and send it as our number. |
+| `--misdn-noflip` | With `--misdn`: use the octets of the B-channel as the card gives them, not bit reversed. |
+| `--usb-leds` | Turn on the carrier and data LEDs of a SmartUSB56 (GPIO 6 and 13), as on the Modem Blaster of Creative. Only for a board that has them. |
+| `--usb-wake` | Let a ring wake the computer: arm the USB remote wakeup of the SmartUSB56 (and on Linux, as root, enable the `power/wakeup` of the kernel for it). |
+| `--usb-handset` | Use the handset detector of the SmartUSB56 (GPIO 2): the phone on its PHONE jack off or on hook gives `<DLE>H` and `<DLE>h` in voice mode. |
+| `--usb-voice-codec=<law>` | Use the second codec of the SmartUSB56 (SSI2, alternate setting 3) as a handset: `+VLS=14` and `15` in voice mode. Its octets are `ulaw`, `alaw` or `linear`. |
+| `--usb-buzzer` | Use the buzzer of the SmartUSB56 (GPIO 11, BUZEN) as the speaker: on while ATM/ATL have the speaker on, as the `Options.Buzzer` of Windows. |
+| `--usb-rhom` | Set the RHOM bit of the SmartUSB56 (FIFO_CONTROL2 bit 15, and bit 7 of the voice codec) while the modem runs, as the `Options.RHOM` of Windows. Not below chip revision 0x200. |
+| `--usb-international` | Control the international line controls of the SmartUSB56 (GPIO 8, 10 and 12) as the Windows driver of Smart Link does: the DC bit of the country, the 350 ms of Australia after the off-hook, and the controls of pulse dialling. |
+| `--usb-wb-tx-gain=<dB>` | The transmit level of a pico-serial WB: the volume of its DAC, -63.5 to +24 dB in 0.5 dB steps (0, the default, is the level of the stick). |
+| `--usb-wb-rx-gain=<dB>` | The hybrid input gain of a pico-serial WB: its MicPGA, 0 (the default) to 47.5 dB in 0.5 dB steps. |
+| `-r <Hz>`, `--rate=<Hz>` | The rate of the codec. 9600 (the default) or 8000 for the voice-band data pumps; an Agere USB modem always runs at 8000, and ignores this value. 48000, 96000 or 192000 for the wideband mode on a bare pair (V.wb, [dsp/vwb.md](dsp/vwb.md)), on a line that has the rate: an ALSA codec, or a pico-serial WB (whose default is 96000), but not the SmartUSB56 or the Line stick. At those rates, V.wb is the default modulation (`AT+MS=VWB`), the voice-band pumps are refused (`NO CARRIER`), and `ATD` dials nothing. All other values are refused. |
 
-Only one of `-a`, `--usb` and `--misdn` can be given.
+You can give only one of `-a`, `--usb` and `--misdn`.
 
-Started as root, dmodemd opens the codec before it goes on as `nobody`,
-so the device's group (usually `audio`) does not matter. Started as an
-ordinary user, that user needs access to `/dev/snd/*`.
+When you start dmodemd as root, it opens the codec before it continues
+as `nobody`. Thus the group of the device (usually `audio`) is not
+important. When you start it as an ordinary user, that user must have
+access to `/dev/snd/*`.
 
-`SIP_LOGIN` is not needed with `-a` or `--usb`.
+`SIP_LOGIN` is not necessary with `-a` or `--usb`.
 
 ## How it works
 
 The ALSA line is `frontend/dmodemd/alsa_line.cpp`:
 
-- **Samples.** The PCM runs both ways from the start, on hook too: S16
-  mono at the line's rate, in periods of 20 ms, with a buffer of 8
-  periods. The playback runs two periods ahead of the capture. Each
-  captured frame's answer is written at once, so the two keep their
-  distance. An overrun or underrun (dmodemd held up) restarts both ways,
-  and the log says so. The modem's clock is the codec's: the number of
-  samples it has delivered.
+- **Samples.** The PCM runs in the two directions from the start, also
+  on hook: S16 mono at the rate of the line, in periods of 20 ms, with a
+  buffer of 8 periods. The playback runs two periods in front of the
+  capture. The answer to each captured frame is written immediately,
+  thus the two keep their distance. An overrun or underrun (when
+  dmodemd is late) starts the two directions again, and the log tells
+  you. The clock of the modem is the clock of the codec: the number of
+  samples that it has delivered.
 - **The hook.** Off hook (a call, or voice), the "Off-hook Switch" is on
   and the "Caller ID Switch" is off. On hook, the hook switch is off and
-  the line monitor is on, so the codec hears the line: rings and caller
-  ID. A hook flash (`AT+VTS=!`) turns the hook switch off for its length.
-- **Rings.** On hook every sample goes through `dsp::RingDetect`. The
-  ring signal, heard through the line monitor, is a large wave of 15 to
-  70 Hz, and each cycle of a burst is a pulse to the core's `ring()`.
-  That is what a ring indicator line gives. The core checks the cadence
-  (`RING`, answering by `ATS0`, and `S1`):
+  the line monitor is on, thus the codec receives the line: rings and
+  caller ID. A hook flash (`AT+VTS=!`) turns off the hook switch for the
+  length of the flash.
+- **Rings.** On hook, each sample goes through `dsp::RingDetect`. The
+  ring signal, received through the line monitor, is a large wave of 15
+  to 70 Hz. Each cycle of a burst is a pulse to the `ring()` of the
+  core. A ring indicator line gives the same signal. The core checks the
+  cadence (`RING`, the answer by `ATS0`, and `S1`):
   - a burst of four pulses or more, after a gap of 1.5 s, is a ring;
-  - ringing with no such gap (such as Egypt's 2 s on and 1 s off) rings
-    every 6 s;
+  - ringing with no such gap (for example the 2 s on and 1 s off of
+    Egypt) rings each 6 s;
   - a ring counts in `S1` for 8 s.
 
-  Every country of the ITU's list rings this way (`ring_tones_test`,
-  [interop.md](interop-details.md#the-line-rung)).
-- **Caller ID.** At the first ring the core runs its caller ID receiver
-  (`AT#CID`) on the monitor's samples for 4 s.
-- **Dialling.** The modem dials the number itself, in DTMF, or in pulses
-  with `ATP` or `ATDP`. A `P` or `T` in the dial string switches for the
-  rest of it. With `ATX4` (the default) the modem waits for a dial tone
-  first; with `ATX3` it waits 2 s instead.
+  All countries of the list of the ITU ring in this way
+  (`ring_tones_test`, [interop.md](interop-details.md#the-line-rung)).
+- **Caller ID.** At the first ring, the core runs its caller ID receiver
+  (`AT#CID`) on the samples of the monitor for 4 s.
+- **Dialling.** The modem itself dials the number, in DTMF, or in
+  pulses with `ATP` or `ATDP`. A `P` or `T` in the dial string changes
+  the method for the remainder of the string. With `ATX4` (the default),
+  the modem first waits for a dial tone. With `ATX3`, it waits 2 s
+  instead.
 - **Pulse dialling.** The call progress pump times the pulses from the
-  country's table (`-c`, `AT+GCI`):
+  table of the country (`-c`, `AT+GCI`):
   - the break and the make: 64 and 36 ms for the USA, 67 and 33 ms for
-    New Zealand, about 60 and 40 ms for most of Europe;
+    New Zealand, approximately 60 and 40 ms for most of Europe;
   - the gap between digits: 800 ms;
   - the digit pattern: n pulses for n and ten for 0; n + 1 in Sweden;
     10 - n in New Zealand.
 
   The line breaks and makes its hook (`Host::pulse_hook()`): the
   "Off-hook Switch" on ALSA, GPIO 3 on the SmartUSB56. The switch is
-  written as the modem's frames are processed, so an edge comes when its
-  frame does (20 ms apart on ALSA). 60/40 pulses keep their times; others
-  come out within one frame of theirs. `*`, `#` and A to D have no pulses
-  and are skipped. A line that cannot pulse (SIP) dials in DTMF.
-- **Busy tone.** The pump takes the country's busy and congestion tones
-  (`dsp/tones.h`, the ITU's list of 192 countries). It needs four cycles
-  of either cadence, within 15% or 80 ms either side, and not the
-  country's ringing tone. A country with neither would use the table's
-  bounds of on and off times, or 0.2 to 0.8 s.
-- **Voice mode.** In voice mode, `ATD` waits 2 s, dials, then takes the
-  call as answered when the ringing tone ends (`+VRA`), or after `+VRN`
-  if there is no ringing tone (V.253 9.1.1).
-- **Modulations.** The core treats the line as an analogue one
+  written while the frames of the modem are processed, thus an edge
+  comes when its frame comes (20 ms apart on ALSA). 60/40 pulses keep
+  their times. Other pulses come out in one frame of their times. `*`,
+  `#` and A to D have no pulses, and the modem skips them. A line that
+  cannot pulse (SIP) dials in DTMF.
+- **Busy tone.** The pump uses the busy and congestion tones of the
+  country (`dsp/tones.h`, the list of the ITU of 192 countries). It
+  needs four cycles of one of the two cadences, in 15% or 80 ms on each
+  side, and not the ringing tone of the country. A country with neither
+  would use the limits of on and off times of the table, or 0.2 to
+  0.8 s.
+- **Voice mode.** In voice mode, `ATD` waits 2 s, dials, then thinks
+  that the call is answered when the ringing tone ends (`+VRA`), or
+  after `+VRN` if there is no ringing tone (V.253 9.1.1).
+- **Modulations.** The core thinks that the line is an analogue line
   (`Host::analog_line()`): the modem is the analogue end of the call.
-  - `+MS`'s V.90 and V.92 (the default) run PCM as the analogue modem at
-    9600 Hz (`-r 9600`, the default): up to 56000 bit/s down and 33600 up
-    from a V.90 server. With V.92 (and a V.92 server) it adds PCM
-    upstream up to 48000 bit/s, quick connect and modem-on-hold (see
-    [V.90 analogue modem](dsp/v90a.md)).
-  - With any other modem it runs V.34 (up to 33600 bit/s) and below.
+  - V.90 and V.92 (the default) of `+MS` run PCM as the analogue modem
+    at 9600 Hz (`-r 9600`, the default): up to 56000 bit/s down and
+    33600 up from a V.90 server. With V.92 (and a V.92 server), it adds
+    PCM upstream up to 48000 bit/s, quick connect and modem-on-hold
+    (refer to [V.90 analogue modem](dsp/v90a.md)).
+  - With all other modems, it runs V.34 (up to 33600 bit/s) and lower
+    modulations.
   - V.91, which is between two digital modems, becomes V.34.
-  - At 8000 Hz (`-r 8000`), V.90 is there only with `DSP_V90A=1`. A
-    codec at 8000 Hz on a clock of its own loses the PCM signal every few
-    seconds (see [8000 Hz lines](dsp/v90a-details.md#8000-hz-lines)), so
-    keep 9600.
-  - It has fax (class 1) and voice too.
+  - At 8000 Hz (`-r 8000`), V.90 is available only with `DSP_V90A=1`.
+    A codec at 8000 Hz on a separate clock loses the PCM signal each few
+    seconds (refer to [8000 Hz lines](dsp/v90a-details.md#8000-hz-lines)).
+    Thus keep 9600.
+  - It also has fax (class 1) and voice.
 
 ## Limits
 
 - **Speed.** As the analogue modem, the open DSP has V.90 with its
-  retrains and rate renegotiations: a line that changes mid-call
-  renegotiates, and one that PCM cannot use falls back to V.34. It also
-  has V.92's PCM upstream (with its renegotiations), quick connect and
-  modem-on-hold. The analogue modem has been tested against our own
-  digital modem on the simulated network only, not yet against an ISP's
-  server.
-- **Pulse timing.** Pulses keep the modem's frames' timing (20 ms on
-  ALSA). They have not yet been tried on a real exchange. `AT&P` (S28's
-  pulse ratio) is kept, but the country's table sets the times.
+  retrains and rate renegotiations: a line that changes during the call
+  renegotiates, and a line that PCM cannot use falls back to V.34. It
+  also has the PCM upstream of V.92 (with its renegotiations), quick
+  connect and modem-on-hold. The analogue modem has had a test only
+  with our own digital modem on the simulated network, not yet with the
+  server of an ISP.
+- **Pulse timing.** Pulses keep the timing of the frames of the modem
+  (20 ms on ALSA). They have not had a test on a real exchange yet.
+  `AT&P` (the pulse ratio of S28) is kept, but the table of the country
+  sets the times.
 - **Country rules.** The country (`-c`, `AT+GCI`) sets the pulse
   dialling, the busy cadence, and the dial pause and hook flash times
-  (S8, S24). `-c` takes any country of the ITU's list too: one the table
-  does not have dials with the USA's settings and its own busy tones.
-  The codec's line settings (impedance, ring thresholds, current limit)
-  are the country's on an HD-audio Si3054 with a Si3018
-  ([above](#si3054-line-settings)), and partly on a Conexant SmartDAA
-  ([above](#the-country-and-the-board)). Any other ALSA codec keeps its
-  kernel driver's settings, the USA's, since ALSA gives no control of
-  them. The DTMF levels stay the pump's own.
-- **Real hardware.** The code has been tested against the fake card
-  below, not yet on a real modem codec.
+  (S8, S24). `-c` also accepts all countries of the list of the ITU. A
+  country that is not in the table dials with the settings of the USA
+  and its own busy tones. The line settings of the codec (impedance,
+  ring thresholds, current limit) are the settings of the country on an
+  HD-audio Si3054 with a Si3018 ([above](#si3054-line-settings)), and
+  partly on a Conexant SmartDAA ([above](#the-country-and-the-board)).
+  All other ALSA codecs keep the settings of their kernel driver, the
+  settings of the USA, because ALSA gives no control of them. The DTMF
+  levels stay the levels of the pump.
+- **Real hardware.** The code has had a test with the fake card below,
+  but not yet on a real modem codec.
 
 ## Testing without hardware
 
 ### The ALSA line
 
-`frontend/dmodemd/test/alsa_test.py` (ctest's `dmodemd_alsa`, label `alsa`) runs
-two dmodemd on fake ALSA modem cards whose lines belong to a simulated
-telephone exchange. It needs libasound2-dev.
+`frontend/dmodemd/test/alsa_test.py` (`dmodemd_alsa` of ctest, label `alsa`) runs
+two dmodemd on fake ALSA modem cards whose lines are part of a
+simulated telephone exchange. It needs libasound2-dev.
 
-- `frontend/dmodemd/test/fake_modem_card.cpp` is alsa-lib's external PCM (ioplug)
-  and control (ctl_ext) plugins, `dmline`. They are loaded through an
-  ALSA configuration of the test's own (`ALSA_CONFIG_PATH`), so dmodemd
-  goes through the same ALSA calls as with a real card. The capture is
-  what the exchange sends, the playback's position runs on the clock
-  like a DMA's, and the control has the two switches.
-- `frontend/dmodemd/test/line_exchange.cpp` is the exchange. Each number's line
-  gets:
-  - a dial tone, then its DTMF or pulse digits collected and the number
-    routed;
-  - for the number called, the ring signal (2 s of 20 Hz, 4 s off,
-    heard through the line monitor) and caller ID between the first two
-    rings (Bell 202, MDMF); for the caller, the ringing tone;
-  - a busy tone if the line called is off hook or unknown;
-  - once answered, the call, with a loss of 3 dB, noise, and an echo at
+- `frontend/dmodemd/test/fake_modem_card.cpp` is the external PCM
+  (ioplug) and control (ctl_ext) plugins of alsa-lib, `dmline`. They
+  load through an ALSA configuration of the test (`ALSA_CONFIG_PATH`),
+  thus dmodemd uses the same ALSA calls as with a real card. The capture
+  is the signal that the exchange sends, the position of the playback
+  runs on the clock as a DMA does, and the control has the two switches.
+- `frontend/dmodemd/test/line_exchange.cpp` is the exchange. The line of
+  each number gets:
+  - a dial tone, then the exchange collects its DTMF or pulse digits and
+    routes the number;
+  - for the called number, the ring signal (2 s of 20 Hz, 4 s off,
+    received through the line monitor) and caller ID between the first
+    two rings (Bell 202, MDMF); for the caller, the ringing tone;
+  - a busy tone if the called line is off hook or unknown;
+  - when answered, the call, with a loss of 3 dB, noise, and an echo at
     -24 dB (`LINE_LOSS=<dB>`, `LINE_ECHO=<dB>|off`);
   - a busy tone after the other end hangs up.
-- `frontend/dmodemd/test/fake_hda_hwdep.cpp` is an HD-audio Si3054's hwdep
-  device, put in front of alsa-lib with `LD_PRELOAD`.
+- `frontend/dmodemd/test/fake_hda_hwdep.cpp` is the hwdep device of an
+  HD-audio Si3054, put in front of alsa-lib with `LD_PRELOAD`.
 
 In real time, the test checks:
 
 - a data call: the dial tone, DTMF, rings, caller ID, the answer at the
-  second ring, CONNECT at both ends, a line of text each way, and the
-  hang-up;
-- a stall of 0.6 s (SIGSTOP), after which the codec's restart is logged;
+  second ring, CONNECT at the two ends, a line of text in each
+  direction, and the hang-up;
+- a stall of 0.6 s (SIGSTOP), after which the log records the restart
+  of the codec;
 - a busy line;
 - a call dialled in pulses (`ATDP`), which the exchange counts (a break
-  of 200 ms at most is a pulse; 300 ms made again ends the digit);
-- a voice call: the ringing tone, caller ID in voice mode's packet
+  of 200 ms maximum is a pulse; a make of 300 ms ends the digit);
+- a voice call: the ringing tone, caller ID in the packet of voice mode
   (`<DLE>X` ... `<DLE>.`), OK at `+VRA`, `+VTS` DTMF across, and the
   busy tone after the other end hangs up;
-- with the fake hwdep device, the Si3054 line settings: `-c UK`'s at
-  start-up, South Africa's after `AT+GCI=9F` (with RZ cleared off hook
-  and set again on hook), and Australia's; nothing written to a codec
-  with another chip ID; and the kernel driver's settings kept on a card
-  with no hwdep device.
+- with the fake hwdep device, the Si3054 line settings: the settings of
+  `-c UK` at start-up, the settings of South Africa after `AT+GCI=9F`
+  (with RZ cleared off hook and set again on hook), and the settings of
+  Australia; nothing written to a codec with a different chip ID; and
+  the settings of the kernel driver kept on a card with no hwdep device.
 
 `RATE=8000` runs it at 8000 Hz.
 
-The line settings and the SmartDAA also have unit tests (label `quick`):
-`si3054_test` (the Si3054's rows and bits), `si3056_test` (the pico-serial
-Line's, on a Si3018 and a Si3019) and `cx_daa_test` (the Conexant
-SmartDAA's register access, kinds, hook, and the kind 0x12 setup against
-the library's writes, [above](#conexant-ac97-codecs)).
+The line settings and the SmartDAA also have unit tests (label
+`quick`): `si3054_test` (the rows and bits of the Si3054),
+`si3056_test` (the rows and bits of the pico-serial Line, on a Si3018
+and a Si3019) and `cx_daa_test` (the register access, types and hook of
+the Conexant SmartDAA, and the type 0x12 setup against the writes of the
+library, [above](#conexant-ac97-codecs)).
 
 ### The SmartUSB56
 
-`frontend/dmodemd/test/usb_test.py` (ctest's `dmodemd_usb`, label `alsa`) runs
+`frontend/dmodemd/test/usb_test.py` (`dmodemd_usb` of ctest, label `alsa`) runs
 two dmodemd with `--usb` on the same exchange. It needs libusb-1.0-0-dev.
 
-`frontend/dmodemd/test/fake_st7554.cpp` is the part of libusb-1.0 that dmodemd
-uses, put in front of the real one with `LD_PRELOAD`. Its one device is
-an ST7554 whose line is the exchange's:
+`frontend/dmodemd/test/fake_st7554.cpp` is the part of libusb-1.0 that
+dmodemd uses, put in front of the real one with `LD_PRELOAD`. Its one
+device is an ST7554 whose line is a line of the exchange:
 
 - its registers set the hook;
-- its IN transfers take the line's samples as the exchange sends them,
-  and its OUT transfers' samples go to the exchange;
+- its IN transfers take the samples of the line as the exchange sends
+  them, and the samples of its OUT transfers go to the exchange;
 - its ring detector changes on each half cycle of the ring signal;
-- it hears the line on hook only with CID1 set.
+- it receives the line on hook only with CID1 set.
 
-One of the two fakes says it is an ST75951/2 (`FAKE_ST7554_DAA`) and
-checks its start-up. The test checks:
+One of the two fakes reports that it is an ST75951/2 (`FAKE_ST7554_DAA`)
+and checks its start-up. The test checks:
 
-- that a wrong `<bus>:<address>` is refused;
+- that dmodemd refuses an incorrect `<bus>:<address>`;
 - a data call: rings, caller ID between the first two rings, the answer
-  at the second ring, CONNECT at both ends, text each way; the LEDs of
-  the modem with `--usb-leds`, and none on the other; the buzzer of the
-  modem with `--usb-buzzer`, on as it dials and off at the CONNECT; and
-  no RING from FIFO underruns;
+  at the second ring, CONNECT at the two ends, text in each direction;
+  the LEDs of the modem with `--usb-leds`, and none on the other; the
+  buzzer of the modem with `--usb-buzzer`, on when it dials and off at
+  the CONNECT; and no RING from FIFO underruns;
 - a busy line, a call dialled in pulses, and a voice call;
 - the handset detector in voice mode;
-- the international line controls: Australia's timer and pulse
-  dialling, France's DC bit, and the ST75951's inverted one;
-- the voice codec as a handset (the fake's `FAKE_ST7554_VOICE`: its
+- the international line controls: the timer and pulse dialling of
+  Australia, the DC bit of France, and the inverted DC bit of the
+  ST75951;
+- the voice codec as a handset (`FAKE_ST7554_VOICE` of the fake: its
   microphone a 1000 Hz tone, its earpiece written to a file): `+VLS=14`
   and `15`, `+VRX` and `+VTX`;
 - RHOM (`--usb-rhom`): on while the modem runs, and none on a revision
   0x0100 chip (`FAKE_ST7554_REVISION`);
-- a call that wakes a suspended 1002 (`--usb-wake`): the fake's ring with
-  its remote wakeup armed, the device reset on resume and set up again,
-  and the call answered;
-- that both dmodemd exit once the exchange (and so the devices) has gone.
+- a call that wakes a suspended 1002 (`--usb-wake`): the ring of the
+  fake with its remote wakeup armed, the device reset on resume and set
+  up again, and the call answered;
+- that the two dmodemd exit when the exchange (and thus the devices) is
+  not there.
 
 ### The pico-serial Line
 
-`frontend/dmodemd/test/pico_line_test.py` (ctest's `dmodemd_pico_line`, label
+`frontend/dmodemd/test/pico_line_test.py` (`dmodemd_pico_line` of ctest, label
 `alsa`) does the same with two pico-serial Line sticks.
-`frontend/dmodemd/test/fake_pico_line.cpp` is a stick (1209:0002) whose line is
-the exchange's, speaking its firmware's protocol: `SET_HOOK` and
-`SET_MONITOR` are the exchange's switches, alternate setting 1 starts its
-samples, and its ring detector's changes come as events. Besides the
-calls, it checks:
+`frontend/dmodemd/test/fake_pico_line.cpp` is a stick (1209:0002) whose
+line is a line of the exchange. It uses the protocol of its firmware:
+`SET_HOOK` and `SET_MONITOR` are the switches of the exchange, alternate
+setting 1 starts its samples, and the changes of its ring detector come
+as events. In addition to the calls, it checks:
 
-- the country's line settings: `-c UK`'s at start-up, Australia's after
-  `AT+GCI=09`, and the USA's for a country the Si3056 datasheet has none
-  for;
-- a stick whose line side does not answer (said, and dmodemd goes on);
-- under Wine, a Windows whose WinUSB cannot stream (said, with what to
-  do), and UsbDk taken where it is installed.
+- the line settings of the country: the settings of `-c UK` at
+  start-up, of Australia after `AT+GCI=09`, and of the USA for a country
+  that the Si3056 datasheet does not give;
+- a stick whose line side does not answer (dmodemd tells you, and
+  continues);
+- under Wine, a Windows whose WinUSB cannot stream (dmodemd tells you,
+  with the procedure), and UsbDk used where it is installed.
 
 ### The pico-serial WB
 
-`frontend/dmodemd/test/pico_wb_test.py` (ctest's `dmodemd_pico_wb`, labels `alsa`
-and `quick`; about 20 s) runs two pico-serial WB sticks on a bare pair
-instead of an exchange:
+`frontend/dmodemd/test/pico_wb_test.py` (`dmodemd_pico_wb` of ctest, labels
+`alsa` and `quick`; approximately 20 s) runs two pico-serial WB sticks on
+a bare pair instead of an exchange:
 
-- `frontend/dmodemd/test/fake_pico_wb.cpp` is a stick (1209:0003) speaking its
-  firmware's protocol.
-- `frontend/dmodemd/test/wb_pair.cpp` is the pair between the two, in real time
-  at 96 kHz. It is the V.wb tests' simulated pair
-  (`dsp/test/vwb_line.cpp`: 1 km of cable, the transformers, noise, each
-  end's hybrid echo, and the two clocks 100 ppm apart). Each end's
-  samples are played as the stick plays them: after a head start, and
-  silence when they run dry. `PAIR_KM`, `PAIR_SNR`, `PAIR_PPM` and
-  `PAIR_ECHO` change the pair.
+- `frontend/dmodemd/test/fake_pico_wb.cpp` is a stick (1209:0003) that
+  uses the protocol of its firmware.
+- `frontend/dmodemd/test/wb_pair.cpp` is the pair between the two, in
+  real time at 96 kHz. It is the simulated pair of the V.wb tests
+  (`dsp/test/vwb_line.cpp`: 1 km of cable, the transformers, noise, the
+  hybrid echo of each end, and the two clocks 100 ppm apart). The
+  samples of each end play as the stick plays them: after a head start,
+  and silence when there are no more samples. `PAIR_KM`, `PAIR_SNR`,
+  `PAIR_PPM` and `PAIR_ECHO` change the pair.
 
 It checks:
 
-- that a wrong `<bus>:<address>` is refused, and that `--usb list` shows
-  the stick;
-- that a rate the stick does not have is refused, and the others are set
-  (`SET_RATE`); the 96000 Hz default; the gains' options (and one out of
-  range refused); V.wb as the default modulation; a codec that does not
-  come up (said);
-- a call: `AT&L1` at both ends, the answerer by itself (`S0=1`), CONNECT
-  at V.wb's rates at both ends, the LINK LEDs on, 32 kB each way at once
-  byte for byte through V.42, and the hang-up (NO CARRIER at the other
-  end, the LEDs off);
-- that both exit once the pair (the devices) has gone.
+- that dmodemd refuses an incorrect `<bus>:<address>`, and that
+  `--usb list` shows the stick;
+- that dmodemd refuses a rate that the stick does not have, and sets
+  the other rates (`SET_RATE`); the 96000 Hz default; the options of the
+  gains (and the refusal of a value out of range); V.wb as the default
+  modulation; a codec that does not come up (dmodemd tells you);
+- a call: `AT&L1` at the two ends, the answerer automatically (`S0=1`),
+  CONNECT at the rates of V.wb at the two ends, the LINK LEDs on, 32 kB
+  in each direction at the same time byte for byte through V.42, and the
+  hang-up (NO CARRIER at the other end, the LEDs off);
+- that the two exit when the pair (the devices) is not there.
 
 ### The Agere USB modem
 
-`frontend/dmodemd/test/agere_test.py` (ctest's `dmodemd_agere`, label `alsa`)
-runs two Agere USB modems at 8000 Hz. `frontend/dmodemd/test/fake_agere.cpp` is
-one (047e:2892) whose line is the exchange's. It has:
+`frontend/dmodemd/test/agere_test.py` (`dmodemd_agere` of ctest, label `alsa`)
+runs two Agere USB modems at 8000 Hz.
+`frontend/dmodemd/test/fake_agere.cpp` is one (047e:2892) whose line is
+a line of the exchange. It has:
 
-- its vendor commands, its ARM's memory and function table, and its
-  codec registers (the hook register 0xc0 is the exchange's switch);
-- its ROM's isochronous stream: every 2 of the line's samples is a
-  packet's time, in which it takes an OUT packet and answers it with an
-  IN packet of the samples that have come. The status word's bit 0 is
-  set while the ring signal is there;
+- its vendor commands, the memory and function table of its ARM, and its
+  codec registers (the hook register 0xc0 is the switch of the
+  exchange);
+- the isochronous stream of its ROM: each 2 samples of the line are the
+  time of a packet, in which it takes an OUT packet and answers it with
+  an IN packet of the samples that have come. Bit 0 of the status word
+  is set while the ring signal is there;
 - a transmit ring of 48 samples, which reports its overruns and
-  underruns, and a codec clock that can run off the USB's
+  underruns, and a codec clock that can be different from the USB clock
   (`FAKE_AGERE_DRIFT`, ppm);
 - a Polaris DAA (`FAKE_AGERE_POLARIS`), whose samples stay 0x8000 until
-  its link is pulsed up, and whose ring bit can stick after a call
-  (`FAKE_AGERE_RING_STICKS`).
+  its link gets a pulse to come up, and whose ring bit can stick after a
+  call (`FAKE_AGERE_RING_STICKS`).
 
-It refuses a patch (command 9 stalls), and gives no samples while a
-patch's entry is in its function table. It reports its OH LED as it
-changes. The test checks:
+It refuses a patch (command 9 stalls), and gives no samples while an
+entry of a patch is in its function table. It reports its OH LED when
+it changes. The test checks:
 
-- that dmodemd says what is wrong with a full speed device;
-- that the samples come at 8000 a second: with a bulk patch's entries
-  left in the table (put back), with a ROM 1.0.6 (its clock left alone),
-  with no active configuration reported, with `DMODEM_AGERE_TRANSFERS`
-  and `DMODEM_AGERE_DUMP`, and after the LED probe
-  (`DMODEM_AGERE_LED_PROBE`);
+- that dmodemd tells you the problem with a full speed device;
+- that the samples come at 8000 each second: with the entries of a bulk
+  patch left in the table (restored), with a ROM 1.0.6 (its clock not
+  changed), with no active configuration reported, with
+  `DMODEM_AGERE_TRANSFERS` and `DMODEM_AGERE_DUMP`, and after the LED
+  probe (`DMODEM_AGERE_LED_PROBE`);
 - 8000 Hz with `-r 9600`;
-- that a Polaris DAA's link comes up and is calibrated (1002 has one);
-- a data call: rings (a Polaris's from codec register 0x0a8), caller ID,
-  the answer at the second ring, CONNECT at both ends, text each way;
-  the OH LED through it; `DMODEM_USB_TX_GAIN` (`auto` and a fixed gain);
-  the transmit ring kept with the codec's clock 300 ppm off (no overrun
-  or underrun); and the call recorded (`DMODEM_USB_REC`);
+- that the link of a Polaris DAA comes up and is calibrated (1002 has
+  one);
+- a data call: rings (the rings of a Polaris from codec register
+  0x0a8), caller ID, the answer at the second ring, CONNECT at the two
+  ends, text in each direction; the OH LED during the call;
+  `DMODEM_USB_TX_GAIN` (`auto` and a fixed gain); the transmit ring
+  kept with the clock of the codec 300 ppm off (no overrun or underrun);
+  and the call recorded (`DMODEM_USB_REC`);
 - no ring from a ring bit stuck after the call;
 - a call dialled in pulses;
-- that both exit once the exchange has gone.
+- that the two exit when the exchange is not there.
 
 ### The Apple USB Modem
 
-`frontend/dmodemd/test/apple_test.py` (ctest's `dmodemd_apple`, label `alsa`)
+`frontend/dmodemd/test/apple_test.py` (`dmodemd_apple` of ctest, label `alsa`)
 runs two Apple USB Modems. `frontend/dmodemd/test/fake_apple.cpp` is one
-(05ac:1401) whose line is the exchange's: its six interfaces and their
-descriptors (the streams' format type I rates), the DAA's commands on
-its registers (register 5's ONHM the exchange's monitor switch),
-`SET_HOOK_STATE` the exchange's hook, and its ring detector's and phone
-cord's notifications. It checks the interfaces found, a line side that
-does not answer, a rate it has not, the country's registers, and the
-same calls as the pico-serial Line's test
+(05ac:1401) whose line is a line of the exchange: its six interfaces
+and their descriptors (the format type I rates of the streams), the
+commands of the DAA on its registers (ONHM of register 5 is the monitor
+switch of the exchange), `SET_HOOK_STATE` is the hook of the exchange,
+and the notifications of its ring detector and phone cord. It checks
+the interfaces found, a line side that does not answer, a rate that it
+does not have, the registers of the country, and the same calls as the
+test of the pico-serial Line
 ([apple-usb-modem-details.md](apple-usb-modem-details.md#testing-without-hardware)).
 
 ### The Conexant USB HSF modems
 
-`frontend/dmodemd/test/cadmus2_test.py` (ctest's `dmodemd_cadmus2`,
+`frontend/dmodemd/test/cadmus2_test.py` (`dmodemd_cadmus2` of ctest,
 label `alsa`) runs two Conexant USB HSF modems at 16000 Hz.
 `frontend/dmodemd/test/fake_cadmus2.cpp` is one (0572:1300) whose line
-is the exchange's: its bridge runs the scripts in the interop harness's
-interpreter (`dsp/test/hw/cadmus2.hpp`), the codec word `aaXX` is the
-exchange's hook, and its channel 4 comes every 40 ms while the line
-rings. It checks the firmware's upload (a stand-in of the same size, in
-`c2firmware.h`'s form), a missing firmware and a SmartDAA board said,
-the rate, no ring at the start, and a call: rings, an answer at the
-second, V.34 both ways and a line of text each way, the hang-up and the
-device unplugged.
+is a line of the exchange: its bridge runs the scripts in the
+interpreter of the interop harness (`dsp/test/hw/cadmus2.hpp`), the
+codec word `aaXX` is the hook of the exchange, and its channel 4 comes
+each 40 ms while the line rings. It checks the upload of the firmware (a
+stand-in of the same size, in the form of `c2firmware.h`), a missing
+firmware and a SmartDAA board (dmodemd tells you), the rate, no ring at
+the start, and a call: rings, an answer at the second ring, V.34 in the
+two directions and a line of text in each direction, the hang-up and
+the unplugged device.
