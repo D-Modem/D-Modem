@@ -130,6 +130,20 @@ enum K56Seg {
 };
 
 extern const s32 k56_seg_len[K56_NSEGS];
+extern const unsigned char k56_trn2b_mag[3][4];
+extern const unsigned char k56_trn2b_mag1[3][2];
+
+/* the robbed-bit models of SM56's detector (MOD_Det_DL_RBS): what a
+   code (its magnitude index m) becomes on the way, as a magnitude's
+   linear value (lin: index -> value, G.711's 16 bit scale, of the
+   law alaw).  The pad (0, 1: 3 dB, 2: 6 dB)
+   re-encodes it that much lower.  Before the pad (a): 1 its index's
+   last bit cleared, 2 nothing.  After it (b): 0 the last bit set, 1
+   cleared, 2 nothing, 3 the mean of the two codes (a robbed bit
+   decoded half way).  neg: the code's sign negative (G.711's encoder,
+   the pad's, rounds a negative value its own way) */
+float k56_rbs_value(const s16 *lin, s16 alaw, unsigned char m, s16 pad,
+		    s16 a, s16 b, s16 neg = 0);
 
 struct K56Train {
 	s16 seg;
@@ -143,6 +157,13 @@ struct K56Train {
 	s16 rcount;             /* R: symbols left */
 	u16 js;                 /* J's 16 bits, the first sent the lowest */
 	s16 no_trn1b;           /* TRN1B left out (as isdn_tx) */
+	s16 pad;                /* the digital pad (0, 1: 3 dB, 2: 6 dB),
+				   from the caller's J: TRN2B's, MP's and
+				   E's magnitudes are its */
+	s32 total;              /* codes sent since the first silence */
+	s32 t1b;                /* total at TRN1B's start (TRN1C's when
+				   no TRN1B): symbol 0 of the 6 symbol
+				   robbed-bit cycle in the caller's J */
 	unsigned char mp[11], mpp[11];
 
 	void init(s16 law);

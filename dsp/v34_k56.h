@@ -61,6 +61,10 @@ struct V34K56 : HdlcTx<V34K56<P>, 64, HdlcK8>, HdlcRx<V34K56<P>, 64, HdlcK8> {
 	s16 k56_up;             /* the upstream's, N * 2400 */
 	s16 k56_mp_in;          /* the caller's MP is in */
 	s32 k56_t0;             /* when the state began (total) */
+	s16 k56_pad;            /* the caller's J: the pad (0, 1: 3 dB,
+				   2: 6 dB) */
+	unsigned char k56_rob;  /* and its robbed symbols in 6 (bit k:
+				   symbol k from TRN1B's start) */
 
 	/* the analogue modem (calling): K56flex offered (+MS=K56 on an
 	   analogue line at 9600 Hz; DSP_K56A=0 leaves it out), agreed
@@ -456,6 +460,8 @@ s16 V34K56<P>::k56_start()
 	k56_frames = 0;
 	k56_down = k56_up = 0;
 	k56_mp_in = 0;
+	k56_pad = 0;
+	k56_rob = 0;
 	k56_t0 = self.total;
 	/* PCM once INFO1a is out of the converters (their delay) */
 	self.pcm_tx = 0;
@@ -521,7 +527,10 @@ s16 V34K56<P>::k56_data_setup()
 		k56_down = static_cast<s16>(dmax);
 	if (k56_down < 1 || k56_down > 13)
 		return -1;
-	if (k56e.init({ 30000 + 2000 * k56_down, 0, self.alaw, 0 }))
+	/* the robbed symbols on the data's own cycle: the data start on
+	   TRN1B's grid of 24 (k56_step), so they are the J's */
+	if (k56e.init({ 30000 + 2000 * k56_down, k56_pad, self.alaw,
+			k56_rob }))
 		return -1;
 	self.rate_tx = 30000 + 2000 * k56_down;
 	k56_make_mp();
@@ -588,6 +597,19 @@ s16 V34K56<P>::k56_step(s32 c)
 			else
 				DSP_DBG("v34: K56flex: no J from the caller; "
 					"R\n");
+			/* its J's octet: the pad in bits 6 and 7, the
+			   robbed symbols in bits 0 to 5 (SM56's
+			   SC_A56_Gen_JA_RBS); TRN2B's and MP's magnitudes
+			   are then the pad's (DSP_K56_RBS=<octet>: the
+			   octet the J would have, for a test) */
+			if (self.prx.ev_j || env_int("DSP_K56_RBS", -1) >= 0) {
+				s32 o = env_int("DSP_K56_RBS", self.prx.j_rbs);
+				k56_pad = static_cast<s16>((o >> 6) & 3);
+				if (k56_pad > 2)
+					k56_pad = 0;
+				k56_rob = static_cast<unsigned char>(o & 63);
+				k56t.pad = k56_pad;
+			}
 			/* R on the symbols' grid: the silence 12288 at
 			   least, in eights (the caller's receiver keeps
 			   its timing and phase through it) */
@@ -610,8 +632,12 @@ s16 V34K56<P>::k56_step(s32 c)
 				return self.fallback("no common data rate");
 			}
 		}
+		/* (MP, MP' and E are 1420 codes: the data start on
+		   TRN1B's grid of 24, where the caller's J counts its
+		   robbed symbols from) */
 		if (k56t.seg == K56_TRN2B && k56_mp_in &&
-		    k56t.n >= 2048) {
+		    k56t.n >= 2048 &&
+		    (k56t.total + 1420 - k56t.t1b) % 24 == 0) {
 			k56t.segment(K56_MP);
 			self.set_state(K4_MP);
 		} else if (k56t.seg == K56_TRN2B &&
@@ -700,7 +726,10 @@ s16 V34K56<P>::k56c_step(s32 c)
 	case KC3_WAIT:
 		/* the digital modem's training until its Js, then our S */
 		if (k56rx.ev_js) {
-			DSP_DBG("v34: K56flex: Js %#06x; S\n", k56rx.js);
+			/* our J's octet: TRN1B's pad and robbed bits */
+			t.j_rbs = k56rx.j_rbs;
+			DSP_DBG("v34: K56flex: Js %#06x; S (our J's robbed "
+				"bits %#04x)\n", k56rx.js, k56rx.j_rbs);
 			self.tx_next(KC3_S, V34_TX_S);
 		} else if (self.total - k56_t0 >= ms2samples(10000,
 							      self.srate)) {
@@ -742,13 +771,23 @@ s16 V34K56<P>::k56c_step(s32 c)
 		break;
 	case KC4_TRN:
 		if (t.seg == V34_TX_TRN && t.n >= 2048) {
-			/* our MP: the most we send, the most we take down
-			   (DSP_K56_MAX, 13: 56000 bit/s) */
+			/* our MP: the most we send, the most we take down:
+			   what the pad, the robbed bits and the error allow
+			   (k56rx.max_rate), at most DSP_K56_MAX (13: 56000
+			   bit/s) */
 			V34Mp *mp = &t.mp;
 			zero(*mp);
 			mp->rate_ca = self.rate_cap(MDMPRM_MAX_RATE);
-			mp->rate_ac = static_cast<s16>(env_int("DSP_K56_MAX",
-							       13));
+			s16 rd = k56rx.max_rate();
+			s32 dmax = env_int("DSP_K56_MAX", 13);
+			if (rd > dmax)
+				rd = static_cast<s16>(dmax);
+			if (rd < 1)
+				rd = 1;
+			mp->rate_ac = rd;
+			DSP_DBG("v34: K56flex: down at most %" PRId32 " bit/s "
+				"(equaliser mse %.5f)\n", 30000 + 2000 * rd,
+				k56rx.mse);
 			mp->rate_mask = 0x3FFF;
 			mp->asym = 1;
 			self.tx_next(KC4_MP, V34_TX_MP);

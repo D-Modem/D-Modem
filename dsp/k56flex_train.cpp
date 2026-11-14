@@ -18,6 +18,19 @@
 
 namespace dsp {
 
+/* TRN2B's, MP's and E's magnitudes for a pad of 0, 3 and 6 dB: the
+   codes that come to the caller as the 0 dB ones (SM56's
+   K56_TRN2B_8LVL_CONSTL and K56_TRN2B_4LVL_CONSTL, their positive
+   halves): 2 bits a symbol (d0 + 2 d1), 1 bit */
+const unsigned char k56_trn2b_mag[3][4] = {
+	{ 0x2f, 0x45, 0x51, 0x57 },
+	{ 0x35, 0x4d, 0x58, 0x60 },
+	{ 0x3d, 0x54, 0x61, 0x67 },
+};
+const unsigned char k56_trn2b_mag1[3][2] = {
+	{ 0x55, 0x3d }, { 0x5d, 0x44 }, { 0x65, 0x4c },
+};
+
 const s32 k56_seg_len[K56_NSEGS] = {
 	512, 288, 16368, 8448, 8448, 128, 12288, 288, 16336, 32, 16368,
 	704, 704, 12, -1,
@@ -38,6 +51,8 @@ void K56Train::segment(s16 s)
 {
 	if (s == K56_TRN1B && no_trn1b)
 		s = K56_TRN1C;
+	if (s == K56_TRN1B || (s == K56_TRN1C && no_trn1b))
+		t1b = total;
 	seg = s;
 	n = 0;
 	len = k56_seg_len[s];
@@ -89,7 +104,7 @@ unsigned char K56Train::put(unsigned char code)
    the running sum's */
 unsigned char K56Train::level(s16 in, unsigned char mag1)
 {
-	static const unsigned char mag2[4] = { 0x2f, 0x45, 0x51, 0x57 };
+	s16 p = pad >= 0 && pad <= 2 ? pad : 0;
 	unsigned char b[2] = { 0, 0 }, mag;
 	bool neg;
 	for (s16 i = 0; i < nb; i++) {
@@ -100,9 +115,9 @@ unsigned char K56Train::level(s16 in, unsigned char mag1)
 	if (mag1)
 		mag = mag1;
 	else if (nb == 1)
-		mag = b[0] ? 0x3d : 0x55;
+		mag = k56_trn2b_mag1[p][b[0]];
 	else
-		mag = mag2[b[0] | b[1] << 1];
+		mag = k56_trn2b_mag[p][b[0] | b[1] << 1];
 	if (alt)
 		neg = rds > 0;
 	else if (mag1)
@@ -189,6 +204,7 @@ unsigned char K56Train::next()
 		break;
 	}
 	n++;
+	total++;
 	if (len >= 0 && n >= len && seg < K56_DATA)
 		segment(static_cast<s16>(seg + 1));
 	return c;

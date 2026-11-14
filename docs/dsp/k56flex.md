@@ -53,15 +53,31 @@ also works on an A-law network, with the customer's codec clock 100
 parts per million off the network's, with an echo on the customer's
 line, and against a server that only has V.90 (it then runs V.90).
 
+The network can make the signal weaker by 3 or 6 dB (a "digital pad"),
+and on some lines it uses the last bit of every sixth value for its own
+signals ("robbed bits"). The customer's modem measures both during the
+training and tells the server. The server then uses the values that
+the customer's modem can still tell apart. The tests pass data with a
+3 dB pad (54000 bit/s), a 6 dB pad (56000 bit/s), robbed bits (54000
+bit/s), and a 6 dB pad with robbed bits (46000 bit/s). The SM56 modem
+also receives our data correctly when there are robbed bits on its
+line.
+
 ## What is missing
 
 - The customer's modem has only been tried against D-Modem's own
   server, which was itself built from what one K56flex client does. A
   real provider's K56flex server may differ.
-- The customer's modem does not measure the network's digital loss or
-  robbed bits, and asks for neither; it assumes a clean line.
+- The SM56 modem cannot train on a line with a digital pad. This is a
+  fault in SM56 itself, not in D-Modem.
 - A-law with a real K56flex modem: written, but not tried.
 - Retrains and speed changes during a call.
 
 Conexant's modem driver, the other one in the test suite, turned out to
 have its K56flex support switched off, so it cannot help.
+
+The firmwares of two K56flex modems (Rockwell and Zoom/Lucent) were
+also read. They contain only the controller code, not the signal
+processing, so they cannot tell how the protocol works. They show what
+these modems report about a K56flex call, for example the digital pad
+and the robbed bits.

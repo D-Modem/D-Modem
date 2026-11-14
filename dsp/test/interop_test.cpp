@@ -388,6 +388,27 @@ std::vector<Call> calls()
 	      ".*k56rx: MP at.*K56flex connect [0-9]+/56000 \\(analogue "
 	      "modem\\)",
 	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect 56000/" });
+	/* a digital pad and robbed bits on the way down: TRN1B finds
+	   them (k56rx's means against SM56's models), our J's octet
+	   says them, and the digital modem codes for them; the rate the
+	   least distance allows */
+	add("open", "open_k56flex_pad3", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_PAD=3", "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: TRN1B: pad 3 dB, robbed bits 0000"
+	      ".*K56flex connect [0-9]+/54000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)the caller's J \\(16 point, robbed bits 0x40\\)"
+	      ".*K56flex connect 54000/" });
+	add("open", "open_k56flex_rbs", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_RBS=0x24", "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: TRN1B: pad 0 dB, robbed bits 0x12"
+	      ".*K56flex connect [0-9]+/5[0-9]000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)robbed bits 0x12\\).*K56flex connect 5[0-9]000/" });
+	add("open", "open_k56flex_pad6_rbs", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_PAD=6", "NET_RBS=0x21",
+	      "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: TRN1B: pad 6 dB, robbed bits 0x18"
+	      ".*K56flex connect [0-9]+/46000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)robbed bits 0x98\\).*K56flex connect 46000/" });
 	add("open", "open_k56flex_alaw", "open", "open8", "ATX3;AT+MS=56",
 	    { "NET=9600:8000:alaw", "DSP_G711=alaw",
 	      "EXPECT_A=(?s)INFO1a: K56flex \\(0x5\\).*A-law.*"
@@ -1042,6 +1063,14 @@ std::vector<Call> calls()
 	add("sm56", "sm56_k56flex", "sm56", "open8", "ATX3;AT+MS=K56FLEX",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect",
+	      "PROTO_B=ATX3;AT+MS=56" });
+	/* robbed bits on the codes to it (netsim's NET_RBS_TO: its line
+	   digital, as the call above): its J's octet says them, from
+	   TRN1B's start, and our data on that grid of 24 code for them */
+	add("sm56", "sm56_k56flex_rbs", "sm56", "open8", "ATX3;AT+MS=K56FLEX",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "NET_RBS_TO=a", "NET_RBS=0x08",
+	      "EXPECT_B=(?s)robbed bits 0x04\\).*K56flex connect",
 	      "PROTO_B=ATX3;AT+MS=56" });
 	/* V.92: its QC1a on the first call already; on the second, quick
 	   connect with short phase 2.  (Its upstream stays V.34: the module
