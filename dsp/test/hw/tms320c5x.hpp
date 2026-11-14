@@ -62,6 +62,8 @@ public:
 	{
 		hooks_[a & 0xffff] = std::move(fn);
 	}
+	/* debugging: fn before every instruction */
+	std::function<void(C5x &)> on_step;
 	/* the hook at a removed */
 	void unhook(unsigned a) { hooks_[a & 0xffff] = nullptr; }
 
@@ -173,6 +175,8 @@ public:
 	void step()
 	{
 		w16 at = pc;
+		if (on_step)
+			on_step(*this);
 		if (hooks_[at]) {
 			hooks_[at](*this);
 			if (pc != at)
@@ -534,10 +538,13 @@ private:
 		case 0x5c: case 0x5d: case 0x5e: case 0x5f: {
 			a = ea(op);
 			w16 k = b >= 0x5c ? imm : d[0x0f];
+			/* XPL, OPL, APL: TC set if the result is 0 (SPRU056D
+			   6-284 and the others); CPL: TC if equal */
+			w16 r;
 			switch ((b - 0x58) & 3) {
-			case 0: wr(a, rdm(a) ^ k); break;
-			case 1: wr(a, rdm(a) | k); break;
-			case 2: wr(a, rdm(a) & k); break;
+			case 0: r = rdm(a) ^ k; wr(a, r); tc = r == 0; break;
+			case 1: r = rdm(a) | k; wr(a, r); tc = r == 0; break;
+			case 2: r = rdm(a) & k; wr(a, r); tc = r == 0; break;
 			default: tc = rdm(a) == k; break;
 			}
 			return -1;

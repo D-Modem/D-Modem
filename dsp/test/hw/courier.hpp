@@ -999,6 +999,8 @@ private:
 		c.unhook(0x814c);
 		c.hook(0x8151, [this](C5x &x) {
 			int i = x.acc & 0xffff;
+			if (dbg & 1)
+				msg("codec rate %d asked (from %04x)", i, x.top());
 			if (i < 6 && i != rate_) {
 				rate_ = i;
 				if (on_rate) on_rate(RATES[i]);
