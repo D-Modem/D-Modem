@@ -96,6 +96,7 @@ struct K56Rx : PcmEqualizer<K56Rx, K56RX_TAPS> {
 	s16 js_n;
 	u16 js;                 /* Js: J's 16 bits, the first the lowest */
 	s16 ones;               /* TRN2A's descrambled ones in a row */
+	s16 zeros;              /* and then zeros (MARK) */
 	/* TRN2B on: the descrambled bits (2 a symbol), the last 88 for
 	   the MP frames */
 	unsigned char mpw[88];
@@ -117,6 +118,12 @@ struct K56Rx : PcmEqualizer<K56Rx, K56RX_TAPS> {
 	s16 qh, qn;
 	float dpow, de_mse;
 	s32 dec_err0;
+	/* data mode: the last 16 symbols (R's search), R2's first 16
+	   codes; the error each rate allows (lim, as SM56's
+	   MOD_rate_det: 0 none) */
+	float dy[16];
+	unsigned char r2c[16];
+	double lim[K56_NRATES];
 
 	/* events (cleared by the caller) */
 	s16 ev_r;               /* R's reversal */
@@ -128,11 +135,22 @@ struct K56Rx : PcmEqualizer<K56Rx, K56RX_TAPS> {
 	s16 ev_mpack;           /* an MP' frame */
 	s16 ev_data;            /* the data frames have begun */
 	s16 bad;                /* the MP's rate is not one we decode */
+	s16 ev_reneg_r;         /* R in data mode: a rate renegotiation
+				   (the digital modem's, or its answer to
+				   our S); R2, TRN2A ... E follow */
+	s32 renegs;             /* how many */
 
 	/* the most we can take down (1: 32000 bit/s .. 13: 56000; 0:
 	   none), from the pad, the robbed bits and the error of late, as
 	   SM56's MOD_rate_det */
 	s16 max_rate() const;
+	/* data mode: the decisions' error of late in the units of the
+	   limits (lim: the code values' steps, 14 bit mu-law, 13 bit
+	   A-law, squared) */
+	double data_err() const;
+	/* the step of rate i's (0: 32000 bit/s) constellation at its
+	   closest, in those units, with the pad and robbed bits found */
+	double dmin(s16 i) const;
 
 	/* the line at rate (9600 Hz), the law */
 	void init(s16 alaw_, s16 rate = 9600);
@@ -162,6 +180,7 @@ private:
 	void symbol(float y);
 	void mp_bit(s16 bit);
 	void data(float y);
+	void reneg_r(s32 s);
 };
 
 } // namespace dsp

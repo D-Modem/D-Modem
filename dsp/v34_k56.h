@@ -65,6 +65,24 @@ struct V34K56 : HdlcTx<V34K56<P>, 64, HdlcK8>, HdlcRx<V34K56<P>, 64, HdlcK8> {
 				   2: 6 dB) */
 	unsigned char k56_rob;  /* and its robbed symbols in 6 (bit k:
 				   symbol k from TRN1B's start) */
+	/* rate renegotiation, both ends: the digital modem 1 (R at the
+	   next frame), 2 (R sent); the analogue modem 1 (ours, or our
+	   answer to its R).  Test: DSP_K56_RENEG=<ms>[:<rate>][a|c], one
+	   that far into the data mode (the analogue modem asks for at
+	   most rate: 1 32000 .. 13 56000) */
+	s16 k56_reneg;
+	s32 k56_rn_at;
+	s16 k56_rn_to;
+	s16 k56_rn_test;
+	/* the analogue modem's watch on the data's error, as SM56's
+	   SC_A56_Data_setRtrnOrRnego: its mean every 500 ms (sum, n);
+	   checks in a row above the retrain limit (bad) and above the
+	   rate down / below the rate up limits (cnt: up -, down +);
+	   renegotiations down; the rate we went down to (not up again
+	   from it); the most our next MP asks for */
+	double k56_em;
+	s32 k56_em_n;
+	s16 k56_rn_bad, k56_rn_cnt, k56_rn_downs, k56_rn_from, k56_rn_cap;
 
 	/* the analogue modem (calling): K56flex offered (+MS=K56 on an
 	   analogue line at 9600 Hz; DSP_K56A=0 leaves it out), agreed
@@ -94,6 +112,11 @@ struct V34K56 : HdlcTx<V34K56<P>, 64, HdlcK8>, HdlcRx<V34K56<P>, 64, HdlcK8> {
 	s16 k56c_start();
 	s16 k56c_step(s32 c);
 	s16 k56c_data_setup();
+	void k56_reneg_start(const char *why, bool remote);
+	void k56c_reneg(const char *why, s16 cap, bool remote);
+	void k56c_mp();
+	s16 k56c_watch();
+	s16 k56_fail(const char *why);
 };
 
 /* our CL (the capabilities list): K56flex's non-standard block, as the
@@ -462,6 +485,8 @@ s16 V34K56<P>::k56_start()
 	k56_mp_in = 0;
 	k56_pad = 0;
 	k56_rob = 0;
+	k56_reneg = 0;
+	k56_rn_test = 0;
 	k56_t0 = self.total;
 	/* PCM once INFO1a is out of the converters (their delay) */
 	self.pcm_tx = 0;
@@ -547,13 +572,25 @@ s16 V34K56<P>::k56_sample()
 {
 	P &self = static_cast<P &>(*this);
 	unsigned char code;
-	if (k56t.seg != K56_DATA) {
+	if (k56t.seg == K56_DATA && !k56_fpos && k56_reneg == 1) {
+		/* our renegotiation: R at a frame's start, then TRN2A,
+		   MARK and TRN2B until the caller's MP, as in phase 4 */
+		k56t.rn = 1;
+		k56t.segment(K56_R2);
+		k56_reneg = 2;
+		k56_frames = 0;
+		self.set_state(K3_TRN2);
+		DSP_DBG("v34: K56flex: R (renegotiation)\n");
+		code = k56t.next();
+	} else if (k56t.seg != K56_DATA) {
 		s16 s0 = k56t.seg;
 		code = k56t.next();
 		if (k56t.seg != s0)
 			DSP_DBG("v34: K56flex: segment %d\n", k56t.seg);
-	}
-	else {
+	} else {
+		/* (the codes counted on: the data start again on TRN1B's
+		   grid of 24 after a renegotiation) */
+		k56t.total++;
 		if (!k56_fpos) {
 			unsigned char bits[K56_MAXBITS];
 			s16 nb = k56e.frame_bits();
@@ -620,48 +657,105 @@ s16 V34K56<P>::k56_step(s32 c)
 		}
 		break;
 	case K3_TRN2:
+		/* a renegotiation's TRN2A: K56_RN_TRN2A (SM56 takes MARK
+		   only 924 to about 5000 symbols into it:
+		   SC_Phase4_Look_For_Zero, SC_A56_RnegoState_testRtrn) */
+		if (k56_reneg && k56t.seg == K56_TRN2A &&
+		    k56t.len == k56_seg_len[K56_TRN2A])
+			k56t.len = K56_RN_TRN2A;
 		/* TRN2B until the caller's MP */
 		if (k56t.seg == K56_TRN2B && k56t.len >= 0) {
 			k56t.len = -1;
 			k56_t0 = self.total;
 		}
+		/* (a renegotiation of ours: the caller's S, its answer) */
+		self.prx.ev_reneg = 0;
 		if (self.prx.ev_mp && !k56_mp_in) {
 			k56_mp_in = 1;
 			if (k56_data_setup()) {
 				DSP_DBG("v34: K56flex: no common rate\n");
-				return self.fallback("no common data rate");
+				return k56_fail("no common data rate");
 			}
 		}
-		/* (MP, MP' and E are 1420 codes: the data start on
-		   TRN1B's grid of 24, where the caller's J counts its
-		   robbed symbols from) */
+		/* (MP, MP' and E are 1420 codes, 1432 in a renegotiation:
+		   the data start on TRN1B's grid of 24, where the caller's
+		   J counts its robbed symbols from) */
 		if (k56t.seg == K56_TRN2B && k56_mp_in &&
 		    k56t.n >= 2048 &&
-		    (k56t.total + 1420 - k56t.t1b) % 24 == 0) {
+		    (k56t.total + (k56t.rn ? 1432 : 1420) - k56t.t1b) % 24 ==
+		    0) {
 			k56t.segment(K56_MP);
 			self.set_state(K4_MP);
 		} else if (k56t.seg == K56_TRN2B &&
 			   self.total - k56_t0 >= ms2samples(8000, self.srate)) {
 			DSP_DBG("v34: K56flex: no MP from the caller\n");
-			return self.fallback("no MP");
+			return k56_fail("no MP");
 		}
 		break;
 	case K4_MP:
 		/* MP, MP', E and B1 down; the caller's MP', E */
-		if (k56t.seg == K56_DATA && self.prx.ev_e) {
+		self.prx.ev_reneg = 0;
+		if (k56t.seg == K56_DATA && self.prx.ev_e && k56_reneg) {
+			k56_reneg = 0;
+			self.set_state(K4_DATA);
+			self.set_rates(self.rate_tx, self.rate_rx);
+			DSP_DBG("v34: K56flex renegotiated " RATE_FMT "\n",
+				self.rate_tx, self.rate_rx);
+		} else if (k56t.seg == K56_DATA && self.prx.ev_e) {
 			self.set_state(K4_DATA);
 			self.set_rates(self.rate_tx, self.rate_rx);
 			self.connected = 1;
 			DSP_DBG("v34: K56flex connect " RATE_FMT "\n",
 				self.rate_tx, self.rate_rx);
 			self.stat_dp(DP_K56);
+			k56_rn_at = self.test_samples("DSP_K56_RENEG");
 			return DPSTAT_CONNECT;
+		}
+		break;
+	case K4_DATA:
+		/* the caller's S: its renegotiation; or ours (a test) */
+		if (self.prx.ev_reneg) {
+			self.prx.ev_reneg = 0;
+			if (!k56_reneg)
+				k56_reneg_start("the caller's", true);
+		} else if (k56_rn_at && c >= k56_rn_at && !k56_rn_test &&
+			   !k56_reneg) {
+			k56_rn_test = 1;
+			k56_reneg_start("test", false);
 		}
 		break;
 	default:
 		break;
 	}
 	return 0;
+}
+
+/* a rate renegotiation, the digital modem's: R at the next frame's
+   start (k56_sample), then as phase 4 from R; the caller's S, S-bar,
+   TRN, MP, MP' and E up (SM56's SC_A56Data_Handler: R in its data,
+   or its own S) */
+template <class P>
+void V34K56<P>::k56_reneg_start(const char *why, bool remote)
+{
+	P &self = static_cast<P &>(*this);
+	DSP_DBG("v34: K56flex renegotiation (%s), upstream mse %.3f\n", why,
+		self.prx.mse);
+	self.stat_reneg(remote);
+	k56_reneg = 1;
+	k56_mp_in = 0;
+	self.prx.ev_mp = self.prx.ev_e = 0;
+}
+
+/* phases 3 and 4 failed: the fallback; in a renegotiation, the end
+   of the call */
+template <class P>
+s16 V34K56<P>::k56_fail(const char *why)
+{
+	P &self = static_cast<P &>(*this);
+	if (!k56_reneg)
+		return self.fallback(why);
+	DSP_DBG("v34: K56flex renegotiation failed (%s)\n", why);
+	return DPSTAT_ERROR;
 }
 
 /*
@@ -684,6 +778,11 @@ s16 V34K56<P>::k56c_start()
 	k56rx.init(self.alaw, self.line_rate);
 	k56_rx = 1;
 	k56_quiet = 0;
+	k56_reneg = 0;
+	k56_rn_test = 0;
+	k56_rn_downs = 0;
+	k56_rn_from = 0;
+	k56_rn_cap = 13;
 	k56_t0 = self.total;
 	/* (the PCM codes' DC is theirs, as V.90's) */
 	if (self.rt)
@@ -712,6 +811,116 @@ s16 V34K56<P>::k56c_data_setup()
 	self.rate_rx = 30000 + 2000 * m.rate_ac;
 	DSP_DBG("v34: K56flex rates: up %" PRId32 ", down %" PRId32 "\n",
 		self.rate_tx, self.rate_rx);
+	return 0;
+}
+
+/* our MP: the most we send, the most we take down: what the pad, the
+   robbed bits and the error allow (k56rx.max_rate), at most
+   DSP_K56_MAX (13: 56000 bit/s) and k56_rn_cap */
+template <class P>
+void V34K56<P>::k56c_mp()
+{
+	P &self = static_cast<P &>(*this);
+	V34Tx &t = self.ptx;
+	V34Mp *mp = &t.mp;
+	zero(*mp);
+	mp->rate_ca = self.rate_cap(MDMPRM_MAX_RATE);
+	s16 rd = k56rx.max_rate();
+	s32 dmax = env_int("DSP_K56_MAX", 13);
+	if (rd > dmax)
+		rd = static_cast<s16>(dmax);
+	if (rd > k56_rn_cap)
+		rd = k56_rn_cap;
+	if (rd < 1)
+		rd = 1;
+	mp->rate_ac = rd;
+	DSP_DBG("v34: K56flex: down at most %" PRId32 " bit/s "
+		"(equaliser mse %.5f)\n", 30000 + 2000 * rd, k56rx.mse);
+	mp->rate_mask = 0x3FFF;
+	mp->asym = 1;
+	self.tx_next(KC4_MP, V34_TX_MP);
+	k56_t0 = self.total;
+}
+
+/* a rate renegotiation as the analogue modem, ours or our answer to
+   the digital modem's R: S 128 T, S-bar 16 T, TRN (4 points), then
+   MP (at most cap down) and MP', E, as phase 4; the digital modem's
+   R, TRN2A ... E down (SM56's SC_A56_Rate_Renego_Init) */
+template <class P>
+void V34K56<P>::k56c_reneg(const char *why, s16 cap, bool remote)
+{
+	P &self = static_cast<P &>(*this);
+	V34Tx &t = self.ptx;
+	DSP_DBG("v34: K56flex renegotiation (%s): down at most %" PRId32
+		", error %.2f\n", why, 30000 + 2000 * static_cast<s32>(cap),
+		k56rx.data_err());
+	self.stat_reneg(remote);
+	k56_reneg = 1;
+	k56_rn_cap = cap;
+	t.data_on = 0;
+	t.ack_mp = 0;
+	t.mp_sent = 0;
+	t.trn16 = 0;
+	k56_t0 = self.total;
+	self.tx_next(KC5_S, V34_TX_S);
+}
+
+/* the data's error, as SM56's SC_A56_Data_setRtrnOrRnego (rate r):
+   checked every 500 ms against the limits of SC_A56_getRateNegoThd,
+   from the error each rate allows (k56rx.lim, L(r)):
+     down: (L(r) + L(r - 1)) / 2, none at 32000 bit/s;
+     retrain: 4 times that;
+     up: 0.8 L(r + 1) + 0.2 L(r + 2), none at the top or from the
+	 rate a renegotiation went down to.
+   3 checks in a row above the retrain limit, or a 6th renegotiation
+   down: a renegotiation to what the error allows; 4 above the down
+   limit: down one rate; 17 below the up limit: up */
+template <class P>
+s16 V34K56<P>::k56c_watch()
+{
+	P &self = static_cast<P &>(*this);
+	k56_em += k56rx.data_err();
+	if (++k56_em_n < ms2samples(500, self.srate))
+		return 0;
+	double e = k56_em / k56_em_n;
+	k56_em = 0;
+	k56_em_n = 0;
+	s16 r = static_cast<s16>((self.rate_rx - 30000) / 2000);
+	if (r < 1 || r > K56_NRATES)
+		return 0;
+	const double *L = k56rx.lim;
+	s32 dmax = env_int("DSP_K56_MAX", 13);
+	double down = r > 1 ? (L[r - 1] + (L[r - 2] > 0 ? L[r - 2] :
+					    2 * L[r - 1])) / 2 : 1e30;
+	double up = 0;
+	if (r < K56_NRATES && r < dmax && r != k56_rn_from)
+		up = 0.8 * L[r] + 0.2 * L[r + 1 < K56_NRATES ? r + 1 : r];
+	k56_rn_bad = e > 4 * down ? static_cast<s16>(k56_rn_bad + 1) : 0;
+	if (e > down)
+		k56_rn_cnt = static_cast<s16>(k56_rn_cnt > 0 ? k56_rn_cnt + 1 : 1);
+	else if (e < up)
+		k56_rn_cnt = static_cast<s16>(k56_rn_cnt < 0 ? k56_rn_cnt - 1 : -1);
+	else
+		k56_rn_cnt = 0;
+	if (k56_rn_bad > 2) {
+		/* (SM56 retrains here) */
+		k56_rn_bad = k56_rn_cnt = 0;
+		k56_rn_from = 0;
+		k56c_reneg("errors", 13, false);
+	} else if (k56_rn_cnt > 3 && ++k56_rn_downs > 5) {
+		/* (SM56 retrains here too) */
+		k56_rn_cnt = 0;
+		k56_rn_downs = 0;
+		k56_rn_from = 0;
+		k56c_reneg("errors", 13, false);
+	} else if (k56_rn_cnt > 3) {
+		k56_rn_cnt = 0;
+		k56_rn_from = static_cast<s16>(r - 1);
+		k56c_reneg("rate down", static_cast<s16>(r - 1), false);
+	} else if (k56_rn_cnt < -16) {
+		k56_rn_cnt = 0;
+		k56c_reneg("rate up", 13, false);
+	}
 	return 0;
 }
 
@@ -770,35 +979,14 @@ s16 V34K56<P>::k56c_step(s32 c)
 		}
 		break;
 	case KC4_TRN:
-		if (t.seg == V34_TX_TRN && t.n >= 2048) {
-			/* our MP: the most we send, the most we take down:
-			   what the pad, the robbed bits and the error allow
-			   (k56rx.max_rate), at most DSP_K56_MAX (13: 56000
-			   bit/s) */
-			V34Mp *mp = &t.mp;
-			zero(*mp);
-			mp->rate_ca = self.rate_cap(MDMPRM_MAX_RATE);
-			s16 rd = k56rx.max_rate();
-			s32 dmax = env_int("DSP_K56_MAX", 13);
-			if (rd > dmax)
-				rd = static_cast<s16>(dmax);
-			if (rd < 1)
-				rd = 1;
-			mp->rate_ac = rd;
-			DSP_DBG("v34: K56flex: down at most %" PRId32 " bit/s "
-				"(equaliser mse %.5f)\n", 30000 + 2000 * rd,
-				k56rx.mse);
-			mp->rate_mask = 0x3FFF;
-			mp->asym = 1;
-			self.tx_next(KC4_MP, V34_TX_MP);
-			k56_t0 = self.total;
-		}
+		if (t.seg == V34_TX_TRN && t.n >= 2048)
+			k56c_mp();
 		break;
 	case KC4_MP:
 		if (k56rx.ev_mp && !t.ack_mp) {
 			if (k56c_data_setup()) {
 				DSP_DBG("v34: K56flex: no common rate\n");
-				return self.fallback("no common data rate");
+				return k56_fail("no common data rate");
 			}
 			t.ack_mp = 1;
 		}
@@ -809,11 +997,21 @@ s16 V34K56<P>::k56c_step(s32 c)
 		else if (self.total - k56_t0 >= ms2samples(8000, self.srate)) {
 			DSP_DBG("v34: K56flex: no MP from the digital "
 				"modem\n");
-			return self.fallback("no MP");
+			return k56_fail("no MP");
 		}
 		break;
 	case KC4_E:
-		if (t.seg == V34_TX_DATA && k56rx.ev_data) {
+		if (t.seg == V34_TX_DATA && k56rx.ev_data && k56_reneg) {
+			k56_reneg = 0;
+			self.set_state(KC4_DATA);
+			self.set_rates(self.rate_tx, self.rate_rx);
+			k56_em = 0;
+			k56_em_n = 0;
+			k56_rn_bad = k56_rn_cnt = 0;
+			DSP_DBG("v34: K56flex renegotiated " RATE_FMT
+				" (analogue modem)\n", self.rate_tx,
+				self.rate_rx);
+		} else if (t.seg == V34_TX_DATA && k56rx.ev_data) {
 			self.set_state(KC4_DATA);
 			self.set_rates(self.rate_tx, self.rate_rx);
 			self.connected = 1;
@@ -821,6 +1019,15 @@ s16 V34K56<P>::k56c_step(s32 c)
 				" (analogue modem)\n", self.rate_tx,
 				self.rate_rx);
 			self.stat_dp(DP_K56);
+			k56_em = 0;
+			k56_em_n = 0;
+			k56_rn_bad = k56_rn_cnt = 0;
+			k56_rn_at = self.test_samples("DSP_K56_RENEG");
+			if (const char *e = pump_test_env("DSP_K56_RENEG",
+							  self.caller))
+				k56_rn_to = static_cast<s16>(
+					strchr(e, ':') ? atoi(strchr(e, ':') + 1) :
+					13);
 			return DPSTAT_CONNECT;
 		}
 		break;
@@ -840,6 +1047,35 @@ s16 V34K56<P>::k56c_step(s32 c)
 				10 * log10f(k56rx.dpow /
 					    (k56rx.de_mse + 1e-6f)),
 				k56rx.dec.errors, k56rx.ppm());
+		/* the digital modem's renegotiation (its R) */
+		if (k56rx.ev_reneg_r) {
+			k56rx.ev_reneg_r = 0;
+			k56c_reneg("the digital modem's", 13, true);
+			break;
+		}
+		if (k56_rn_at && c >= k56_rn_at && !k56_rn_test) {
+			k56_rn_test = 1;
+			k56c_reneg("test", k56_rn_to, false);
+			break;
+		}
+		return k56c_watch();
+	case KC5_S:
+		if (t.n >= 128)
+			self.tx_next(KC5_SBAR, V34_TX_SBAR);
+		break;
+	case KC5_SBAR:
+		if (t.n >= 16)
+			self.tx_next(KC5_TRN, V34_TX_TRN);
+		break;
+	case KC5_TRN:
+		/* TRN until the digital modem's R and 4096 symbols of its
+		   TRN2A (the error measured again for our MP) */
+		k56rx.ev_reneg_r = 0;
+		if (t.n >= 2048 && k56rx.k_trn2a >= 0 &&
+		    k56rx.k >= k56rx.k_trn2a + 4096)
+			k56c_mp();
+		else if (self.total - k56_t0 >= ms2samples(6000, self.srate))
+			return k56_fail("no R after our S");
 		break;
 	default:
 		break;

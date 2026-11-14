@@ -308,9 +308,13 @@ running DC sum [seen in `isdn_tx`]. The levels depend on the digital pad (the ne
 
 | Pad | 2 bits (`d1 d0` = 0..3) | 1 bit (0, 1) |
 |---|---|---|
-| 0 dB | `2f 45 51 57` | `55 3d` |
-| 3 dB | `35 4d 58 60` | `5d 44` |
-| 6 dB | `3d 54 61 67` | `65 4c` |
+| 0 dB | `2f 45 51 57` | `3d 55` |
+| 3 dB | `35 4d 58 60` | `44 5d` |
+| 6 dB | `3d 54 61 67` | `4c 65` |
+
+The 1-bit order is the client's (`SC_A56_Sym2Bits`: `0x3d` is 0, `0x55`
+is 1) [seen]. The server uses 1 bit a symbol only in a rate
+renegotiation (section 5).
 
 ## 5. Data mode
 
@@ -437,6 +441,75 @@ tried.
 
 In sm56's encoder, data mode starts right after E, and B1 is data. The
 client discards its first 48 symbols (B1) [seen].
+
+### Rate renegotiation
+
+Either modem can start a rate renegotiation in data mode [seen in
+`SC_A56Data_Handler`, `SC_A56_Rate_Renego_Init` and
+`SC_A56_Phase4_Renego_Init`]:
+
+- The client starts it with V.34's S. The server then stops the data at
+  a frame's start and sends R.
+- The server starts it with R in place of the data. The client finds R
+  in its data (`MOD_R_Det` in `State_Data`) and sends S.
+
+After that, both modems do phase 4 again from R:
+
+| Direction | Sequence |
+|---|---|
+| Up (client) | S 128 T, S-bar 16 T, TRN (4 points), MP until the server's MP, MP', E, B1, data |
+| Down (server) | R 288, TRN2A, MARK 32, TRN2B until the client's MP, MP 704, MP' 704, E 24, data (B1 first) |
+
+The differences from the first phase 4 are these [seen]:
+
+- MP, MP' and E down carry 1 bit a symbol, as one of 2 magnitudes
+  (section 4). E is thus 24 symbols. The number of codes from MP to the
+  data is 1432, and the data must start on TRN1B's grid of 24, as
+  before.
+- sm56 has time limits for each step (`SC_A56_RnegoState_testRtrn`).
+  It looks for MARK from 924 symbols into TRN2A and gives up after
+  about 5000. Our server sends 2048 symbols of TRN2A
+  (`K56_RN_TRN2A`). The full 16336 of the first phase 4 is too long.
+- sm56's front end skips the silence and the first R search. In TRN2B
+  it adapts with other step sizes and for 4096 symbols.
+
+When does the client start one? sm56 checks the mean error of its data
+decisions every 501 interrupts (`SC_A56_Data_setRtrnOrRnego`). It uses
+limits that `SC_A56_getRateNegoThd` gets from the error that each rate
+allows. For rate r, with L(r) the error that rate r allows:
+
+| Limit | Value | Result |
+|---|---|---|
+| Down | (L(r) + L(r − 1)) / 2; none at 32000 bit/s | 4 checks in a row above it: down one rate |
+| Retrain | 4 × the down limit | 3 checks in a row above it: a retrain |
+| Up | 0.8 L(r + 1) + 0.2 L(r + 2); none at the top, or at the rate that the last renegotiation went down to | 17 checks in a row below it: up |
+
+More than 5 renegotiations down also cause a retrain.
+
+Our modems do the same (`dsp/v34_k56.h`):
+
+- The client (`k56c_watch()`) checks every 500 ms. L(r) is
+  d(r)² / (91.4 · 0.675), as in its rate rule (section 6). Our client
+  has no K56flex retrain yet. Where sm56 retrains, our client starts a
+  renegotiation to the rate that its error allows.
+- The client finds R in its data: two frames that agree with R2's first
+  16 codes. It finds MARK from the descrambled bits, because the
+  server sets the length of TRN2A. It asks for at most one rate less
+  when it goes down.
+- The server answers the client's S. It starts a renegotiation only for
+  a test (`DSP_K56_RENEG`).
+
+`DSP_K56_RENEG=<ms>[:<rate>][a|c]` starts a renegotiation that far into
+the data mode, for a test. On the client, rate (1 is 32000 bit/s, 13 is
+56000) is the most that it asks for.
+
+Against sm56 (our server starts the renegotiation), sm56 does all of
+phase 4 again and goes back to data mode. But its decisions in data
+mode then have about 10 times the error of the first data mode, and
+it retrains after about 4 s [seen with `SM56_TRACE=1`]. The cause is
+not known. sm56 keeps the code levels that it adapted in the first
+data mode (MOD + 0x4040, copied to + 0x3840) [inferred: a possible
+cause].
 
 ## 6. The client: D-Modem as the analogue modem
 
@@ -565,6 +638,9 @@ is 0.55 rms (77 dB below the signal). The tests:
 | `open_k56flex_pad3` | a 3 dB pad: found, J's octet `0x40`, 54000 |
 | `open_k56flex_rbs` | robbed bits (`NET_RBS=0x24`): found as `0x12`, 50000 to 59000 |
 | `open_k56flex_pad6_rbs` | a 6 dB pad and robbed bits: J's octet `0x98`, 46000 |
+| `open_k56flex_reneg` | the client renegotiates to 50000, then its watch goes up to 56000 again; 200000 octets each way |
+| `open_k56flex_reneg_dm` | the server renegotiates (its R in the data) |
+| `open_k56flex_noise` | noise from 4 s into the data mode: the client renegotiates to 4x000, and the data has no more code errors |
 | `sm56_k56flex_rbs` | sm56 with robbed bits on the codes to it (`NET_RBS_TO=a`): its J's octet `0x04`, data on the grid of 24 |
 
 netsim's `NET_RBS_TO=a` (or `b`) puts `NET_PAD` and `NET_RBS` on the
@@ -581,7 +657,8 @@ on a padded line, with our server or with any other.
 
 ### Not done
 
-- 8000 Hz analogue lines, retrains and rate renegotiation.
+- 8000 Hz analogue lines and retrains.
+- sm56's data after a renegotiation (section 5).
 
 ## 7. The firmwares
 
@@ -607,4 +684,5 @@ They show what the modems report about a call:
   TRN1C's real length: sm56 takes anything from about 4000 symbols on.
 - An A-law client: what sets its law, and whether the INFO1a codes 5 and 13 work. Not tested.
 - The meaning of INFO1a's x bit and of NS octets 3 to 7.
-- Retrains and rate renegotiation.
+- Retrains.
+- Why sm56's data after a renegotiation is wrong.

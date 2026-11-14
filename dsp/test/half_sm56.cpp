@@ -256,9 +256,12 @@ static int trace_patch(void)
 /* SM56_TRACE: the K56flex front end's state (MOD + 0x30f8, the
    RxFront_StateTableEntries index), the pad it found (+ 0xf390, dB),
    its gain (+ 0xf4b4), the equaliser's mse (+ 0x3088), and the
-   retrain flag, cause and mse limit of its SC struct (MOD - 0x113c4:
-   + 0xb73, + 0x1d5, + 0x20a28), each time the state or the retrain
-   flag changes */
+   retrain flag, cause and phase 4 counter of its SC struct (MOD -
+   0x113c4: + 0xb73, + 0x1d5, + 0x20a28), each time the state, the
+   retrain flag or the phase 4 transmitter's or receiver's state (SC
+   + 0xc56c + 0x125, + 0x126) changes; in the data (state 25) the
+   decisions' error (+ 0x3090), its mean (+ 0x308c) and the rates
+   (SC + 0x176, + 0x177) every 100 interrupts */
 static void trace_k56(void)
 {
 	static u32 last = ~0u;
@@ -269,12 +272,23 @@ static void trace_k56(void)
 	byte *sc = mod - 0x113c4;
 	u32 st = *(u32 *)(mod + 0x30f8);
 	int rt = sc[0xb73];
-	if (st == last && rt == last_rt)
+	static int last_p4 = -1;
+	int p4 = sc[0xc56c + 0x125] | sc[0xc56c + 0x126] << 8;
+	static unsigned tick;
+	if (st == 25 && ++tick % 100 == 0)
+		fprintf(stderr, "sm56: data: error %g (mean %g), rates %d/%d, "
+			"symbol %u\n", *(float *)(mod + 0x3090),
+			*(float *)(mod + 0x308c), sc[0x176], sc[0x177],
+			*(u32 *)(mod + 0x30f0));
+	if (st == last && rt == last_rt && p4 == last_p4)
 		return;
 	last = st;
 	last_rt = rt;
+	last_p4 = p4;
+	fprintf(stderr, "sm56: phase 4 tx state %d, rx state %d, count %u\n",
+		p4 & 255, p4 >> 8, *(u32 *)(mod + 0x30f0));
 	fprintf(stderr, "sm56: K56flex front end state %u, pad %d dB, "
-		"gain %.3f, mse %g, retrain %d cause %#x, mse limit %d\n", st,
+		"gain %.3f, mse %g, retrain %d cause %#x, count %d\n", st,
 		*(int *)(mod + 0xf390), *(float *)(mod + 0xf4b4),
 		*(float *)(mod + 0x3088), rt, sc[0x1d5],
 		*(short *)(sc + 0x20a28));

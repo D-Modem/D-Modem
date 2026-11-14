@@ -295,6 +295,11 @@ enum v34_state {
 	KC4_MP,
 	KC4_E,
 	KC4_DATA,
+	/* and its rate renegotiation, ours or in answer to the digital
+	   modem's R: S, S-bar, TRN; then KC4_MP and KC4_E */
+	KC5_S,
+	KC5_SBAR,
+	KC5_TRN,
 	/* V.92 analogue modem, PCM upstream phase 3 (9.5.2/V.92): the
 	   PAM transmitter's segments follow each other (v92a.h), these
 	   wait for what moves them on */
@@ -3232,7 +3237,8 @@ void V34Pump::pump_rx_sample(float x)
 		if (!ec.bypass)
 			x = ec.run(last_tx, x);
 		k56rx.line(x);
-		if (state == KC4_DATA && k56rx.qn) {
+		if ((state == KC4_DATA || state == KC5_S ||
+		     state == KC5_SBAR || state == KC5_TRN) && k56rx.qn) {
 			unsigned char b[K56RX_Q];
 			s16 m = k56rx.take(b, K56RX_Q);
 			CoreBits{ modem }.put(b, m);
@@ -5882,6 +5888,9 @@ s16 V34Pump::handshake()
 	case KC4_MP:
 	case KC4_E:
 	case KC4_DATA:
+	case KC5_S:
+	case KC5_SBAR:
+	case KC5_TRN:
 		return k56c_step(c);
 	case K3_TRAIN:
 	case K3_TRN2:

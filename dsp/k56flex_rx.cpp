@@ -58,6 +58,13 @@ void K56Rx::init(s16 alaw_, s16 rate)
 	k_sil2 = K_SIL2;
 	k_r2 = k_trn2a = k_trn2b = k_mp = k_data = -1;
 	mp_last = -1000;
+	{
+		K56Train r;
+		r.init(alaw_);
+		r.segment(K56_R2);
+		for (s16 j = 0; j < 16; j++)
+			r2c[j] = r.next();
+	}
 }
 
 /* a code's value at our receiver, as the digital modem sends it */
@@ -183,38 +190,52 @@ void K56Rx::rbs_detect()
    they are the codes' values at each symbol (rv: the pad and the robbed
    bits), a code and its last bit flipped the same at a robbed symbol
    (the decoder takes them so) */
+double K56Rx::dmin(s16 i) const
+{
+	double u = alaw ? 8 : 4;
+	K56Dec d;
+	if (d.init({ 32000 + 2000 * i, static_cast<s16>(det ? pad : 0), alaw,
+		     det ? robbed : static_cast<unsigned char>(0) }))
+		return 0;
+	double dm = 1e30;
+	for (s16 ng = 0; ng < (det ? 2 : 1); ng++)
+		for (s16 p = 0; p < (det ? 24 : 1); p++) {
+			bool rob = det && (robbed >> (p % 6)) & 1;
+			float last = -1;
+			s16 lm = -1;
+			for (s16 m = 0; m < 128; m++) {
+				if (!d.inv[m])
+					continue;
+				float v = det ? rv[ng][p][m] : lin[m];
+				if (lm >= 0 && !(rob && (lm ^ m) == 1)) {
+					double g = (v - last) / u;
+					if (g < dm)
+						dm = g;
+				}
+				last = v;
+				lm = m;
+			}
+		}
+	return dm;
+}
+
+/* see k56flex_rx.h */
+double K56Rx::data_err() const
+{
+	double u = alaw ? 8 : 4;
+	return static_cast<double>(de_mse) / (u * u);
+}
+
+/* see k56flex_rx.h */
 s16 K56Rx::max_rate() const
 {
 	double u = alaw ? 8 : 4;
 	double e = static_cast<double>(mse) * level * level / (u * u);
 	for (s16 i = K56_NRATES - 1; i >= 0; i--) {
-		K56Dec d;
-		if (d.init({ 32000 + 2000 * i,
-			     static_cast<s16>(det ? pad : 0), alaw,
-			     det ? robbed : static_cast<unsigned char>(0) }))
-			continue;
-		double dm = 1e30;
-		for (s16 ng = 0; ng < (det ? 2 : 1); ng++)
-			for (s16 p = 0; p < (det ? 24 : 1); p++) {
-				bool rob = det && (robbed >> (p % 6)) & 1;
-				float last = -1;
-				s16 lm = -1;
-				for (s16 m = 0; m < 128; m++) {
-					if (!d.inv[m])
-						continue;
-					float v = det ? rv[ng][p][m] : lin[m];
-					if (lm >= 0 && !(rob && (lm ^ m) == 1)) {
-						double g = (v - last) / u;
-						if (g < dm)
-							dm = g;
-					}
-					last = v;
-					lm = m;
-				}
-			}
 		/* (SM56: A-law with a 3 dB pad 36000 at most) */
 		if (alaw && det && pad == 1 && i > 2)
 			continue;
+		double dm = dmin(i);
 		if (91.4 * 0.675 * e < dm * dm && dm >= 2)
 			return static_cast<s16>(i + 1);
 	}
@@ -311,14 +332,17 @@ void K56Rx::mp_bit(s16 bit)
 		if (!mpw[i])
 			return;
 	V34Mp m;
+	/* (2 bits a symbol, 1 in a renegotiation: its E 24 symbols) */
+	s16 nb = renegs ? 1 : 2;
+	s32 e_len = renegs ? 24 : 12;
 	s32 start = mp_bits - 88;
-	if (start & 1 || m.parse(mpw, 88))
+	if (start % nb || m.parse(mpw, 88))
 		return;
-	s32 at = k_trn2b + start / 2;
+	s32 at = k_trn2b + start / nb;
 	if (k_mp < 0) {
 		mp = m;
 		k_mp = at;
-		k_data = at + 704 + 704 + 12;
+		k_data = at + 704 + 704 + e_len;
 		ev_mp = 1;
 		DSP_DBG("k56rx: MP at symbol %" PRId32 ": rates %d/%d, mask "
 			"%#x\n", at - k_trn2b, m.rate_ca, m.rate_ac,
@@ -327,6 +351,14 @@ void K56Rx::mp_bit(s16 bit)
 			dec.init({ 30000 + 2000 * m.rate_ac, pad, alaw,
 				   robbed });
 		if (!bad) {
+			/* the error each rate allows (SM56's rule, as
+			   max_rate) */
+			for (s16 i = 0; i < K56_NRATES; i++) {
+				double dm = dmin(i);
+				lim[i] = dm >= 2 && !(alaw && det && pad == 1 &&
+						      i > 2) ?
+					dm * dm / (91.4 * 0.675) : 0;
+			}
 			/* the rate's magnitudes, rising */
 			nmags = 0;
 			for (s16 i = 0; i < 128; i++)
@@ -338,8 +370,8 @@ void K56Rx::mp_bit(s16 bit)
 	if (m.ack && !ev_mpack) {
 		ev_mpack = 1;
 		/* the first MP' after the last MP: MP''s first */
-		if (at - 44 == mp_last)
-			k_data = at + 704 + 12;
+		if (at - 88 / nb == mp_last)
+			k_data = at + 704 + e_len;
 		DSP_DBG("k56rx: MP' at symbol %" PRId32 "\n", at - k_trn2b);
 	}
 	if (!m.ack)
@@ -378,10 +410,26 @@ void K56Rx::data(float y)
 	timing(k, y, a);
 	dpow += 0.001f * (a * a - dpow);
 	de_mse += 0.001f * (e * e - de_mse);
+	dy[k & 15] = y;
 	code[fpos++] = static_cast<unsigned char>((y > 0 ? 0x80 : 0) | m);
 	if (fpos < 8)
 		return;
 	fpos = 0;
+	/* R from a frame's start, two frames of it: the digital modem
+	   renegotiates (or answers our S) */
+	if (frames >= 2) {
+		s32 s0 = k - 15;
+		s16 j;
+		for (j = 0; j < 16; j++) {
+			float ex = expect(r2c[j], s0 + j);
+			if (fabsf(dy[(s0 + j) & 15] - ex) > 0.25f * fabsf(ex))
+				break;
+		}
+		if (j == 16) {
+			reneg_r(s0);
+			return;
+		}
+	}
 	unsigned char bits[K56_MAXBITS];
 	s16 nb = dec.frame(code, bits);
 	/* (B1: 6 frames of ones first) */
@@ -391,6 +439,37 @@ void K56Rx::data(float y)
 		q[(qh + qn) % K56RX_Q] = bits[j];
 		qn++;
 	}
+}
+
+/* R in data mode from symbol s (k now): R2, TRN2A, MARK and TRN2B
+   from there as after the silence, the MP and the data again */
+void K56Rx::reneg_r(s32 s)
+{
+	k_r2 = s;
+	k_trn2a = k_r2 + 288;
+	/* (TRN2A's length the digital modem's: TRN2B after MARK) */
+	k_trn2b = INT32_C(0x3fffffff);
+	zeros = 0;
+	k_mp = k_data = -1;
+	r2.init(alaw);
+	r2.segment(K56_R2);
+	for (s32 j = k_r2; j <= k; j++)
+		r2.next();
+	ones = 0;
+	ev_trn2a = 0;
+	mp_bits = 0;
+	mp_last = -1000;
+	ev_mp = ev_mpack = ev_data = 0;
+	bad = 0;
+	dec_on = 0;
+	frames = 0;
+	fpos = 0;
+	err_sum = 0;
+	err_n = 0;
+	ev_reneg_r = 1;
+	renegs++;
+	DSP_DBG("k56rx: R in data mode at symbol %" PRId32 " (renegotiation "
+		"%" PRId32 "), error %.2f\n", s, renegs, data_err());
 }
 
 /* see k56flex_rx.h */
@@ -551,27 +630,54 @@ void K56Rx::sample(float v)
 					ev_trn2a = 1;
 					DSP_DBG("k56rx: TRN2A\n");
 				}
+				/* a renegotiation's: MARK's 16 zeros after
+				   the ones, TRN2B next */
+				zeros = !d && ev_trn2a ?
+					static_cast<s16>(zeros + 1) : 0;
+				if (renegs && zeros == 16 &&
+				    k_trn2b == INT32_C(0x3fffffff)) {
+					k_trn2b = k + 2;
+					DSP_DBG("k56rx: MARK, TRN2B at symbol %"
+						PRId32 " (TRN2A %" PRId32 ")\n",
+						k_trn2b, k_trn2b - 32 - k_trn2a);
+				}
 			}
 		} else if (k_trn2b >= 0 && k >= k_trn2b &&
 			   (k_data < 0 || k < k_data)) {
 			/* TRN2B, MP, MP', E: 2 bits a symbol in 4
-			   magnitudes */
+			   magnitudes; in a renegotiation MP, MP' and E 1
+			   bit in 2 (the reference the nearest of all 6) */
 			/* (the pad's magnitudes, as they come) */
 			const unsigned char *m2 = k56_trn2b_mag[det ? pad : 0];
-			float ay = fabsf(y), be = 1e30f;
-			s16 j, mi = 0;
-			for (j = 0; j < 4; j++) {
+			const unsigned char *m1 = k56_trn2b_mag1[det ? pad : 0];
+			float ay = fabsf(y), be = 1e30f, be1 = 1e30f;
+			s16 j, mi = 0, mi1 = 0;
+			unsigned char mg = m2[0];
+			for (j = 0; j < 6; j++) {
+				unsigned char c = j < 4 ? m2[j] : m1[j - 4];
 				float d = fabsf(ay - expect(
-					static_cast<unsigned char>(0x80 | m2[j]), k));
-				if (d < be) {
+					static_cast<unsigned char>(0x80 | c), k));
+				if (j < 4 && d < be) {
 					be = d;
 					mi = j;
 				}
+				if (j >= 4 && d < be1) {
+					be1 = d;
+					mi1 = static_cast<s16>(j - 4);
+				}
 			}
+			if (!renegs)
+				mg = m2[mi];
+			else
+				mg = be <= be1 ? m2[mi] : m1[mi1];
 			a = expect(static_cast<unsigned char>(
-					   (y > 0 ? 0x80 : 0) | m2[mi]), k);
-			mp_bit(descramble(&dscr, SCR_GPA, mi & 1));
-			mp_bit(descramble(&dscr, SCR_GPA, mi >> 1));
+					   (y > 0 ? 0x80 : 0) | mg), k);
+			if (renegs) {
+				mp_bit(descramble(&dscr, SCR_GPA, mi1));
+			} else {
+				mp_bit(descramble(&dscr, SCR_GPA, mi & 1));
+				mp_bit(descramble(&dscr, SCR_GPA, mi >> 1));
+			}
 		} else if (k_data >= 0 && k >= k_data) {
 			if (!ev_data) {
 				ev_data = 1;

@@ -28,7 +28,7 @@ const unsigned char k56_trn2b_mag[3][4] = {
 	{ 0x3d, 0x54, 0x61, 0x67 },
 };
 const unsigned char k56_trn2b_mag1[3][2] = {
-	{ 0x55, 0x3d }, { 0x5d, 0x44 }, { 0x65, 0x4c },
+	{ 0x3d, 0x55 }, { 0x44, 0x5d }, { 0x4c, 0x65 },
 };
 
 const s32 k56_seg_len[K56_NSEGS] = {
@@ -80,6 +80,14 @@ void K56Train::segment(s16 s)
 	case K56_MP:
 	case K56_MPP:
 		idx = pos = 0;
+		/* (a renegotiation's: 1 bit a symbol) */
+		if (rn)
+			nb = 1;
+		break;
+	case K56_E:
+		/* (a renegotiation's: 24 ones, 1 a symbol) */
+		if (rn)
+			len = 24;
 		break;
 	default:
 		break;

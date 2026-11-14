@@ -63,6 +63,12 @@ bit/s), and a 6 dB pad with robbed bits (46000 bit/s). The SM56 modem
 also receives our data correctly when there are robbed bits on its
 line.
 
+The modems can also change speed during a call. If the line becomes
+worse or better, the customer's modem asks for a new speed, as the
+SM56 modem does. The server can also start a speed change. The tests
+change the speed in both ways and when noise starts in the middle of
+a call, and the data stays correct.
+
 ## What is missing
 
 - The customer's modem has only been tried against D-Modem's own
@@ -71,7 +77,9 @@ line.
 - The SM56 modem cannot train on a line with a digital pad. This is a
   fault in SM56 itself, not in D-Modem.
 - A-law with a real K56flex modem: written, but not tried.
-- Retrains and speed changes during a call.
+- Retrains during a call.
+- After a speed change, the SM56 modem does not receive our data
+  correctly. The cause is not known yet.
 
 Conexant's modem driver, the other one in the test suite, turned out to
 have its K56flex support switched off, so it cannot help.

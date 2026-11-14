@@ -130,6 +130,8 @@ enum K56Seg {
 };
 
 extern const s32 k56_seg_len[K56_NSEGS];
+/* TRN2A's length in a rate renegotiation */
+#define K56_RN_TRN2A    2048
 extern const unsigned char k56_trn2b_mag[3][4];
 extern const unsigned char k56_trn2b_mag1[3][2];
 
@@ -157,6 +159,10 @@ struct K56Train {
 	s16 rcount;             /* R: symbols left */
 	u16 js;                 /* J's 16 bits, the first sent the lowest */
 	s16 no_trn1b;           /* TRN1B left out (as isdn_tx) */
+	s16 rn;                 /* a rate renegotiation's R2 to E: MP, MP'
+				   and E 1 bit a symbol (2 magnitudes), E
+				   24 symbols (SM56's
+				   SC_A56_Phase4_Renego_Init, SC_A56_Sym2Bits) */
 	s16 pad;                /* the digital pad (0, 1: 3 dB, 2: 6 dB),
 				   from the caller's J: TRN2B's, MP's and
 				   E's magnitudes are its */

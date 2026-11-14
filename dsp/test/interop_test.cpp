@@ -409,6 +409,29 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)k56rx: TRN1B: pad 6 dB, robbed bits 0x18"
 	      ".*K56flex connect [0-9]+/46000 \\(analogue modem\\)",
 	      "EXPECT_B=(?s)robbed bits 0x98\\).*K56flex connect 46000/" });
+	/* rate renegotiation in the data mode: ours, the analogue
+	   modem's S, to 50000 bit/s; and the digital modem's R, the
+	   analogue modem asking for what its error allows */
+	add("open", "open_k56flex_reneg", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_K56_RENEG=2000:10c",
+	      "EXPECT_A=(?s)K56flex renegotiation \\(test\\).*"
+	      "K56flex renegotiated [0-9]+/50000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)K56flex renegotiation \\(the caller's\\).*"
+	      "K56flex renegotiated 50000/" });
+	add("open", "open_k56flex_reneg_dm", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_K56_RENEG=2000a",
+	      "EXPECT_A=(?s)k56rx: R in data mode.*K56flex renegotiation "
+	      "\\(the digital modem's\\).*K56flex renegotiated "
+	      "[0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)K56flex renegotiation \\(test\\).*"
+	      "K56flex renegotiated 56000/" });
+	/* noise down from 4 s into the data mode: the analogue modem's
+	   watch on the error renegotiates to what it allows */
+	add("open", "open_k56flex_noise", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "NET_NOISE=24:30",
+	      "NET_NOISE_DIR=ba",
+	      "EXPECT_A=(?s)K56flex renegotiation \\(errors\\).*"
+	      "K56flex renegotiated [0-9]+/4[0-9]000 \\(analogue modem\\)" });
 	add("open", "open_k56flex_alaw", "open", "open8", "ATX3;AT+MS=56",
 	    { "NET=9600:8000:alaw", "DSP_G711=alaw",
 	      "EXPECT_A=(?s)INFO1a: K56flex \\(0x5\\).*A-law.*"
