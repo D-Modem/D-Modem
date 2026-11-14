@@ -219,11 +219,14 @@ int CourierPeer::start()
 	}
 	if (env("STORE_WATCH")) {
 		/* COURIER_STORE_WATCH=<hex>: each DSP address that stores
-		   to that data word, the first time */
+		   to that data word, the first time (each time inside
+		   COURIER_WATCH_TIME) */
 		m.dsp.watch = strtol(env("STORE_WATCH"), nullptr, 16) & 0xffff;
 		static std::vector<bool> by(65536);
 		m.dsp.watch_fn = [this](C5x &d, C5x::w16 v) {
-			if (by[d.pc])
+			bool in = watch_t1_ && ms() >= watch_t0_ &&
+				  ms() <= watch_t1_;
+			if (by[d.pc] && !in)
 				return;
 			by[d.pc] = true;
 			log("<%07.3f> %04lx = %04x from %04x\n", ms() / 1000.0,
