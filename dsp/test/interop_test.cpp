@@ -801,7 +801,7 @@ std::vector<Call> calls()
 #ifdef INTEROP_HAVE_AMR
 	/* --- two open modems (8000 Hz) through a mobile network's speech
 	   codec (netsim's NET_CODEC): V.22 passes AMR at 12.2 kbit/s with
-	   its data intact, V.21 AMR-WB at 23.85 (docs/cellular/v_cvm.pdf
+	   its data intact, V.21 AMR-WB at 23.85 (docs/specs/v_cvm.pdf
 	   has the whole picture) */
 	add("open", "open_22_amr122", "open8", "open8", "ATX3;AT+MS=22",
 	    { "NET=8000:8000:ulaw", "NET_CODEC=amr:12.2", "STREAM=10" });

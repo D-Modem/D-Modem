@@ -99,6 +99,16 @@ version 1.0 (2 July 1998), is here as [umud10.rtf](umud10.rtf) and as
 right to reproduce and distribute it for making hardware that complies
 with it.
 
+D-Modem's own proposal for a new Recommendation, "Draft new
+Recommendation ITU-T V.cvm" (data over the speech paths of mobile
+networks), is here as [v_cvm.pdf](v_cvm.pdf). It is in the form of an
+ITU-T Recommendation, but ITU-T did not approve it. The D-Modem Authors
+wrote it, so the PDF is in the repository. `docs/cellular/build.sh`
+builds it from its LaTeX source in [docs/cellular](../cellular/v_cvm.tex).
+[The V.cvm proposal](../vcvm-spec.md) and
+[its technical details](../vcvm-spec-details.md) describe it.
+`AT+MS=VCVM` (`dsp/dp_vcvm.cpp`, [vcvm.md](../dsp/vcvm.md)) implements it.
+
 Not from the ITU: Bell 103 and Bell 212A (AT&T), Bell 202 caller ID (Telcordia
 GR-30), TIFF-F (RFC 3949), Contact ID (SIA DC-05, `dsp/dp_contactid.cpp`), fixed-line SMS (ETSI ES 201 912 protocol 1, `dsp/dp_sms.cpp`; its messages are 3GPP TS 23.040's SMS-SUBMIT and SMS-DELIVER in TS 23.038's alphabets, `dsp/sms_pdu.cpp`). Section references in the code and in these
 documents, such as "9.6.2/V.34", are to these editions.
