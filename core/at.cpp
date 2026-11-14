@@ -325,13 +325,12 @@ const struct {
 };
 
 /* +MS may choose pump id: it has a code and is registered (K56flex
-   while V.90 is, V.FC while V.8's pump is, which run for them) */
+   while V.90 is, which runs for it) */
 bool ms_choosable(u32 id)
 {
 	const DpDriver *d = dp_driver(id);
 	return d && d->code &&
-		(d->op || (id == DP_K56 && dp_registered(DP_V90)) ||
-		 (id == DP_VFC && dp_registered(DP_V8)));
+		(d->op || (id == DP_K56 && dp_registered(DP_V90)));
 }
 
 /* +GMI, +GMM, +GMR (and +FMx) by their last letter: the author, the

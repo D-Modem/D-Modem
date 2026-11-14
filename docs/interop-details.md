@@ -1510,10 +1510,17 @@ transfer each way, past N(S)'s wrap, also gets through.
 
 Not yet:
 
-- **V.FC and V.34.** Between two Couriers both start (the overlay
-  loaded, line probing at 10266.67 Hz), but training does not finish,
-  and they retrain over and over: the emulation is short of something
-  there.
+- **V.FC.** The open modem calls the Courier (`courier_vfc_open_calls`,
+  `AT&M0S56=96S58=33` on the Courier): the whole start-up, then CONNECT
+  26400 on both sides. The test stops at CONNECT (`CONNECT_ONLY=1`). The
+  open modem reads the Courier's data; the Courier reads only the first
+  frames of the open modem's data. Calls from the Courier do not start:
+  it does not reply to the open modem's answer tone. Two Couriers stop
+  at the table of phase 4. See [V.FC's technical
+  details](dsp/vfc-details.md).
+- **V.34.** Between two Couriers both start (the overlay loaded, line
+  probing at 10266.67 Hz), but training does not finish, and they
+  retrain over and over: the emulation is short of something there.
 
 ## The open modem on an HD-audio modem codec
 

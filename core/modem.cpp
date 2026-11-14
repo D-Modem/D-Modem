@@ -1086,7 +1086,7 @@ static const struct {
 /* pumps the V.8 pump starts (driver DP_V8) */
 static bool v8_started(u32 id)
 {
-	return id == DP_V34 || id == DP_V90 || id == DP_V92 || id == DP_VFC;
+	return id == DP_V34 || id == DP_V90 || id == DP_V92;
 }
 
 /* the PCM pumps (their rates their own) */
@@ -1110,9 +1110,8 @@ u32 Modem::mnp10_mods() const
 		if (pcm_dp(p.dp) && p.dp != cur)
 			continue;
 		u32 drv = v8_started(p.dp) ? static_cast<u32>(DP_V8) : p.dp;
-		if (!dp_registered(drv) || (drv == DP_V8 &&
-					    !dp_registered(p.dp == DP_VFC ?
-							   DP_V34 : p.dp)))
+		if (!dp_registered(drv) ||
+		    (drv == DP_V8 && !dp_registered(p.dp)))
 			continue;
 		m |= 1u << static_cast<u32>(p.mod);
 	}
@@ -2214,8 +2213,7 @@ void Modem::change_dp()
 		} else if (host_.analog_line(*this) && id == DP_CLEAR)
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
-				      id == DP_V92 || id == DP_VCVM ||
-				      id == DP_VFC ?
+				      id == DP_V92 || id == DP_VCVM ?
 			      static_cast<u32>(DP_V8) :
 			      id;
 		/* the answerer's V.8 bis first (+A8E), then this again */
@@ -2411,7 +2409,7 @@ bool Modem::v8bis_call() const
 		id = DP_V34;
 	return id == DP_V8 || id == DP_V34 || id == DP_V90 ||
 	       id == DP_V91 || id == DP_V92 || id == DP_VCVM || id == DP_K56 ||
-	       id == DP_X2 || id == DP_VFC;
+	       id == DP_X2;
 }
 
 /* see dcore.h */
