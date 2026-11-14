@@ -1,19 +1,19 @@
 # Interop tests against other soft modems: technical details
 
-This is the technical companion to [Interop against other soft modems](interop.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This page is the technical companion to [Interop against other soft modems](interop.md), the plain-English overview. Read that page first. This page gives all the details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 ## The harnesses
 
 The interop tests make calls between the open modem and other soft
 modems:
 
-- Smart Link's soft modem, running on our modem core;
+- the soft modem of Smart Link, on our modem core;
 - the Agere, SM56 (Motorola), PCTel, HSF (Conexant) and Intel soft
   modems, each in user space on an emulation of its hardware;
-- Broadcom's and ESS's Windows drivers, on a Windows kernel of our own
+- the Windows drivers of Broadcom and ESS, on our own Windows kernel
   and an emulation of their chips;
-- spandsp's modems;
-- a USRobotics Courier V.Everything, the whole modem emulated with its
+- the modems of spandsp;
+- a USRobotics Courier V.Everything, the full modem emulated with its
   own firmware;
 - the open modem itself, on an emulated HD-audio modem codec.
 
@@ -22,39 +22,39 @@ modems:
 keep time.
 
 Each modem has a harness program, `half_<name>`. A harness reads the
-line's audio on file descriptor 3, writes its own audio on file
-descriptor 4, and acts as the modem's DTE (the data terminal, the
-computer side) on a pty. Each modem also has its own ctest label, so
+audio of the line on file descriptor 3 and writes its own audio on file
+descriptor 4. It is the DTE of the modem (the data terminal, the
+computer side) on a pty. Each modem also has its own ctest label. Thus,
 `ctest -L <label> -j16` runs its calls.
 
 ### The shared program: `modem_half.hpp`
 
-The harnesses of the closed modems and spandsp's are C++ classes built
-on `dsp/test/modem_half.hpp`. `half::HalfModem` is the program itself.
-It:
+The harnesses of the closed modems and of spandsp are C++ classes on
+`dsp/test/modem_half.hpp`. `half::HalfModem` is the program itself. It
+does these tasks:
 
-- reads its settings from the environment: `<NAME>_DEBUG`, `<NAME>_RATE`
-  (the line's sample rate, 8000 by default), `<NAME>_SYNC` and
-  `<NAME>_SYNC_PHASE` (see [the calls' options](#the-calls-options));
-- opens the pty;
-- runs the line one sample at a time, and serves the DTE every 48
+- It reads its settings from the environment: `<NAME>_DEBUG`,
+  `<NAME>_RATE` (the sample rate of the line, 8000 by default),
+  `<NAME>_SYNC` and `<NAME>_SYNC_PHASE` (refer to [the calls' options](#the-calls-options)).
+- It opens the pty.
+- It runs the line one sample at a time, and serves the DTE each 48
   samples.
 
-A harness derives from it and supplies three things: the modem's start
-(`start()`), its handling of a line sample (`line_sample()` or
-`line_block()`), and its DTE service (`dte_poll()`).
+A harness derives from it and supplies three items:
+- the start of the modem (`start()`);
+- the processing of a line sample (`line_sample()` or `line_block()`);
+- its DTE service (`dte_poll()`).
 
 ### The emulated hardware: `dsp/test/hw/`
 
-The hardware a harness emulates is in `dsp/test/hw/`, one header for
-each kind. Each is a mixin: a class template that the harness also
-derives from, with the harness as its template parameter. That way,
-whatever the hardware needs from the board it sits on is provided by the
-harness itself. For example, the ICH controller reads and writes its
-codec's registers through the harness's `codec_read()` and
-`codec_write()`, and the x86 traps carry out their `in` and `out`
-instructions through its `io_in()` and `io_out()`. The SM56 harness is
-declared as:
+The hardware that a harness emulates is in `dsp/test/hw/`, one header
+for each type. Each is a mixin: a class template that the harness also
+derives from, with the harness as its template parameter. Thus, the
+harness itself supplies all that the hardware needs from its board. For
+example, the ICH controller reads and writes the registers of its codec
+through the `codec_read()` and `codec_write()` of the harness. The x86
+traps do their `in` and `out` instructions through its `io_in()` and
+`io_out()`. The declaration of the SM56 harness is:
 
     class Sm56 : public HalfModem, public Ac97Codec<Sm56>, public Ich<Sm56>,
                  public PciDevice<Sm56>, public X86Traps<Sm56>,
@@ -79,25 +79,28 @@ declared as:
 | `courier.hpp` | the whole Courier: the 80C186EB's timers, interrupt controller and serial port, the ASIC (hook, lamps, ring, DIP switches, the DSP's mailbox and data lanes), the NVRAM, the DSP and its codec (`Courier`) | Courier |
 | `si3054_hda.hpp` | a Silicon Labs Si3054 HD-audio modem codec: its root node and modem function group, its registers as nodes 2 to 21, the hook and the line monitor (`Si3054Hda`) | HDA |
 
-Each mixin's members carry its name (`ich_sample()`, `pci_cfg`,
-`si3034_rate`, ...), so a harness can derive from any combination of
+The members of each mixin have its name (`ich_sample()`, `pci_cfg`,
+`si3034_rate`, ...). Thus, a harness can derive from all combinations of
 them without name clashes.
 
 `CodecLine` puts a windowed sinc resampler in each direction and adds
-noise to the codec's input, because a real line is never digitally
-silent. The noise is uniform, the same on every run, and its rms is 5 by
-default (about -76 dB of full scale); `<NAME>_NOISE` sets another.
+noise to the input of the codec, because a real line is never digitally
+silent. The noise is uniform and the same on each run. Its rms is 5 by
+default (approximately -76 dB of full scale). `<NAME>_NOISE` sets a
+different value.
 
 ## The peers' binaries
 
-The vendor modems are their own binaries, as their Linux drivers shipped
-them, in `dsp/test/<peer>/`. They are i386 objects, which the harnesses
-link in (built `-m32`). Broadcom's and ESS's are their Windows drivers,
-which `half_broadcom` and `half_ess` load at run time.
+The vendor modems are their own binaries, as their Linux drivers
+supplied them, in `dsp/test/<peer>/`. They are i386 objects, and the
+harnesses link them in (built `-m32`). The Broadcom and ESS binaries are
+their Windows drivers. `half_broadcom` and `half_ess` load them at run
+time.
 
-Each file is the file of a known release, compared byte for byte with
-that release wherever it can still be obtained. The files belong to
-their owners and are licensed by them, not under this repository's terms
+Each file is the file of a known release. Where that release is still
+available, we compared the file byte for byte with it. The files belong
+to their owners, and the owners give the licences for them. The terms of
+this repository do not apply to them
 ([dsp/test/NOTICE.md](../dsp/test/NOTICE.md)).
 
 | Peer | Files | Release | Built | Byte-identical to |
@@ -113,56 +116,57 @@ their owners and are licensed by them, not under this repository's terms
 | spandsp | (the system's libspandsp) | spandsp 0.0.6 (release 20110122) | | |
 | Courier | `usr/IDSDL302.ROM`, `usr/c51-mask.rom`, `usr/courier-nvram.bin` | ID_SDL v3.02 (USRobotics supervisor 7.3.14, DSP 3.0.13) | 13 Mar 1998 (USRobotics), 6 Jun 1998 (ID_SDL) | none to be had (below) |
 
-The files' SHA-256 hashes, and what each was compared with:
+The SHA-256 hashes of the files, and what we compared each one with:
 
 - **Smart Link.** `dsplibs.o`:
   `1f3e56d0dfae1a6aaf4eb6fcc4875a4524905e010d5758114cde288b3cf0b379`.
   The tarball
   (`cea496e9c34a16cf347124b27ed673f3a6e87089f83e15ab5e0b0365a56fd253`)
   is at `https://deb.debian.org/debian/pool/non-free/s/sl-modem/`. The
-  library came with slmodemd 2.9.11 in D-Modem's first commit.
+  library came with slmodemd 2.9.11 in the first commit of D-Modem.
 - **Agere.** `agrsm_core.o`:
   `a00a7fe7a21c2b20a353bf373042c3e30599ff4a9238a061acb494bb559e171c`.
-  - It says "Agere SoftModem Version 2.1.40" and "Built on 11/16/2005
-    16:43:35", and of its PCM module "AGERE PCMLL V2.1.37.105, seed =
-    1220, 2/1/2004".
+  - It contains "Agere SoftModem Version 2.1.40" and "Built on
+    11/16/2005 16:43:35". For its PCM module, it contains "AGERE PCMLL
+    V2.1.37.105, seed = 1220, 2/1/2004".
   - agrsm-20070804 is a dated package of the linmodems "sv92" series
-    (from linmodems.technion.ac.il, now gone), which carries Agere's
-    2.1.40. Its successor, agrsm-20080203, answers `ATI` with the same
-    version.
-  - Agere's own builds of 2.1.40 for Mandrake, Red Hat and SuSE
+    (from linmodems.technion.ac.il, which is now gone). It contains the
+    2.1.40 of Agere. Its successor, agrsm-20080203, answers `ATI` with
+    the same version.
+  - The builds of 2.1.40 that Agere made for Mandrake, Red Hat and SuSE
     (December 2005, `agrmodemlib.o` on the Kaiomy Pinball-C driver CD at
-    archive.org) have the same 3132 global symbols. But they were built
-    with other compilers, and their `LXHardwareInfoCreate` and
+    archive.org) have the same 3132 global symbols. But other compilers
+    built them, and their `LXHardwareInfoCreate` and
     `LXHardwareInfoDestroy` are global.
-  - In ours those two symbols are weak, because the harness provides its
-    own (the package's Makefile weakens them). The object was therefore
-    rewritten after Agere linked it, and no file of Agere's matches it
-    byte for byte.
+  - In our file, those two symbols are weak, because the harness
+    supplies its own (the Makefile of the package makes them weak).
+    Thus, the object was changed after Agere linked it, and no file from
+    Agere is the same byte for byte.
 - **SM56.** `sm56.ko`:
   `a757fd85bc27cc4bd816073efa9d03591307973de5c5aabcb37e0bb225ba516a`,
   with `vermagic=2.6.9-1.667 686 REGPARM 4KSTACKS gcc-3.4`, "SM56 Rel.
   6.09 Build 05" and "Copyright 1998-2004, Motorola Inc.". The RPM
   (`1f24ba64dae3901de3fe497ec47f6490b7756558cd9ec26f568cc475b0da13d0`;
-  vendor Motorola, built 2005-05-17, its checksums good, unsigned) can no
-  longer be obtained: Motorola gave it only to distributors and OEMs, and
-  its copies at linux-xp-brasil.com.br and linmodems.technion.ac.il are
-  gone.
+  vendor Motorola, built 2005-05-17, its checksums good, unsigned) is
+  no longer available. Motorola gave it only to distributors and OEMs,
+  and its copies at linux-xp-brasil.com.br and linmodems.technion.ac.il
+  are gone.
 - **PCTel.** `dsp.o`:
   `15d8e5ab1ac4019a029fd9e562e0e74b3f233aa3ab42621334506721e66f82b1`;
   `control.o`:
   `38d46cabd67f675f8c011afd4725a41a1a813075bae4b516c94cda1b4dfec69d`.
-  - These are upstream's `.a` files renamed (they are plain objects).
-  - The pumps' `timeStamp` is "Jun 21 2001,14:27:03". The controller says
-    "Linux Driver K2.4.7.V92.001 (03/26/2003)", and of the DSP "LCE-336V
-    version .2.15.4.".
-  - The copy compared
+  - These are the `.a` files of upstream with new names (they are plain
+    objects).
+  - The `timeStamp` of the pumps is "Jun 21 2001,14:27:03". The
+    controller contains "Linux Driver K2.4.7.V92.001 (03/26/2003)". For
+    the DSP, it contains "LCE-336V version .2.15.4.".
+  - The copy that we compared
     (`f1304bbcefd1b88dc1733421f7850598334eaf62c5b132c8d129af3405d1ddfb`)
     is
     `https://archive.org/download/pctel-0.9.7-9-rht-6_for_Ubuntu-2.6.15-23-386/`:
-    Robert Thornburrow's 0.9.7-9-rht-6 of 2006, as a third party
-    uploaded it. Its ChangeLog changes no binaries after 0.9.7-8, so
-    0.9.7-9 and its rht releases carry the same two files.
+    the 0.9.7-9-rht-6 of Robert Thornburrow of 2006, as a third party
+    uploaded it. Its ChangeLog changes no binaries after 0.9.7-8. Thus,
+    0.9.7-9 and its rht releases contain the same two files.
 - **HSF.** `hsfengine.o`:
   `6d570356f37e62153374f2f50b5d3a3e4b1246285199cbba2aa7d631a5f894fc`;
   `hsfmc97ich.o`:
@@ -183,131 +187,137 @@ The files' SHA-256 hashes, and what each was compared with:
     (`7388bf4338f434aa65363f2097a9f9c2c87f523ac1a549764de831b68f37846c`,
     released 9 May 2010) is at
     `https://www.linuxant.com/drivers/hsf/oem/downloads.php`.
-  - The objects' symbols are `cnxthsf_7800206oem_<name>`. The "full"
-    build's symbols differ (`cnxthsf_7800206full_`), and Linuxant no
-    longer offers that build.
-  - The `.inf` is Conexant's Linux_Intel_SmartMC.inf, "Version:
-    5.03.27"; the country file says "Version: V7.72.00".
+  - The symbols of the objects are `cnxthsf_7800206oem_<name>`. The
+    symbols of the "full" build are different (`cnxthsf_7800206full_`),
+    and Linuxant no longer supplies that build.
+  - The `.inf` is the Linux_Intel_SmartMC.inf of Conexant, "Version:
+    5.03.27". The country file contains "Version: V7.72.00".
 - **Broadcom.** `BCMSM.sys`:
   `033c6716ef63b1984a8f7a7b36c8efce1c7d9ec622dd97132d54eb5b8a5c0662`;
   `BCMSMwxp.inf`:
   `34f4059d27803bb1b4947ff6dc1f4b872230eaf738551f8c267ba6f50e363ca8`.
-  - They come from Dell's package "Communications:V.92 Soft Modem (Data
-    Fax) Driver", version A05 (OEM version 3.4.19.1.1, for the Dimension
-    2200 to 8300, created 27 Aug 2002; Windows 2000 and XP).
+  - They come from the Dell package "Communications:V.92 Soft Modem
+    (Data Fax) Driver", version A05 (OEM version 3.4.19.1.1, for the
+    Dimension 2200 to 8300, created 27 Aug 2002; Windows 2000 and XP).
   - The driver answers `ATI3` with "BCM V.92 56K Modem Version 3.4.19".
     Its debug path is
     `C:\releases\3_4_19_1_1\softmodem\build\Win32\opt-dell-wdm-pentium-mmx\bin\BCMSM.pdb`,
-    and the INF's `DriverVer` is 05/21/2002,3.4.19.
-  - The package's catalog, `BCMSMwxp.cat` (signed by Microsoft Windows
-    Hardware Compatibility Publisher, 31 Jul 2002), lists the driver's
-    Authenticode SHA-1 (`3261275f43309bd1155178d2549b1496ac9552f2`) and
-    the INF's SHA-1 (`74a33b6de90b0d12e3b688a29c94cc1dd399ea51`): both
-    files are the ones Microsoft signed. Dell's download of the package
-    was not compared.
+    and the `DriverVer` of the INF is 05/21/2002,3.4.19.
+  - The catalog of the package, `BCMSMwxp.cat` (signed by Microsoft
+    Windows Hardware Compatibility Publisher, 31 Jul 2002), lists the
+    Authenticode SHA-1 of the driver
+    (`3261275f43309bd1155178d2549b1496ac9552f2`) and the SHA-1 of the INF
+    (`74a33b6de90b0d12e3b688a29c94cc1dd399ea51`). Thus, the two files are
+    the files that Microsoft signed. We did not compare the Dell download
+    of the package.
 - **Intel.** `537core.lib`:
   `e81d02cbe185191e1bf9ed46672117edb02ccfb7f3d493800c1aa428f9d6f49f`;
   `wwh_dflt.c`:
   `4d308a3988ae17c9348341feab0f05432e3d6d2483f512667ff09d03a7ccf1e8`;
-  and the archive's `license.txt` with them
+  and the `license.txt` of the archive with them
   (`87e01e6b9bf0b40ecf0d665d033348c61f964a1793124e0516908afd4b1518fa`).
-  - The archive
+  - Someone gave us the archive
     (`bfc42b0917e1f15cf974de0ddeff7dbf2617316e017888eec1c25574cd5b25c0`,
-    "Intel(R) 537 V9x DF modem Linux driver", for 2.4.22-1.2115.nptlsmp)
-    was given to us; it was not compared with a download of Intel's.
-  - Its licence is a BSD one (redistribution in binary form with the
+    "Intel(R) 537 V9x DF modem Linux driver", for 2.4.22-1.2115.nptlsmp).
+    We did not compare it with a download from Intel.
+  - Its licence is a BSD licence (redistribution in binary form with the
     notice).
   - The core answers `ATI3` with "537EP".
 - **ESS.** `es56hpi.sys`:
   `dc0f3b3614dc3cb168759526d47a306977616318e1bc15102987dd1a415d576f`;
   `mdmzn.inf`:
   `18c4114cfc3c78581791e6d719e1c7e4a41fdde52beca95695ed96c55b4db8ba`.
-  - They are from the `WinXP` directory of ESS's installer
+  - They are from the `WinXP` directory of the ESS installer
     `ess54370.exe`
-    (`d9d87c53d3a3dd48c11990b8823ab51755861004fbb4fd565e998551726385e7`);
-    its `Win2k` and `Win98` directories carry the same driver.
+    (`d9d87c53d3a3dd48c11990b8823ab51755861004fbb4fd565e998551726385e7`).
+    Its `Win2k` and `Win98` directories contain the same driver.
   - The driver is "ES56H-PI Modem Card", "ESS Telephony Driver", file
     version V5.43.070. It answers `ATI3` with "V5.43.070-H-PI" and `ATI1`
     with "ES2838".
-  - The package's catalog, `slm.cat` (signed by Microsoft Windows
-    Hardware Compatibility Publisher, 2 Apr 2003), lists the driver's
-    Authenticode SHA-1 (`7ccbff2b0b602f8fddec4557ab6505dde6dc0899`) and
-    the INF's SHA-1 (`5dc97a690730326335a15cc2ba6e8392f2935796`): both
-    files are the ones Microsoft signed.
-  - The installer was given to us; it was not compared with a download
-    of ESS's.
+  - The catalog of the package, `slm.cat` (signed by Microsoft Windows
+    Hardware Compatibility Publisher, 2 Apr 2003), lists the
+    Authenticode SHA-1 of the driver
+    (`7ccbff2b0b602f8fddec4557ab6505dde6dc0899`) and the SHA-1 of the INF
+    (`5dc97a690730326335a15cc2ba6e8392f2935796`). Thus, the two files are
+    the files that Microsoft signed.
+  - Someone gave us the installer. We did not compare it with a download
+    from ESS.
   - An older build of the driver, 5.43.064 of March 2002
-    (`ES2838_2839_XP_583211.zip`, whose own catalog matches it too), is
+    (`ES2838_2839_XP_583211.zip`, which its own catalog also matches), is
     not in the tree.
-- **spandsp.** Not in the tree: the build uses the system's library
+- **spandsp.** Not in the tree: the build uses the library of the system
   (pkg-config `spandsp`), which is 0.0.6 in Debian and Ubuntu.
 
 ## The closed modules' stack
 
 The Agere, SM56, PCTel and HSF modules read some of their stack before
-they write it. Valgrind's memcheck shows where. (It was run on the
-harnesses linked `-static`: on the dynamic ones it wants i386 glibc's
-debug symbols. Under Valgrind, SM56's `cli`, `in` and `out` reach the
-harness as SIGILL rather than SIGSEGV.)
+they write it. Valgrind memcheck shows where. (We ran it on the
+harnesses linked `-static`. On the dynamic harnesses, it needs the debug
+symbols of i386 glibc. Under Valgrind, the `cli`, `in` and `out` of SM56
+get to the harness as SIGILL, not as SIGSEGV.)
 
 - **Agere.** `ATProcessorStatusHandler`, called from
   `LinkLayerStatusHandler`, tests a value of the status that
-  `V32DataPumpReportStatus` and `V22DataPumpReportStatus` build on their
-  stack and leave unset. `CodecStatusHandler`'s text (`StatusParser`,
-  through its `sprintf`) takes unset bytes of `ReportConnectionStatus`'s.
+  `V32DataPumpReportStatus` and `V22DataPumpReportStatus` make on their
+  stack and do not set. The text of `CodecStatusHandler` (`StatusParser`,
+  through its `sprintf`) uses unset bytes of the stack of
+  `ReportConnectionStatus`.
 - **SM56.** `CM_ConfigReqEvent` tests a value that `ACU_DialResponse`
-  leaves unset on its stack (in four of the five calls run under
+  does not set on its stack (in four of the five calls that we ran under
   Valgrind).
-- **HSF.** Two of the engine's routines (`hsfengine564_`, under its
-  timer, and `hsfengine2004_`) test locals they have not set.
+- **HSF.** Two of the routines of the engine (`hsfengine564_`, under
+  its timer, and `hsfengine2004_`) test locals that they have not set.
 - **PCTel.** Its `+MS` command ([below](#against-the-pctel-hsp-soft-modem)).
 
-What they read is whatever the calls before them left there, including
-the harness's own calls. A read or write of the pty, whose timing
-depends on the driver, could leave other bytes there, so the same line
-samples could give a different call.
+They read the data that the calls before them put there, which includes
+the calls of the harness itself. A read or write of the pty, with a
+timing that depends on the driver, can put other bytes there. Thus, the
+same line samples can give a different call.
 
-So each harness clears 8 KB of the stack below its frame before each
-call into its module (`half::stack_clear()`), and a module finds the
-same there every time. `HALF_STACK_FILL=<byte>` fills that stack with the
-given byte instead of 0. With 0, 0xa5 and 0xff, the Agere, SM56 and HSF
-tests (and PCTel's, with their top rate given) all pass, connect at the
-same rates and retrain the same way. So what those modules read unset
-does not decide their calls here. For PCTel's `+MS` it did.
+Thus, each harness clears 8 KB of the stack below its frame before each
+call into its module (`half::stack_clear()`). A module finds the same
+data there each time. `HALF_STACK_FILL=<byte>` fills that stack with the
+given byte and not with 0. With 0, 0xa5 and 0xff, the Agere, SM56 and HSF
+tests (and the PCTel tests, with their top rate given) all pass. They
+connect at the same rates and retrain in the same way. Thus, the unset
+data that those modules read does not decide their calls here. For the
+PCTel `+MS`, it did.
 
 ## Against the Smart Link soft modem
 
-`half_smartlink` runs Smart Link's soft modem: its DSP library
-(`test/smartlink/dsplibs.o`, binary-only, i386). This is the library that
-slmodemd was written for, and the open DSP keeps its interface
-(`dsp/dsplibs.h`). It runs on our modem core in place of the open pumps:
-`half_smartlink` is `half_open` built with the library and
-`test/smartlink_glue.cpp` instead of `dsp/`.
+`half_smartlink` runs the soft modem of Smart Link: its DSP library
+(`test/smartlink/dsplibs.o`, binary-only, i386). slmodemd was written
+for this library, and the open DSP keeps its interface
+(`dsp/dsplibs.h`). It runs on our modem core and replaces the open
+pumps: `half_smartlink` is `half_open` built with the library and
+`test/smartlink_glue.cpp`, not with `dsp/`.
 
-It needs no hardware. The core gives it the line's samples at 9600 Hz,
-as it gives the open pumps theirs; the library does not work at 8000 Hz.
+It needs no hardware. The core gives it the samples of the line at
+9600 Hz, as it gives the open pumps their samples. The library does not
+operate at 8000 Hz.
 
-The glue (`smartlink_glue.cpp`) has the little the library needs beyond
-the core's interface (its binary log records), and the tests' handles on
-it, `SMARTLINK_V92FULL` and `SMARTLINK_FPE_AT`
-([dsp/v92-details.md](dsp/v92-details.md)). These work through the
-linker's `--wrap` of `dp_runtime_create` and `modem_dp_register`.
+The glue (`smartlink_glue.cpp`) contains the small number of items that
+the library needs in addition to the interface of the core (its binary
+log records). It also contains the handles of the tests on the library,
+`SMARTLINK_V92FULL` and `SMARTLINK_FPE_AT`
+([dsp/v92-details.md](dsp/v92-details.md)). These use the `--wrap` of
+the linker on `dp_runtime_create` and `modem_dp_register`.
 
-The library also asks for the line's delay (`MDMPRM_IODELAY`: PipeModem's
-lead silence), and may ask for it to change (`MDMPRM_UPDATE_DELAY`:
-input dropped or silence added). The core passes both to its host
-(`Host::io_delay`, `Host::update_delay`).
+The library also asks for the delay of the line (`MDMPRM_IODELAY`: the
+lead silence of PipeModem). It can ask for a change of the delay
+(`MDMPRM_UPDATE_DELAY`: input removed or silence added). The core sends
+the two requests to its host (`Host::io_delay`, `Host::update_delay`).
 
-Until October 2026 the library ran on slmodemd's old C core, which was
-kept in the tree for it. That core is gone. The 60 calls of the time
-came out the same on our core, within the run-to-run variation of the
-old harness.
+Until October 2026, the library ran on the old C core of slmodemd, which
+stayed in the tree for it. That core is removed. The 60 calls of that
+time gave the same results on our core, in the run-to-run variation of
+the old harness.
 
 `ctest -L smartlink -j16` runs the tests. `smartlink_log.py` decodes the
-library's own debug lines ([dsp/v92-details.md](dsp/v92-details.md)).
+debug lines of the library ([dsp/v92-details.md](dsp/v92-details.md)).
 
-The library is slmodem-2.9.11-20110321's (see the table above). Its parts
-report their own versions:
+The library is the library of slmodem-2.9.11-20110321 (refer to the
+table above). Its parts report their own versions:
 
 - the V.90 modem 2.98 (25-Mar-04, "Modified Quick Connect without Memory
   + Train Time + Constel Power");
@@ -315,7 +325,7 @@ report their own versions:
   fix");
 - a "V.92 Lite" build.
 
-slmodem's changes after 2.9.11 are to its drivers only.
+The changes to slmodem after 2.9.11 are to its drivers only.
 
 Results at the time of writing:
 
@@ -330,35 +340,36 @@ Results at the time of writing:
 | 23 (V.23) | CONNECT 1200 | CONNECT 1200 |
 | 21 (V.21) | CONNECT 300 | fails: its V.21 answerer only sends 2225 Hz, and does not connect to itself either (not in the tests) |
 
-V.34 tests beyond plain connects:
+V.34 tests in addition to plain connects:
 
-- **A line hit.** 300 ms of silence both ways in the middle of the data
-  (`smartlink_34_hit_*`): both modems retrain, and V.42 carries on.
+- **A line hit.** 300 ms of silence in the two directions in the middle
+  of the data (`smartlink_34_hit_*`): the two modems retrain, and V.42
+  continues.
 - **Rate renegotiation.** It answers our V.34 rate renegotiation
   (`smartlink_34_reneg_*`).
 
-**V.90.** As the analogue modem, it calls ours (the digital modem, at
-8000 Hz) through netsim's G.711 network and connects with V.90, µ-law and
-A-law (`smartlink_v90_*`). On the µ-law tests' line (with netsim's noise
-floor, `NET_FLOOR=3`) that is 54666/31200
-([dsp/v90-details.md](dsp/v90-details.md)). The rate renegotiations both
-ways are tested too.
+**V.90.** As the analogue modem, it calls our modem (the digital modem,
+at 8000 Hz) through the G.711 network of netsim. It connects with V.90,
+µ-law and A-law (`smartlink_v90_*`). On the line of the µ-law tests
+(with the noise floor of netsim, `NET_FLOOR=3`), the result is
+54666/31200 ([dsp/v90-details.md](dsp/v90-details.md)). We also test the
+rate renegotiations in the two directions.
 
-**V.92.** Its V.92 is a "V.92 Lite" build, which retrains when it is
-offered PCM upstream. `SMARTLINK_V92FULL=1` sets its full V.92 bit, and
-it then does PCM upstream with us:
+**V.92.** Its V.92 is a "V.92 Lite" build, which retrains when it gets
+an offer of PCM upstream. `SMARTLINK_V92FULL=1` sets its full V.92 bit.
+Then it does PCM upstream with us:
 
 - 56000/38666 (µ-law) and 40000 upstream (A-law) with our prefilter;
 - quick connect;
-- rate renegotiations and fast parameter exchanges both ways
-  (`SMARTLINK_FPE_AT=<s>` starts its own exchange that many seconds into
-  the data);
+- rate renegotiations and fast parameter exchanges in the two directions
+  (`SMARTLINK_FPE_AT=<s>` starts its own exchange that number of seconds
+  into the data);
 - modem-on-hold;
 - the exchange for its timing slip.
 
 These are the `smartlink_v92_*` tests ([dsp/v92-details.md](dsp/v92-details.md)).
 
-**Class 1 fax** both ways at 9600 Hz (`smartlink_fax_*`):
+**Class 1 fax** in the two directions at 9600 Hz (`smartlink_fax_*`):
 
 | Modulation | Smart Link sender → open receiver | open sender → Smart Link receiver |
 |---|---|---|
@@ -368,23 +379,23 @@ These are the `smartlink_v92_*` tests ([dsp/v92-details.md](dsp/v92-details.md))
 
 Notes on its fax:
 
-- It makes a few bit errors with some of its own signals; hence the
+- It makes some bit errors with some of its own signals. Thus, the
   driver allows 1 bit error in 1000 on a page.
-- Its V.27ter training contains stray 180 degree phase flips, which the
-  open receiver follows.
-- Its V.17 receiver takes a short train or not depending on how its 20
-  ms frames fall on it. So the fax calls give the DTE's commands to the
-  modems only every 192 samples (`PIPE_SYNC=192`, see
-  [testing-details.md](testing-details.md)).
+- Its V.27ter training contains unwanted 180 degree phase flips. The
+  open receiver follows them.
+- Its V.17 receiver accepts a short train or not, as a function of the
+  position of its 20 ms frames. Thus, the fax calls give the commands of
+  the DTE to the modems only each 192 samples (`PIPE_SYNC=192`, refer
+  to [testing-details.md](testing-details.md)).
 
 ## Against the Agere soft modem
 
-`half_agere` runs the Agere Systems soft modem library
+`half_agere` runs the soft modem library of Agere Systems
 (`test/agere/agrsm_core.o`, Agere SoftModem 2.1.40 from agrsm-20070804;
-see above) in user space, on an emulated Intel ICH modem controller and a
-Silicon Labs Si3038 codec. Its serial side is a virtual 16550 UART
+refer to above) in user space, on an emulated Intel ICH modem controller
+and a Silicon Labs Si3038 codec. Its serial side is a virtual 16550 UART
 between the library and the pty. `AGERE_DEBUG=1` prints its log and the
-port accesses the harness does not know.
+port accesses that the harness does not know.
 
 `ctest -L agere -j8` calls it from and to the open modem. Results at the
 time of writing:
@@ -400,44 +411,48 @@ time of writing:
 
 The other Agere tests:
 
-- V.44 both ways, 60000 octets each way (`agere_v44_*`);
-- our V.34 rate renegotiation both ways, and a much noisier line 10 s
-  after CONNECT, which forces a retrain (`agere_34_reneg_*`,
+- V.44 in the two directions, 60000 octets in each direction
+  (`agere_v44_*`);
+- our V.34 rate renegotiation in the two directions, and a much noisier
+  line 10 s after CONNECT, which causes a retrain (`agere_34_reneg_*`,
   `agere_34_noise`);
-- phase 2's recovery when our INFO0a is lost (`agere_34_lose_info0`);
+- the recovery of phase 2 when our INFO0a is lost
+  (`agere_34_lose_info0`);
 - V.92 quick connect with short phase 2 on the second call
   (`agere_v92_qc`);
 - V.92 modem-on-hold: its request granted (`agere_v92_moh_grant`) and
-  denied (`agere_v92_moh_deny`), and our request, which it takes for a
+  denied (`agere_v92_moh_deny`), and our request, which it thinks is a
   retrain (`agere_v92_moh_request`);
 - V.90 at the alignment `AGERE_SYNC_PHASE=96` (`agere_v90_phase96`), and
   our V.90 rate renegotiation (`agere_v90_reneg_open`);
-- MNP ([below](#mnp)), V.80 ([below](#v80)) and the DTE's retrains and
-  renegotiations ([below](#retrains-and-renegotiations-on-request)).
+- MNP ([below](#mnp)), V.80 ([below](#v80)) and the retrains and
+  renegotiations of the DTE ([below](#retrains-and-renegotiations-on-request)).
 
 **Class 1 fax** at 8000 Hz (`agere_fax_*`): V.27ter, V.29 and V.17 (7200
-to 14400, short-train pages) pass both ways.
+to 14400, short-train pages) pass in the two directions.
 
-Agere's library, in its default V.92 mode, does V.8 with automode off,
+The Agere library, in its default V.92 mode, does V.8 with automode off,
 and connects to the open modem at V.34.
 
 ## Against spandsp's data modems
 
-`half_spandsp` is a modem built around spandsp's pumps (the system's
-libspandsp 0.0.6, the version Asterisk and FreeSWITCH use). It has:
+`half_spandsp` is a modem around the pumps of spandsp (the libspandsp
+0.0.6 of the system, the version that Asterisk and FreeSWITCH use). It
+has:
 
 - V.21, V.23, Bell 103 and V.22/V.22bis;
 - asynchronous 8N1 characters;
-- a few AT commands;
+- some AT commands;
 - V.8 by default, or the modulation forced with `AT+MS=`.
 
 spandsp has no modem of its own. The `data_modems` of its later versions
-is a sketch: its V.32bis (V.17's pumps with V.32's scramblers, no
-handshake) and its V.34 (no data receiver yet) cannot connect.
+is not complete: its V.32bis (the pumps of V.17 with the scramblers of
+V.32, no handshake) and its V.34 (no data receiver yet) cannot connect.
 
 `ctest -L spanpeer -j8` calls it from and to the open modem at each
-modulation it has, with `AT+MS=` forced on both sides. (This label is not
-part of CI's `spandsp` label, which holds only quick tests.)
+modulation that it has, with `AT+MS=` forced on the two sides. (This
+label is not part of the `spandsp` label of CI, which has only quick
+tests.)
 
 | `AT+MS=` | spandsp caller → open answerer | open caller → spandsp answerer |
 |---|---|---|
@@ -446,65 +461,69 @@ part of CI's `spandsp` label, which holds only quick tests.)
 | 23 (V.23) | CONNECT 1200/75 | CONNECT 1200/75 |
 | 21 (V.21), 103 (Bell 103) | CONNECT 300 | CONNECT 300 |
 
-spandsp's modem has no error correction, which found two faults in ours:
+The modem of spandsp has no error correction. This found two faults in
+our modem:
 
 - Our V.42 detection phase counted T400 (750 ms) in bits at a nominal
-  28800 bit/s: that made it 9 s at 2400 bit/s, 18 s at 1200 and 72 s at
-  300. It now counts at the pump's rate (`link/hdlc.cpp`).
-- Our caller went to LAPM without the detection phase (V.42 allows
-  this; it now has the phase, as the Courier's calls below found). When
-  the answerer had no V.42, it sent XID N400 times and then
-  waited for nothing. It now goes on in asynchronous mode (the
-  `link_test` test `LapmCallerAsyncRemote`).
+  28800 bit/s. Thus, it was 9 s at 2400 bit/s, 18 s at 1200 and 72 s at
+  300. It now counts at the rate of the pump (`link/hdlc.cpp`).
+- Our caller went to LAPM without the detection phase. (V.42 allows
+  this. It now has the phase, because of the Courier calls below.) When
+  the answerer had no V.42, it sent XID N400 times and then waited for
+  nothing. It now continues in asynchronous mode (the `link_test` test
+  `LapmCallerAsyncRemote`).
 
-V.8 between the two is not tested. When this was written it did not
-connect: our CM offered only V.34 and V.32bis, and our answerer went to
-V.32bis automode on a CM without V.34 instead of sending a JM for the
-modulation both had. Both have changed since: our CM and JM now carry
-V.34, V.32bis, V.22bis, V.23 and V.21 (`dsp/dp_v34.cpp`, `v8_msg`), and
-our answerer chooses the best modulation both have (`v8_choice()`; see
-[the HSF modem](#against-the-conexant-hsf-soft-modem)).
+We do not test V.8 between the two. When we wrote this, it did not
+connect. Our CM offered only V.34 and V.32bis. On a CM without V.34, our
+answerer went to V.32bis automode and did not send a JM for the
+modulation that the two had. The two items are changed now:
+- Our CM and JM now contain V.34, V.32bis, V.22bis, V.23 and V.21
+  (`dsp/dp_v34.cpp`, `v8_msg`).
+- Our answerer selects the best modulation that the two have
+  (`v8_choice()`; refer to [the HSF modem](#against-the-conexant-hsf-soft-modem)).
 
-spandsp, for its part:
+spandsp does these things:
 
-- sends a V.92 octet before its CM (a QC1a with all fields 0, which ours
-  answers), even with V.92 off;
-- in 0.0.6, sends the CM's modulations back in its JM unless the
-  application trims them (`half_spandsp` does, in `v8_cb()`).
+- It sends a V.92 octet before its CM (a QC1a with all fields 0, which
+  our modem answers), also with V.92 off.
+- In 0.0.6, it sends the modulations of the CM back in its JM, if the
+  application does not remove them (`half_spandsp` removes them, in
+  `v8_cb()`).
 
-`SPANDSP_V8_CALL=<n>` sets the call function its V.8 sends (Table 3/V.8;
-6, data, by default; 4 is a fax machine that sends), which the adaptive
-answer tests use ([below](#adaptive-answer)). `SPANDSP_DEBUG=1` prints
-spandsp's logs and the harness's.
+`SPANDSP_V8_CALL=<n>` sets the call function that its V.8 sends
+(Table 3/V.8; 6, data, by default; 4 is a fax machine that sends). The
+adaptive answer tests use it ([below](#adaptive-answer)).
+`SPANDSP_DEBUG=1` prints the logs of spandsp and of the harness.
 
 ## Against the Motorola SM56 soft modem
 
-`half_sm56` runs Motorola's SM56 soft modem: `sm56.ko` of sm56-06.09.05,
-built for Fedora Core 3's kernel 2.6.9, with its controller and data
-pumps and V.92. It runs in user space:
+`half_sm56` runs the SM56 soft modem of Motorola: the `sm56.ko` of
+sm56-06.09.05, built for the kernel 2.6.9 of Fedora Core 3, with its
+controller, data pumps and V.92. It runs in user space:
 
-- The module is linked in as it is. At build time `sm56_obj.cmake`
-  renames its kernel imports to `k_<name>` (into `sm56k.o`), and the
-  harness provides them.
+- The module is linked in without changes. At build time,
+  `sm56_obj.cmake` gives its kernel imports the names `k_<name>` (into
+  `sm56k.o`), and the harness supplies them.
 - The harness emulates an Intel ICH modem controller with a Motorola
-  "MOTf" codec, on port I/O that traps and that the harness carries out.
-- It patches the module's few reads of `current`.
-- It resamples between the line's 8000 Hz and the codec's rate, which
-  the module sets by modulation, from 7200 to 12000 Hz (7200 Hz idle,
-  9600 Hz for V.90).
+  "MOTf" codec, on port I/O that traps and that the harness does.
+- It patches the small number of reads of `current` in the module.
+- It resamples between the 8000 Hz of the line and the rate of the
+  codec. The module sets this rate for each modulation, from 7200 to
+  12000 Hz (7200 Hz idle, 9600 Hz for V.90).
 
-The module must be `test/sm56/sm56.ko` exactly as Motorola shipped it
-(SHA-256 `a757fd85...`): the harness checks the places it patches.
+The module must be `test/sm56/sm56.ko` exactly as Motorola supplied it
+(SHA-256 `a757fd85...`): the harness checks the places that it patches.
 `ctest -L sm56 -j8` runs the tests. `SM56_DEBUG=1` prints its `printk`s
-and the port accesses the harness does not know; `SM56_DEBUG=2` prints
-every port access.
+and the port accesses that the harness does not know. `SM56_DEBUG=2`
+prints all port accesses.
 
-**The FPU save.** The module's interrupt and deferred routines save the
-FPU (`fnsave`) to `.rodata.cst4` + 0x640 and + 0x644. That runs past the
-end of the section into whatever the linker puts after it. With the
-module linked first, that is its own constants, and its V.90
-interpolation then reads far outside its buffers. The harness points
-those four instructions (`fnsave` and `frstor`) at buffers of its own.
+**The FPU save.** The interrupt and deferred routines of the module save
+the FPU (`fnsave`) to `.rodata.cst4` + 0x640 and + 0x644. This goes
+past the end of the section into the data that the linker puts after
+it. With the module linked first, this data is its own constants. Then
+its V.90 interpolation reads far outside its buffers. The harness
+points those four instructions (`fnsave` and `frstor`) at its own
+buffers.
 
 | SM56 `AT+MS=` / ours | SM56 caller → open answerer | open caller → SM56 answerer |
 |---|---|---|
@@ -514,135 +533,141 @@ those four instructions (`fnsave` and `frstor`) at buffers of its own.
 | V22,0 / 22, V21,0 / 21 | CONNECT 1200, 300 | the same |
 | V90 / 90 (ours as the digital modem), µ-law and A-law | CONNECT 50666/31200 | - |
 
-**V.22bis.** Below V.34, its `+MS` wants automode off: `AT+MS=V22` alone
-is an error. Forced to V.22bis that way (`AT+MS=V22B,0`), it does not
-connect as the caller to a V.22bis answerer that sends the answer tone
-(ours, or the Agere modem's):
+**V.22bis.** Below V.34, its `+MS` needs automode off: `AT+MS=V22`
+alone is an error. When it is forced to V.22bis in that way
+(`AT+MS=V22B,0`), it does not connect as the caller to a V.22bis
+answerer that sends the answer tone (our modem, or the Agere modem):
 
-- Its unscrambled ones detector starts during the 2100 Hz tone and takes
-  the tone for them.
-- It sends S1 456 ms after the tone ends. With V.22bis's 75 ms of
-  silence, that is while it is already training on the answerer's
-  unscrambled ones, so it misses the answerer's S1.
-- It goes on at 1200 bit/s, sending S1 again every 2 s.
+- Its unscrambled ones detector starts during the 2100 Hz tone and
+  thinks that the tone is unscrambled ones.
+- It sends S1 456 ms after the tone ends. With the 75 ms of silence of
+  V.22bis, it is then already in training on the unscrambled ones of
+  the answerer. Thus, it does not hear the S1 of the answerer.
+- It continues at 1200 bit/s, and sends S1 again each 2 s.
 
-With 600 ms of silence, or none (the original library answers without
-the tone), it connects at 2400. In its automode, which is its default, it
-calls our V.22bis answerer at 2400, so that is what the test does.
+With 600 ms of silence, or no silence (the original library answers
+without the tone), it connects at 2400. In its automode, which is its
+default, it calls our V.22bis answerer at 2400. Thus, the test uses
+automode.
 
-**The codec's noise.** The harness adds noise to the codec's input
-(`SM56_NOISE`, rms 5, about -76 dB of full scale). On exact zeros, the
-module's frequency estimate stays at its initial 1800 Hz, which its
-answering automode takes for a V.32 caller's AA tone. It then leaves
-ANSam within 40 ms for V.32's AC, and a V.34 caller never hears an
-answer tone. Rms 3 is not enough; rms 10 costs V.90 a step (45333).
+**The codec's noise.** The harness adds noise to the input of the codec
+(`SM56_NOISE`, rms 5, approximately -76 dB of full scale). On exact
+zeros, the frequency estimate of the module stays at its initial
+1800 Hz. Its answering automode thinks that this is the AA tone of a
+V.32 caller. Then it stops ANSam in 40 ms for the AC of V.32, and a
+V.34 caller never hears an answer tone. Rms 3 is not sufficient. Rms 10
+makes V.90 one step lower (45333).
 
-**Its V.92.** It sends QC1a in V.8 on every call, and on the second call
-(`CALLS=2`) it does quick connect with short phase 2 (`sm56_v92_qc`). Its
-upstream stays V.34:
+**Its V.92.** It sends QC1a in V.8 on each call. On the second call
+(`CALLS=2`), it does quick connect with short phase 2 (`sm56_v92_qc`).
+Its upstream stays V.34:
 
-- The module has PCM upstream (`UAPCMP3_*`), but chooses it only in quick
-  connect's INFO1a (`SC_QC_Phase2_Set_Info_1A`), from INFO1d's PCM
-  upstream bit.
+- The module has PCM upstream (`UAPCMP3_*`), but it selects it only in
+  the INFO1a of quick connect (`SC_QC_Phase2_Set_Info_1A`), from the PCM
+  upstream bit of INFO1d.
 - Its full phase 2 (`SC_Phase2_Create_Tone_A_Set_1A`) clears that bit
-  after reading it.
-- Forced on, that path crashes the module (in `SC_Modulate`).
+  after it reads it.
+- When we force that path on, the module crashes (in `SC_Modulate`).
 
-Its short phase 2's INFO1a (3200 baud) says high carrier (bit 33, Table
-19/V.92), but it sends on the low one. Its upstream's spectrum is centred
-at the same 1850 Hz as after a full phase 2, where our INFO1d asked for
-the low carrier (1829 Hz; the high one is 1920 Hz). A receiver on the
-high carrier never finds its S, and it retrains. `sm56_v92_qc` fails if
-there is a retrain after short phase 2.
+The INFO1a of its short phase 2 (3200 baud) tells high carrier (bit 33,
+Table 19/V.92), but it transmits on the low carrier. The spectrum of its
+upstream has its centre at the same 1850 Hz as after a full phase 2,
+where our INFO1d asked for the low carrier (1829 Hz; the high carrier is
+1920 Hz). A receiver on the high carrier never finds its S, and it
+retrains. `sm56_v92_qc` fails if there is a retrain after short phase 2.
 
 **Modem-on-hold.**
 
-- We grant its own request (`AT+PMHR`, `sm56_v92_moh_grant`). It goes on
-  hold and comes back with quick connect.
-- It takes ours for a retrain, as the Agere modem does
+- We grant its own request (`AT+PMHR`, `sm56_v92_moh_grant`). It goes
+  on hold and comes back with quick connect.
+- It thinks that our request is a retrain, as the Agere modem does
   (`sm56_v92_moh_request`).
-- It answers MHreq only where its phase 2 begins, in place of INFO0d
-  (`SC_Phase2_Detect_Info_0` looks for both).
-- An MHreq sent at its retrain reversal does get an answer: MHnack with
-  `+PMHT=0` (its default), and MHcda then clears the call down. With
+- It answers MHreq only at the start of its phase 2, in place of INFO0d
+  (`SC_Phase2_Detect_Info_0` looks for the two).
+- An MHreq sent at its retrain reversal gets an answer: MHnack with
+  `+PMHT=0` (its default), and then MHcda disconnects the call. With
   `+PMHT` set, it waits for an accept from its platform (the handset,
   `MO_HoldStatePlatformInput`).
-- After MHfrr it does not reconnect with V.8, and expects something else
-  after the silence.
+- After MHfrr, it does not connect again with V.8, and it expects a
+  different signal after the silence.
 
-Up to the point where it answers MHreq, it behaves like a remote that
-knows nothing of modem-on-hold. And an MHreq sent at the reversal stalls
-the original library and the Agere modem (they take it for our
-reversal). So we keep following the retrain.
+Until it answers MHreq, it operates as a remote that does not know
+modem-on-hold. Also, an MHreq sent at the reversal stops the original
+library and the Agere modem (they think that it is our reversal). Thus,
+we continue to follow the retrain.
 
-**K56flex.** It is the one K56flex client we have, and `sm56_k56flex`
+**K56flex.** It is the only K56flex client that we have. `sm56_k56flex`
 calls us with `AT+MS=K56FLEX` (we answer with `AT+MS=56` as the digital
-modem, on the 8000 Hz line). It connects at 44000 bit/s down and 31200 up,
-with LAPM. Getting there took (see [K56flex](dsp/k56flex-details.md)):
+modem, on the 8000 Hz line). It connects at 44000 bit/s down and 31200
+up, with LAPM. To get this result, we had to do these items (refer to
+[K56flex](dsp/k56flex-details.md)):
 
 - a TRN1B that its own unused transmitter (`isdn_tx`) does not send;
-- the 16-level Js, as its detector cannot take the 4-level one, and then
-  16-point TRN, MP and E from it in phase 4;
+- the 16-level Js, because its detector cannot accept the 4-level Js,
+  and then 16-point TRN, MP and E from it in phase 4;
 - its J of 24 bits (J and a robbed-bit octet), heard in time: it waits
-  only some 0.75 s for our second R;
-- the sign of our codes as its decoder takes them (bit 7 positive).
+  only approximately 0.75 s for our second R;
+- the sign of our codes as its decoder uses them (bit 7 positive).
 
 ## Against the PCTel HSP soft modem
 
-`half_pctel` runs PCTel's HSP soft modem in user space: pctel-0.9.7-9,
-"HSP56 MicroModem ... K2.4.7.V92.001 (03/26/2003)". It uses the Intel
-AMR build of the data pumps (`lib/amr/dsp.a`) and the controller
-(`lib/control.a`).
+`half_pctel` runs the HSP soft modem of PCTel in user space:
+pctel-0.9.7-9, "HSP56 MicroModem ... K2.4.7.V92.001 (03/26/2003)". It
+uses the Intel AMR build of the data pumps (`lib/amr/dsp.a`) and the
+controller (`lib/control.a`).
 
-Unlike the Agere and SM56 modems, these need nothing of a kernel. The two
-objects (`test/pctel/dsp.o` and `control.o`, PCTel's files renamed)
-import only their hardware layer and the virtual UART's registers and
-queues. The harness provides these in C, after the driver's `i8xxhal.s`
-and `vuart.s`.
+These objects need nothing from a kernel, but the Agere and SM56 modems
+do. The two objects (`test/pctel/dsp.o` and `control.o`, the PCTel files
+with new names) import only their hardware layer and the registers and
+queues of the virtual UART. The harness supplies these in C, from the
+`i8xxhal.s` and `vuart.s` of the driver.
 
-- Its interrupt runs `dspMain()` and `modem_main()` once per block of
-  codec samples.
-- The pumps take the block with `RdASIC` and give theirs with `WrASIC`,
-  at the rate and block size they set (7200 Hz and 24 samples when idle).
-- `GlobalTimer` is the blocks' time in ms.
+- Its interrupt runs `dspMain()` and `modem_main()` one time for each
+  block of codec samples.
+- The pumps get the block with `RdASIC` and give their block with
+  `WrASIC`, at the rate and block size that they set (7200 Hz and 24
+  samples when idle).
+- `GlobalTimer` is the time of the blocks in ms.
 
-`ctest -L pctel -j8` runs the tests. `PCTEL_DEBUG=1` prints what the HAL
-(hardware layer) is asked, and the pump the controller asks for
-(`sharedRam` + 0x1c, + 0x20) against the pump running (`curModem`).
+`ctest -L pctel -j8` runs the tests. `PCTEL_DEBUG=1` prints the
+requests to the HAL (hardware layer), and the pump that the controller
+asks for (`sharedRam` + 0x1c, + 0x20) against the pump in operation
+(`curModem`).
 
 **`+MS` read its stack.** The controller reads some of its stack before
-writing it. `+MS` (`plus_ms`) copies the carrier's name (`ext_ms` +
-0x1b) to its stack without the terminating 0, and compares the copy with
-"V21" ... "V90", "V92", "K56FLEX".
+it writes it. `+MS` (`plus_ms`) copies the name of the carrier (`ext_ms`
++ 0x1b) to its stack without the terminating 0. Then it compares the
+copy with "V21" ... "V90", "V92", "K56FLEX".
 
-- The name matched only when the byte after the copy happened to be 0.
-  Otherwise `+MS` left the carrier as it was.
-- The harness clears the stack below its frame before each call into the
-  objects (they use about 1 KB of it; it clears 8 KB), so the copy ends
-  in 0, as it was meant to.
-- What was there before came from the harness's own calls: a print added
-  to the harness, or the stack filled with 0, turned `pctel_v90_calls`
-  from 50666 to 45333 every time.
+- The name matched only when the byte after the copy was 0 by chance.
+  Otherwise, `+MS` did not change the carrier.
+- The harness clears the stack below its frame before each call into
+  the objects (they use approximately 1 KB of it; it clears 8 KB). Thus,
+  the copy ends in 0, as its designers intended.
+- The data that was there before came from the calls of the harness
+  itself. A print added to the harness, or the stack filled with 0,
+  changed `pctel_v90_calls` from 50666 to 45333 each time.
 
-With the name matched, `+MS=V90` and `+MS=V92` take the top rate from the
+When the name matches, `+MS=V90` and `+MS=V92` get the top rate from the
 command (`ext_ms` + 0x86):
 
-- Without one (0, which is under 28000), they set S37 to 0 (automode) and
-  keep the downstream to drn 14, 45333.
+- Without a top rate (0, which is less than 28000), they set S37 to 0
+  (automode) and keep the downstream at drn 14, 45333.
 - `+MS=V90,1,300,56000` sets S37 to 14 (V.90), and the call trains at
   50666. The tests give the top rate.
 
-**A missed INFO0d.** At some starts of a call it misses our INFO0d and
-repeats its INFO0a, unacknowledged, every 82 ms. In a sweep of the
-call's start over nine periods of the commands, one start did this,
-with the harness's codec noise at its 5 rms; at 0 or 2 rms the same start
-trains. We had no recovery for that outside quick connect, and the call
-waited in phase 2 until the driver gave up. `pctel_v90_calls` failed
-this way about once in six full runs, where the machine's load moved the
-call's start (the driver's setup commands land a period later when it
-answers late). Now our INFO0d goes again until the remote takes one
-([dsp/v34-details.md](dsp/v34-details.md)). `pctel_v90_lose_info0` loses
-our first one on purpose.
+**A missed INFO0d.** At some call starts, it does not hear our INFO0d,
+and it sends its INFO0a again, unacknowledged, each 82 ms. In a sweep of
+the call start over nine periods of the commands, one start did this,
+with the codec noise of the harness at its 5 rms. At 0 or 2 rms, the
+same start trains. We had no recovery for this outside quick connect,
+and the call waited in phase 2 until the driver stopped. Thus,
+`pctel_v90_calls` failed approximately one time in six full runs, where
+the load of the machine moved the call start (the setup commands of the
+driver come one period later when it answers late). Now, we send our
+INFO0d again until the remote accepts one
+([dsp/v34-details.md](dsp/v34-details.md)). `pctel_v90_lose_info0`
+loses our first INFO0d intentionally.
 
 | PCTel `AT+MS=` / ours | PCTel caller → open answerer | open caller → PCTel answerer |
 |---|---|---|
@@ -654,113 +679,117 @@ our first one on purpose.
 | (its automode) / 23 | CONNECT 1200/75 | CONNECT 1200/75 |
 | (its automode) / 21 | CONNECT 300 | CONNECT 300 |
 
-Its CONNECT reports the DTE's rate (115200). Against itself and the SM56
-modem it connects at V.34 both ways (33600 with SM56).
+Its CONNECT reports the rate of the DTE (115200). Against itself and
+the SM56 modem, it connects at V.34 in the two directions (33600 with
+SM56).
 
-**Low speeds.** Its low-speed modulations work in its automode (no
-`+MS`), both ways, against our forced V.21, V.22, V.22bis and V.23
-modems. Answering, it sends V.22bis's unscrambled ones after its answer
-tone. Forced to one of them (`+MS=V21,0` and so on) they do not work:
-answering, it is silent after its answer tone. (These were the open
-failures while the tests forced it. Our V.22bis answerer, which once
-took 10 s over its V.22bis caller, connects in 8 s now.) With V.8 it
-always offers V.34, whatever `+MS` says.
+**Low speeds.** Its low-speed modulations operate in its automode (no
+`+MS`), in the two directions, against our forced V.21, V.22, V.22bis
+and V.23 modems. When it answers, it sends the unscrambled ones of
+V.22bis after its answer tone. When it is forced to one of them
+(`+MS=V21,0` and so on), they do not operate: when it answers, it is
+silent after its answer tone. (These were the open failures while the
+tests forced it. Our V.22bis answerer, which before needed 10 s for its
+V.22bis caller, now connects in 8 s.) With V.8, it always offers V.34,
+whatever the `+MS` value is.
 
-**V.34 with it answering** failed at first: it retrained phase 2 instead
-of answering our INFO1c with INFO1a, every time. Its INFO decoder (state
-in `g34`) never found the frame's start. We went from L2 straight into
-INFO1c, so the frame's first bit was a phase change from our last
-control channel symbol before L1. We now send two symbols of B first, as
-a phase reference. (The Agere and SM56 modems and the original library
-did not mind either way.)
+**V.34 with it as the answerer** failed at first: each time, it
+retrained phase 2 and did not answer our INFO1c with INFO1a. Its INFO
+decoder (state in `g34`) never found the start of the frame. We went
+from L2 directly into INFO1c. Thus, the first bit of the frame was a
+phase change from our last control channel symbol before L1. We now
+send two symbols of B first, as a phase reference. (This was not
+important to the Agere and SM56 modems and the original library.)
 
-**V.90** with it as the analogue modem connects at 50666/33600, µ-law and
-A-law. It used to retrain in phase 4, 200 ms into our TRN2d, and the
-call went on at V.34:
+**V.90** with it as the analogue modem connects at 50666/33600, µ-law
+and A-law. Before, it retrained in phase 4, 200 ms into our TRN2d, and
+the call continued at V.34:
 
-- Its receiver measured TRN2d at 20 dB (it wants 32,
-  `VpcmARxHandshake`), and later found no usable constellation at all
-  (`VpcmSelectCon`). Its CPt already asked for little (drn 6).
-- The cause was the harness. During V.90 the modem runs its codec at
-  FreqTable's "10287 Hz", which is V.34's 3429 baud times 3, that is
-  72000 / 7 Hz. The harness ran it at exactly 10287 Hz, 125 ppm off the
-  line's 8000 Hz.
-- A V.90 analogue modem's sampling has to follow the network's clock,
-  and this one does not track such an offset. At 72000 / 7 Hz its CPt
-  asks for drn 14 and the call trains.
+- Its receiver measured TRN2d at 20 dB (it needs 32,
+  `VpcmARxHandshake`). Later, it found no usable constellation
+  (`VpcmSelectCon`). Its CPt already asked for a low value (drn 6).
+- The cause was the harness. During V.90, the modem runs its codec at
+  the "10287 Hz" of FreqTable, which is the 3429 baud of V.34 times 3,
+  that is 72000 / 7 Hz. The harness ran it at exactly 10287 Hz, 125 ppm
+  away from the 8000 Hz of the line.
+- The sampling of a V.90 analogue modem must follow the clock of the
+  network, and this modem does not track such an offset. At
+  72000 / 7 Hz, its CPt asks for drn 14 and the call trains.
 
-**No V.92 to test.** Asked for V.92 (`AT+MS=V92`), it connects with V.90,
-with no quick connect or PCM upstream offer, on the first call and on a
-second one too. This build has V.92 in its controller only:
+**No V.92 to test.** When we ask for V.92 (`AT+MS=V92`), it connects
+with V.90, with no quick connect or PCM upstream offer, on the first
+call and also on a second call. This build has V.92 only in its
+controller:
 
-- `+MS=V92` is accepted but leaves S37 (the modulation, `act[0x25]`) at
-  0, automode, so V.8 picks V.90.
-- The controller's V.92 path (`go_v8_v92`: its V.8 for V.92, then
-  `set_dsp_interface_v92`) is taken with S37=15 and S19=2. `+PQC` and
-  `+PIG` default to on (`V92QuickConnectFlag`, `V92UpStreamFlag`).
-- But with `ATS37=15 S19=2` it asks the DSP for modem 15, and the DSP
-  (`dsp.o`, "LCE-336V 2.15.4") knows only modems 2 to 14 (`initSys`'s
-  switch; 14 is V.90). It sends a CM (with V.23 duplex added) and no
+- It accepts `+MS=V92`, but it keeps S37 (the modulation, `act[0x25]`)
+  at 0, automode. Thus, V.8 selects V.90.
+- The controller uses its V.92 path (`go_v8_v92`: its V.8 for V.92,
+  then `set_dsp_interface_v92`) with S37=15 and S19=2. `+PQC` and `+PIG`
+  are on by default (`V92QuickConnectFlag`, `V92UpStreamFlag`).
+- But with `ATS37=15 S19=2`, it asks the DSP for modem 15. The DSP
+  (`dsp.o`, "LCE-336V 2.15.4") knows only modems 2 to 14 (the switch of
+  `initSys`; 14 is V.90). It sends a CM (with V.23 duplex added) and no
   INFO0a after it, and the call ends in phase 2.
-- Nor has the DSP any of V.92's signals (QC1a, QTS, ANSpcm, INFO0a's V.92
-  bits) or a PCM upstream transmitter (Ru, TRN1u, the precoder and
-  prefilter): only V.90's.
+- Also, the DSP has none of the signals of V.92 (QC1a, QTS, ANSpcm, the
+  V.92 bits of INFO0a) and no PCM upstream transmitter (Ru, TRN1u, the
+  precoder and prefilter). It has only the signals of V.90.
 
 **Hanging up and calling again.** It answers ATH after +++ with NO
-CARRIER, which `interop_call` takes as the hang-up, as it does OK. On
-hook for the driver's usual 2 s, its second call stops in phase 2: its
-DSP never leaves the state after INFO0, and never switches its codec to
-9600 Hz for it. With 3 s or more on hook it trains (in real time, as the
-tests run it; `HANGUP_WAIT`). `pctel_v90_calls` makes two calls with 5 s
-on hook between them: 50666/33600 both times.
+CARRIER. `interop_call` accepts this as the hang-up, as it accepts OK.
+After the usual 2 s on hook of the driver, its second call stops in
+phase 2. Its DSP never leaves the state after INFO0, and never changes
+its codec to 9600 Hz for it. With 3 s or more on hook, it trains (in
+real time, as the tests run it; `HANGUP_WAIT`). `pctel_v90_calls` makes
+two calls with 5 s on hook between them: 50666/33600 the two times.
 
 ## Against the Conexant HSF soft modem
 
-`half_hsf` runs Conexant's HSF soft modem (Linuxant's hsfmodem
-7.80.02.06oem) in user space. It has three of the driver's i386 objects,
-as they are in `test/hsf/`:
+`half_hsf` runs the HSF soft modem of Conexant (the hsfmodem
+7.80.02.06oem of Linuxant) in user space. It has three of the i386
+objects of the driver, as they are in `test/hsf/`:
 
 - its engine (`hsfengine`: the controller and the data pumps);
 - its AC'97 ICH codec module (`hsfmc97ich`);
-- its soft DAA module (`hsfsoar`);
+- its soft DAA module (`hsfsoar`).
 
-plus the modem's `.inf` and country file, for its NVM (its stored
-configuration).
+It also has the `.inf` and country file of the modem, for its NVM (its
+stored configuration).
 
-**Linking.** CMake renames each object's `.ctors` and `.gnu.linkonce.*`
-sections for that object (`hsf_obj.cmake`): each object has the same C++
-names, and the linker would otherwise keep only one. It also makes the
-ICH module's microsecond busy wait (`hsfmc97ich41_`) and its print
-function (`hsfmc97ich57_`) weak symbols, so the harness can provide its
-own (below).
+**Linking.** CMake gives the `.ctors` and `.gnu.linkonce.*` sections of
+each object a name for that object (`hsf_obj.cmake`). The reason is
+that each object has the same C++ names, and otherwise the linker keeps
+only one. It also makes the microsecond busy wait (`hsfmc97ich41_`) and
+the print function (`hsfmc97ich57_`) of the ICH module weak symbols.
+Thus, the harness can supply its own (below).
 
 **What the harness provides.**
 
-- The engine's OS layer (`cnxthsf_7800206oem_Os*`): memory, timers on the
-  line's clock, I/O ports, the interrupt.
-- Its NVM: the `HKR` lines of the `.inf` and the country's lines of
-  `hsf.cty` (`HSF_NVM=<dir>` reads them from another directory).
-- Models of what the modules drive:
-  - an ICH's AC'97 bus master (PCM in and out, pausing and resuming at
-    the position it was at);
+- The OS layer of the engine (`cnxthsf_7800206oem_Os*`): memory, timers
+  on the clock of the line, I/O ports, the interrupt.
+- Its NVM: the `HKR` lines of the `.inf` and the lines of the country in
+  `hsf.cty` (`HSF_NVM=<dir>` reads them from a different directory).
+- Models of the hardware that the modules operate:
+  - the AC'97 bus master of an ICH (PCM in and out, pause and resume at
+    the position where it stopped);
   - a secondary MC'97 codec (Conexant, 0x4358/0x5429) at 15999 Hz;
-  - the SmartDAA behind the codec's register 0x7a, its line side
-    answering commands as the DAA library drives them (its kind 0x12;
-    see [hardware-details.md](hardware-details.md#conexant-ac97-codecs)).
-    So the library powers the DAA up, sets the line up and takes it off
-    hook.
-- The modem's `ComCtrl` interface is the DTE, on a pty.
+  - the SmartDAA behind register 0x7a of the codec. Its line side
+    answers commands as the DAA library sends them (its type 0x12;
+    refer to [hardware-details.md](hardware-details.md#conexant-ac97-codecs)).
+    Thus, the library gives power to the DAA, sets up the line and puts
+    it off hook.
+- The `ComCtrl` interface of the modem is the DTE, on a pty.
 
-**The TSC.** The engine reads the TSC (the processor's time stamp
-counter). The harness traps `rdtsc` (`PR_SET_TSC`) and gives the line's
-time at 1000 MHz, moving it on by 0.1 µs a read while the line stands
-still (otherwise a busy wait would never end). The ICH module waits about
-37 µs that way about 80 times a second of the line, 370 trapped reads
-each, and most of the modem's processor time went into those signals.
-The harness's `hsfmc97ich41_` steps the counter over the wait at once, to
-where those reads would have left it, with the same result (a call
-trains the same, sample for sample). The HSF calls take about a quarter
-of the time they did.
+**The TSC.** The engine reads the TSC (the time stamp counter of the
+processor). The harness traps `rdtsc` (`PR_SET_TSC`) and gives the time
+of the line at 1000 MHz. It adds 0.1 µs for each read while the line
+does not move (otherwise a busy wait never ends). The ICH module waits
+approximately 37 µs in that way approximately 80 times for each second
+of the line, with 370 trapped reads each time. Most of the processor
+time of the modem was used by those signals. The `hsfmc97ich41_` of the
+harness moves the counter over the wait immediately, to the value that
+those reads would give, with the same result (a call trains the same,
+sample for sample). The HSF calls now need approximately a quarter of
+the time that they needed before.
 
 **Running it.** `ctest -L hsf -j8` runs the tests. Its settings:
 
@@ -790,205 +819,229 @@ of the time they did.
 | V92 / 92 (V.92, PCM upstream) | CONNECT 52000/41333 | - |
 
 **The USB back end.** `half_hsf_usb` is the same modem on its USB back
-end (`hsfusbcd2`, for Conexant's "Cadmus 2" USB bridge: 0572:1300 and
-the others) in place of the ICH one. The harness provides Linuxant's
-`OsUsb*` layer and a model of the bridge (`hw/cadmus2.hpp`): it runs the
-module's scripts (byte code the module sends with vendor request 2: the
-bridge's registers, the codec's words, the line side's registers) and
-sends their replies on the interrupt pipe. The line's samples go in
-frames of 128 bytes (64 samples, 16 bit, 16000 Hz) each way, and a
-transmitted frame completes as the codec plays it. Modelled as a
-SmartDAA board, its calls go as the ICH's do (`hsf_usb_*`: V.21 to V.34,
-both ways). As a board with only the codec (`HSF_CD2_PLAIN=1`) it calls
-at V.22bis and below; above, its receiver fails, it seems for want of
-the real codec's filters, which the module allows for.
+end (`hsfusbcd2`, for the "Cadmus 2" USB bridge of Conexant: 0572:1300
+and the others), in place of the ICH back end. The harness supplies the
+`OsUsb*` layer of Linuxant and a model of the bridge (`hw/cadmus2.hpp`):
+- It runs the scripts of the module (byte code that the module sends
+  with vendor request 2: the registers of the bridge, the words of the
+  codec, the registers of the line side).
+- It sends their replies on the interrupt pipe.
+- The samples of the line go in frames of 128 bytes (64 samples, 16 bit,
+  16000 Hz) in each direction. A transmitted frame is complete when the
+  codec plays it.
 
-Other HSF tests: our forced V.21, V.23, V.22 and V.22bis callers against
-its automode (`hsf_low_*`); V.90 with our INFO0d lost
-(`hsf_v90_lose_info0`); our echo canceller against the echo of our signal
-from its line's hybrid, in V.90 and V.92 (`hsf_v90_echo`,
-`hsf_v92_echo`); and our fast parameter exchange, which it does not have
-(no RM to our Rf), so we renegotiate instead (`hsf_v92_fpe`).
+As a model of a SmartDAA board, its calls are the same as the calls of
+the ICH (`hsf_usb_*`: V.21 to V.34, in the two directions). As a board
+with only the codec (`HSF_CD2_PLAIN=1`), it calls at V.22bis and below.
+Above that, its receiver fails, possibly because it does not have the
+filters of the real codec, which the module expects.
 
-**V.90's CJ.** V.90 with it as the analogue modem connects at 52000/33600
-over µ-law and A-law. It failed at first: we waited for its CJ while it
-went on with INFO0a. It cuts its CM short for CJ, and drops its carrier
-right after the last data bit of CJ's third zero octet. So that octet has
-no stop bit, and our V.8 receiver counted only two. Now two zero octets,
-plus the start bit and eight zero bits of a third, count as CJ (CM and JM
-never have two zero octets in a row).
+Other HSF tests:
+- our forced V.21, V.23, V.22 and V.22bis callers against its automode
+  (`hsf_low_*`);
+- V.90 with our INFO0d lost (`hsf_v90_lose_info0`);
+- our echo canceller against the echo of our signal from the hybrid of
+  its line, in V.90 and V.92 (`hsf_v90_echo`, `hsf_v92_echo`);
+- our fast parameter exchange, which it does not have (no RM to our Rf).
+  Thus, we renegotiate (`hsf_v92_fpe`).
 
-**The ring buffer.** The ICH module ran off its ring buffer every 3.27 s
-at first. A word of its device (offset 0x280, set to 2 once the engine
-runs) makes it add 8 samples to each position it reads past sample 700,
-as for a codec that runs fast. The harness clears that word before each
-interrupt (`HSF_KEEP8=1` keeps it).
+**V.90's CJ.** V.90 with it as the analogue modem connects at
+52000/33600 over µ-law and A-law. At first, it failed: we waited for its
+CJ while it continued with INFO0a. It stops its CM early for CJ, and it
+stops its carrier immediately after the last data bit of the third zero
+octet of CJ. Thus, that octet has no stop bit, and our V.8 receiver
+counted only two. Now, two zero octets, plus the start bit and eight
+zero bits of a third, count as CJ (CM and JM never have two zero octets
+in sequence).
 
-**Its V.21 and V.23 answerers work only after V.8.** Forced
+**The ring buffer.** At first, the ICH module went past the end of its
+ring buffer each 3.27 s. A word of its device (offset 0x280, set to 2
+when the engine runs) makes it add 8 samples to each position that it
+reads after sample 700, as for a codec that runs fast. The harness
+clears that word before each interrupt (`HSF_KEEP8=1` keeps it).
+
+**Its V.21 and V.23 answerers operate only after V.8.** When forced
 (`+MS=V21,0`, `V23C,0`), it stays silent after ATA: no answer tone and
-no mark for a minute. That happens:
+no mark for a minute. That occurs:
 
-- against our caller, the Agere, SM56, spandsp and PCTel modems' callers,
-  and its own (all of which wait for the answerer, as V.25 has them do);
-- against a 980 Hz V.21 originate mark put on the line from the start
-  (by netsim, as a test);
-- with another country (`+GCI`), or the rates given (`V21,0,300,300`);
-  and `ATB` is not there.
+- against our caller, the callers of the Agere, SM56, spandsp and PCTel
+  modems, and its own caller (all of which wait for the answerer, as
+  V.25 tells them to);
+- against a 980 Hz V.21 originate mark on the line from the start (by
+  netsim, as a test);
+- with a different country (`+GCI`), or with the rates given
+  (`V21,0,300,300`). Also, `ATB` is not available.
 
-The harness is not the cause: forced, its V.22, V.22bis and V.32bis
-answerers work, its V.21 caller works (the same FSK transmitter), and so
-do the V.21 and V.23 answerers of its automode, through V.8.
+The harness is not the cause. When forced, its V.22, V.22bis and
+V.32bis answerers operate, and its V.21 caller operates (the same FSK
+transmitter). The V.21 and V.23 answerers of its automode also operate,
+through V.8.
 
-In automode it sends ANSam and, when no CM comes, its 1650 Hz mark, but
-it drops the mark 2 s after the caller's mark (again also against
-itself, calling with `+MS=V21,0`). So our V.21 caller (`AT+MS=21`) did not
-connect to it until our caller, too, used V.8 on its ANSam. That is for
-V.21 alone; our V.22, V.22bis and V.23 callers connect to it without V.8.
+In automode, it sends ANSam. When no CM comes, it sends its 1650 Hz
+mark, but it stops the mark 2 s after the mark of the caller (also
+against itself, with `+MS=V21,0` on the caller). Thus, our V.21 caller
+(`AT+MS=21`) did not connect to it until our caller also used V.8 on its
+ANSam. This is for V.21 only. Our V.22, V.22bis and V.23 callers connect
+to it without V.8.
 
 **The V.8 changes this led to.**
 
-- Our V.8 caller's CM now offers V.22bis, V.23 and V.21 as well as V.34
-  and V.32bis. A JM with one of these (the HSF modem's, answering with
-  `+MS=V21` and so on) gets CJ and that modulation, the FSK caller's
-  carrier first (as the HSF modem's own caller does).
-- Answering, a CM that goes no higher than one of these gets our JM of it
-  and, after CJ, that modulation.
-- A fault found on the way: the PCTel modem takes our CJ only when V.8's
-  75 ms without signal follows it (`dsp/dp_v34.cpp`, `V8C_GAP`). Our V.8
-  caller used to start the agreed modulation's carrier right after CJ,
-  and the PCTel modem went on with JM until it gave up. About half the
-  calls got through anyway, by chance: the V.8 pump did not clear the
-  rest of the block it ended in, and what the host's buffer held from
-  before went out, now and then a moment of V.21 space, which the PCTel
-  modem took for the end of CJ. Our caller now keeps the 75 ms gap.
+- The CM of our V.8 caller now offers V.22bis, V.23 and V.21, in
+  addition to V.34 and V.32bis. A JM with one of these (the JM of the
+  HSF modem, when it answers with `+MS=V21` and so on) gets CJ and that
+  modulation, with the carrier of the FSK caller first (as the caller of
+  the HSF modem does).
+- When we answer, a CM with no modulation higher than one of these gets
+  our JM of that modulation and, after CJ, that modulation.
+- We also found this fault: the PCTel modem accepts our CJ only when the
+  75 ms without signal of V.8 follows it (`dsp/dp_v34.cpp`, `V8C_GAP`).
+  Before, our V.8 caller started the carrier of the agreed modulation
+  immediately after CJ. The PCTel modem continued with JM until it
+  stopped. Approximately half the calls connected by chance. The V.8
+  pump did not clear the remaining part of the block that it ended in.
+  The old data in the buffer of the host went out, sometimes a short
+  time of V.21 space, which the PCTel modem accepted as the end of CJ.
+  Our caller now keeps the 75 ms gap.
 
-**Its V.32bis caller.** Its V.32bis (and V.32) caller went silent after
-our answerer's AC/CA exchange and never answered our R1. Its own
-answerer, after the reversal that answers the caller's CC, keeps on with
-AC for 256 symbols before the silence and S. Ours stopped after 64, and
-the HSF modem missed our S. With 128 or more it trains; we now send 256,
-as it does (the other modems do not mind).
+**Its V.32bis caller.** Its V.32bis (and V.32) caller became silent
+after the AC/CA exchange of our answerer, and never answered our R1.
+After the reversal that answers the CC of the caller, its own answerer
+continues with AC for 256 symbols before the silence and S. Our
+answerer stopped after 64, and the HSF modem did not hear our S. With
+128 or more, it trains. We now send 256, as it does (this is not
+important to the other modems).
 
-**V.92 with PCM upstream** connects at 52000/41333, µ-law and A-law, with
-quick connect (it sends QC1a on the first call already) and without it
-(`+PQC=3`, `hsf_v92_pcmup_noqc`). It failed at first in phase 3: we
-waited for its Su to reverse while it waited for our Jp.
+**V.92 with PCM upstream** connects at 52000/41333, µ-law and A-law,
+with quick connect (it sends QC1a already on the first call) and
+without it (`+PQC=3`, `hsf_v92_pcmup_noqc`). At first, it failed in
+phase 3: we waited for the reversal of its Su while it waited for our
+Jp.
 
 - Its Su, Su-bar and Su come as one short burst: Su for 144 symbols,
   Su-bar for only 24, then Su again until Jp.
-- Its Su has Sd's shape, period 6, but its energy is mostly at 4000 Hz
-  (with quick connect, all of it; without, the Su it holds is a sine).
-- Our receiver took only a sine of period 6 for Su, and looked for
+- Its Su has the shape of Sd, period 6, but its energy is almost all at
+  4000 Hz (with quick connect, all of it; without quick connect, the Su
+  that it holds is a sine).
+- Our receiver accepted only a sine of period 6 as Su. It looked for
   reversals between two 12-symbol windows 6 apart: too far apart for a
   Su-bar of 24 symbols.
 
 Now, while we send Jd, a signal of period 6 with some of its energy at
-1333 Hz counts as Su, and Su's reversals are each period's phase against
-Su's.
+1333 Hz counts as Su. The reversals of Su are the phase of each period
+against the phase of Su.
 
 ## Against the Broadcom soft modem (Windows)
 
-`half_broadcom` runs Broadcom's V.92 soft modem for Windows, `BCMSM.sys`
-3.4.19. This is the WDM (Windows Driver Model) driver of the "BCM V.92
-56K Modem", with its controller, data pumps, V.42, V.44 and fax all in
-that one driver, as Dell shipped it for its Dimension desktops in 2002
-(see above). It runs on `interop_windows.cpp`, a Windows kernel of our
-own.
+`half_broadcom` runs the V.92 soft modem of Broadcom for Windows,
+`BCMSM.sys` 3.4.19. This is the WDM (Windows Driver Model) driver of the
+"BCM V.92 56K Modem". Its controller, data pumps, V.42, V.44 and fax are
+all in that one driver, as Dell supplied it for its Dimension desktops
+in 2002 (refer to above). It runs on `interop_windows.cpp`, our own
+Windows kernel.
 
 ### Why not Wine
 
-Wine could not run it. Wine's kernel (`ntoskrnl.exe`, master of October
-2026) has 726 of its 1716 exports as stubs, and its HAL 71 of 92:
+Wine could not run it. The kernel of Wine (`ntoskrnl.exe`, master of
+October 2026) has 726 of its 1716 exports as stubs, and its HAL has 71
+of 92 as stubs:
 
-- Its `KeInsertQueueDpc` queues nothing.
+- Its `KeInsertQueueDpc` puts nothing in the queue.
 - `IoConnectInterrupt`, `IoGetDmaAdapter` and `KeSynchronizeExecution`
   are stubs.
 - `MmMapIoSpace` returns NULL, and port reads return 0.
 - START_DEVICE comes without resources.
 - Timers run in real time on a thread pool.
 
-A soft modem needs all of these, and here it has to run on the line's
-clock.
+A soft modem needs all of these, and here it must run on the clock of
+the line.
 
 ### Our Windows kernel: `interop_windows.cpp`
 
 `interop_windows.cpp` is a Windows kernel for the WDM driver of a soft
-modem on a PCI device. The Broadcom driver was the first it ran.
+modem on a PCI device. The Broadcom driver was the first driver that it
+ran.
 
 A harness describes its device in `struct win_dev` (`interop_windows.h`):
 
-- the driver's files and the INF's model;
-- the PCI configuration space (the harness's `PciDevice`'s);
-- the registers (BAR 0's memory or port I/O, PCI's configuration ports
-  among them), as calls;
+- the files of the driver and the model of the INF;
+- the PCI configuration space (from the `PciDevice` of the harness);
+- the registers (the memory or port I/O of BAR 0, which includes the
+  configuration ports of PCI), as calls;
 - the interrupt line;
-- the line's rate, and how to run the line on while the kernel waits.
+- the rate of the line, and how to move the line on while the kernel
+  waits.
 
 Its interface:
 
-- `win_start()` loads and starts the driver and opens its port;
-- `win_tick()`, called after each line sample, runs the kernel's time;
-- `win_serial_read()` and `win_serial_write()` are the port's reads and
-  writes.
+- `win_start()` loads and starts the driver and opens its port.
+- `win_tick()`, called after each line sample, moves the time of the
+  kernel.
+- `win_serial_read()` and `win_serial_write()` are the reads and writes
+  of the port.
 
-Everything else the driver needs comes from the INF: the registry, the
-service, and the device's description, maker and class. The device's IDs
-come from its configuration space.
+All other items that the driver needs come from the INF: the registry,
+the service, and the description, manufacturer and class of the device.
+The IDs of the device come from its configuration space.
 
 The kernel is part of a 32-bit program. It loads the PE image at its
 base (0x10000), relocates it and binds its imports by name. The Broadcom
 driver has 114 imports: 102 from `ntoskrnl.exe` (one of them data), 7
 from `HAL.dll`, 3 from `WMILIB.SYS` and 2 from `ks.sys`, stdcall and
-fastcall as in Windows. An import the kernel does not have stops the
-program with its name.
+fastcall as in Windows. If the kernel does not have an import, the
+program stops and shows the name of the import.
 
-Everything runs on one thread, on the line's clock:
+All items run on one thread, on the clock of the line:
 
-- The interrupt time and the system time are the line's samples. While
-  the line stands still, each read moves them on by 1 µs, because the
-  driver busy-waits on them a few µs at a time.
+- The interrupt time and the system time are the samples of the line.
+  While the line does not move, each read adds 1 µs to them, because
+  the driver does busy waits on them of some µs at a time.
 - Timers and their DPCs (deferred procedure calls) run between samples.
-  The ISR runs when the device's interrupt comes up (for the BCM4212, a
-  status bit it enables).
-- The driver's system threads are coroutines (`ucontext`). Each runs
-  when the event or timer it waits for is signalled.
-- IRQL is respected: no interrupt at or above the device's IRQL, no DPC
-  at DISPATCH_LEVEL and above, and threads at PASSIVE_LEVEL only.
-- The registry is held in memory: the INF's `AddReg` sections, as the
+  The ISR runs when the interrupt of the device comes up (for the
+  BCM4212, a status bit that it enables).
+- The system threads of the driver are coroutines (`ucontext`). Each one
+  runs when the event or timer that it waits for is signalled.
+- The kernel obeys IRQL: no interrupt at or above the IRQL of the
+  device, no DPC at DISPATCH_LEVEL and above, and threads at
+  PASSIVE_LEVEL only.
+- The registry is in memory: the `AddReg` sections of the INF, as the
   modem class installer writes them, and `PortName`.
 - fs points at a KPCR (a TLS entry of the GDT, set with
-  `set_thread_area`). The driver checks the stack it has left against its
-  NT_TIB's limit (fs:8), which the kernel sets for each coroutine.
+  `set_thread_area`). The driver checks its remaining stack against the
+  limit of its NT_TIB (fs:8), which the kernel sets for each coroutine.
 - `in`, `out`, `cli`, `sti`, `rdtsc` (`PR_SET_TSC`) and moves to and
-  from control registers (the driver reads CR0 and CR4) fault, and the
-  kernel carries them out.
+  from control registers (the driver reads CR0 and CR4) cause a fault,
+  and the kernel does them.
 
-We are the rest of the device stack:
+We are the remaining part of the device stack:
 
-- Under the driver we are the PCI bus driver: its PDO (physical device
-  object), with the configuration space, the PnP IRPs the driver sends
-  down, and its resources.
+- Under the driver, we are the PCI bus driver: its PDO (physical device
+  object), with the configuration space, the PnP IRPs that the driver
+  sends down, and its resources.
 - We are also the PnP manager: DriverEntry, AddDevice, and START_DEVICE
-  with the device's memory BAR and interrupt.
-- Over the driver we are Windows' `modem.sys`, whose lower filter the INF
-  makes the driver. To us the driver is a serial port. We open it
-  (IRP_MJ_CREATE), set it up with the serial IOCTLs (baud rate, line
-  control, handflow, timeouts, DTR, RTS), and read and write it with IRPs
-  that carry the pty's bytes (`half_broadcom`'s DTE).
+  with the memory BAR and interrupt of the device.
+- Above the driver, we are the `modem.sys` of Windows. The INF makes the
+  driver a lower filter of `modem.sys`. For us, the driver is a serial
+  port:
+  1. We open it (IRP_MJ_CREATE).
+  2. We set it up with the serial IOCTLs (baud rate, line control,
+     handflow, timeouts, DTR, RTS).
+  3. We read and write it with IRPs that carry the bytes of the pty (the
+     DTE of `half_broadcom`).
 
 ### The BCM4212 chip
 
-The driver's hardware is the BCM4212, Broadcom's PCI modem chip
-(14e4:4212, Dell's subsystem 1028:0001). This build (`opt-dell-wdm`) has
-codec code only for CodecType 0x15, 0x19 and 0x1c, the BCM4212's; the INF
-gives 0x15. The driver also looks on the PCI bus for AC'97 controllers
-(the ICHs that the other harnesses emulate). But for the codec types
-those use, its codec operations are a stub that fails, and opening the
-port then fails with STATUS_INSUFFICIENT_RESOURCES. So `half_broadcom`
-emulates the BCM4212.
+The hardware of the driver is the BCM4212, the PCI modem chip of
+Broadcom (14e4:4212, Dell subsystem 1028:0001). This build
+(`opt-dell-wdm`) has codec code only for CodecType 0x15, 0x19 and 0x1c,
+the types of the BCM4212. The INF gives 0x15. The driver also looks on
+the PCI bus for AC'97 controllers (the ICHs that the other harnesses
+emulate). But for the codec types of those controllers, its codec
+operations are a stub that fails. Then the port does not open, with
+STATUS_INSUFFICIENT_RESOURCES. Thus, `half_broadcom` emulates the
+BCM4212.
 
-There is no datasheet to be had, so the registers below are what the
-driver does with them:
+There is no datasheet. Thus, the registers below show what the driver
+does with them:
 
 | Offset | Register |
 |---|---|
@@ -1003,98 +1056,103 @@ driver does with them:
 | 0x210 to 0x21c | the same for RX |
 
 The registers are a 16 KB memory BAR, which the driver maps with
-`MmMapIoSpace`. The kernel gives it a window it cannot access, so each
-access faults. The kernel then decodes the instruction, opens the window
-with the register's value in place (from `half_broadcom`), and
-single-steps the instruction (with the trap flag, TF). At the trap after
-it, the kernel gives the device what was written and closes the window
-again.
+`MmMapIoSpace`. The kernel gives it a window that it cannot access.
+Thus, each access causes a fault. Then the kernel does these steps:
+1. It decodes the instruction.
+2. It opens the window with the value of the register in position (from
+   `half_broadcom`).
+3. It single-steps the instruction (with the trap flag, TF).
+4. At the trap after the instruction, it gives the device the written
+   value and closes the window again.
 
-The DMA engine is Broadcom's own, the BCM4401 Ethernet's (Linux's `b44`
-driver knows it). Its rings hold 8-octet descriptors: a control word
-(the length in bits 0 to 12, 0x10000000 for the end of the ring,
-0x20000000 for an interrupt when done) and an address. The samples are
-16 bit.
+The DMA engine is the engine of Broadcom, from the BCM4401 Ethernet (the
+`b44` driver of Linux knows it). Its rings contain 8-octet descriptors:
+a control word (the length in bits 0 to 12, 0x10000000 for the end of
+the ring, 0x20000000 for an interrupt when done) and an address. The
+samples are 16 bit.
 
-- TX: 64 descriptors of 96 octets (6 ms), with an interrupt on the last.
-  The engine stops at the descriptor the driver posted last.
+- TX: 64 descriptors of 96 octets (6 ms), with an interrupt on the last
+  descriptor. The engine stops at the descriptor that the driver posted
+  last.
 - RX: 128 descriptors of 4 and 92 octets in turn, end to end, with an
   interrupt for each pair.
 
-The line side is a Silicon Labs Si3034 DAA behind the chip's serial
-port:
+The line side is a Silicon Labs Si3034 DAA behind the serial port of the
+chip:
 
 - Its PLL sets the sample rate (registers 7 to 9: 4 MHz · M1 M2 / (N1 N2)
-  / 5120). It stays at 8000 Hz in the calls here, V.90's too.
-- Register 5's bit 0 is the hook.
-- Register 12 is the line's state: frame detect, and the loop current in
-  its low four bits. 1111 there is an overload, and the driver hangs up at
-  once (it went off hook and straight back on). The harness reports 1000,
-  half the scale.
+  / 5120). It stays at 8000 Hz in the calls here, also for V.90.
+- Bit 0 of register 5 is the hook.
+- Register 12 is the state of the line: frame detect, and the loop
+  current in its low four bits. 1111 there is an overload, and the
+  driver hangs up immediately (it went off hook and immediately back on).
+  The harness reports 1000, half the scale.
 
 ### How the driver starts the chip
 
-This comes from `BCMSM.sys`'s code, read with REA's disassembly, and
-from its register trace under `BROADCOM_DEBUG=2`, which prints each
-access with the address of the instruction.
+This data comes from the code of `BCMSM.sys`, read with the disassembly
+of REA, and from its register trace under `BROADCOM_DEBUG=2`, which
+prints each access with the address of the instruction.
 
 1. It maps the BAR and reads its settings from the registry: `SiSetup`
-   (20 bytes of DAA setup; without it, it works out the PLL itself for a
-   4 MHz clock), `UseGPIOHook`, `DaisyChainMode` and
+   (20 bytes of DAA setup; without it, it calculates the PLL itself for
+   a 4 MHz clock), `UseGPIOHook`, `DaisyChainMode` and
    `OffHookWatchdogTimeout`.
 2. Reset (CodecType 0x15): control (0x00) = 0x1001, a short wait, then
-   0x2000; 0xb0 and 0xb4 = 0x80; 0xc8 and 0xca = 0x3f; both DMA
-   channels (0x200, 0x210) and the interrupt mask (0x24) to 0. Then
-   0xb0's bit 2 is cleared, control = 0x1000 for ten reads of it, and
-   control = 0x2000. The driver tries this for up to 100 ms until the
-   DAA answers.
-3. The DAA's setup, with each write read back and retried up to 25
-   times:
+   0x2000; 0xb0 and 0xb4 = 0x80; 0xc8 and 0xca = 0x3f; the two DMA
+   channels (0x200, 0x210) and the interrupt mask (0x24) to 0. Then the
+   driver clears bit 2 of 0xb0, sets control = 0x1000 for ten reads of
+   it, and sets control = 0x2000. The driver tries this for up to 100 ms
+   until the DAA answers.
+3. The setup of the DAA. The driver reads back each write and tries it
+   again up to 25 times:
    - register 1 = 0x80 (soft reset);
    - the PLL (7 = 0x18, 8 = 0xff, 10 = 0, 9 = 0: 8000 Hz);
    - 6 = 0xe0; 5 = 0;
    - it waits for frame detect (register 12, bit 6), then reads register
-     13. Bit 6 set means an Si3034 ("International"): the driver sets
-     register 18's bit 1 and writes the country's registers 16, 17 and
-     18 (for the US: 0x08, 0x00, 0x02). Bit 6 clear means an Si3035
-     ("USA Only"), which keeps to the US alone (`AT+GCI=?` lists only
-     B5).
+     13. If bit 6 is set, the DAA is an Si3034 ("International"): the
+     driver sets bit 1 of register 18 and writes the registers 16, 17
+     and 18 of the country (for the US: 0x08, 0x00, 0x02). If bit 6 is
+     clear, the DAA is an Si3035 ("USA Only"), which uses only the US
+     (`AT+GCI=?` lists only B5).
 
-   The model is an Si3035 by default; `BROADCOM_DAA=3034` makes it an
-   Si3034. `broadcom_si3034_broadcom_calls` tests that: off hook, register
-   18 is then 0x03, not 0x01. Even so, `AT+GCI=?` lists only B5: the
-   other countries' values come from the registry
-   (`SOFTWARE\BCMSM\Modem\Country\`), which this INF does not fill.
-4. DMA: both channels off, then on (0x200, 0x210 = 1), the rings'
-   addresses (0x204, 0x214), the interrupt mask (0x24 = 0x101c000), the
-   last descriptors posted (0x208, 0x218 = 0xff8), and control |= 0x60.
+   The model is an Si3035 by default. `BROADCOM_DAA=3034` makes it an
+   Si3034. `broadcom_si3034_broadcom_calls` tests that: off hook,
+   register 18 is then 0x03, not 0x01. But `AT+GCI=?` still lists only
+   B5. The values of the other countries come from the registry
+   (`SOFTWARE\BCMSM\Modem\Country\`), and this INF does not fill it.
+4. DMA: the two channels off, then on (0x200, 0x210 = 1), the addresses
+   of the rings (0x204, 0x214), the interrupt mask (0x24 = 0x101c000),
+   the last descriptors posted (0x208, 0x218 = 0xff8), and
+   control |= 0x60.
 
-A DAA write waits for 0x3c's bit 15 to clear, then writes `reg << 8 |
-value` to 0x38. A read writes `0x2000 | reg << 8`, waits again and takes
-0x3c's low byte. The driver polls register 12 (the line's state) about
-500 times a second.
+A DAA write waits until bit 15 of 0x3c is clear, then writes `reg << 8 |
+value` to 0x38. A read writes `0x2000 | reg << 8`, waits again and gets
+the low byte of 0x3c. The driver polls register 12 (the state of the
+line) approximately 500 times a second.
 
-Off hook, the driver sets register 18's bit 0, then 5 = 0x01 (the hook),
-17 = 0x20, 20 = 0x60 and then 0, and 6 = 0xe3. On hook it undoes them:
-18's bit 0 clear, 5 = 0, 17 = 0, 6 = 0xe0.
+Off hook, the driver sets bit 0 of register 18, then 5 = 0x01 (the
+hook), 17 = 0x20, 20 = 0x60 and then 0, and 6 = 0xe3. On hook, it
+reverses them: bit 0 of 18 clear, 5 = 0, 17 = 0, 6 = 0xe0.
 
-CodecType 0x19 and 0x1c are other chips: a Sonics backplane like the
-BCM4401's, whose V.90 core (core ID 0x807 at 0xffc) the driver resets
-through 0xf98 (0x30001, then 0x30000), with its interrupt routed by 0xf94
-and a serial clock divider in control's bits 16 and up (from
-`BackplaneFreq` and `MasterClockDiv`). The BCM4212 has none of this.
+CodecType 0x19 and 0x1c are other chips: a Sonics backplane similar to
+the backplane of the BCM4401. The driver resets its V.90 core (core ID
+0x807 at 0xffc) through 0xf98 (0x30001, then 0x30000). 0xf94 routes its
+interrupt, and bits 16 and up of control are a serial clock divider
+(from `BackplaneFreq` and `MasterClockDiv`). The BCM4212 has none of
+this.
 
-`half_broadcom` resamples between the codec's rate and the line's
-(`BROADCOM_RATE`, 8000 Hz) and adds the codec's noise (`BROADCOM_NOISE`,
-rms 5).
+`half_broadcom` resamples between the rate of the codec and the rate of
+the line (`BROADCOM_RATE`, 8000 Hz), and adds the noise of the codec
+(`BROADCOM_NOISE`, rms 5).
 
-Two of the driver's own habits:
+Two special habits of the driver:
 
-- It reads each setting with Windows XP's version appended first
+- It reads each setting first with the version of Windows XP added
   (`CodecFlags__5_1`), then without it.
 - It reads `DisableTxRxDpc` with a handle that is not a key (an address
-  in its device extension). Windows answers STATUS_INVALID_HANDLE, and so
-  does our kernel.
+  in its device extension). Windows answers STATUS_INVALID_HANDLE, and
+  our kernel does the same.
 
 ### Running it, and the results
 
@@ -1119,63 +1177,63 @@ Two of the driver's own habits:
 | V92 with `+PIG=0` (PCM upstream) / 92 | phases 3 and 4, but no B1u: after a retrain, CONNECT 50666 (V.90) | - |
 
 We receive its V.34 at 24000 bit/s because of our line probe on this
-µ-law line (the same as with the Agere and SM56 modems); it receives ours
-at 33600. Its LAPM calls agree on V.44, and `broadcom_v44_*` sends 60000
-octets each way through it.
+µ-law line (the same as with the Agere and SM56 modems). It receives
+our V.34 at 33600. Its LAPM calls agree on V.44, and `broadcom_v44_*`
+sends 60000 octets in each direction through it.
 
 **Class 1 fax** at 8000 Hz (`broadcom_fax_*`): V.27ter, V.29 and V.17
-(7200 to 14400) pass both ways.
+(7200 to 14400) pass in the two directions.
 
-**Its V.92** sends QC1a on every call, and its upstream stays V.34. By
-default it leaves PCM upstream out (`+PIG:1`). With `AT+PIG=0` it
-chooses PCM upstream in INFO1a (`broadcom_v92_pcmup`):
+**Its V.92** sends QC1a on each call, and its upstream stays V.34. By
+default, it does not offer PCM upstream (`+PIG:1`). With `AT+PIG=0`, it
+selects PCM upstream in INFO1a (`broadcom_v92_pcmup`):
 
-- Phase 3 failed at first. Its Su lasts 96T before Su-bar, where V.92
+- At first, phase 3 failed. Its Su is 96T long before Su-bar, but V.92
   has 144T. Our receiver accepted Su only after 96 coherent samples,
-  which came inside its Su-bar, so it never saw the reversal. The modem
-  then waited 4 s for our Jp and gave up. Su now counts after 48 samples,
-  and phases 3 and 4 get through.
-- After E2u it sends no B1u (48 frames of scrambled ones). With our usual
-  CPd (a prefilter of 64 taps), its output turns periodic (48 symbols) a
-  few samples after E2u. With no prefilter (`DSP_V92_PREFILTER=0`) it
-  falls silent: exact zeros, which no V.92 precoder can produce, since
-  the constellations exclude zero. Neither decodes as ones. We retrain,
-  and the call connects at V.90 (50666/33600).
+  which came in its Su-bar. Thus, it never saw the reversal. The modem
+  then waited 4 s for our Jp and stopped. Su now counts after 48
+  samples, and phases 3 and 4 are successful.
+- After E2u, it sends no B1u (48 frames of scrambled ones). With our
+  usual CPd (a prefilter of 64 taps), its output becomes periodic (48
+  symbols) some samples after E2u. With no prefilter
+  (`DSP_V92_PREFILTER=0`), it becomes silent: exact zeros, which no V.92
+  precoder can make, because the constellations do not include zero.
+  Neither of the two decodes as ones. We retrain, and the call connects
+  at V.90 (50666/33600).
 
-PCM upstream may well be unfinished in this build, as it is off by
-default.
+PCM upstream is possibly not complete in this build, because it is off
+by default.
 
 ## Against the ESS soft modem (Windows)
 
-`half_ess` runs ESS's V.92 soft modem for Windows, `es56hpi.sys`
-5.43.070. This is the WDM driver of the "ESS ES56H-PI Data Fax Modem",
-with its controller, data pumps (fixed point and MMX), V.42, V.44, MNP
-and fax in that one driver, as ESS shipped it in 2003 (see above).
+`half_ess` runs the V.92 soft modem of ESS for Windows, `es56hpi.sys`
+5.43.070. This is the WDM driver of the "ESS ES56H-PI Data Fax Modem".
+Its controller, data pumps (fixed point and MMX), V.42, V.44, MNP and fax
+are in that one driver, as ESS supplied it in 2003 (refer to above).
 
-It runs on `interop_windows.cpp`, as the Broadcom driver does, and uses
-some parts of it that the Broadcom driver did not need:
+It runs on `interop_windows.cpp`, as the Broadcom driver does. It uses
+some parts of the kernel that the Broadcom driver did not need:
 
 - Its BAR 0 is ports, not memory. START_DEVICE gives it a port resource
   (`win_dev::io_size`), and its port accesses go to the harness. They are
-  16 bit: the port is the one in dx, whatever the driver passes above
-  it.
-- 20 more imports: C library functions (`strstr`, `strncmp`, `_strnicmp`,
-  `atoi`, `wcsstr`, ...), the compiler's 64-bit helpers (`_allmul`,
-  `_alldiv`, and `_allshl` and `_allshr`, which take edx:eax and cl),
-  `DbgPrint`, `RtlInitString`, the fast mutexes, and `KeTickCount`, a
-  data import (a KSYSTEM_TIME that the kernel moves on every 10 ms of the
-  line).
-- AddReg lines of the harness's own after the INF's (`win_dev::addreg`):
-  with `ESS_DEBUG=2` they set the driver's `DebugLevel`, and its
-  `DbgPrint`s print.
+  16 bit: the port is the port in dx, whatever the driver gives above it.
+- 20 more imports: C library functions (`strstr`, `strncmp`,
+  `_strnicmp`, `atoi`, `wcsstr`, ...), the 64-bit helpers of the
+  compiler (`_allmul`, `_alldiv`, and `_allshl` and `_allshr`, which take
+  edx:eax and cl), `DbgPrint`, `RtlInitString`, the fast mutexes, and
+  `KeTickCount`, a data import (a KSYSTEM_TIME that the kernel moves
+  forward each 10 ms of the line).
+- AddReg lines of the harness after the lines of the INF
+  (`win_dev::addreg`). With `ESS_DEBUG=2`, they set the `DebugLevel` of
+  the driver, and its `DbgPrint`s print.
 
 ### The ES2838 chip
 
-Its hardware is ESS's ES2838 (PCI 125d:2838, ESS's own subsystem; the
-INF's model `ModemPV`), a host signal processing modem: the chip has a
-codec, a sample FIFO and an interrupt, and the driver does everything
-else. There is no datasheet to be had, so the ports below
-(`hw/es2838.hpp`) are what the driver does with them:
+Its hardware is the ES2838 of ESS (PCI 125d:2838, the subsystem of ESS;
+the model `ModemPV` of the INF), a host signal processing modem. The
+chip has a codec, a sample FIFO and an interrupt, and the driver does
+all other tasks. There is no datasheet. Thus, the ports below
+(`hw/es2838.hpp`) show what the driver does with them:
 
 | Port | Register |
 |---|---|
@@ -1187,17 +1245,20 @@ else. There is no datasheet to be had, so the ports below
 | 0x0e | status: bit 1 the FIFO's interrupt, bit 0 the line's |
 
 - The interrupt comes with 16 samples in the FIFO. The driver takes 12
-  at a time (16 at its V.34 rates), a block every 1/600 s.
-- The codec's rate is in its register 0x5a (index 0x15a), set from a
-  table in the driver of the rates its pumps run at: 6 for 7200 Hz (V.8,
-  V.21 to V.32bis, fax); 5, 4, 3, 2 and 1 for 8229, 8400, 9000, 9600 and
-  10286 Hz (V.34's symbol rates at three samples a symbol, and 2400 baud
-  at four); and 11 for 8000 Hz (call progress and V.90).
+  at a time (16 at its V.34 rates), a block each 1/600 s.
+- The rate of the codec is in its register 0x5a (index 0x15a). The
+  driver sets it from a table of the rates of its pumps:
+  - 6 for 7200 Hz (V.8, V.21 to V.32bis, fax);
+  - 5, 4, 3, 2 and 1 for 8229, 8400, 9000, 9600 and 10286 Hz (the
+    symbol rates of V.34 at three samples a symbol, and 2400 baud at
+    four);
+  - 11 for 8000 Hz (call progress and V.90).
 - Bit 9 of the GPIO status is the loop current. Off hook without it, the
-  driver counts on and says OVERLOAD (its over-current protection).
+  driver counts and then shows OVERLOAD (its over-current protection).
 
-`half_ess` resamples between the codec's rate and the line's (`ESS_RATE`,
-8000 Hz) and adds the codec's noise (`ESS_NOISE`, rms 5).
+`half_ess` resamples between the rate of the codec and the rate of the
+line (`ESS_RATE`, 8000 Hz), and adds the noise of the codec
+(`ESS_NOISE`, rms 5).
 
 ### Running it, and the results
 
@@ -1222,241 +1283,262 @@ else. There is no datasheet to be had, so the ports below
 | V92 / 92, as it comes | CONNECT 49333 (V.90) | - |
 | V92 with `+PIG=0` (PCM upstream) / 92, µ-law and A-law | CONNECT 49333/41333 (our prefilter) | - |
 
-These pass too: V.8 in its automode (V.34, with it calling), V.44 both
-ways (60000 octets), MNP 5 both ways, and, as with the other peers:
+These also pass: V.8 in its automode (V.34, with it as the caller), V.44
+in the two directions (60000 octets), MNP 5 in the two directions, and,
+as with the other peers:
 
-- V.8 agreeing on V.21, V.23, V.22bis and V.32bis both ways
-  (`ess_v8_*`), and our forced V.21, V.23, V.22 and V.22bis callers
-  against its automode (`ess_low_*`);
-- our V.34 rate renegotiations both ways, the line 10 dB noisier 10 s in
-  (a retrain), and phase 2's recovery from our lost INFO0a;
+- V.8 agreement on V.21, V.23, V.22bis and V.32bis in the two
+  directions (`ess_v8_*`), and our forced V.21, V.23, V.22 and V.22bis
+  callers against its automode (`ess_low_*`);
+- our V.34 rate renegotiations in the two directions, the line 10 dB
+  noisier after 10 s (a retrain), and the recovery of phase 2 from our
+  lost INFO0a;
 - V.90 with our INFO0d lost; our renegotiation (after its own to 26400
-  upstream, which it starts at every V.90 connect); and the echo of our
-  PCM signal 20 dB down (our echo canceller takes about 31 dB away);
+  upstream, which it starts at each V.90 connect); and the echo of our
+  PCM signal 20 dB down (our echo canceller removes approximately
+  31 dB);
 - V.92 with the echo 10 dB down, PCM upstream on A-law lines, and our
-  modem-on-hold request (it takes our tone B for a retrain's and
-  retrains, as the Agere modem does);
-- MNP 4 alone, with it calling.
+  modem-on-hold request (it thinks that our tone B is the tone B of a
+  retrain and retrains, as the Agere modem does);
+- MNP 4 alone, with it as the caller.
 
-**Class 1 fax** at 8000 Hz with it receiving (`ess_fax_*_open_sends`)
-passes at all ten modulations. It says CONNECT a little before it
-receives: at 300 bit/s its first octet or more are lost, so its FSK calls
-send their data a second after CONNECT (`DATA_WAIT=1`). Its V.29 at 9600
-now and then gets the page's first three octets wrong, which the fax
-check accepts (it finds the page by its next 128 bits).
+**Class 1 fax** at 8000 Hz with it as the receiver
+(`ess_fax_*_open_sends`) passes at all ten modulations. It shows CONNECT
+a short time before it receives. At 300 bit/s, its first octet or more
+are lost. Thus, its FSK calls send their data one second after CONNECT
+(`DATA_WAIT=1`). Its V.29 at 9600 sometimes gets the first three octets
+of the page wrong. The fax check accepts this (it finds the page by its
+next 128 bits).
 
-**Bell 103.** As the Bell 103 caller it ignores an answer tone (2225 Hz)
-that is already on the line as it dials, and sends nothing. So
+**Bell 103.** As the Bell 103 caller, it ignores an answer tone (2225 Hz)
+that is already on the line when it dials, and it sends nothing. Thus,
 `ess_103_ess_calls` answers 2 s after it dials (`DIAL`, `ANSWER_AFTER`),
-as after rings, and it then calls at 300 bit/s.
+as after rings. Then it calls at 300 bit/s.
 
 ### What it does not do here
 
-- Once it has left a call's data state for command state, its parser
-  takes no command. After `+++` it says OK; then `ATI` gets no answer,
-  and `ATO` goes out on the line as data. As the fax sender (the caller)
-  it takes the answerer's frames and says OK, but takes no `AT+FTH=3`
-  after them, nor `AT` (with our answerer, Agere's and Broadcom's alike),
-  until the call is over. So there are no fax calls with it sending, and
-  no modem-on-hold of its own (`AT+PMHR` needs the escape). Keeping a
-  WAIT_ON_MASK in flight, as modem.sys does, makes no difference.
-- No Bell 212A: `AT+MS=B212` is ERROR (and `ATB1` with V.22 is no 212A).
+- After it goes from the data state of a call to command state, its
+  parser accepts no command. After `+++`, it shows OK. Then `ATI` gets no
+  answer, and `ATO` goes out on the line as data. As the fax sender (the
+  caller), it accepts the frames of the answerer and shows OK. But it
+  does not accept `AT+FTH=3` after them, or `AT` (with our answerer and
+  also with the answerers of Agere and Broadcom), until the call ends.
+  Thus, there are no fax calls with it as the sender, and no
+  modem-on-hold of its own (`AT+PMHR` needs the escape). A WAIT_ON_MASK
+  kept in progress, as modem.sys does, does not change this.
+- No Bell 212A: `AT+MS=B212` is ERROR (and `ATB1` with V.22 is not
+  212A).
 - Its V.92 INFO0a has short phase 2 off: no quick connect, with or
   without `+PQC=0`.
-- Answering with MNP (`+ES=3,0,6`), it often takes our direction no
-  higher than 14400 bit/s (7200 at some answer timings), and retrains up
-  a second or two into the call, as an MNP 10 modem would. MNP 5 goes on
-  through the retrain. With MNP 4 alone (our `%C2`) it gives its DTE no
-  CONNECT after the retrain, so that test runs only with it calling.
-- Plain V.34 answers take 33600 at most timings, but 14400 or 7200 at
-  some: about one call in ten with `ESS_SYNC=0`, where the ATA lands
-  wherever the scheduler puts it. These were the intermittent caps of
-  full-suite runs. The tests' `ESS_SYNC` (the default, `PIPE_SYNC`'s 4800
-  samples) keeps them at a timing that takes 33600.
+- When it answers with MNP (`+ES=3,0,6`), it frequently sets our
+  direction to 14400 bit/s or less (7200 at some answer timings). Then
+  it retrains up one or two seconds into the call, as an MNP 10 modem
+  does. MNP 5 continues through the retrain. With MNP 4 alone (our
+  `%C2`), it gives its DTE no CONNECT after the retrain. Thus, that test
+  runs only with it as the caller.
+- Plain V.34 answers get 33600 at most timings, but 14400 or 7200 at
+  some: approximately one call in ten with `ESS_SYNC=0`, where the ATA
+  comes at the time that the scheduler gives it. These were the
+  intermittent limits of full-suite runs. The `ESS_SYNC` of the tests
+  (the default, the 4800 samples of `PIPE_SYNC`) keeps them at a timing
+  that gets 33600.
 
 ### Its PCM upstream
 
-With `+PIG=0` its INFO1a asks for PCM upstream. Phases 3 and 4 get
-through: Ru, TRN1u, Ja, TRN2u, SUVu, its CPu (6 constellations), SUVu'
-and E2u. Three things in ours had to change.
+With `+PIG=0`, its INFO1a asks for PCM upstream. Phases 3 and 4 are
+successful: Ru, TRN1u, Ja, TRN2u, SUVu, its CPu (6 constellations),
+SUVu' and E2u. We had to change three items in our modem.
 
 **The CPd's filter sections.** Its INFO1a has filter sections 0 (p1 and
 z2 alone, Table 18/V.92). Our CPd had 4 taps of z1 and p2 in it (for the
-Smart Link library, whose filters have all four). It never took that CPd,
-and retrained after half a second. Our CPd now has z1 and p2 only where
-the INFO1a has them.
+Smart Link library, which has filters with all four). It never accepted
+that CPd, and retrained after half a second. Our CPd now has z1 and p2
+only where the INFO1a has them.
 
-**Its points.** Its points then differ from V.92's in two ways, both now
-handled in our receiver (`v92.cpp`, `data_symbol()`):
+**Its points.** Then its points are different from the points of V.92 in
+two ways. Our receiver now corrects the two (`v92.cpp`,
+`data_symbol()`):
 
-- Without precoding, its negative points are a grid step (16 G) further
-  out than the mirror of its positive ones: they land on the even grid
-  units. The first 24 symbols' negative points show it, and from then on
-  they go a step in.
+- Without precoding, its negative points are one grid step (16 G)
+  farther out than the mirror of its positive points: they are on the
+  even grid units. The negative points of the first 24 symbols show
+  this. After that, we move them one step in.
 - Its precoder rounds its feedback down to the grid unit below: it sends
-  x = w - ceil(fb), where fb is the sum of p1 over its previous x. So we
-  receive the point less a fraction of a unit; the decisions sit at the
-  edge of their regions, and B1u had about 5 % of its bits wrong. We
-  rebuild its x from our decisions, and so fb (near a unit, on either
-  side, the one nearer a point: its sum is not quite ours). The first 48
-  symbols' grid mse with this and without it tells which applies.
+  x = w - ceil(fb), where fb is the sum of p1 over its previous x. Thus,
+  we receive the point minus a fraction of a unit. The decisions are at
+  the edge of their regions, and B1u had approximately 5 % of its bits
+  wrong. We make its x again from our decisions, and thus fb (near a
+  unit, on one of the two sides, the side nearer a point: its sum is not
+  exactly our sum). The grid mse of the first 48 symbols with this
+  correction and without it tells which applies.
 
 **The trellis frame's 4th symbol.** With our prefilter (in z2, the
-precoder in p1) its points come on our levels. But on the trellis frame's
-4th symbol, about half of the time, it sent 0. There the classes are of
-2M (eta = 2K + 2zM + parity), and its precoder goes past the M (1 + sum
-|b|) points our prefilter's CPd had (42 for M 36); there it sends 0
-rather than the last point. (The HSF and Smart Link modems keep within
-them.) The CPd now has at least 2M points, as the design without the
-prefilter had; the HSF and Smart Link rates are the same with them.
+precoder in p1), its points are on our levels. But on the 4th symbol of
+the trellis frame, approximately half of the time, it sent 0. There the
+classes are of 2M (eta = 2K + 2zM + parity), and its precoder goes past
+the M (1 + sum |b|) points that the CPd of our prefilter had (42 for
+M 36). There it sends 0 and not the last point. (The HSF and Smart Link
+modems stay in them.) The CPd now has a minimum of 2M points, as the
+design without the prefilter had. The HSF and Smart Link rates are the
+same with them.
 
-ESS's PCM upstream now connects at 41333 (µ-law and A-law), with
-modem-on-hold, and with the echo 10 dB down (33333) too.
+The PCM upstream of ESS now connects at 41333 (µ-law and A-law), with
+modem-on-hold, and also with the echo 10 dB down (33333).
 
-**The fallback.** Should a PCM upstream with the prefilter fail on a
-modem with p1 and z2 alone, we retrain and try once more without the
+**The fallback.** If a PCM upstream with the prefilter fails on a modem
+with p1 and z2 alone, we retrain and try one more time without the
 prefilter or trellis decoding: precoding alone, with the corrections
-above. ESS gets 32000 or 33333 that way. Its points, off G.711's levels,
-carry its quantization noise (which TRN2u's mse misses), so the margin
-renegotiates down, each time below the last rate (`drn_cap`), to about
-30666.
+above. ESS gets 32000 or 33333 in that way. Its points, which are not on
+the levels of G.711, carry its quantization noise (which the mse of
+TRN2u does not measure). Thus, the margin renegotiates down, each time
+below the last rate (`drn_cap`), to approximately 30666.
 
 ### What it showed in ours
 
 Our V.32 and V.32bis caller sent S for 256 symbols after R1, then S-bar.
-V.32 (5.4.1) has S first for NT, the round trip delay the caller measured
-from its CC, and then the 256 symbols of the conditioning signal. The ESS
-answerer stopped R1 at our S and never sent its S, TRN and R3.
-(Broadcom's caller, with NT, got through.) Our caller now measures NT
-(from its CC reversal to the answerer's, less the answerer's 64 symbols)
-and sends S for NT + 256 symbols.
+V.32 (5.4.1) has S first for NT, the round trip delay that the caller
+measured from its CC, and then the 256 symbols of the conditioning
+signal. The ESS answerer stopped R1 at our S and never sent its S, TRN
+and R3. (The caller of Broadcom, with NT, was successful.) Our caller
+now measures NT (from its CC reversal to the reversal of the answerer,
+minus the 64 symbols of the answerer) and sends S for NT + 256 symbols.
 
 ## Against the Intel 537EP soft modem
 
-`half_intel` runs the core of Intel's 537EP driver for Linux
+`half_intel` runs the core of the Intel 537EP driver for Linux
 (`537core.lib`, "Release 4.65", of the Intel537EP 2.37.50.1 driver for
 Fedora Core 1). The core has its controller (AT commands, V.42, V.42bis,
-V.44, MNP, fax) and its data pumps (Intel's own, on IPP, Intel's
-Integrated Performance Primitives) up to V.92. The core runs on the host;
-its "DSP" is a software comm RAM.
+V.44, MNP, fax) and its data pumps up to V.92 (the pumps of Intel, on
+IPP, the Integrated Performance Primitives of Intel). The core runs on
+the host. Its "DSP" is a software comm RAM.
 
-It needs no kernel: only what the driver's open glue (BSD licensed) gave
-it, which the harness provides again in C++ (89 symbols):
+It needs no kernel. It needs only what the open glue of the driver (BSD
+licensed) gave it, and the harness supplies this again in C++ (89
+symbols):
 
-- the virtual UART's queues and lines (`uart.c`), with the DTE on the
-  pty;
-- the real-time service (`rts.c`). Every 10 ms of the line it runs the
-  controller's timers (`linux_sys_isr_timer_ticker`, `acu_timer`), and
-  when its time comes, the RTS task `clm_bg()`, on a stack of its own (a
-  `ucontext`). The tasker's `RSATaskYield()` sleeps the task until the
-  next time. In the kernel, the task's time slice ran out while the timer
-  ticked; here no time passes inside the task, so it sleeps at each yield
-  (`fax1_execute_command` waits that way for `AT+FTS`);
+- the queues and lines of the virtual UART (`uart.c`), with the DTE on
+  the pty;
+- the real-time service (`rts.c`). Each 10 ms of the line, it runs the
+  timers of the controller (`linux_sys_isr_timer_ticker`, `acu_timer`).
+  At the correct time, it also runs the RTS task `clm_bg()`, on its own
+  stack (a `ucontext`). The `RSATaskYield()` of the tasker stops the task
+  until the next time. In the kernel, the time slice of the task expired
+  while the timer ticked. Here, no time passes in the task. Thus, it
+  stops at each yield (`fax1_execute_command` waits in that way for
+  `AT+FTS`);
 - the precise dialer (pulse dialling, hook flash), a task on its own
-  stack that waits with `linux_schedule()`, resumed every ms;
-- the locks (none: there is one thread), but the core's resources
+  stack that waits with `linux_schedule()`, resumed each ms;
+- the locks (none: there is one thread), but the resources of the core
   (`linux_RSAGetExclusive`, try-locks in `locks.c`) as they were: the RTS
-  task can yield while holding one, and `cp_dsp` gets none from a stub;
-- the DMA rings' memory (`AllocateDmaResources`), the country tables
-  (`wwh_dflt.c`, Intel's data as it is), `gettimeofday` and `rdtsc` on the
-  line's clock, and none of the persistent settings (the hamregistry's
-  requests time out at once).
+  task can yield while it holds one, and `cp_dsp` gets none from a stub;
+- the memory of the DMA rings (`AllocateDmaResources`), the country
+  tables (`wwh_dflt.c`, the data of Intel without changes),
+  `gettimeofday` and `rdtsc` on the clock of the line, and none of the
+  persistent settings (the requests of the hamregistry time out
+  immediately).
 
 ### The chip
 
 The chip (8086:1080, `hw/i537ep.hpp`) is an Si3052 DAA with its own DMA.
-The core reaches its registers through four accessors of its own on a
-base pointer (the driver's `iobase`), so here they are plain memory, and
-the chip does its work between the driver's calls:
+The core gets to its registers through four of its own accessors on a
+base pointer (the `iobase` of the driver). Thus, here they are plain
+memory, and the chip does its work between the calls of the driver:
 
 - two rings of 32-bit words (a sample in the low half of each), 32
-  periods of 96 words: the ADC's at 0x08 to 0x14 and the DAC's at 0x18 to
-  0x24 (base, end, interrupt point, current word);
+  periods of 96 words: the ring of the ADC at 0x08 to 0x14 and the ring
+  of the DAC at 0x18 to 0x24 (base, end, interrupt point, current word);
 - the interrupt status at 0x04 (written back to clear: the handler
   acknowledges what it read);
-- the codec's rate at 0x37 (7200 to 16000 Hz; 9600 by default, and
+- the rate of the codec at 0x37 (7200 to 16000 Hz; 9600 by default, and
   72000 / 7 for V.34);
-- the codec's clock lock and the loop current at 0x3c;
+- the clock lock of the codec and the loop current at 0x3c;
 - the hook at 0x35.
 
-Each period's interrupt runs the chip's handler (`AfeIRQ`), the comm
-RAM's, and then the DSP tasklet `DspTask()`, with a clean FPU as the
-kernel gave it (`fnsave`).
+The interrupt of each period runs the handler of the chip (`AfeIRQ`),
+the handler of the comm RAM, and then the DSP tasklet `DspTask()`, with a
+clean FPU as the kernel gave it (`fnsave`).
 
 ### IPP's processor
 
-IPP picks its pumps' code by `cpuid` (px, m6, a6, w7). The harness makes
-it a Pentium 4 (`ippCoreGetCpuType` returns 6, w7) whatever the host;
-`INTEL_CPU=<type>` picks another. IPP's cycle counter
-(`ipp_get_pentium_counter`, a bare `rdtsc`) runs on the line's clock.
-Both symbols are weakened in the object, and its own `exit` (empty),
-`index` and `pow` are renamed (`CMakeLists.txt`). With the other code
-paths (`INTEL_CPU=0`, 3, 5: px, a6, m6), its V.34, V.32bis, V.90 and V.17
-fax calls pass as well.
+IPP selects the code of its pumps by `cpuid` (px, m6, a6, w7). The
+harness makes it a Pentium 4 (`ippCoreGetCpuType` returns 6, w7) on all
+hosts. `INTEL_CPU=<type>` selects a different type. The cycle counter of
+IPP (`ipp_get_pentium_counter`, a bare `rdtsc`) runs on the clock of the
+line. The two symbols are weak in the object, and its own `exit`
+(empty), `index` and `pow` have new names (`CMakeLists.txt`). With the
+other code paths (`INTEL_CPU=0`, 3, 5: px, a6, m6), its V.34, V.32bis,
+V.90 and V.17 fax calls also pass.
 
-`INTEL_DEBUG=1` prints the chip's DMA and the codec's rate;
-`INTEL_DEBUG=2` also prints the core's own messages.
+`INTEL_DEBUG=1` prints the DMA of the chip and the rate of the codec.
+`INTEL_DEBUG=2` also prints the messages of the core.
 
 ### The results
 
-Its line runs at 9600 Hz (`INTEL_RATE=9600`): V.90 connects at 53333
+Its line runs at 9600 Hz (`INTEL_RATE=9600`). V.90 connects at 53333 in
 that way, but at 45333 through the resampling to 8000 Hz. Against the
 open modem (`ctest -L intel`):
 
 - V.34 (33600), V.32bis (14400), V.22bis, V.22, V.21, V.23 and Bell 103,
-  each forced, both ways;
-- V.8 with both modems in their automodes (V.34, with it calling); V.44
-  both ways (60000 octets); MNP 5 both ways;
-- V.90 as the analogue modem, both laws (53333/31200);
-- class 1 fax at all ten modulations, both ways.
+  each forced, in the two directions;
+- V.8 with the two modems in their automodes (V.34, with it as the
+  caller); V.44 in the two directions (60000 octets); MNP 5 in the two
+  directions;
+- V.90 as the analogue modem, the two laws (53333/31200);
+- class 1 fax at all ten modulations, in the two directions.
 
-**Its V.92** (`+MS=V92`, the default): its INFO0a says V.92, but its
+**Its V.92** (`+MS=V92`, the default): its INFO0a tells V.92, but its
 INFO1a asks for V.90 (no PCM upstream), and the call is V.90
-(`intel_v92`). With `+PIG=0` it asks for PCM upstream and gets through
+(`intel_v92`). With `+PIG=0`, it asks for PCM upstream. It completes
 phase 3 (Ru, Ja, CPt, E1u), TRN2u and SUVu, and acknowledges our CPd
 (SUVu'). But it sends no CPu: 0.4 s later it retrains (tone A), with or
-without our prefilter, with a 16- or 64-state trellis, and the call is
-V.90 after the retrain (`intel_v92_pcmup`).
+without our prefilter, with a 16- or 64-state trellis. The call is V.90
+after the retrain (`intel_v92_pcmup`).
 
-**What it showed in ours.** Our V.32bis answerer reversed its CA to AC as
-soon as it saw the caller's CC; 6.2/V.32bis has it 64 symbols after. The
-caller times the round trip from that reversal, and the Intel modem,
-calling, then missed our training at most alignments of the line (as it
-does the Agere answerer's at 6 alignments of 8). Our answerer now
-reverses 38 symbols after its detector's detection (which is 26 symbols
-late), as our caller does its CC. It also sends AC until the caller's
-tone drops (16 symbols of silence, then S), not for 256 symbols.
+**What it showed in ours.** Our V.32bis answerer reversed its CA to AC
+immediately when it saw the CC of the caller. But 6.2/V.32bis puts the
+reversal 64 symbols after. The caller measures the round trip from that
+reversal. Thus, the Intel modem, as the caller, did not hear our
+training at most alignments of the line (as with the Agere answerer at
+6 alignments of 8). Our answerer now reverses 38 symbols after the
+detection of its detector (which is 26 symbols late), as our caller does
+its CC. It also sends AC until the tone of the caller stops (16 symbols
+of silence, then S), not for 256 symbols.
 
 ## Against the USRobotics Courier (emulated)
 
 The Courier V.Everything is a desktop modem of the 1990s that does its
-work on its own processors, so there is no driver to run: `half_courier`
-emulates the whole board and runs USRobotics' firmware on it.
+work on its own processors. Thus, there is no driver to run:
+`half_courier` emulates the full board and runs the firmware of
+USRobotics on it.
 
-- **The board.** An Intel 80C186EB at 20.16 MHz runs the supervisor
-  (the AT commands, V.42 and MNP, HST's link, the start-ups) out of a
-  512 KiB flash; a TI TMS320C51 runs the data pumps, downloaded by the
-  supervisor from the same flash (a resident image and overlays: V.34,
-  V.FC); an ASIC joins them (a mailbox and six data lanes) and drives
-  the hook, the lamps and the DTE's lines; a 93C66 holds the profile.
-  `hw/courier.hpp` models them as the firmware uses them;
+- **The board.**
+  - An Intel 80C186EB at 20.16 MHz runs the supervisor (the AT commands,
+    V.42 and MNP, the link of HST, the start-ups) from a 512 KiB flash.
+  - A TI TMS320C51 runs the data pumps. The supervisor downloads them
+    from the same flash (a resident image and overlays: V.34, V.FC).
+  - An ASIC connects them (a mailbox and six data lanes) and operates
+    the hook, the lamps and the lines of the DTE.
+  - A 93C66 holds the profile.
+
+  `hw/courier.hpp` models them as the firmware uses them.
   `hw/i80186.hpp` and `hw/tms320c5x.hpp` are the two cores.
-- **Time.** The codec's samples drive everything: each sample the
-  80186 runs 3.4 M instructions a second's share, its timers 5.04 MHz's,
-  and the DSP up to 20.16 M instructions a second's, until its main loop
-  is through. The DSP sets the codec's rate (7200 to 10266.67 Hz);
-  `CodecLine` resamples to the line's 8000 Hz (`COURIER_RATE`).
-- **Short cuts.** The supervisor's downloads to the DSP (through the
-  C51's loader, in its mask ROM) are done by copying the image straight
-  into the DSP's memory.
-- **The files.** `IDSDL302.ROM` is ID_SDL v3.02, a widely circulated
-  patch of USRobotics' supervisor 7.3.14 and DSP 3.0.13 for the 20.16
-  MHz external Courier; `c51-mask.rom` the C51's on-chip ROM, read out
-  of such a board (its first 2 K words are used). Neither has a release
-  to compare against. `courier-nvram.bin` is the firmware's own `AT&F`
-  and `AT&W` (with `ATQ0 V1 X1 &H1 &R2`) on an erased part, plus the
-  six settings records (words 94 to 102) that enable V.FC, V.34, x2 and
-  V.90, which `ATI7` then lists.
+- **Time.** The samples of the codec drive all items. For each sample,
+  the 80186 runs its part of 3.4 M instructions a second, its timers
+  their part of 5.04 MHz, and the DSP its part of up to 20.16 M
+  instructions a second, until its main loop is complete. The DSP sets
+  the rate of the codec (7200 to 10266.67 Hz). `CodecLine` resamples to
+  the 8000 Hz of the line (`COURIER_RATE`).
+- **Short cuts.** The harness does the downloads of the supervisor to
+  the DSP (through the loader of the C51, in its mask ROM) by a direct
+  copy of the image into the memory of the DSP.
+- **The files.** `IDSDL302.ROM` is ID_SDL v3.02, a widely distributed
+  patch of the supervisor 7.3.14 and DSP 3.0.13 of USRobotics for the
+  20.16 MHz external Courier. `c51-mask.rom` is the on-chip ROM of the
+  C51, read from such a board (its first 2 K words are used). There is
+  no release to compare them with. `courier-nvram.bin` is the `AT&F`
+  and `AT&W` of the firmware (with `ATQ0 V1 X1 &H1 &R2`) on an erased
+  part, plus the six settings records (words 94 to 102) that enable
+  V.FC, V.34, x2 and V.90. `ATI7` then lists them.
   - `IDSDL302.ROM`:
     `49f4182cc961aef983ff43468b7b7e55c03205c9dba80e9689fe20aa6ff2ccc5`.
   - `c51-mask.rom`:
@@ -1464,13 +1546,13 @@ emulates the whole board and runs USRobotics' firmware on it.
   - `courier-nvram.bin`:
     `4b21d145baffed2a686c3597845fd0eac1aa13ca7ec5b88391151940d5de63d9`.
 - **Settings.** The DIP switches are `COURIER_DIPS` (3, 5 and 8 on:
-  result codes, no auto answer, AT commands). The Courier's modulation
-  is chosen with its own S registers: S27=4 no V.32, S34=128 no
-  V.32terbo, S54=128 no V.8, S56=96 no V.34, 224 no V.FC either,
-  S58=33 no x2 or V.90; `&N3` fixes the link at 2400 bit/s.
-  `COURIER_DEBUG` (1 to 3) logs the DTE's traffic, the hook, the codec's
-  rate and the mailbox's messages; `COURIER_DUMP` writes the codec's
-  samples.
+  result codes, no auto answer, AT commands). The S registers of the
+  Courier select its modulation: S27=4 no V.32, S34=128 no V.32terbo,
+  S54=128 no V.8, S56=96 no V.34, 224 also no V.FC, S58=33 no x2 or
+  V.90. `&N3` fixes the link at 2400 bit/s. `COURIER_DEBUG` (1 to 3)
+  logs the traffic of the DTE, the hook, the rate of the codec and the
+  messages of the mailbox. `COURIER_DUMP` writes the samples of the
+  codec.
 
 The calls (label `courier`):
 
@@ -1486,268 +1568,275 @@ The calls (label `courier`):
 | `courier_v32_open_calls` | the open modem to a Courier, V.32bis | 14400/ARQ |
 | `courier_v22_open_calls` | the open modem to a Courier, V.22bis | 2400/ARQ |
 
-The open modem's calls to a Courier found two faults in ours:
+The calls of the open modem to a Courier found two faults in our modem:
 
-- Calling, it left out V.42's detection phase (its V.92 quick connect's
-  LAPM, taken for every call), and the Courier answering waits for the
-  ODPs. The caller now has the phase on the modulations older than V.8
-  (an answerer without it sends flags, which end the phase); after
-  V.8, on a leased line and on a clear channel it goes straight to
-  LAPM as before.
-- The Courier ignores an XID command whose private parameter group has
-  our zstd set ("ZST") after V.42bis's: it answers nothing, and the
-  link went on without V.42. When our first XID goes unanswered, the
-  next offers no zstd (`link/lapm.cpp`).
+- As the caller, it did not do the detection phase of V.42 (the LAPM of
+  its V.92 quick connect, used for all calls), and the Courier as the
+  answerer waits for the ODPs. The caller now does the phase on the
+  modulations older than V.8 (an answerer without it sends flags, which
+  end the phase). After V.8, on a leased line and on a clear channel,
+  it goes directly to LAPM as before.
+- The Courier ignores an XID command that has our zstd set ("ZST") after
+  the V.42bis parameters in its private parameter group. It sends no
+  answer, and the link continued without V.42. When our first XID gets
+  no answer, the next XID offers no zstd (`link/lapm.cpp`).
 
 In HST, the calls found that a Courier does not run V.42 after the
-switch from V.22bis: HST has a link layer of its own, which turns the
-channels around when the back channel's side has data (a Courier
-holds its data until then). The open modem now has that link
-(`link/hst_link.cpp`) and its pump turns the channels at the link's
-word; see [HST's technical details](dsp/hst-details.md). Both calls
-send data both ways (`STREAM=5`) with the channels turning; a 30 kB
-transfer each way, past N(S)'s wrap, also gets through.
+change from V.22bis. HST has its own link layer, which turns the
+channels around when the side of the back channel has data (a Courier
+keeps its data until then). The open modem now has that link
+(`link/hst_link.cpp`), and its pump turns the channels when the link
+tells it to. Refer to [HST's technical details](dsp/hst-details.md).
+The two calls send data in the two directions (`STREAM=5`) while the
+channels turn. A 30 kB transfer in each direction, past the wrap of
+N(S), is also successful.
 
 Not yet:
 
-- **V.FC and V.34.** Between two Couriers both start (the overlay
+- **V.FC and V.34.** Between two Couriers, the two start (the overlay
   loaded, line probing at 10266.67 Hz), but training does not finish,
-  and they retrain over and over: the emulation is short of something
-  there.
+  and they retrain again and again: the emulation does not have some
+  item there.
 
 ## The open modem on an HD-audio modem codec
 
-`half_hda` is not another vendor's modem. It is the open modem, on the
-modem core as `dmodemd -a` runs it, over an emulation of the hardware of
-an HD-audio soft modem (the laptops of about 2005 to 2010). No closed
-driver in the suite drives HD audio, so the driver is our own, written to
-the interface that Linux's `snd-hda-intel` and `snd-hda-codec-si3054`
-use (`sound/pci/hda/patch_si3054.c`). What the calls test is that path:
-the codec's verbs, its registers and switches, the streams' DMA, and the
-modem running on the codec's clock.
+`half_hda` is not the modem of a different vendor. It is the open modem,
+on the modem core as `dmodemd -a` runs it, over an emulation of the
+hardware of an HD-audio soft modem (the laptops of approximately 2005 to
+2010). No closed driver in the suite operates HD audio. Thus, the driver
+is our own, written to the interface that the `snd-hda-intel` and
+`snd-hda-codec-si3054` drivers of Linux use
+(`sound/pci/hda/patch_si3054.c`). The calls test that path: the verbs of
+the codec, its registers and switches, the DMA of the streams, and the
+modem on the clock of the codec.
 
-- `hw/hda.hpp`: the controller's reset and STATESTS, the immediate
+- `hw/hda.hpp`: the reset and STATESTS of the controller, the immediate
   command interface (ICOI, IRII, ICIS), and one input and one output
-  stream (SDnCTL, SDnSTS, LPIB, CBL, LVI, FMT, BDPL/BDPU) walking their
-  buffer descriptor lists in the process's memory.
-- `hw/si3054_hda.hpp`: the Si3054's root node (vendor ID 163c:3055;
-  `HDA_VENDOR` sets another) and its modem function group, with the
-  registers as nodes 2 to 21 (verbs 0x9 and 0x1, 16-bit payloads):
-  EXTENDED_MID's ready bits, LINE_RATE, LINE_LEVEL's stream numbers,
-  GPIO_CONTROL's hook and line monitor, CHIPID, and LINE_STATUS's frame
-  detect. Off hook its ADC hears the line and its DAC drives it; on hook
-  the ADC hears the line only with the monitor on.
+  stream (SDnCTL, SDnSTS, LPIB, CBL, LVI, FMT, BDPL/BDPU) that move
+  through their buffer descriptor lists in the memory of the process.
+- `hw/si3054_hda.hpp`: the root node of the Si3054 (vendor ID 163c:3055;
+  `HDA_VENDOR` sets a different ID) and its modem function group, with
+  the registers as nodes 2 to 21 (verbs 0x9 and 0x1, 16-bit payloads):
+  the ready bits of EXTENDED_MID, LINE_RATE, the stream numbers of
+  LINE_LEVEL, the hook and line monitor of GPIO_CONTROL, CHIPID, and the
+  frame detect of LINE_STATUS. Off hook, its ADC hears the line and its
+  DAC drives it. On hook, the ADC hears the line only with the monitor
+  on.
 - `half_hda.cpp`: the driver.
-  - It probes the codec. A vendor ID outside the Si3054 driver's list is
-    refused, as no driver would bind it.
-  - It runs the Si3054 driver's init.
-  - It prepares both streams: four periods of 10 ms, IOC (interrupt on
-    completion) on each, and the stream format of the rate (48 kHz over
-    5 for 9600 Hz).
-  - It sets the switches as ALSA's "Off-hook Switch" and "Caller ID
-    Switch" controls do.
-  - Each period captured is the modem's next 10 ms, and the modem's
-    answer is written two periods ahead into the playback buffer, as
+  - It probes the codec. It refuses a vendor ID that is not in the list
+    of the Si3054 driver, because no driver binds it.
+  - It runs the init of the Si3054 driver.
+  - It prepares the two streams: four periods of 10 ms, IOC (interrupt
+    on completion) on each, and the stream format of the rate (48 kHz
+    divided by 5 for 9600 Hz).
+  - It sets the switches as the ALSA controls "Off-hook Switch" and
+    "Caller ID Switch" do.
+  - Each period captured is the next 10 ms of the modem. It writes the
+    answer of the modem two periods ahead into the playback buffer, as
     `AlsaLine` does.
 
-`HDA_CODEC_RATE` sets the codec's rate (9600 by default, or 8000).
+`HDA_CODEC_RATE` sets the rate of the codec (9600 by default, or 8000).
 
 `ctest -L hda` runs its calls with the open modem:
 
-- every modulation from V.34 to V.21, both ways;
+- all modulations from V.34 to V.21, in the two directions;
 - V.34 with the codec at 8000 Hz;
-- V.90 (56000 down, both laws) and V.92 (quick connect, PCM upstream at
-  37333), with it as the analogue modem;
-- class 1 fax both ways at each modulation.
+- V.90 (56000 down, the two laws) and V.92 (quick connect, PCM upstream
+  at 37333), with it as the analogue modem;
+- class 1 fax in the two directions at each modulation.
 
 The data calls have the codec at 9600 Hz on the 8000 Hz line, through
-`CodecLine`'s resampler. The PCM calls have the line at 9600 Hz
-(`HDA_RATE=9600`), as the Intel modem's has. The reason: the resampler's
-gain differs a little at each of its five phases, which the DIL (digital
-impairment learning) measures as a level of its own at each frame
-position, and V.90 then falls back to V.34 (no real PCM line has such a
-thing). The fax calls are at 8000 Hz, with `half_open8`, because the fax
-relay runs at one rate. `hw_test` checks the controller and the codec on
-their own.
+the resampler of `CodecLine`. The PCM calls have the line at 9600 Hz
+(`HDA_RATE=9600`), as the calls of the Intel modem have. The reason: the
+gain of the resampler is a little different at each of its five phases.
+The DIL (digital impairment learning) measures this as a different level
+at each frame position, and then V.90 falls back to V.34 (no real PCM
+line has such a thing). The fax calls are at 8000 Hz, with `half_open8`,
+because the fax relay runs at one rate. `hw_test` checks the controller
+and the codec alone.
 
 ## The line rung
 
-With `NET_RING=<country>`, netsim puts the call through the way that
-country's exchange does. Without it, netsim only carries the samples.
+With `NET_RING=<country>`, netsim connects the call in the same way as
+the exchange of that country. Without it, netsim only carries the
+samples.
 
-- **The hooks.** The modems tell netsim their hook state: `half_open`'s
-  `PipeModem` and `half_hda` write `1` off hook and `0` on hook to
-  `MODEM_HOOK_FD`. `interop_call` makes that their fd 5, and netsim's
-  `NET_HOOK_A` and `NET_HOOK_B`.
-- **Dial tone and digits.** A, off hook, hears the country's dial tone
-  (steady, or in its cadence: Italy's is 0.2 s on, 0.2 off, 0.6 on, 1
-  off) until its first digit. Netsim hears the digits: DTMF on A's line
-  (`DtmfDetect`), or dial pulses. A pulse is a break by A of under 0.5 s,
-  and a digit is the count of pulses once 0.3 s go by without one.
-  Netsim logs the number dialled.
+- **The hooks.** The modems tell netsim their hook state: the
+  `PipeModem` of `half_open`, and `half_hda`, write `1` off hook and `0`
+  on hook to `MODEM_HOOK_FD`. `interop_call` makes that their fd 5, and
+  the `NET_HOOK_A` and `NET_HOOK_B` of netsim.
+- **Dial tone and digits.** A, off hook, hears the dial tone of the
+  country (steady, or in its cadence: the dial tone of Italy is 0.2 s
+  on, 0.2 off, 0.6 on, 1 off) until its first digit. Netsim hears the
+  digits: DTMF on the line of A (`DtmfDetect`), or dial pulses. A pulse
+  is a break by A of less than 0.5 s. A digit is the count of pulses
+  when 0.3 s go by without a pulse. Netsim logs the number dialled.
 - **Ringing.** `NET_RING_DELAY` seconds (2) after the last digit (or
-  `NET_DIAL_TIMEOUT` seconds, 4, of dial tone if A dials none), B's line,
-  on hook, gets the ring signal, in the cadence of the country's ringing
-  tone. The ring signal is 25 Hz; 20 Hz with the North American ringing
-  tone (440 + 480 Hz), 16 Hz in Japan, and 50 Hz in France's networks;
-  24000 at its peak. Meanwhile A hears the ringing tone itself (its one
-  or two frequencies, or one modulated).
-- **Answer.** B going off hook answers, and from then on the line is
-  through. Until then each side hears only the above. A on hook for 0.5 s
-  (longer than a dial pulse) ends the call.
-- **Busy and congestion.** With B off hook already, or `NET_BUSY=1`, A
-  hears the country's busy tone instead of the ringing (and B is not
-  rung). With `NET_CONGESTION=1`, it hears the congestion tone (the
-  network's lines or switches busy). Either tone goes on until A hangs
-  up.
+  `NET_DIAL_TIMEOUT` seconds, 4, of dial tone if A dials no digit), the
+  line of B, on hook, gets the ring signal, in the cadence of the
+  ringing tone of the country. The ring signal is 25 Hz. It is 20 Hz
+  with the North American ringing tone (440 + 480 Hz), 16 Hz in Japan,
+  and 50 Hz in the networks of France. It is 24000 at its peak. During
+  this time, A hears the ringing tone itself (its one or two
+  frequencies, or one modulated).
+- **Answer.** When B goes off hook, it answers, and after that the line
+  is connected. Until then, each side hears only the signals above. A
+  on hook for 0.5 s (longer than a dial pulse) ends the call.
+- **Busy and congestion.** If B is already off hook, or with
+  `NET_BUSY=1`, A hears the busy tone of the country and not the
+  ringing (and B does not ring). With `NET_CONGESTION=1`, A hears the
+  congestion tone (the lines or switches of the network are busy). The
+  two tones continue until A hangs up.
 
 ### The countries
 
-The countries are those of the ITU's list of the tones used in national
+The countries are those of the ITU list of the tones in national
 networks (Annex to ITU Operational Bulletin No. 955, position on 1 May
 2010, after Recommendation E.180): 192 of them, in `dsp/tones.cpp`.
-`dsp/tones_gen.py` generates that file from the list's Word file, and
-says how it picks a tone where the list gives several. Where the list
-has gaps:
+`dsp/tones_gen.py` makes that file from the Word file of the list. It
+also tells how it selects a tone where the list gives more than one.
+Where the list has gaps:
 
-- the countries with no dial tone in it get a steady one at their
-  ringing tone's frequency;
-- a "Re-order tone" counts as a congestion tone;
-- a country with no busy tone takes its congestion tone (or E.180's 0.5
-  s on and 0.5 s off), and one with no congestion tone takes its busy
-  tone.
+- The countries with no dial tone in the list get a steady dial tone at
+  the frequency of their ringing tone.
+- A "Re-order tone" counts as a congestion tone.
+- A country with no busy tone uses its congestion tone (or the 0.5 s on
+  and 0.5 s off of E.180). A country with no congestion tone uses its
+  busy tone.
 
-Names are the list's, in capitals
+The names are the names in the list, in capitals
 (`UNITED_KINGDOM_OF_GREAT_BRITAIN_AND_NORTHERN_IRELAND`), or an alias:
-the core's country names (`UK`, `USA`, `SOUTHKOREA`, ...) and a few short
-ones.
+the country names of the core (`UK`, `USA`, `SOUTHKOREA`, ...) and some
+short names.
 
 ### The ring tests
 
 `ctest -L ring` makes a call between two open modems in each country. A,
 set to that country, waits for the dial tone (`ATX4`) and dials 123 in
-DTMF; B answers at its first RING (V.22bis, a second of data). A few more
-calls:
+DTMF. B answers at its first RING (V.22bis, one second of data). Some
+more calls:
 
-- no dial tone wait and no digits (`ATX3`), with B answering at the
+- no dial tone wait and no digits (`ATX3`), with B that answers at the
   second ring (`ring_uk_second`);
 - two calls (`ring_usa_calls`);
 - V.34 (`ring_germany_34`);
-- `half_hda` answering (`ring_hda_answers`);
-- `half_hda` pulse dialling after its dial tone (`ring_hda_pulse_dials`).
+- `half_hda` as the answerer (`ring_hda_answers`);
+- `half_hda` with pulse dialling after its dial tone
+  (`ring_hda_pulse_dials`).
 
-Then a busy call and a congestion call in each country. A, set to the
-country (`COUNTRY_A`, dmodemd's `--country`, which accepts every country
-of the list), waits for the dial tone, dials 123, and must end with BUSY
-(`EXPECT_FAIL`). On a steady tone (Ascension's congestion tone) it must
-end with NO ANSWER after S7. All 384 calls do.
+Then there is a busy call and a congestion call in each country. A, set
+to the country (`COUNTRY_A`, the `--country` of dmodemd, which accepts
+all countries of the list), waits for the dial tone, dials 123, and must
+end with BUSY (`EXPECT_FAIL`). On a steady tone (the congestion tone of
+Ascension), it must end with NO ANSWER after S7. All 384 calls do this.
 
-The modem takes the country's own busy and congestion tones for busy
-(`dsp/dp_callprog.cpp`, from `dsp/tones.h`): four cycles of either's
-cadence, within 15% or 80 ms either side. It does not take the country's
-ringing tone for busy, so the callers of the countries whose ringing tone
-is 0.4 s on and 0.2 s off for ever can dial with `ATX4` too.
-`ring_tones_test` checks the same without the calls: every country's
-busy and congestion tones are BUSY to a modem in that country, and its
-ringing tone is not.
+The modem accepts the busy and congestion tones of the country as busy
+(`dsp/dp_callprog.cpp`, from `dsp/tones.h`): four cycles of the cadence
+of one of the two, in 15% or 80 ms on each side. It does not accept the
+ringing tone of the country as busy. Thus, the callers of the countries
+with a ringing tone of 0.4 s on and 0.2 s off without end can also dial
+with `ATX4`. `ring_tones_test` checks the same without the calls: the
+busy and congestion tones of each country are BUSY to a modem in that
+country, and its ringing tone is not.
 
-The modem's dial tone check (the call progress pump's 350, 425 and 440
-Hz filters, which also pass 400 and 450 Hz and the pairs) wants 1 s of
-dial tone. A dial tone in a cadence counts too: its tone is added up
-across gaps of up to 1 s, and while one is heard the modem waits 2 s
-longer than S6 for it.
+The dial tone check of the modem (the 350, 425 and 440 Hz filters of the
+call progress pump, which also pass 400 and 450 Hz and the pairs) needs
+1 s of dial tone. A dial tone in a cadence also counts: the modem adds
+its tone across gaps of up to 1 s. While it hears one, the modem waits
+2 s longer than S6 for it.
 
-`ring_tones_test` also checks every country's ring signal without the
-calls: through `RingDetect` to the core, it must give a RING for each of
-its rings, and auto answer at S0=2. For that the core's ring check
-(`core/modem.cpp`):
+`ring_tones_test` also checks the ring signal of each country without
+the calls. Through `RingDetect` to the core, it must give a RING for
+each of its rings, and auto answer at S0=2. For that, the ring check of
+the core (`core/modem.cpp`) does these things:
 
-- takes a burst of four pulses or more (a 16 Hz signal's 0.3 s) as a
-  ring;
-- takes a ring still going when it is checked (2.5 s after its first
-  pulse) as a ring;
-- takes ringing with no gap of 1.5 s (Egypt's 2 s on and 1 off) as a ring
-  every 6 s;
-- keeps a ring in S1 for 8 s, so that a cadence of up to 10 s (Serbia's 1
-  s on and 9 off) rings in time.
+- It accepts a burst of four pulses or more (0.3 s of a 16 Hz signal)
+  as a ring.
+- It accepts a ring that continues when it is checked (2.5 s after its
+  first pulse) as a ring.
+- It accepts ringing with no gap of 1.5 s (2 s on and 1 off in Egypt)
+  as a ring each 6 s.
+- It keeps a ring in S1 for 8 s. Thus, a cadence of up to 10 s (1 s on
+  and 9 off in Serbia) rings in time.
 
-Tuvalu's 12.5 s cadence is longer: there each ring counts as the first,
-and only S0=1 answers.
+The 12.5 s cadence of Tuvalu is longer. There, each ring counts as the
+first, and only S0=1 answers.
 
 ## Adaptive answer
 
-`ctest -L adaptive` runs calls into the open modem answering with
+`ctest -L adaptive` runs calls into the open modem, which answers with
 `AT+FAA=1`. That is adaptive answer: a data answer, in which the modem
-finds out whether the call is a fax or a data call
+finds if the call is a fax or a data call
 ([at_commands.pdf](at_commands.pdf)).
 
-- **Fax senders.** Each modem's class 1 fax sender calls it, answering in
-  fax mode (and the open modem's sender also with it in data mode). The
-  answerer must say FAX before its CONNECT (`ANSWER_B`), and then the page
-  is checked.
-  - The open modem, Smart Link's library, and the Broadcom, Intel and
-    HD-audio modems are recognised by their CNG (calling tone).
-  - The Agere and Conexant modems stop their CNG as soon as they hear our
-    ANSam. The burst cut short also tells.
-  - The open modem's sender without CNG (`DSP_FAX_CNG=0`), silent until
-    the DIS, into fax and into data mode: FAX at the end of the automode
-    chain (after Bell 103's 3 s).
-- **A V.8 fax call.** spandsp's V.8 with the call function of a fax
+- **Fax senders.** The class 1 fax sender of each modem calls it, with
+  it as the answerer in fax mode (and the sender of the open modem also
+  with it in data mode). The answerer must show FAX before its CONNECT
+  (`ANSWER_B`). Then the test checks the page.
+  - The open modem, the library of Smart Link, and the Broadcom, Intel
+    and HD-audio modems are recognised by their CNG (calling tone).
+  - The Agere and Conexant modems stop their CNG immediately when they
+    hear our ANSam. The short burst also identifies them.
+  - The sender of the open modem without CNG (`DSP_FAX_CNG=0`), silent
+    until the DIS, into fax and into data mode: FAX at the end of the
+    automode chain (after the 3 s of Bell 103).
+- **A V.8 fax call.** The V.8 of spandsp with the call function of a fax
   machine (`SPANDSP_V8_CALL=4`), into data mode: FAX, and no data call.
-- **Data callers.** The Agere modem at V.34 and V.22bis, Smart Link's at
-  V.34, spandsp's at V.22bis and V.21, the SM56 and Conexant modems at
-  V.90, and the open modem at V.92, in data mode and in fax mode: DATA,
-  then the data call.
+- **Data callers.** The Agere modem at V.34 and V.22bis, the Smart Link
+  modem at V.34, the spandsp modem at V.22bis and V.21, the SM56 and
+  Conexant modems at V.90, and the open modem at V.92, in data mode and
+  in fax mode: DATA, then the data call.
 - **Voice mode.** The open, Agere and Conexant fax senders call the open
   modem in voice mode, on the line with `+FAA=1` (`ANSWER_VOICE`):
-  `<DLE>c`, FAX, the class 1 answer on the call, then the page. (Smart
-  Link's library sends no CNG on a silent line, so it is not among them.)
-- **Slow legacy callers,** silent until they hear their own answer signal
-  (the Agere modem forced to Bell 103, V.21 or V.22, without V.8), into
-  fax mode with the whole automode chain: each answers its stage, and the
-  result is DATA.
+  `<DLE>c`, FAX, the class 1 answer on the call, then the page. (The
+  library of Smart Link sends no CNG on a silent line. Thus, it is not
+  one of them.)
+- **Slow legacy callers,** silent until they hear their own answer
+  signal (the Agere modem forced to Bell 103, V.21 or V.22, without
+  V.8), into fax mode with the full automode chain: each one answers its
+  stage, and the result is DATA.
 
 ## MNP
 
-The Agere, SM56, PCTel, HSF, Broadcom, Intel and ESS modems have MNP 2 to
-4 and MNP 5 (Smart Link's library and spandsp have none). With their
-defaults they all choose V.42 with us.
+The Agere, SM56, PCTel, HSF, Broadcom, Intel and ESS modems have MNP 2
+to 4 and MNP 5 (the library of Smart Link and spandsp have none). With
+their defaults, they all select V.42 with us.
 
-Forced to MNP, each connects with MNP 4 and MNP 5 both ways (`ctest -R
-mnp`, 20000 octets each way):
+When forced to MNP, each one connects with MNP 4 and MNP 5 in the two
+directions (`ctest -R mnp`, 20000 octets in each direction):
 
-- calling with MNP alone (`+ES=4,4,6`), the peer's LR is taken by our
-  default answerer in the detection phase;
-- answering with MNP alone (`+ES=3,0,6`), the peer takes our LR (we call
-  with `\N5`).
+- When the peer calls with MNP alone (`+ES=4,4,6`), our default
+  answerer accepts the LR of the peer in the detection phase.
+- When the peer answers with MNP alone (`+ES=3,0,6`), the peer accepts
+  our LR (we call with `\N5`).
 
-Peculiarities:
+Special behaviours:
 
-- The PCTel modem accepts no LR offering N401 256. Ours offers 64, with
-  the 256-octet optimization, as theirs do.
+- The PCTel modem accepts no LR that offers N401 256. Our LR offers 64,
+  with the 256-octet optimization, as their LRs do.
 - The SM56 modem sends its LR 1.1 s after the connection. Our answerer
   with MNP waits three times T400 for it.
 - The HSF modem sends LTs without information with MNP 5.
 - None of them has MNP 10 or 10EC.
 
-See [link-details.md](link-details.md#mnp) for MNP, and for what MNP
-10EC would take.
+Refer to [link-details.md](link-details.md#mnp) for MNP, and for what
+MNP 10EC would need.
 
 ## V.80
 
-With `interop_call`'s `V80=1` (`interop_call.h`), the call's data is
-V.80 frames:
+With the `V80=1` of `interop_call` (`interop_call.h`), the data of the
+call is V.80 frames:
 
-- Both DTEs ask for Synchronous Access Mode (`+ES=6` calling, `+ES=,,8`
-  answering).
-- After CONNECT each goes over to the framed sub-mode (`<EM><flag>`),
-  sends a warm-up frame that need not arrive, then 20 frames
-  (`V80_FRAMES`) of 1 to 250 octets, with every octet value among them.
-- The other DTE must get each frame whole, ended by `<EM><flag>`.
+- The two DTEs ask for Synchronous Access Mode (`+ES=6` to call,
+  `+ES=,,8` to answer).
+- After CONNECT, each DTE goes to the framed sub-mode (`<EM><flag>`). It
+  sends a warm-up frame that does not have to arrive, then 20 frames
+  (`V80_FRAMES`) of 1 to 250 octets, which contain all octet values.
+- The other DTE must get each frame complete, ended by `<EM><flag>`.
 
-The calls are V.34, with our transmitter at 28800 bit/s at most: V.80 has
-no error correction, and a renegotiation in the middle (the SM56
-modem's, from 33600) costs frames.
+The calls are V.34, with our transmitter at a maximum of 28800 bit/s:
+V.80 has no error correction, and a renegotiation in the middle (the
+renegotiation of the SM56 modem, from 33600) causes lost frames.
 
 The tests (`ctest -R _v80_`), and what each modem does:
 
@@ -1759,34 +1848,37 @@ The tests (`ctest -R _v80_`), and what each modem does:
 | Intel | `(1-4,6),(0,2-4),(1,2,4-6,8)` | none only | both ways, its reception only | It receives as it should. Its transmitter sends 16 1s in place of each frame's last two octets (an FCS field with no FCS), which a receiver takes for an abort |
 | HSF, PCTel, ESS | no 6 or 8 | | none | No Synchronous Access Mode (ESS accepts `+ES=6` and makes a plain call) |
 
-Every receiver took our transmitter's frames whole, with each FCS it
-offers (our FCS-16 is theirs). Ours took theirs whole, except Intel's.
+All receivers accepted the frames of our transmitter complete, with
+each FCS that it offers (our FCS-16 is the same as theirs). Our receiver
+accepted their frames complete, but not the frames of Intel.
 
-The checks can be relaxed per side:
+You can make the checks less strict for each side:
 
-- `V80_STRAY_A=1` (`_B`) lets that side's DTE get the stray EM;
-- `V80_EXTRA_A=2` (`_B`) lets it get the FCS after each frame;
-- `V80_ONLY=A` (`B`) checks one side's frames alone;
-- `V80_PAD_A=<octets>` (`_B`) puts octets after that side's frames. For
-  Intel's two lost last octets: with `XY` after each frame, the frame
-  itself arrives whole.
+- `V80_STRAY_A=1` (`_B`) lets the DTE of that side get the unwanted EM.
+- `V80_EXTRA_A=2` (`_B`) lets it get the FCS after each frame.
+- `V80_ONLY=A` (`B`) checks only the frames of one side.
+- `V80_PAD_A=<octets>` (`_B`) puts octets after the frames of that side.
+  This is for the two lost last octets of Intel: with `XY` after each
+  frame, the frame itself arrives complete.
 
-`half_intel` gives the Intel controller the DTE's characters as they come
-while online, as its serial port's interrupt did. When they were given
-from its background task alone, every 15 ms, its V.80 transmitter ran
-out in the middle of frames.
+While online, `half_intel` gives the Intel controller the characters of
+the DTE when they come, as the interrupt of its serial port did. When
+only its background task gave them, each 15 ms, its V.80 transmitter
+had no data in the middle of frames.
 
 ### The transparent sub-mode's SYN hunt
 
-`V80=2` keeps both DTEs in the transparent sub-mode, with `+ESA`'s
-`<trans_idle>` set to 1 (the 8-bit SYN, 16h) or 2 (16h then 96h). Each
-DCE idles with the SYN, and the other's receiver must find it and give
-its DTE octets aligned on it, starting with the SYN, from the CONNECT on.
+`V80=2` keeps the two DTEs in the transparent sub-mode, with the
+`<trans_idle>` of `+ESA` set to 1 (the 8-bit SYN, 16h) or 2 (16h then
+96h). Each DCE sends the SYN when idle. The receiver of the other DCE
+must find it and give its DTE octets aligned on it, with the SYN first,
+from the CONNECT.
 
-Then each DTE sends 3000 octets, which the other's must get whole, with
-only the SYN idle before them. `V80_HUNT=1` then has A's DTE send
-`<EM><hunt>`, and B's 1000 octets more. Without the hunt (`<trans_idle>`
-0) our DTE gets `8a 76 b3 ff ...` before the SYN, and the check fails.
+Then each DTE sends 3000 octets. The other DTE must get them complete,
+with only the SYN idle before them. Then, `V80_HUNT=1` makes the DTE of
+A send `<EM><hunt>`, and the DTE of B send 1000 more octets. Without the
+hunt (`<trans_idle>` 0), our DTE gets `8a 76 b3 ff ...` before the SYN,
+and the check fails.
 
 The tests (`ctest -R _v80_syn`):
 
@@ -1800,69 +1892,72 @@ Two open modems run the same SYN hunt calls (`open_v80_syn1`,
 
 ## The call's statistics in the middle of a call
 
-`EXPECT_MIDCALL_A=<regex>` (`_B`) checks what a modem answered to its
+`EXPECT_MIDCALL_A=<regex>` (`_B`) checks the answers of a modem to its
 `MIDCALL` commands, as `EXPECT_A` checks its log.
 
-`open_v90a_stats` escapes both D-Modems in V.90 data, on a network with
-a 3 dB pad, a robbed bit and the analogue modem's codec 100 ppm fast, for
-`ATI11`, `AT&V1` and `AT#UD`. It checks:
+`open_v90a_stats` escapes the two D-Modems in V.90 data, on a network
+with a 3 dB pad, a robbed bit and the codec of the analogue modem
+100 ppm fast, for `ATI11`, `AT&V1` and `AT#UD`. It checks:
 
-- each direction's symbol rate and carrier (8000 and PCM downstream, 3429
-  baud and 1959 Hz upstream);
-- the upstream's trellis code, on each side;
-- the clock 100 ppm off as each modem sees it (the analogue modem's
-  -100, the network being slower; the digital modem's +100);
-- the pad and the robbed bit as the analogue modem's DIL found them;
-- the same in Unimodem's keys (`AT#UD`'s `DIAG` lines), keys 20 and 21
-  per direction: V.34's `C` upstream and PCM's `E` downstream.
-- `AT&V1`'s Rockwell lines: the termination `NONE` while up, the last
-  receive rate, the robbed bit as an `RBS Pattern` mask and the
+- the symbol rate and carrier of each direction (8000 and PCM
+  downstream, 3429 baud and 1959 Hz upstream);
+- the trellis code of the upstream, on each side;
+- the clock 100 ppm off as each modem sees it (-100 for the analogue
+  modem, because the network is slower; +100 for the digital modem);
+- the pad and the robbed bit as the DIL of the analogue modem found
+  them;
+- the same in the keys of Unimodem (the `DIAG` lines of `AT#UD`), keys
+  20 and 21 for each direction: the `C` of V.34 upstream and the `E` of
+  PCM downstream;
+- the Rockwell lines of `AT&V1`: the termination `NONE` while up, the
+  last receive rate, the robbed bit as an `RBS Pattern` mask and the
   `Digital Pad` of 3dB.
 
 ## Retrains and renegotiations on request
 
-`MIDCALL_ATO_A=<cmd>` (`_B`) makes `interop_call`'s mid-call return to
-online use that command instead of `ATO`: `ATO1` retrains, and `ATO3`
+`MIDCALL_ATO_A=<cmd>` (`_B`) makes the mid-call return to online of
+`interop_call` use that command, not `ATO`: `ATO1` retrains, and `ATO3`
 renegotiates the rate. `ctest -R dte_` runs them with `STREAM=25` and an
-escape 6 s in:
+escape after 6 s:
 
-- V.34 (`AT+MS=V34`) retrains, both ways, against Agere, Broadcom, SM56,
-  PCTel, HSF, Intel and ESS (`<peer>_34_dte_retrain_open_calls`,
-  `<peer>_34_dte_retrain_<peer>_calls`); and renegotiations with us
-  calling Agere and Broadcom (`<peer>_34_dte_reneg_open_calls`). Each
-  peer answers, and the data carries on whole.
-- Between two of ours: V.90 as the analogue modem
+- V.34 (`AT+MS=V34`) retrains, in the two directions, against Agere,
+  Broadcom, SM56, PCTel, HSF, Intel and ESS
+  (`<peer>_34_dte_retrain_open_calls`,
+  `<peer>_34_dte_retrain_<peer>_calls`). Also renegotiations with us as
+  the caller to Agere and Broadcom (`<peer>_34_dte_reneg_open_calls`).
+  Each peer answers, and all the data arrives.
+- Between two of our modems: V.90 as the analogue modem
   (`open_v90a_dte_retrain`, `open_v90a_dte_reneg`) and as the digital
-  modem (`open_v90_dte_reneg`); and V.92 with PCM upstream, as either
+  modem (`open_v90_dte_reneg`); and V.92 with PCM upstream, as the two
   (`open_v92_dte_reneg`, `open_v92a_dte_reneg`, `open_v92_dte_retrain`).
 
-The Agere, Broadcom and HSF modems answer our retrain's tone B with tone
-A plus an 1800 Hz tone of the same strength. Until the tone detector
-allowed for it ([dsp/v34-details.md](dsp/v34-details.md)), our retrains
-with them failed with no tone A.
+The Agere, Broadcom and HSF modems answer the tone B of our retrain with
+tone A plus an 1800 Hz tone of the same strength. Until the tone
+detector accepted this ([dsp/v34-details.md](dsp/v34-details.md)), our
+retrains with them failed with no tone A.
 
 ## The calls' options
 
-**`ANSWER_AFTER=<s>`** gives the answerer its ATA that long after the
-caller's ATD, as a real line rings only once the number is dialled. The
-quick connect tests dial (`DIAL`), and the Agere modem waits 2 s off hook
-before its digits; answering at once, our ANSam would be over before it
-listens.
+**`ANSWER_AFTER=<s>`** gives the answerer its ATA that time after the
+ATD of the caller, because a real line rings only after the number is
+dialled. The quick connect tests dial (`DIAL`), and the Agere modem
+waits 2 s off hook before its digits. If we answer immediately, our
+ANSam ends before it listens.
 
 **`MODEM_REC=<prefix>`** makes `half_open` and `half_smartlink` record
 their line input and output (`<prefix>.<name>.in` and
-`<prefix>.<name>.out`, where the name is `MODEM_NAME`'s: `modemA` and
-`modemB` in an interop call).
+`<prefix>.<name>.out`, where the name is the name in `MODEM_NAME`:
+`modemA` and `modemB` in an interop call).
 
-**`DBG=<level>`** sets the debug level the interop calls run the modems
-with (3 by default).
+**`DBG=<level>`** sets the debug level of the modems in the interop
+calls (3 by default).
 
 **`WAV=<file>`** makes `interop_call` save the call as audio: a stereo
-16-bit WAV at 8000 Hz of the line where it crosses the simulated network
-(after G.711; A, the caller, to B on the left, and B to A on the right),
-from the first dial to the end of the data (or of the call that failed).
-It needs `NET` (netsim writes the file, `NET_WAV`); with `CALLS`, the
-calls in between are in it as well. For example:
+16-bit WAV at 8000 Hz of the line where it goes through the simulated
+network (after G.711; A, the caller, to B on the left, and B to A on the
+right), from the first dial to the end of the data (or of the call that
+failed). It needs `NET` (netsim writes the file, `NET_WAV`). With
+`CALLS`, the calls between them are also in it. For example:
 
     NETSIM=build/dsp/test/netsim NET=9600:8000:ulaw SMARTLINK_V92FULL=1 \
       WAV=call.wav build/dsp/test/interop_call \
@@ -1883,22 +1978,23 @@ calls in between are in it as well. For example:
 | `ESS_SYNC=<samples>` | `half_ess` |
 | `HDA_SYNC=<samples>` | `half_hda` |
 
-With them, the modems take the DTE's commands only every that many line
-samples (data, once connected, goes in at once), run their timers between
-half frames, and keep time by the line. Without them, where the commands
-meet the line depends on the scheduler.
+With them, the modems accept the commands of the DTE only each that
+number of line samples (data, after the connection, goes in
+immediately). They run their timers between half frames, and keep time
+by the line. Without them, the scheduler decides where the commands
+meet the line.
 
-A data call sets `PIPE_SYNC=4800` unless it is already set, and each
-peer's `<NAME>_SYNC` to `PIPE_SYNC`'s value unless that is set
-(`interop_call.cpp`, `data_call()`); a fax call sets `PIPE_SYNC=192` (see
-[Smart Link's fax](#against-the-smart-link-soft-modem)). `0` turns the
-sync off.
+A data call sets `PIPE_SYNC=4800` if it is not already set. It also
+sets the `<NAME>_SYNC` of each peer to the value of `PIPE_SYNC` if that
+is not set (`interop_call.cpp`, `data_call()`). A fax call sets
+`PIPE_SYNC=192` (refer to [Smart Link's fax](#against-the-smart-link-soft-modem)).
+`0` sets the sync to off.
 
 With `PIPE_SYNC`, `half_open` and `half_smartlink` also run in real time
-while on hook, their line running from the start (the other harnesses'
-lines do anyway). That way the commands meet the samples they would meet
-in real time, even when the call itself runs unpaced (see
-[testing-details.md](testing-details.md)).
+while on hook, with their line in operation from the start (the lines of
+the other harnesses always operate in that way). Thus, the commands
+meet the samples that they would meet in real time, also when the call
+itself runs without pacing (refer to [testing-details.md](testing-details.md)).
 
-`AGERE_SYNC_PHASE` (each peer's `<NAME>_SYNC_PHASE`) moves that side
-within the period, to try the alignments one by one.
+`AGERE_SYNC_PHASE` (the `<NAME>_SYNC_PHASE` of each peer) moves that
+side in the period, to try the alignments one at a time.
