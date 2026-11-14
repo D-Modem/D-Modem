@@ -15,6 +15,17 @@
  *    LD ends the connection.  The timers count transmitted bits at the
  *    data pump's rate, as LAPM's T401.
  *
+ *    MNP 10 (Microcom's, as its DeskPorte FAST firmware has it:
+ *    docs/link.md) rides on the same LRs and frames: parameter 8's
+ *    bit 4 and parameter 0x0C agree on it, type 8 frames carry its
+ *    rate-shift signals and LMI probes, type 9 is an LA with a probe's
+ *    acknowledgement.  The probes grow the LTs' size while they come
+ *    back, retransmissions shrink it; the line's quality moves the call
+ *    up and down a ladder of rates, the pumps retraining, renegotiating
+ *    or changing modulation (Owner::mnp10_shift()) while the link stays
+ *    up.  Between two D-Modems, LR parameter 0xC0 opens the ladder to
+ *    every modulation both can run on the line.
+ *
  */
 
 #ifndef DMODEM_LINK_MNP_H
@@ -35,6 +46,35 @@ enum {
 
 struct Config;
 class Mnp;
+
+/* the modulations of MNP 10's rate ladder; D-Modem's extension (LR
+   parameter 0xC0) names them by these numbers, as bits */
+enum class Mod : u8 {
+	V92, V90, K56, X2,      /* PCM, each a rung of its own: the pump
+				   picks its rates */
+	V34, VFC, V32T, V32B, HST,
+	V26T, V22B, V22, B212, V23, V21, B103,
+	V33, V29, V27T, V26, B208, B201, B202,     /* 4-wire leased */
+	Count
+};
+
+/* what a rate shift asks of the pumps: a retrain or a rate
+   renegotiation of the one running, or the call's start-up again in
+   another modulation (or the same one), the link staying up; at rate
+   (0: the pump's best), up or down the ladder */
+enum class ShiftKind : u8 { Retrain, Reneg, Restart };
+struct Shift {
+	ShiftKind kind;
+	Mod mod;
+	s32 rate;
+	bool up;
+};
+
+/* MNP 10's rung: a modulation at a rate */
+struct Rung {
+	Mod mod;
+	s32 rate;
+};
 
 /* A.3/V.42: start-stop octets (as Async), each frame SYN DLE STX, its
    body (header and information) with each DLE doubled, DLE ETX and the
@@ -108,6 +148,31 @@ public:
 	s16 optimization() const { return opt_; }
 	/* (see mode()) */
 	bool mnp5() const { return mnp5_; }
+	/* MNP 10 agreed; and its cellular mode */
+	bool mnp10() const { return m10_; }
+	/* (see mnp10()) */
+	bool cellular() const { return cell_; }
+	/* D-Modem's extension agreed (LR parameter 0xC0 both ways) */
+	bool mnp10_ext() const { return ext_; }
+	/* the rate ladder and the rung the call is on (-1: none) */
+	const Rung *ladder(s16 *n) const { *n = nrungs_; return rungs_; }
+	/* (see ladder()) */
+	s16 rung() const { return cur_; }
+	/* our LT information field's size now */
+	s16 lt_size() const;
+	/* a rate shift's physical change is over (ok: the pump connected
+	   at the rate it reports), from the owner (Link::shift_done()) */
+	void shift_done(bool ok);
+	/* a shift is waiting for the pumps */
+	bool shifting() const { return sh_ == Sh::Pump; }
+	/* MNP 10's parameters (3 and 8 on) of our LR for V.42's XID
+	   (-K1): up to n octets into b, how many */
+	s16 upgrade_params(u8 *b, s16 n, bool initiator);
+	/* the remote's in its XID: agreed (as by an LR); the link then
+	   runs MNP in HDLC frames, the initiator's LA first */
+	bool upgrade_rx(const u8 *p, s16 len, bool initiator);
+	/* the data phase's start after the XIDs agreed it */
+	void upgrade_start(bool initiator);
 
 	/* MnpAsync's side: its frames, and one with a bad FCS (bit: an
 	   HDLC frame's) */
@@ -164,6 +229,116 @@ private:
 	s32 t401_est() const;
 	s32 t401_data() const;
 	s32 rate() const;
+
+	/* MNP 10 (mnp10.cpp) */
+	enum class Sh {
+		Idle,
+		FfReq,          /* our fall forward asked (04), the answer
+				   awaited */
+		FbReq,          /* our fallback asked (02) */
+		Go,             /* the pumps' change once our signal is out */
+		Pump,           /* the pumps changing (Owner::mnp10_shift()) */
+		Resync,         /* the responder's wait for a frame after */
+	};
+	enum { MAX_RUNGS = 64 };
+	s16 m10_lr(u8 *b, s16 n);
+	void m10_rx_lr(const u8 *h, s16 len);
+	bool m10_agree(bool initiator);
+	void m10_local_0c();
+	void m10_ladder();
+	s16 m10_find(Mod mod, s32 rate) const;
+	s16 m10_next(bool up) const;
+	void m10_start();
+	void m10_reset();
+	void m10_tick();
+	void m10_second();
+	Frame *m10_frame();
+	Frame *build_t8(u8 sub);
+	Frame *build_probe();
+	Frame *build_t9();
+	void rx_t8(const u8 *h, s16 len);
+	void rx_probe(const u8 *h, s16 len);
+	void rx_ack(u8 r);
+	void rx_report(s16 g, s16 e);
+	void m10_heard(s16 type);
+	void m10_sent(const Frame *f);
+	void m10_lt_again();
+	void p_grow(s16 d);
+	void p_shrink();
+	bool ff_test(bool responder) const;
+	void ff_start();
+	void fb_start();
+	void go(s16 target, bool up);
+	void pump(s16 target, bool up, bool restart);
+	void shift_failed();
+	void shift_over();
+	void tx_level_report(s16 g, s16 e);
+	static u8 g_code(s16 dbm);
+	static u8 e_code(s16 eqm);
+
+	/* what we offer, the remote's, what was agreed */
+	bool m10_offer_ = false;
+	bool m10_ = false, cell_ = false, ext_ = false;
+	bool upgraded_ = false;         /* from V.42's XID (-K1) */
+	u8 m10_ours_[4] = {}, m10_theirs_[4] = {}, m10_agreed_[4] = {};
+	s16 m10_ours_n_ = 0;
+	bool m10_seen_ = false;         /* the remote's LR had 0x0C */
+	s16 m10_opt_ = 0;               /* the remote's parameter 8 */
+	u32 ext_ours_ = 0, ext_theirs_ = 0;
+	u8 ext_flags_ours_ = 0, ext_flags_theirs_ = 0;
+	bool p11_ = false;              /* the remote's LR had 0x11 */
+	bool fb_ok_ = false, ff_ok_ = false;
+	s16 first_g_ = -1, first_e_ = -1;       /* parameter 0x0D */
+	/* the ladder, the rung the call is on, modulations that failed */
+	Rung rungs_[MAX_RUNGS] = {};
+	s16 nrungs_ = 0, cur_ = -1;
+	u32 failed_mods_ = 0;
+	/* ticks (12.5 ms of bits at the pump's rate) */
+	s32 tick_bits_ = 0;
+	s32 ticks_ = 0;                 /* since the link's start or a shift */
+	s16 sec_ticks_ = 0;
+	/* the LMI probes: S, A, R; P; a type 9 due; the probe timer */
+	u8 lmi_s_ = 0, lmi_a_ = 0, lmi_r_ = 0;
+	s16 pkt_p_ = 0x20;
+	bool t9_due_ = false, probe_due_ = false;
+	s16 probe_ticks_ = 0;
+	/* the error average X, the packet size's health H, an LT sent
+	   again since X's last update; X high this many seconds (cellular) */
+	s16 err_x_ = 0, health_ = 9;
+	bool lt_again_since_ = false;
+	s16 x_high_secs_ = 0;
+	/* type 8 signals to send (subtype, copies), the signal sent last */
+	u8 sig_ = 0;
+	s16 sig_copies_ = 0;
+	/* rate shifts: the state, its time left (ticks), the hold-off
+	   (seconds left, and its length), the post-shift hold, the rung
+	   asked for and the one before, a shift asked by the remote,
+	   retries after a failure */
+	Sh sh_ = Sh::Idle;
+	s32 sh_ticks_ = 0;
+	s32 holdoff_ = 30, holdoff_len_ = 30, post_hold_ = 10;
+	s16 sh_target_ = -1, sh_from_ = -1;
+	bool sh_up_ = false, sh_restart_ = false, sh_responder_ = false;
+	bool ff_failed_ = false;
+	s16 sh_fails_ = 0, cell_retries_ = 2;
+	s32 shifts_ = 0;
+	/* the line: our G and E now, the EQM's windows (16 ticks each, the
+	   last four), the remote's reports */
+	s16 g_ = 0xff, e_ = 0xff;
+	s32 eqm_sum_ = 0;
+	s16 eqm_n_ = 0;
+	s16 eqm_win_[4] = {}, eqm_wins_ = 0;
+	s16 peer_g_ = 0xff, peer_e_ = 0xff;
+	/* cellular transmit level: L, the report before, the level then,
+	   the level's change pending */
+	s16 lvl_ = 0, prev_e_ = -1, prev_lvl_ = -1;
+	bool lvl_first_ = true;
+	/* :T19: ticks since an LA, type 9 or type 8 at 1200 bit/s */
+	s32 t19_ticks_ = 0;
+	/* our settings */
+	bool cfg_cell_ = false, cfg_t19_ = true, cfg_ext_ = true;
+	s16 cfg_lowest_ = 2, cfg_level_ = 0;
+	s32 cfg_top_ = 33600;
 
 	Link *link_ = nullptr;
 	Phase phase_ = Phase::Idle;

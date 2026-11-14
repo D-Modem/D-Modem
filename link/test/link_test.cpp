@@ -2314,6 +2314,275 @@ TEST(Link, MnpMnp5)
 
 namespace {
 
+
+/*
+ *    MNP 10
+ *
+ */
+
+/* a DTE whose "pumps" MNP 10 shifts: the modulations it has, the one
+   running and its rate, the line's EQM; a shift asked waits for the
+   test (pending) */
+struct M10Dte : Dte {
+	u32 mods = 0;
+	Mod mod = Mod::V32B;
+	int32_t rate = 14400;
+	s16 eqm = 2;
+	bool pending = false;
+	Shift asked = {};
+	std::vector<Shift> shifts;
+	s16 level = -1;
+	explicit M10Dte(const char *n) : Dte(n) {}
+	int32_t tx_rate() override { return rate; }
+	u32 mnp10_mods() override { return mods; }
+	Mod mnp10_mod() override { return mod; }
+	void mnp10_line(s16 &dbm, s16 &e) override {
+		dbm = -20;
+		e = eqm;
+	}
+	bool mnp10_shift(const Shift &s) override {
+		asked = s;
+		shifts.push_back(s);
+		pending = true;
+		return true;
+	}
+	void mnp10_tx_level(s16 db) override { level = db; }
+};
+
+/* two links back to back with MNP 10: a shift's change is the test's
+   (both sides asked: both "pumps" change, V.34 to the top it allows) */
+struct M10Pair {
+	M10Dte dc{"caller"}, da{"answerer"};
+	Link lc, la;
+	double ber = 0;
+	long errors = 0;
+	int32_t v34_top = 33600;
+	M10Pair(const Config &cc, const Config &ca) {
+		lc.init(&dc, true, cc);
+		la.init(&da, false, ca);
+		const char *v = getenv("LINK_DEBUG");
+		dc.verbose = da.verbose = v && *v;
+	}
+	void start() {
+		lc.start(true, true);
+		la.start(true, true);
+	}
+	/* the change both asked: to its modulation and rate */
+	static void change(M10Dte &d, Link &l, int32_t v34_top) {
+		d.pending = false;
+		d.mod = d.asked.mod;
+		d.rate = d.asked.mod == Mod::V34 && d.asked.up ?
+			std::max(d.asked.rate, std::min(v34_top, d.asked.rate)) :
+			d.asked.rate;
+		l.shift_done(true);
+	}
+	void run(long seconds) {
+		std::vector<uint8_t> b(48);
+		for (long t = 0; t < seconds * 100; t++) {
+			/* 10 ms of bits at each side's rate */
+			for (int32_t k = 0; k < std::max(48, dc.rate / 100);
+			     k += 48) {
+				lc.get_bits(1, b.data(), 48);
+				flip(b);
+				if (!da.pending)
+					la.put_bits(1, b.data(), 48);
+				la.get_bits(1, b.data(), 48);
+				flip(b);
+				if (!dc.pending)
+					lc.put_bits(1, b.data(), 48);
+			}
+			if (dc.up)
+				lc.set_online(true);
+			if (da.up)
+				la.set_online(true);
+			if (dc.pending && da.pending) {
+				change(dc, lc, v34_top);
+				change(da, la, v34_top);
+			}
+		}
+	}
+	void flip(std::vector<uint8_t> &b) {
+		if (ber <= 0)
+			return;
+		for (auto &x : b)
+			if ((rnd() & 0xffffff) < ber * 0x1000000) {
+				x ^= 1;
+				errors++;
+			}
+	}
+};
+
+static Config m10_config(bool ext = false)
+{
+	Config c = mnp_config(false);
+	c.mnp10 = true;
+	c.mnp10_ext = ext;
+	return c;
+}
+
+/* the LR with MNP 10's parameters: 8's bit 4, 0x0C, 0x0D, 0x11 */
+TEST(Link, Mnp10Lr)
+{
+	M10Dte d("caller");
+	d.mods = 1u << int(Mod::V32B) | 1u << int(Mod::V22B) |
+		1u << int(Mod::V22);
+	Link l;
+	l.init(&d, true, m10_config());
+	l.start(true, true);
+	std::vector<uint8_t> bits, b(48), idle(48, 1);
+	for (int k = 0; k < 14400 * 2 / 48; k++) {
+		l.get_bits(1, b.data(), 48);
+		bits.insert(bits.end(), b.begin(), b.end());
+		l.put_bits(1, idle.data(), 48);
+	}
+	auto frames = mnp_frames(line_chars(bits));
+	CHECK(!frames.empty(), "an LR");
+	if (frames.empty())
+		return;
+	const std::vector<uint8_t> lr = {
+		0x22, 0x01, 0x02, 0x01, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0xff, 0x02, 0x01, 0x03, 0x03, 0x01, 0x08, 0x04, 0x02, 0x40,
+		0x00, 0x08, 0x01, 0x13,
+		0x0c, 0x02, 0x4f, 0x3d,         /* shifts, 1200, 2400; V.32bis */
+		0x0d, 0x02, 0x07, 0x06,         /* -20 dBm, EQM 2 */
+		0x11, 0x01, 0x00 };
+	std::string hex;
+	for (uint8_t c : frames[0])
+		hex += fmt(" %02x", c);
+	CHECK(frames[0] == lr, "our LR:%s", hex.c_str());
+}
+
+/* MNP 10 agreed between two of ours, the probes grow the LTs, data both
+   ways, no shift on a clean V.32bis line at its top */
+TEST(Link, Mnp10)
+{
+	rnd_state = 12345;
+	M10Pair p(m10_config(), m10_config());
+	for (M10Dte *d : { &p.dc, &p.da })
+		d->mods = 1u << int(Mod::V32B) | 1u << int(Mod::V22B) |
+			1u << int(Mod::V22);
+	p.start();
+	p.run(3);
+	CHECK(p.dc.up && p.da.up, "up");
+	CHECK(p.lc.mnp().mnp10() && p.la.mnp().mnp10(), "MNP 10 agreed");
+	s16 n = 0;
+	p.lc.mnp().ladder(&n);
+	CHECK(n == 7, "7 rungs (%d)", n);
+	p.dc.to_send = text(100000);
+	p.da.to_send = text(60000);
+	p.run(90);
+	CHECK(p.da.got == p.dc.to_send, "caller -> answerer %zu",
+	      p.da.got.size());
+	CHECK(p.dc.got == p.da.to_send, "answerer -> caller %zu",
+	      p.dc.got.size());
+	CHECK(p.lc.mnp().lt_size() == 256, "LTs of 256 (%d)",
+	      p.lc.mnp().lt_size());
+	CHECK(p.dc.shifts.empty() && p.da.shifts.empty(), "no shift");
+}
+
+/* bit errors: the fallback down V.32bis, both sides alike, data intact */
+TEST(Link, Mnp10Fallback)
+{
+	rnd_state = 54321;
+	M10Pair p(m10_config(), m10_config());
+	for (M10Dte *d : { &p.dc, &p.da })
+		d->mods = 1u << int(Mod::V32B) | 1u << int(Mod::V22B) |
+			1u << int(Mod::V22);
+	p.start();
+	p.run(3);
+	CHECK(p.lc.mnp().mnp10(), "MNP 10");
+	p.ber = 3e-4;
+	p.dc.to_send = text(40000);
+	p.da.to_send = text(40000);
+	p.run(40);
+	p.ber = 0;
+	p.run(200);
+	bool down = false;
+	for (auto &s : p.dc.shifts)
+		down |= !s.up && s.rate < 14400;
+	CHECK(down, "down while the errors lasted");
+	CHECK(p.dc.rate == p.da.rate && p.dc.mod == p.da.mod,
+	      "both alike (%d %d)", p.dc.rate, p.da.rate);
+	CHECK(p.da.got == p.dc.to_send && p.dc.got == p.da.to_send,
+	      "data intact (%zu, %zu)", p.da.got.size(), p.dc.got.size());
+}
+
+/* between two D-Modems, from V.22 up through V.22bis and V.32bis to
+   V.34's top (start-ups between them, V.34's renegotiation in it) */
+TEST(Link, Mnp10ClimbAcross)
+{
+	rnd_state = 777;
+	M10Pair p(m10_config(true), m10_config(true));
+	for (M10Dte *d : { &p.dc, &p.da }) {
+		d->mods = 1u << int(Mod::V34) | 1u << int(Mod::V32B) |
+			1u << int(Mod::V22B) | 1u << int(Mod::V22);
+		d->mod = Mod::V22;
+		d->rate = 1200;
+	}
+	p.start();
+	p.run(3);
+	CHECK(p.lc.mnp().mnp10_ext() && p.la.mnp().mnp10_ext(),
+	      "the extension");
+	p.dc.to_send = text(400000);
+	p.da.to_send = text(200000);
+	for (int i = 0; i < 40 && p.dc.rate < 33600; i++)
+		p.run(30);
+	CHECK(p.dc.mod == Mod::V34 && p.dc.rate == 33600,
+	      "V.34 33600 (%d, %d)", int(p.dc.mod), p.dc.rate);
+	CHECK(p.da.mod == p.dc.mod && p.da.rate == p.dc.rate, "both alike");
+	bool restart = false, v22b = false;
+	for (auto &s : p.dc.shifts) {
+		restart |= s.kind == ShiftKind::Restart;
+		v22b |= s.mod == Mod::V22B;
+	}
+	CHECK(restart && v22b, "start-ups, through V.22bis");
+	p.run(120);
+	CHECK(p.da.got == p.dc.to_send && p.dc.got == p.da.to_send,
+	      "data intact (%zu, %zu)", p.da.got.size(), p.dc.got.size());
+}
+
+/* one side without the extension: the call stays in its class */
+TEST(Link, Mnp10NoExtension)
+{
+	M10Pair p(m10_config(true), m10_config(false));
+	for (M10Dte *d : { &p.dc, &p.da }) {
+		d->mods = 1u << int(Mod::V34) | 1u << int(Mod::V32B) |
+			1u << int(Mod::V22B) | 1u << int(Mod::V22);
+		d->mod = Mod::V22;
+		d->rate = 1200;
+	}
+	p.start();
+	p.run(3);
+	CHECK(p.lc.mnp().mnp10() && !p.lc.mnp().mnp10_ext(),
+	      "MNP 10 without the extension");
+	p.dc.to_send = text(100000);
+	for (int i = 0; i < 20; i++)
+		p.run(30);
+	CHECK(p.dc.mod != Mod::V34 && p.dc.rate <= 14400,
+	      "in the V.32bis class (%d)", p.dc.rate);
+	CHECK(p.dc.rate == 14400, "at its top (%d)", p.dc.rate);
+}
+
+/* cellular: the probes carry G and E, the transmit level moves */
+TEST(Link, Mnp10Cellular)
+{
+	Config cc = m10_config();
+	cc.mnp10_cellular = true;
+	M10Pair p(cc, m10_config());
+	for (M10Dte *d : { &p.dc, &p.da })
+		d->mods = 1u << int(Mod::V32B) | 1u << int(Mod::V22B) |
+			1u << int(Mod::V22);
+	p.start();
+	p.run(3);
+	CHECK(p.lc.mnp().cellular() && p.la.mnp().cellular(),
+	      "cellular both ways");
+	CHECK(p.dc.level >= 0 && p.dc.level <= 25 && p.da.level >= 0 &&
+	      p.da.level <= 25, "levels (%d, %d)", p.dc.level, p.da.level);
+	p.dc.to_send = text(20000);
+	p.run(20);
+	CHECK(p.da.got == p.dc.to_send, "data");
+}
+
 /* a V.80 DTE: what it sends (EM-coded already) and what it got, the
    in-band commands it gave the DCE, the octets it says wait in its
    buffer */

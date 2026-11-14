@@ -80,6 +80,20 @@ struct Config {
 	s16 mnp_info = MNP_MAX_INFO;
 	s16 mnp_opt = 3;
 	bool mnp5 = false;
+	/* MNP 10 offered in the LR (mnp.h), with: its cellular mode ()M1,
+	   the DK dial modifier), the lowest rate it may go to (-Q: 0
+	   neither 2400 nor 1200, 1 not 1200, 2 any), the cellular transmit
+	   level's start (@M), :T19's 120 s at 1200 bit/s, V.42's XID
+	   upgrade (-K1), D-Modem's extension (parameter 0xC0), the top
+	   speed its rate masks come from */
+	bool mnp10 = false;
+	bool mnp10_cellular = false;
+	s16 mnp10_lowest = 2;
+	s16 mnp10_level = 0;
+	bool mnp10_t19 = true;
+	bool mnp10_upgrade = true;
+	bool mnp10_ext = true;
+	s32 mnp10_top = 33600;
 	s16 tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
 	s16 tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
 	/* LAPM's 32-bit FCS (10 c/V.42) offered by the originator, agreed
@@ -173,6 +187,26 @@ public:
 	   swaps its forward and back channels, the one sending the
 	   forward channel training it again */
 	virtual void hst_turn() {}
+	/* MNP 10 (mnp.h): the modulations the pumps can change to on this
+	   line (bit n: Mod n); none, no shifts */
+	virtual u32 mnp10_mods() { return 0; }
+	/* the modulation running (Mod::Count: none of the ladder's) */
+	virtual Mod mnp10_mod() { return Mod::Count; }
+	/* the receiver now: its level (dBm0, 0 when not known) and its
+	   eye quality, the mean squared error as 1024ths of the signal's
+	   power (0 to 255, -1 when not known) */
+	virtual void mnp10_line(s16 &dbm, s16 &eqm) {
+		dbm = 0;
+		eqm = -1;
+	}
+	/* a rate shift's physical change: true if it began, and
+	   Link::shift_done() says when it is over */
+	virtual bool mnp10_shift(const Shift &s) {
+		(void)s;
+		return false;
+	}
+	/* the cellular mode's transmit level, db below the nominal */
+	virtual void mnp10_tx_level(s16 db) { (void)db; }
 	/* the DTE's in-band command in Synchronous Access Mode (<EM><rate>:
 	   tx and rx are its rate codes) */
 	virtual void sync_command(SyncCommand c, u8 tx, u8 rx) {
@@ -370,6 +404,30 @@ public:
 	void hst_turn() { owner_->hst_turn(); }
 	/* what MNP's LRs agreed (cfg()) to the owner */
 	void negotiated() { owner_->negotiated(cfg_); }
+	/* MNP 10's side of the owner (see Owner) */
+	u32 mnp10_mods() { return owner_->mnp10_mods(); }
+	/* (see Owner) */
+	Mod mnp10_mod() { return owner_->mnp10_mod(); }
+	/* (see Owner) */
+	void mnp10_line(s16 &dbm, s16 &eqm) { owner_->mnp10_line(dbm, eqm); }
+	/* (see Owner) */
+	bool mnp10_shift(const Shift &s) { return owner_->mnp10_shift(s); }
+	/* (see Owner) */
+	void mnp10_tx_level(s16 db) { owner_->mnp10_tx_level(db); }
+	/* the pumps' change for MNP 10's rate shift is over (ok: connected
+	   again); the link's framers start again */
+	void shift_done(bool ok);
+	/* MNP 10's shift is waiting for the pumps */
+	bool shifting() const {
+		return mode_ == Mode::Mnp && mnp_.shifting();
+	}
+	/* the call's MNP (for its MNP 10 state) */
+	const Mnp &mnp() const { return mnp_; }
+	/* V.42's XID agreed to MNP 10 (-K1): MNP from now on, in HDLC
+	   frames (initiator: the LA first) */
+	void mnp_upgrade(bool initiator);
+	/* (for LAPM's XID) the call's MNP */
+	Mnp &mnp() { return mnp_; }
 	/* LAPM keeps characters the DTE did not take; push them on */
 	bool push_pending = false;
 
