@@ -63,6 +63,10 @@ extern "C" void dp_runtime_set_framed(void *runtime, int framed)
    (dsplibs.h): weak as well */
 extern "C" void dp_runtime_set_v110(void *runtime, long rate) DCORE_WEAK;
 extern "C" long dp_runtime_v110(void *runtime) DCORE_WEAK;
+/* an MNP 10 start-up's answerer: its answer tone already sent
+   (dsplibs.h): weak as well */
+extern "C" void dp_runtime_set_restart(void *runtime, int ans_sent)
+	DCORE_WEAK;
 /* the fax engine's CED cut short after an answer tone (dsplibs.h):
    Smart Link's library's fax engine has none */
 extern "C" void FAX_answer_tone(void *obj, unsigned ms) DCORE_WEAK;
@@ -236,6 +240,20 @@ struct LinkOwner final : public dlink::Owner {
 		m_.negotiated(c.comp, c.v44, c.zstd, c.dict_size,
 			      c.max_string, c.mnp5);
 	}
+	/* MNP 10's rate shifts (mnp.h) */
+	u32 mnp10_mods() override { return m_.mnp10_mods(); }
+	/* (see mnp10_mods()) */
+	dlink::Mod mnp10_mod() override { return m_.mnp10_mod(); }
+	/* (see mnp10_mods()) */
+	void mnp10_line(s16 &dbm, s16 &eqm) override {
+		m_.mnp10_line(dbm, eqm);
+	}
+	/* (see mnp10_mods()) */
+	bool mnp10_shift(const dlink::Shift &s) override {
+		return m_.mnp10_shift(s);
+	}
+	/* (see mnp10_mods()) */
+	void mnp10_tx_level(s16 db) override { m_.mnp10_tx_level(db); }
 	/* HST agreed in XID: the call changes to it */
 	void hst(s32 bps) override { m_.hst_switch(bps); }
 	/* HST's link turns the channels around: the pump follows */
@@ -396,6 +414,10 @@ void Modem::sregs_init()
 		{ SREG_CONNNECT_MSG_SPEED_SRC, 0 }, { SREG_ANS_DELAY, 2 },
 		{ SREG_EC, 3 }, { SREG_COMP, 3 }, { SREG_MNP_BLOCK, 3 },
 		{ SREG_CONNECT_PROTOCOL, 0 },
+		{ SREG_MNP10_UPGRADE, 0 }, { SREG_MNP10_LOWEST, 2 },
+		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
+		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
+		{ SREG_MNP10, 3 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -695,6 +717,10 @@ s16 Modem::start_call(bool keep_line)
 	timer_on_ = false;
 	escape_count_ = 0;
 	link_req_ = 0;
+	shift_ = ShiftPhase::None;
+	shift_cap_ = 0;
+	tx_gain_ = 1;
+	rx_pow_ = 0;
 	if (!(keep_line && started_) && do_start())
 		return fail("the line does not start");
 	return 0;
@@ -958,6 +984,17 @@ s16 Modem::link_init()
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
 	c.hst = hst_offer();
+	/* MNP 10 (S113, -K, -Q, )M, @M, :T19): with MNP, not synchronous;
+	   the D-Modem extension's top rate +MS's */
+	c.mnp10 = cfg_.mnp && !cfg_.sync && (sregs_[SREG_MNP10] & 1) &&
+		!clear_channel() && !relay_channel();
+	c.mnp10_ext = (sregs_[SREG_MNP10] & 2) != 0;
+	c.mnp10_upgrade = sregs_[SREG_MNP10_UPGRADE] != 0;
+	c.mnp10_lowest = static_cast<s16>(sregs_[SREG_MNP10_LOWEST]);
+	c.mnp10_cellular = sregs_[SREG_MNP10_CELLULAR] != 0;
+	c.mnp10_level = static_cast<s16>(sregs_[SREG_MNP10_LEVEL]);
+	c.mnp10_t19 = sregs_[SREG_MNP10_T19] != 0;
+	c.mnp10_top = max_rate_ ? static_cast<s32>(max_rate_) : 33600;
 	v110_ = false;
 	/* +B2: on a clear channel (an ISDN B-channel) X.75 or PPP in place
 	   of the modem's link layer */
@@ -1013,6 +1050,249 @@ void Modem::hst_switch(s32 bps)
 	hst_bps_ = bps;
 	dp_requested_ = DP_HST;
 	later(Later::ChangeDp, static_cast<u32>(srate_) * 50 / 1000);
+}
+
+/*
+ *    MNP 10's rate shifts: the pumps' side (dlink's mnp.h)
+ */
+
+/* the 25 s an MNP 10 start-up has (its retrain the same); the caller's
+   start after the answerer's */
+static const u32 SHIFT_TRAIN_MS = 25000;
+static const u32 SHIFT_CALLER_MS = 600;
+
+/* MNP 10's modulations and the pumps that run them */
+static const struct {
+	dlink::Mod mod;
+	u32 dp;
+	bool leased;    /* a 4-wire leased line's alone */
+} k_m10_pumps[] = {
+	{ dlink::Mod::V92, DP_V92, false }, { dlink::Mod::V90, DP_V90, false },
+	{ dlink::Mod::K56, DP_K56, false }, { dlink::Mod::X2, DP_X2, false },
+	{ dlink::Mod::V34, DP_V34, false }, { dlink::Mod::VFC, DP_VFC, false },
+	{ dlink::Mod::V32T, DP_V32TERBO, false },
+	{ dlink::Mod::V32B, DP_V32BIS, false },
+	{ dlink::Mod::V26T, DP_V26TER, false },
+	{ dlink::Mod::V22B, DP_V22BIS, false },
+	{ dlink::Mod::V22, DP_V22, false }, { dlink::Mod::B212, DP_B212, false },
+	{ dlink::Mod::V23, DP_V23, false }, { dlink::Mod::V21, DP_V21, false },
+	{ dlink::Mod::B103, DP_B103, false },
+	{ dlink::Mod::V33, DP_V33, true }, { dlink::Mod::V29, DP_V29, true },
+	{ dlink::Mod::V27T, DP_V27TER, true }, { dlink::Mod::V26, DP_V26, true },
+	{ dlink::Mod::B208, DP_B208, true }, { dlink::Mod::B201, DP_B201, true },
+	{ dlink::Mod::B202, DP_B202, true },
+};
+
+/* pumps the V.8 pump starts (driver DP_V8) */
+static bool v8_started(u32 id)
+{
+	return id == DP_V34 || id == DP_V90 || id == DP_V92 || id == DP_VFC;
+}
+
+/* the PCM pumps (their rates their own) */
+static bool pcm_dp(u32 id)
+{
+	return id == DP_V90 || id == DP_V92 || id == DP_K56 || id == DP_X2;
+}
+
+/* the pumps registered for each of MNP 10's modulations on this line:
+   the PCM ones only while a PCM pump runs (a PCM call's server side is
+   on a digital line, which the others cannot change to); a 4-wire
+   leased line's own only on one.  HST is not one: its start-up is
+   V.22bis's and its link HST's (hst_switch()) */
+u32 Modem::mnp10_mods() const
+{
+	const u32 cur = static_cast<u32>(modulation(dp_stats_, dp_));
+	u32 m = 0;
+	for (const auto &p : k_m10_pumps) {
+		if (p.leased && !four_wire())
+			continue;
+		if (pcm_dp(p.dp) && p.dp != cur)
+			continue;
+		u32 drv = v8_started(p.dp) ? static_cast<u32>(DP_V8) : p.dp;
+		if (!dp_registered(drv) || (drv == DP_V8 &&
+					    !dp_registered(p.dp == DP_VFC ?
+							   DP_V34 : p.dp)))
+			continue;
+		m |= 1u << static_cast<u32>(p.mod);
+	}
+	return m;
+}
+
+/* the modulation running, as MNP 10's (V.32 is V.32bis's rung) */
+dlink::Mod Modem::mnp10_mod() const
+{
+	u32 cur = static_cast<u32>(modulation(dp_stats_, dp_));
+	if (cur == DP_V32)
+		cur = DP_V32BIS;
+	for (const auto &p : k_m10_pumps)
+		if (p.dp == cur)
+			return p.mod;
+	return dlink::Mod::Count;
+}
+
+/* the receiver's level (dBm0 from the line's power: 0 dBm0 is a sine of
+   16024 RMS) and its eye quality, from the pump's SNR: the mean
+   squared error as 1024ths of the signal (-1 with no SNR) */
+void Modem::mnp10_line(s16 &dbm, s16 &eqm) const
+{
+	dbm = rx_pow_ > 0 ? static_cast<s16>(lroundf(10 * log10f(
+		rx_pow_ / (16024.0f * 16024.0f)))) : -99;
+	eqm = -1;
+	if (dp_ && (dp_stats_.have & DP_STATS_SNR))
+		eqm = static_cast<s16>(std::min(255.0f, roundf(1024 *
+			powf(10, -dp_stats_.snr / 10))));
+}
+
+/* the cellular transmit level: db below the nominal */
+void Modem::mnp10_tx_level(s16 db)
+{
+	tx_gain_ = powf(10, -static_cast<float>(db) / 20);
+	logf("MNP 10: transmit level %d dB down\n", db);
+}
+
+/* a rate shift's change of the pumps: the rate as the pumps' cap; in
+   the pump (V.32bis, V.32terbo, V.34) a retrain or V.34's rate
+   renegotiation, which only the side that asked starts (the other's
+   pump follows the remote's); else the pump goes, and after the
+   silence the new one starts in the call's roles (shift_tick()).
+   False if the modulation has no pump here */
+bool Modem::mnp10_shift(const dlink::Shift &s)
+{
+	u32 id = 0;
+	for (const auto &p : k_m10_pumps)
+		if (p.mod == s.mod)
+			id = p.dp;
+	if (!id || !(mnp10_mods() & (1u << static_cast<u32>(s.mod))) ||
+	    run_ != Run::Dp ||
+	    (!dp_ && s.kind != dlink::ShiftKind::Restart)) {
+		logf("MNP 10: no pump for the shift\n");
+		return false;
+	}
+	/* (V.34 and PCM pick their own rate going up: no cap, as their
+	   renegotiations cannot rise past their start-up's) */
+	const bool autor = s.mod == dlink::Mod::V34 ||
+		pcm_dp(id);
+	shift_cap_ = static_cast<u32>(s.rate) >= 56000 || (autor && s.up) ?
+		0 : static_cast<u32>(s.rate);
+	if (s.kind != dlink::ShiftKind::Restart) {
+		shift_ = ShiftPhase::InPump;
+		shift_mark_ = rate_sets_;
+		shift_end_ = count_ + static_cast<u32>(
+			static_cast<u64>(SHIFT_TRAIN_MS) * srate_ / 1000);
+		if (s.lead)
+			link_req_ = s.kind == dlink::ShiftKind::Reneg ? 2 : 1;
+		logf("MNP 10: %s to %" PRId32 " bit/s%s\n",
+		     s.kind == dlink::ShiftKind::Reneg ? "rate renegotiation" :
+		     "retrain", s.rate, s.lead ? "" : " (the remote's)");
+		return true;
+	}
+	/* the silence: S10/8 + 3 s, then 250 ms with the transmitter on
+	   (the caller 600 ms more, the answerer's pump listening first) */
+	u32 ms = (sregs_[SREG_CARRIER_LOSS_DISCONNECT_TIME] / 8 + 3) * 1000 +
+		250 + (caller_ ? SHIFT_CALLER_MS : 0);
+	/* the pump's last bits on the line first (the receiver's delay,
+	   a character or two more): 100 ms and 20 bits' time */
+	const u32 drain = 100 + 20000 / std::max<u32>(tx_rate_, 300);
+	shift_dp_ = id;
+	shift_ = ShiftPhase::Quiet;
+	shift_drop_ = count_ + static_cast<u32>(static_cast<u64>(drain) *
+						srate_ / 1000);
+	shift_end_ = shift_drop_ + static_cast<u32>(static_cast<u64>(ms) *
+						    srate_ / 1000);
+	/* (the pump goes in shift_tick(): this is called from within its
+	   process()) */
+	logf("MNP 10: the pump goes, pump %u in %u ms\n", id, ms);
+	return true;
+}
+
+/* the new pump of a shift's start-up: the answerer's with the answer
+   tone sent (its handshake's next step; V.8's pumps send ANSam
+   again), the caller's as at a call's start */
+void Modem::shift_pump()
+{
+	const u32 id = shift_dp_;
+	const u32 drv = v8_started(id) ? static_cast<u32>(DP_V8) : id;
+	if (DCORE_HAS(dp_runtime_set_restart) && dp_runtime_)
+		dp_runtime_set_restart(dp_runtime_, !caller_ && drv != DP_V8);
+	const DpDriver *d = dp_driver(drv);
+	struct dp *dp = nullptr;
+	if (d && d->op)
+		dp = d->op->create(handle(), static_cast<enum DP_ID>(id),
+				   caller_, srate_, frag_, d->op);
+	dsp::zero(dp_stats_);
+	if (!dp) {
+		log_printf(1, "err: %s: cannot create pump %u\n", name_, id);
+		shift_end(false);
+		return;
+	}
+	logf("MNP 10: pump %u (driver %u) starts, %s\n", id, drv,
+	     caller_ ? "caller" : "answerer");
+	dp_ = dp;
+	shift_ = ShiftPhase::Training;
+	shift_end_ = count_ + static_cast<u32>(
+		static_cast<u64>(SHIFT_TRAIN_MS) * srate_ / 1000);
+}
+
+/* the shift's timers, with the line's samples: the silence's end, the
+   pump's limit (25 s); a retrain is over once the pump set both its
+   rates again */
+void Modem::shift_tick()
+{
+	if (shift_ == ShiftPhase::None)
+		return;
+	const bool due = static_cast<s32>(count_ - shift_end_) >= 0;
+	switch (shift_) {
+	case ShiftPhase::InPump:
+		if (rate_sets_ - shift_mark_ >= 2)
+			shift_end(true);
+		else if (due)
+			shift_end(rate_sets_ != shift_mark_);
+		break;
+	case ShiftPhase::Quiet:
+		if (dp_ && static_cast<s32>(count_ - shift_drop_) >= 0) {
+			struct dp *old = dp_;
+			dp_ = nullptr;
+			old->op->destroy(old);
+		}
+		if (due)
+			shift_pump();
+		break;
+	case ShiftPhase::Training:
+		if (due) {
+			logf("MNP 10: no connection in %u s\n",
+			     SHIFT_TRAIN_MS / 1000);
+			shift_end(false);
+		}
+		break;
+	case ShiftPhase::None:
+		break;
+	}
+}
+
+/* the shift over (ok, the pump connected): the link told.  A failed
+   start-up's pump goes (the link may shift again, to another); with
+   no pump left and no shift, the call ends */
+void Modem::shift_end(bool ok)
+{
+	const ShiftPhase was = shift_;
+	shift_ = ShiftPhase::None;
+	if (was == ShiftPhase::None)
+		return;
+	logf("MNP 10: shift %s, %u/%u bit/s\n", ok ? "done" : "failed",
+	     tx_rate_, rx_rate_);
+	if (!ok && was != ShiftPhase::InPump && dp_) {
+		struct dp *old = dp_;
+		dp_ = nullptr;
+		old->op->destroy(old);
+	}
+	if (ok && was != ShiftPhase::InPump)
+		stats_.dp = static_cast<s16>(modulation(dp_stats_, dp_));
+	link_->shift_done(ok);
+	if (!dp_ && shift_ == ShiftPhase::None) {
+		logf("MNP 10: no pump after the shift\n");
+		update_status(ST_DP_ERROR);
+	}
 }
 
 /* what XID or MNP's LRs agreed: the call's compression */
@@ -1731,6 +2011,7 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 	}
 	count_ += n;
 	samples_at_ms_ = host_.now_ms();
+	shift_tick();
 	if (later_ != Later::None &&
 	    static_cast<s64>(count_ - later_at_) >= 0)
 		later(later_, 0);
@@ -1761,7 +2042,23 @@ void Modem::run(s16 *in, s16 *out, s32 n)
 			std::fill_n(out, n, 0);
 			break;
 		}
+		if (link_->mnp10()) {
+			/* MNP 10: the received level, smoothed over about
+			   0.1 s; the cellular transmit level */
+			double sq = 0;
+			for (s32 i = 0; i < n; i++)
+				sq += static_cast<double>(in[i]) * in[i];
+			const float a = std::min(1.0f, static_cast<float>(n) /
+						 (0.1f * srate_));
+			if (n > 0)
+				rx_pow_ += a * (static_cast<float>(sq / n) -
+						rx_pow_);
+		}
 		dp_process(in, out, n);
+		if (tx_gain_ != 1)
+			for (s32 i = 0; i < n; i++)
+				out[i] = static_cast<s16>(lroundf(out[i] *
+								  tx_gain_));
 		break;
 	case Run::CallerId:
 		cid_process(in, out, n);
@@ -1799,6 +2096,11 @@ void Modem::dp_process(s16 *in, s16 *out, s32 n)
 		case DPSTAT_OK:
 			break;
 		case DPSTAT_CONNECT:
+			/* MNP 10's start-up again: the link's again */
+			if (shift_ == ShiftPhase::Training) {
+				shift_end(true);
+				break;
+			}
 			/* (HST after V.22bis: the link waits in EC_ESTAB) */
 			if (state_ == IDLE || state_ == DP_ESTAB ||
 			    (hst_bps_ && dp_->id == DP_HST &&
@@ -1818,6 +2120,18 @@ void Modem::dp_process(s16 *in, s16 *out, s32 n)
 				  "V.8");
 			break;
 		case DPSTAT_ERROR:
+			/* an MNP 10 shift's pump that lost the line: the
+			   link may shift again */
+			if (shift_ != ShiftPhase::None &&
+			    state_ != DP_DISC && state_ != EC_DISC) {
+				struct dp *old = dp_;
+				dp_ = nullptr;
+				old->op->destroy(old);
+				shift_end(false);
+				if (!dp_)
+					return;
+				break;
+			}
 			failed = true;
 			/* hanging up: the pump's end (its cleardown) is
 			   over, the stop due now */
@@ -1909,6 +2223,18 @@ void Modem::change_dp()
 		   offer it in XID (hst_switch()) */
 		if (id == DP_HST && hst_offer())
 			id = drv = DP_V22BIS;
+		/* *H1, *H2: MNP 10's caller starts low, V.22 or V.32bis at
+		   4800 bit/s, and climbs from there */
+		const u32 h = sregs_[SREG_MNP10_START];
+		if (caller_ && h && cfg_.mnp && !cfg_.sync &&
+		    (sregs_[SREG_MNP10] & 1) &&
+		    (!dp_ || dp_->id == DP_CALLPROG) &&
+		    dp_registered(h == 1 ? DP_V22 : DP_V32BIS)) {
+			id = drv = h == 1 ? DP_V22 : DP_V32BIS;
+			shift_cap_ = h == 1 ? 0 : 4800;
+			logf("MNP 10: the call starts at %s (*H%u)\n",
+			     h == 1 ? "V.22" : "V.32bis 4800", h);
+		}
 	}
 	logf("pump %u (driver %u), %s\n", id, drv,
 	     caller_ ? "caller" : "answerer");

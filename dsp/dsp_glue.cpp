@@ -259,6 +259,18 @@ void dp_runtime_set_framed(void *runtime, int framed)
 }
 
 /* see dsplibs.h */
+void dp_runtime_set_restart(void *runtime, int ans_sent)
+{
+	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
+	if (!rt)
+		return;
+	rt->ans_sent = rt->after_v8 = static_cast<s16>(ans_sent ? 1 : 0);
+	rt->v32_automode = 0;
+	rt->v8_tried = 1;
+	rt->v8_for = 0;
+}
+
+/* see dsplibs.h */
 void dp_runtime_set_v110(void *runtime, long rate)
 {
 	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);

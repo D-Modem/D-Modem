@@ -421,6 +421,8 @@ public:
 	bool shifting() const {
 		return mode_ == Mode::Mnp && mnp_.shifting();
 	}
+	/* the call runs MNP 10 */
+	bool mnp10() const { return mode_ == Mode::Mnp && mnp_.mnp10(); }
 	/* the call's MNP (for its MNP 10 state) */
 	const Mnp &mnp() const { return mnp_; }
 	/* V.42's XID agreed to MNP 10 (-K1): MNP from now on, in HDLC

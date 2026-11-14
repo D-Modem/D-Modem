@@ -103,6 +103,20 @@ enum S_REGISTER {
 	SREG_VCVM_RENEGS                  = 45,  /* and its
 						    renegotiations */
 	SREG_CONNECT_PROTOCOL             = 106, /* AT\V */
+	SREG_MNP10_UPGRADE                = 107, /* AT-K: V.42 to MNP 10 */
+	SREG_MNP10_LOWEST                 = 108, /* AT-Q: MNP 10's lowest
+						    rate (0 not 2400 or
+						    1200, 1 not 1200) */
+	SREG_MNP10_CELLULAR               = 109, /* AT)M: cellular mode */
+	SREG_MNP10_LEVEL                  = 110, /* AT@M: its transmit
+						    level's start */
+	SREG_MNP10_START                  = 111, /* AT*H: the call's start
+						    (1 V.22, 2 V.32bis at
+						    4800), MNP 10 climbing */
+	SREG_MNP10_T19                    = 112, /* AT:T19's 120 s at 1200 */
+	SREG_MNP10                        = 113, /* MNP 10 offered (bit 0),
+						    and between D-Modems
+						    every modulation (bit 1) */
 	SREG_LEASED                       = 47,  /* AT&L: 1 a 2-wire leased
 						    line, 2 a 4-wire one (no
 						    dial tone or ringing: ATD

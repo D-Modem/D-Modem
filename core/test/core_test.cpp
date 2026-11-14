@@ -1579,6 +1579,49 @@ TEST(Core, RetrainOnRequest)
 		<< i11;
 }
 
+/* MNP 10 between two D-Modems: the caller starts at V.22 (*H1), and the
+   fall forwards climb across the modulations, by start-ups in each new
+   one (V.22bis, V.32bis, V.32terbo, V.34 through V.8) and retrains
+   within V.32bis and V.32terbo, to V.34; the data both ways after */
+TEST(Core, Mnp10Climbs)
+{
+	if (getenv("SHOW")) {
+		dcore::log_set_hook([](const char *s) { fputs(s, stdout); });
+		dcore::log_level = 2;
+	}
+	Pair p("+MS=34+ES=4,0,2*H1");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	printf("online at %u/%u bit/s\n", p.a->tx_rate(), p.a->rx_rate());
+	EXPECT_EQ(p.a->tx_rate(), 1200u);
+	EXPECT_TRUE(p.run_until([](Pair &q) {
+		return q.a->tx_rate() >= 26400 && q.b->tx_rate() >= 26400 &&
+			q.a->link_state() == LinkState::Online; }, 400000))
+		<< p.a->tx_rate() << "/" << p.b->tx_rate();
+	printf("climbed to %u/%u bit/s\n", p.a->tx_rate(), p.b->tx_rate());
+	std::string da = data('a', 20000), db = data('b', 15000);
+	size_t sa = 0, sb = 0;
+	p.got_a.clear();
+	p.got_b.clear();
+	for (int t = 0; t < 120000; t += 20) {
+		int n = std::min<int>(p.a->dte_space(), da.size() - sa);
+		sa += p.a->dte_input(da.data() + sa, n);
+		n = std::min<int>(p.b->dte_space(), db.size() - sb);
+		sb += p.b->dte_input(db.data() + sb, n);
+		p.step();
+		if (p.got_b.size() >= da.size() && p.got_a.size() >= db.size())
+			break;
+	}
+	EXPECT_TRUE(p.got_b == da) << "B got " << p.got_b.size();
+	EXPECT_TRUE(p.got_a == db) << "A got " << p.got_a.size();
+	EXPECT_TRUE(p.a->carrier() && p.b->carrier());
+	dcore::log_level = 0;
+	dcore::log_set_hook(nullptr);
+}
+
 /* +MS's highest rate holds on V.34 as well (each MP asks for no more,
    both ways) */
 TEST(Core, V34MaxRate)

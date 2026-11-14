@@ -228,6 +228,9 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	s32 lost_syms;          /* ... symbols in a row past it */
 	s16 lost_off;           /* (tests: none of that) */
 	u16 r_word;             /* last R word received */
+	enum DP_ID v32_id;      /* DP_V32, DP_V32BIS or DP_V32TERBO */
+
+	u16 offered_caps();
 
 	cplx tx_symbol();
 	void set_tx(enum v32_txm m);
@@ -773,6 +776,8 @@ void V32Pump::retrain(bool remote)
 	stat_retrain(remote);
 	retraining = 1;
 	automode = 0;                /* no falling back now */
+	/* the core's limits as they are now (a rate shift's cap) */
+	caps = offered_caps();
 	rx_reset();
 	ev_rev = ev_r = ev_e = ev_s = 0;
 	ca_rev = 0;
@@ -813,6 +818,32 @@ static const float v32_min_snr[] = { 29.5f, 26.5f, 25, 22, 19, 16, 0 };
 float V32Pump::lost_limit(const struct v32_rate *r)
 {
 	return rate_lost_limit(v32_rates, v32_min_snr, r);
+}
+
+/* the rates we offer: the pump's (V.32 9600 and 4800 alone,
+   V.32terbo's two more only for DP_V32TERBO) within the core's
+   limits now (AT+MS, or a rate shift's cap: MNP 10); 4800 at least */
+u16 V32Pump::offered_caps()
+{
+	const s32 min_rate =
+		static_cast<s32>(modem_get_param(modem, MDMPRM_MIN_RATE));
+	const s32 max_rate =
+		static_cast<s32>(modem_get_param(modem, MDMPRM_MAX_RATE));
+	u16 c = 0;
+	for (s16 i = 0; i < V32_NRATES; i++) {
+		const struct v32_rate *r = &v32_rates[i];
+		if (v32_id == DP_V32 && r->bps != 9600 && r->bps != 4800)
+			continue;
+		/* V.32terbo's rates only when asked for (+MS=V32T) */
+		if (v32_id != DP_V32TERBO && (r->bits & RB_TERBO))
+			continue;
+		if (max_rate > 0 && r->bps > max_rate)
+			continue;
+		if (min_rate > 0 && r->bps < min_rate)
+			continue;
+		c |= r->bits;
+	}
+	return c ? c : RB_4800;
 }
 
 /* the rates our receiver can take, judged by the decision error on
@@ -1068,6 +1099,13 @@ s16 V32Pump::handshake()
 			 !retrains) {
 			retrain(false);
 		}
+		/* the core's retrain or rate renegotiation (V.80's, MNP
+		   10's rate shifts): a retrain either way, at the rates
+		   its limits allow now */
+		else if (modem_get_param(modem, MDMPRM_LINK_REQ) > 0) {
+			modem_set_param(modem, MDMPRM_LINK_REQ, 0);
+			retrain(false);
+		}
 		/* our receiver has lost its equalization (5.5/V.32: either
 		   modem may retrain): its error past its rate's limit for
 		   2 s (a burst of noise passes: the equalizer comes back
@@ -1134,31 +1172,13 @@ s16 V32Pump::sample(float x, float *y)
 s16 V32Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 		   s32 srate_, s32 max_frag)
 {
-	s16 i;
-	s32 min_rate, max_rate;
-
 	pump_setup(m, srate_, caller_);
 	automode = (id != DP_V32 && id != DP_V32BIS && id != DP_V32TERBO) ||
 		(rt && rt->v32_automode);
 
 	/* rates we offer */
-	min_rate = static_cast<s32>(modem_get_param(m, MDMPRM_MIN_RATE));
-	max_rate = static_cast<s32>(modem_get_param(m, MDMPRM_MAX_RATE));
-	for (i = 0; i < V32_NRATES; i++) {
-		const struct v32_rate *r = &v32_rates[i];
-		if (id == DP_V32 && r->bps != 9600 && r->bps != 4800)
-			continue;
-		/* V.32terbo's rates only when asked for (+MS=V32T) */
-		if (id != DP_V32TERBO && (r->bits & RB_TERBO))
-			continue;
-		if (max_rate > 0 && r->bps > max_rate)
-			continue;
-		if (min_rate > 0 && r->bps < min_rate)
-			continue;
-		caps |= r->bits;
-	}
-	if (!caps)
-		caps = RB_4800;
+	v32_id = id;
+	caps = offered_caps();
 
 	tx.init(srate_, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,
 		    sqrtf(V32_POWER), V32_TX_AMPLITUDE);

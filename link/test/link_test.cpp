@@ -747,6 +747,7 @@ struct Pair {
 		}
 	}
 	/* bit errors at the rate ber */
+	/* ber's bit errors in b */
 	void flip(std::vector<uint8_t> &b) {
 		if (ber <= 0)
 			return;
@@ -2332,20 +2333,27 @@ struct M10Dte : Dte {
 	Shift asked = {};
 	std::vector<Shift> shifts;
 	s16 level = -1;
+	/* the DTE named n */
 	explicit M10Dte(const char *n) : Dte(n) {}
+	/* the "pump's" rate */
 	int32_t tx_rate() override { return rate; }
+	/* the modulations it has */
 	u32 mnp10_mods() override { return mods; }
+	/* the one running */
 	Mod mnp10_mod() override { return mod; }
+	/* a line at -20 dBm with eqm's eye quality */
 	void mnp10_line(s16 &dbm, s16 &e) override {
 		dbm = -20;
 		e = eqm;
 	}
+	/* a shift asked: kept, the change pending */
 	bool mnp10_shift(const Shift &s) override {
 		asked = s;
 		shifts.push_back(s);
 		pending = true;
 		return true;
 	}
+	/* the cellular level */
 	void mnp10_tx_level(s16 db) override { level = db; }
 };
 
@@ -2357,12 +2365,14 @@ struct M10Pair {
 	double ber = 0;
 	long errors = 0;
 	int32_t v34_top = 33600;
+	/* the caller with cc, the answerer with ca */
 	M10Pair(const Config &cc, const Config &ca) {
 		lc.init(&dc, true, cc);
 		la.init(&da, false, ca);
 		const char *v = getenv("LINK_DEBUG");
 		dc.verbose = da.verbose = v && *v;
 	}
+	/* both links started */
 	void start() {
 		lc.start(true, true);
 		la.start(true, true);
@@ -2376,6 +2386,7 @@ struct M10Pair {
 			d.asked.rate;
 		l.shift_done(true);
 	}
+	/* seconds of the line both ways */
 	void run(long seconds) {
 		std::vector<uint8_t> b(48);
 		for (long t = 0; t < seconds * 100; t++) {
@@ -2401,6 +2412,7 @@ struct M10Pair {
 			}
 		}
 	}
+	/* ber's bit errors in b */
 	void flip(std::vector<uint8_t> &b) {
 		if (ber <= 0)
 			return;
@@ -2412,12 +2424,45 @@ struct M10Pair {
 	}
 };
 
+/* MNP with MNP 10 (ext: the D-Modem extension) */
 static Config m10_config(bool ext = false)
 {
 	Config c = mnp_config(false);
 	c.mnp10 = true;
 	c.mnp10_ext = ext;
 	return c;
+}
+
+/* -K1: a V.42 call whose XIDs carry MNP's LR parameters becomes MNP 10
+   in HDLC frames, data both ways; -K0 at either end stays V.42 */
+TEST(Link, Mnp10Upgrade)
+{
+	for (int k = 0; k < 3; k++) {
+		rnd_state = 777;
+		Config cc = m10_config(), ca = m10_config();
+		cc.ec = ca.ec = true;
+		cc.mnp10_upgrade = k != 1;
+		ca.mnp10_upgrade = k != 2;
+		M10Pair p(cc, ca);
+		for (M10Dte *d : { &p.dc, &p.da })
+			d->mods = 1u << int(Mod::V32B) |
+				1u << int(Mod::V22B) | 1u << int(Mod::V22);
+		p.start();
+		p.run(4);
+		CHECK(p.dc.up && p.da.up, "up (%d)", k);
+		const bool m10 = p.lc.mnp10() && p.la.mnp10();
+		CHECK(m10 == (k == 0), "MNP 10 %s (%d)",
+		      k == 0 ? "by XID" : "not agreed", k);
+		CHECK((p.lc.protocol() == Protocol::Lapm) == (k != 0) &&
+		      (p.la.protocol() == Protocol::Lapm) == (k != 0),
+		      "V.42 %s (%d)", k ? "kept" : "left", k);
+		p.dc.to_send = text(30000);
+		p.da.to_send = text(20000);
+		p.run(30);
+		CHECK(p.da.got == p.dc.to_send && p.dc.got == p.da.to_send,
+		      "data both ways (%d: %zu, %zu)", k, p.da.got.size(),
+		      p.dc.got.size());
+	}
 }
 
 /* the LR with MNP 10's parameters: 8's bit 4, 0x0C, 0x0D, 0x11 */

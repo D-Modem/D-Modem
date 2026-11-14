@@ -68,6 +68,9 @@ struct Shift {
 	Mod mod;
 	s32 rate;
 	bool up;
+	/* we asked for it (the responder's pump follows the initiator's
+	   retrain rather than starting one of its own) */
+	bool lead;
 };
 
 /* MNP 10's rung: a modulation at a rate */
@@ -328,6 +331,9 @@ private:
 	s32 eqm_sum_ = 0;
 	s16 eqm_n_ = 0;
 	s16 eqm_win_[4] = {}, eqm_wins_ = 0;
+	/* ticks in a row the pump gave no EQM (an FSK pump has none): the
+	   fall forward then on P and X alone */
+	s16 eqm_none_ = 0;
 	s16 peer_g_ = 0xff, peer_e_ = 0xff;
 	/* cellular transmit level: L, the report before, the level then,
 	   the level's change pending */

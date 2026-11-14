@@ -148,11 +148,13 @@ bool auto_rate(Mod m)
 	       m == Mod::K56 || m == Mod::X2;
 }
 
+/* the modulation's bit in a set of them (Owner::mnp10_mods()) */
 u32 mod_bit(Mod m)
 {
 	return UINT32_C(1) << static_cast<u8>(m);
 }
 
+/* the modulation's name, for the log */
 const char *mod_name(Mod m)
 {
 	static const char *const names[] = {
@@ -630,7 +632,7 @@ void Mnp::m10_reset()
 	ticks_ = 0;
 	sec_ticks_ = 0;
 	t19_ticks_ = 0;
-	eqm_sum_ = eqm_n_ = eqm_wins_ = 0;
+	eqm_sum_ = eqm_n_ = eqm_wins_ = eqm_none_ = 0;
 	sh_ = Sh::Idle;
 	sh_ticks_ = 0;
 	sh_restart_ = sh_responder_ = false;
@@ -688,6 +690,10 @@ void Mnp::m10_tick()
 	link_->mnp10_line(dbm, eqm);
 	g_ = g_code(dbm);
 	e_ = e_code(eqm);
+	if (eqm < 0)
+		eqm_none_ = static_cast<s16>(std::min(eqm_none_ + 1, 1000));
+	else
+		eqm_none_ = 0;
 	if (eqm >= 0) {
 		eqm_sum_ += std::min<s16>(eqm, 255);
 		if (++eqm_n_ >= 16) {
@@ -749,8 +755,11 @@ bool Mnp::ff_test(bool responder) const
 		return autor || pkt_p_ >= P_FULL;
 	if (!autor && pkt_p_ < P_FULL)
 		return false;
-	if (err_x_ > X_GOOD || eqm_wins_ < 4)
+	if (err_x_ > X_GOOD)
 		return false;
+	/* no EQM from this pump: P full and X low are the line's word */
+	if (eqm_wins_ < 4)
+		return eqm_none_ >= 4 * 16;
 	s32 sum = 0;
 	for (s16 i = 0; i < 4; i++)
 		sum += eqm_win_[i];
@@ -831,6 +840,7 @@ void Mnp::pump(s16 target, bool up, bool restart)
 	s.mod = t.mod;
 	s.rate = t.rate;
 	s.up = up;
+	s.lead = !sh_responder_;
 	if (!restart && from == t.mod && in_pump(t.mod))
 		s.kind = up && t.mod == Mod::V34 ? ShiftKind::Reneg :
 			ShiftKind::Retrain;

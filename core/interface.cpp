@@ -160,7 +160,8 @@ intptr_t Modem::get_param(u32 name)
 	case MDMPRM_MIN_RATE:
 		return min_rate_;
 	case MDMPRM_MAX_RATE:
-		return max_rate_;
+		/* (an MNP 10 rate shift's cap below it) */
+		return rate_cap(max_rate_);
 
 	/* what the host knows of its line */
 	case MDMPRM_IODELAY:
@@ -222,7 +223,7 @@ intptr_t Modem::get_param(u32 name)
 				voice_ear_cb };
 		return param_address(&asvd_voice_);
 	case MDMPRM_MAX_RX_RATE:
-		return max_rx_rate_ ? max_rx_rate_ : max_rate_;
+		return rate_cap(max_rx_rate_ ? max_rx_rate_ : max_rate_);
 	case MDMPRM_HST_START:
 		return hst_bps_;
 	case MDMPRM_HST_TURN:

@@ -761,7 +761,7 @@ rarer ones.
 \cmdl[pctC]{\%C\p{n}} & Data compression. & \cmdl[pctE]{\%E\p{n}} & Line quality monitor (kept). \\ \hline
 \cmdl[hashCID]{\#CID} & Caller ID. & \cmdl[hashUD]{\#UD} & Unimodem diagnostics. \\ \hline
 \cmdl[hashCLS]{\#CLS} & Data, fax or voice (Rockwell, US Robotics). & \cmdl[hashV]{\#V\ldots} & Voice, Rockwell's and US Robotics' commands. \\ \hline
-\cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10} (accepted). & \cmdl[mnp10]{)M, @M, *H} & \std{MNP~10} (accepted). \\ \hline
+\cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10}. & \cmdl[mnp10]{)M, @M, *H, :T19} & \std{MNP~10}. \\ \hline
 \cmdl[plusMS]{+MS} & Modulation. & \cmdl[plusGMI]{+GMI, +GMM, +GMR} & Identification. \\ \hline
 \cmdl[plusGCAP]{+GCAP} & Capabilities. & \cmdl[plusGCI]{+GCI} & Country. \\ \hline
 \cmdl[plusES]{+ES} & Error control. & \cmdl[plusESA]{+ESA} & \std{V.80} synchronous access. \\ \hline
@@ -2363,13 +2363,32 @@ Rockwell's \std{MNP~10EC}, and its transmit level (\cmd{1,12}): kept, \emph{defa
 gives \cmd{(0,1),(0-30)}.
 \end{command}
 
-\begin{command}{mnp10}{-C, -K, -Q, )M, @M, *H}{Rockwell's \texorpdfstring{\texttt{MNP}}{MNP} 10}
-Rockwell's \std{MNP~10} and 10EC (cellular): the calling tone, \std{MNP} Extended
-Services, the \std{V.22bis} fallback, power levels and the link's speed.  The
-modem has no \std{MNP~10}: it accepts them, changing nothing.  A modem with
-\std{MNP~10EC} connects with \std{V.42}.
+\begin{command}{mnp10}{-C, -K, -Q, )M, @M, *H, :T19}{\texorpdfstring{\texttt{MNP}}{MNP} 10}
+Microcom's \std{MNP~10}, offered in every \std{MNP} call (S113 bit 0, \emph{default}
+on): the link's packets grow and shrink with the line, and the call moves
+between modulations as the line gets better or worse.  With a \std{D-Modem} at
+the other end (S113 bit 1, \emph{default} on) it moves between every
+modulation both have, \std{V.34} and \std{V.32bis} down to \std{V.21}; with
+other \std{MNP~10} modems within \std{V.34}, and within \std{V.32bis},
+\std{V.22bis} and \std{V.22}.
+\begin{vtable}
+\cmdl[mnp10]{-K0} & A \std{V.42} call stays \std{V.42} (S107, \emph{default}). \\ \hline
+\cmdl[mnp10]{-K1}, \cmdl[mnp10]{-K2} & A \std{V.42} call whose other end offers it in its \std{XID} becomes \std{MNP~10}, in \std{HDLC} frames (it loses \std{V.42bis}). \\ \hline
+\cmdl[mnp10]{-Q0} & No rate below 4800 bit/s (S108). \\ \hline
+\cmdl[mnp10]{-Q1} & No rate below 2400 bit/s. \\ \hline
+\cmdl[mnp10]{-Q2} & Down to the lowest (\emph{default}). \\ \hline
+\cmdl[mnp10]{)M0} & Not cellular (S109, \emph{default}). \\ \hline
+\cmdl[mnp10]{)M1}, \cmdl[mnp10]{)M2} & Cellular: the transmit level follows the other end's reports, the fallbacks go faster. \\ \hline
+\cmdl[mnp10]{@M\p{n}} & The cellular transmit level's start (S110): \cmd{@M0} 8~dB down, \cmd{@M1} 20~dB, \cmd{@M10} to \cmd{@M30} 0 to 20~dB. \\ \hline
+\cmdl[mnp10]{*H0} & The call starts at the highest rate (S111, \emph{default}). \\ \hline
+\cmdl[mnp10]{*H1}, \cmdl[mnp10]{*H2} & The caller starts at \std{V.22} (1200 bit/s) or \std{V.32bis} at 4800, and climbs. \\ \hline
+\cmdl[mnp10]{:T19\p{n}} & 1 (\emph{default}): at 1200 bit/s, hang up after 120~s with nothing from the other end (S112). \\ \hline
+\end{vtable}
+\cmdl[mnp10]{-C} is accepted, changing nothing.  \std{MNP~10EC}'s own
+modulations are not there: a modem with it connects with \std{V.42}, or
+with \std{MNP~10}.
 \begin{results}
-\res{\rc{OK}}{For \cmdl[mnp10]{-C0}, \cmdl[mnp10]{-C1}, \cmdl[mnp10]{-K0} to \cmdl[mnp10]{-K2}, \cmdl[mnp10]{-Q0}, \cmdl[mnp10]{-Q1}, \cmdl[mnp10]{)M0} to \cmdl[mnp10]{)M2}, \cmdl[mnp10]{@M0} to \cmdl[mnp10]{@M30}, \cmdl[mnp10]{*H0} to \cmdl[mnp10]{*H2}.}
+\res{\rc{OK}}{For \cmdl[mnp10]{-C0}, \cmdl[mnp10]{-C1}, \cmdl[mnp10]{-K0} to \cmdl[mnp10]{-K2}, \cmdl[mnp10]{-Q0} to \cmdl[mnp10]{-Q2}, \cmdl[mnp10]{)M0} to \cmdl[mnp10]{)M2}, \cmdl[mnp10]{@M0} to \cmdl[mnp10]{@M30}, \cmdl[mnp10]{*H0} to \cmdl[mnp10]{*H2}, \cmdl[mnp10]{:T190}, \cmdl[mnp10]{:T191}.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \end{command}
