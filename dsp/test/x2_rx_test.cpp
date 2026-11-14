@@ -51,6 +51,7 @@ struct Line {
 	std::mt19937 rng{ 7 };
 	std::normal_distribution<double> nd{ 0, 1 };
 
+	/* at rate r, gain g, noise snr_db below, frac f late */
 	Line(int r, double g, double snr_db, double f)
 		: rate(r), gain(g), frac(f), t(0)
 	{
@@ -184,6 +185,7 @@ Result run_line(int rate, double gain, double snr, double frac,
 	return res;
 }
 
+/* a clean line at 8000 Hz: every stage, the data bit for bit */
 TEST(X2Rx, CleanLine8000)
 {
 	Result r = run_line(8000, 0.5, 60, 0.0);
@@ -222,6 +224,7 @@ TEST(X2Rx, BestRate)
 	EXPECT_LE(b40, b50);
 }
 
+/* at 9600 Hz behind the resampler, 45 dB: the same, and the SNR seen */
 TEST(X2Rx, Analogue9600)
 {
 	Result r = run_line(9600, 0.3, 45, 0.37);

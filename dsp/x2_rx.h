@@ -191,8 +191,11 @@ struct X2Rx : PcmEqualizer<X2Rx, X2RX_TAPS> {
 
 private:
 	friend struct PcmEqualizer<X2Rx, X2RX_TAPS>;
+	/* sample i of the history (16 000 Hz) */
 	float at(s32 i) const { return x[i & (X2RX_HIST - 1)]; }
+	/* sample i of the preamble's history (8000 Hz) */
 	float at8(s32 i) const { return x8[i & (X2RX_HIST8 - 1)]; }
+	/* the equaliser's input i for code kk, d samples later */
 	float xin(s32 kk, s16 i, s16 d = 0) const
 	{
 		return at(b + 2 * kk + X2RX_EQ_D + d - i);
