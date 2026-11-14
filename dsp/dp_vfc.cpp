@@ -120,6 +120,7 @@ struct VfcScr {
 	u32 r;
 	s16 tap;
 
+	/* n bits of in scrambled */
 	s16 scramble(s16 in, s16 n)
 	{
 		s16 s = static_cast<s16>(((r >> tap) ^ r ^
@@ -127,6 +128,7 @@ struct VfcScr {
 		r = (r | static_cast<u32>(s) << 23) >> n;
 		return s;
 	}
+	/* n bits of s descrambled */
 	s16 descramble(s16 s, s16 n)
 	{
 		s16 d = static_cast<s16>(((r >> tap) ^ r ^
@@ -145,8 +147,9 @@ struct VfcScr {
 	}
 };
 
-/* the tap of each side's scrambler, as VfcScr and as V.34's */
+/* the tap of each side's scrambler as VfcScr has it */
 static s16 vfc_tap(s16 caller) { return caller ? 5 : 18; }
+/* and as V.34's (bits.h) */
 static s16 vfc_v34_tap(s16 caller) { return caller ? 18 : 5; }
 
 /* a phase 2 message: its 20 dibits */
@@ -312,6 +315,7 @@ struct VfcTrn {
 	s16 prev;               /* the last point */
 	s16 phase;              /* in S and S-bar */
 
+	/* from the start, with the scrambler's tap */
 	void init(s16 tap)
 	{
 		scr.r = 0;
@@ -388,8 +392,9 @@ enum vfc_rxp {
 };
 
 struct VfcPump : PumpBase<VfcPump, vfc_state>, QamRxCore<VfcPump> {
-	static constexpr const char *name = "V.FC data pump";
+	static constexpr const char *name = "V.FC pump";
 
+	/* (the receiver's buffers freed) */
 	~VfcPump()
 	{
 		rx.release();
@@ -472,7 +477,9 @@ struct VfcPump : PumpBase<VfcPump, vfc_state>, QamRxCore<VfcPump> {
 	bool connected;
 	float data_power;
 
+	/* the pump's name in the log */
 	const char *tag() const { return "vfc"; }
+	/* in the data mode */
 	bool in_data() const { return state == V_DATA; }
 
 	s16 handshake();
@@ -490,10 +497,13 @@ struct VfcPump : PumpBase<VfcPump, vfc_state>, QamRxCore<VfcPump> {
 	void rx_bit(s16 b);
 	void rx_known();
 	void data_start();
+	/* (the carrier is the data mode's) */
 	void carrier_came() {}
+	/* (as carrier_came) */
 	void carrier_went() {}
 	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
 		  s32 max_frag);
+	/* cnt line samples in, cnt out */
 	s16 process(void *in, void *out, s32 cnt) override
 	{
 		return pump_loop(in, out, cnt);
@@ -1071,6 +1081,8 @@ void VfcPump::rx_symbol()
  *    the handshake
  */
 
+/* the start-up's state machine, once a sample: DPSTAT_OK, or the
+   connect */
 s16 VfcPump::handshake()
 {
 	switch (state) {
@@ -1183,6 +1195,7 @@ s16 VfcPump::handshake()
 	return DPSTAT_OK;
 }
 
+/* one line sample x in, *y out */
 s16 VfcPump::sample(float x, float *y)
 {
 	s16 r = handshake();
