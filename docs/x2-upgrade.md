@@ -99,4 +99,4 @@ records only when it starts.
   change the country or other features.
 - In supervisor builds that have V.90, the same bit enables V.90.
 - The tests used emulated Couriers (courier-emu), not a physical
-  modem. See [the technical details](x2-upgrade-details.md#tests).
+  modem. See [the technical details](x2-upgrade-details.md#6-tests).
