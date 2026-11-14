@@ -117,6 +117,8 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	s16 flags_hs;           /* HDLC flags for its scrambled ones at
 				   1200 bit/s (S49 bit 1) */
 	s32 ans_ms;             /* the answer tone's length, ms */
+	float dec_mse = 1;      /* the decision error over the point's
+				   power, averaged */
 
 	/* transmitter */
 	enum v22_tx tx_mode;
@@ -432,6 +434,13 @@ void V22Pump::rx_symbol(cplx y)
 	z = cplx_mul(out, rot);
 
 	quad = slice(z, &d, &q34);
+	/* the decision error against the point's power, for the SNR */
+	{
+		const float pd = cplx_pow(d);
+		if (pd > 1e-6f)
+			dec_mse += 0.005f *
+				(cplx_pow(cplx_sub(d, z)) / pd - dec_mse);
+	}
 	/* 16 point decision for the 2400 bit/s detector */
 	if (rx_rate == 2400)
 		q34_16 = q34;
@@ -820,6 +829,7 @@ s16 V22Pump::handshake()
 			stat_line(V22_BAUD, caller ? 1200 : 2400, V22_BAUD,
 				  caller ? 2400 : 1200);
 			stat_freq_offset(dtheta, V22_BAUD);
+			stat_snr(-10 * log10f(dec_mse + 1e-6f));
 		}
 		break;
 	}

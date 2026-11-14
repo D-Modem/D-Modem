@@ -297,6 +297,42 @@ void Link::start_mnp(bool initiator, const BitQueue *rx)
 		mnp_async_.start_in_frame(*rx);
 }
 
+/* V.42's XID agreed to MNP 10 (-K1): MNP in HDLC frames from now on,
+   the FCS-16, the XID in the LRs' place (Mnp::upgrade_start()) */
+void Link::mnp_upgrade(bool initiator)
+{
+	mnp_tried_ = true;
+	cfg_.ec = false;
+	cfg_.mnp5 = false;
+	enc5_.init();
+	dec5_.init();
+	proto_ = Protocol::Mnp;
+	mode_ = Mode::Mnp;
+	timer_ = 0;
+	timer_what_ = Timer::None;
+	push_pending = false;
+	logf("mnp: upgraded from V.42 (%s).",
+	     initiator ? "initiator" : "responder");
+	hdlc_.set_tx_fcs32(false);
+	hdlc_.set_rx_fcs(RX_FCS16);
+	hdlc_.set_framer(&mnp_, true);
+	mnp_async_.start(this, &mnp_);
+	mnp_.upgrade_start(initiator);
+}
+
+/* MNP 10's rate shift: the pumps' change is over; the framers start
+   again (a frame cut by the change is lost: LTs go again as after any
+   loss) */
+void Link::shift_done(bool ok)
+{
+	if (mode_ != Mode::Mnp)
+		return;
+	hdlc_.start(this);
+	hdlc_.set_framer(&mnp_, true);
+	mnp_async_.start(this, &mnp_);
+	mnp_.shift_done(ok);
+}
+
 /* the answerer's detection phase saw SYN DLE STX */
 void Link::mnp_lr_seen(const BitQueue &rx)
 {

@@ -121,10 +121,54 @@ back runs: 19200 from an estimate of 29.5 dB, 16800 from 26.5 dB. On
 `pump_test`'s line that picks 19200 from 34 dB of SNR and 16800 from
 26 dB; forced, 19200 runs clean from about 32 dB and 16800 from 24 dB.
 
+## Rate renegotiation
+
+V.32bis and V.32terbo change their rate in the middle of data without a
+retrain (8.5/V.32bis). The equalizers and the echo canceller keep what
+they learned, so it takes a fraction of a second where a retrain takes
+about three.
+
+1. The modem that starts it sends S for 128 symbols, S-bar for 16 and a
+   short TRN (64 symbols of the two point part, then the four point
+   part to 256), then R4: the rates of the call it can take now.
+2. The other modem hears S in its data. S has AA's 1800 Hz and AC's 600
+   and 3000 Hz in it, so its receiver looks for S's +-90 degree steps
+   first (10 ms), before the tone trackers could call it a retrain
+   (20 ms). It answers with the same S, S-bar and TRN, waits for R4, and
+   sends R5: R4's rates that its own receiver can take, judged by the
+   error on the training.
+3. The initiator takes R5's fastest rate and sends E, then B1 and data.
+   The responder sends E once it has the initiator's, then data.
+
+If both start at once, each takes the other's R4 for an R5 and both end
+on the fastest rate the two words share. If the other modem does not
+renegotiate (none of the peers here do: Agere, Broadcom, ESS and the
+Courier all answer S with a retrain, and their own `ATO3` in V.32bis
+retrains), its AA or AC alone shows within about 200 ms and the pump
+answers that retrain. Without either, it retrains after 3 s.
+
+What starts one: `ATO3` and V.80's `<EM><rrn>` (`MDMPRM_LINK_REQ` 2),
+and MNP 10's rate shifts within V.32bis and V.32terbo, up or down, the
+new rate as the cap. Plain V.32 has no renegotiation, so there `ATO3`
+retrains. Each renegotiation counts in `ATI11` as the local or the
+remote modem's.
+
+Two details came out of testing it back to back:
+
+- **The tone trackers are cleared after it.** Once S turns the 1800 Hz
+  tracker on, data's own spectrum near 1800 Hz crosses its threshold
+  often enough to hold it on. The answerer then took the caller's data
+  for AA, a retrain, the moment the renegotiation ended.
+- **The receiver listens during its own S and TRN.** At the start-up it
+  ignores the line while the echo canceller learns. In a renegotiation
+  the canceller is already trained, and the two trainings overlap.
+
+The words are those of the start-up (`0FF9` for all the V.32bis
+rates). V.32bis's text on R4 and R5 was not to hand, and no peer here
+sends them, so these words have been checked only against our own pump.
+
 ## Not done
 
-- **Rate renegotiation.** V.32bis's rate renegotiation is not
-  implemented for any of the V.32 family; D-Modem retrains instead.
 - **V.8.** V.8 has no code for V.32terbo; it is used only when chosen
   with `AT+MS=V32T`.
 
@@ -133,6 +177,17 @@ back runs: 19200 from an estimate of 29.5 dB, 16800 from 26.5 dB. On
 - `pump_test`: `v32terbo*` (clean, 27 dB, no band limit, 8000 Hz,
   300 ppm clock offset, an echo), and `V32Terbo.Rates` (19200 at 40 dB,
   16800 at 27 dB, 14400 at 25 dB, each without a bit error).
+- `pump_test`'s `V32bis.Renegotiation`: the caller's and then the
+  answerer's renegotiation down to 9600 bit/s (`DSP_V32_RENEG=<ms>[:<bit/s>][a|c]`),
+  answered without a retrain, the errors all in the one burst of the
+  change.
+- `dmodem_test`'s `v32_reneg_both`, `v32_reneg_a`, `v32_reneg_c`: the
+  same through the whole modem, V.42 carrying the data over it.
+- `core_test`'s `Core.Mnp10Climbs`: MNP 10 climbs from V.32bis 4800 to
+  14400 and from V.32terbo 16800 to 19200 by renegotiations.
+- `<peer>_132_dte_reneg_<peer>_calls` (Agere, Broadcom, ESS) and
+  `courier_v32_dte_reneg`: our `ATO3` in V.32bis against a modem that
+  answers it with a retrain; the data carries on whole.
 - `agere_232_agere_calls`, `agere_232_open_calls`: the Agere modem
   and D-Modem, both with `AT+MS=V32T`, call each other and connect at
   19200 bit/s both ways (`ctest -L agere`).

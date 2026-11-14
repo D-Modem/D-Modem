@@ -6,7 +6,7 @@
  *                    parametric mode back to back, through a delay, a
  *                    gain and a clock difference of 200 ppm, and through
  *                    the AMR and AMR-WB codecs of codec_sim (where the
- *                    libraries are), against what docs/v_cvm.pdf's
+ *                    libraries are), against what docs/specs/v_cvm.pdf's
  *                    Appendix I measured
  *
  */

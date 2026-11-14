@@ -9,8 +9,11 @@
  *
  */
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -67,7 +70,7 @@ void unmap(const X2Rate &r, const unsigned char code[X2_FRAME], s16 *last,
 		unsigned char g = static_cast<unsigned char>(code[i] | 0x80);
 		d[i] = -1;
 		for (j = 0; j < r.n[i]; j++)
-			if (k56_code(r.lv[i][j], 0) == g)
+			if (x2_code(r, i, j) == g)
 				d[i] = j;
 		ASSERT_GE(d[i], 0) << "code " << int(code[i]);
 	}
@@ -92,13 +95,15 @@ void unmap(const X2Rate &r, const unsigned char code[X2_FRAME], s16 *last,
 		bits[k++] = (x >> i) & 1;
 }
 
-/* random frames at both start-up rates and the next ones back to their
-   bits */
+/* random frames at both start-up rates and all 15 data rates, across
+   each pad, back to their bits */
 TEST(X2Map, DecodesBack)
 {
-	for (const X2Rate *r : { &x2_rate_a, &x2_rate_b, &x2_rate_c,
-				      &x2_rate_d, &x2_rate_e, &x2_rate_f,
-				      &x2_rate_g }) {
+	std::vector<const X2Rate *> rates = { &x2_rate_a, &x2_rate_b };
+	for (s16 m = 0; m < X2_MODES; m++)
+		for (s16 n = 1; n <= 15; n++)
+			rates.push_back(x2_rate_for(n, m));
+	for (const X2Rate *r : rates) {
 		X2Map m{};
 		m.init(*r);
 		m.last = 1;
@@ -110,21 +115,20 @@ TEST(X2Map, DecodesBack)
 			unsigned char in[X2_MAXBITS], line[X2_MAXBITS],
 				code[X2_FRAME];
 			s16 nb = m.frame_bits();
-			ASSERT_EQ(nb, r == &x2_rate_c ? 41 : r == &x2_rate_d ? 39 :
-				      r == &x2_rate_e ? 35 : r == &x2_rate_f ? 38 :
-				      r == &x2_rate_g ? 40 : 24);
+			ASSERT_EQ(nb, r->B + 5);
 			for (s16 i = 0; i < nb; i++)
 				in[i] = static_cast<unsigned char>(rand() & 1);
 			m.frame(in, code);
 			unmap(*r, code, &last, line);
 			for (s16 i = 0; i < nb; i++)
 				ASSERT_EQ(descramble(&dscr, SCR_GPC, line[i]),
-					  in[i]) << "frame " << f << " bit " << i;
+					  in[i]) << "B " << r->B << " frame "
+						 << f << " bit " << i;
 			if (abs(m.rds) > rds_max)
 				rds_max = abs(m.rds);
 		}
 		/* the free sign holds the running sum down */
-		EXPECT_LT(rds_max, 40000);
+		EXPECT_LT(rds_max, 40000) << "B " << r->B;
 	}
 }
 
@@ -198,9 +202,9 @@ TEST(X2Map, DecodesIModemOnes)
 	const struct {
 		const X2Rate *r;
 		const unsigned char *o;
-	} calls[] = { { &x2_rate_d, d }, { &x2_rate_c, c },
-		      { &x2_rate_e, e }, { &x2_rate_f, f },
-		      { &x2_rate_g, g } };
+	} calls[] = { { x2_rate_for(12), d }, { x2_rate_for(14), c },
+		      { x2_rate_for(8), e }, { x2_rate_for(11), f },
+		      { x2_rate_for(13), g } };
 	for (const auto &t : calls) {
 		u32 dscr = 0;
 		s16 last = 1;
@@ -226,30 +230,86 @@ TEST(X2Map, DecodesIModemOnes)
 	}
 }
 
-/* the next rate by the most the client takes */
+/* the rates by the most the client takes: all 15 of the Quad's ladder */
 TEST(X2Map, RateFor)
 {
-	EXPECT_EQ(x2_rate_for(1), nullptr);
-	EXPECT_EQ(x2_rate_for(7), nullptr);
-	EXPECT_EQ(x2_rate_for(8), &x2_rate_e);
-	EXPECT_EQ(x2_rate_for(9), nullptr);
-	EXPECT_EQ(x2_rate_for(10), nullptr);
-	EXPECT_EQ(x2_rate_for(11), &x2_rate_f);
-	EXPECT_EQ(x2_rate_for(12), &x2_rate_d);
-	EXPECT_EQ(x2_rate_for(13), &x2_rate_g);
-	EXPECT_EQ(x2_rate_for(14), &x2_rate_c);
-	EXPECT_EQ(x2_rate_for(15), nullptr);
-	/* enough levels for the bits, and each list the largest first */
-	for (const X2Rate *r : { &x2_rate_c, &x2_rate_d, &x2_rate_e,
-				 &x2_rate_f, &x2_rate_g }) {
+	static const s16 B[15] = {
+		19, 22, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37,
+	};
+	EXPECT_EQ(x2_rate_for(0), nullptr);
+	EXPECT_EQ(x2_rate_for(16), nullptr);
+	EXPECT_EQ(x2_rate_for(1, 3), nullptr);
+	for (s16 n = 1; n <= 15; n++) {
+		const X2Rate *r = x2_rate_for(n);
+		ASSERT_NE(r, nullptr);
+		EXPECT_EQ(r->B, B[n - 1]);
+		EXPECT_EQ(r->MD, 5);
+		/* enough levels for the bits, each list the largest first */
 		double v = 1;
 		for (int i = 0; i < X2_FRAME; i++) {
 			v *= r->n[i];
+			ASSERT_LE(r->n[i], X2_MAXLEVELS);
 			for (int j = 1; j < r->n[i]; j++)
 				EXPECT_LT(r->lv[i][j - 1], r->lv[i][j]);
 		}
 		EXPECT_GE(v, static_cast<double>(INT64_C(1) << r->B));
 	}
+	/* the first is the start-up's data rate */
+	for (int i = 0; i < X2_FRAME; i++)
+		for (int j = 0; j < 9; j++)
+			EXPECT_EQ(x2_rate_for(1)->lv[i][j], x2_rate_b.lv[i][j]);
+	/* the I-modem's lists, as seen on the line (and in the Quad's
+	   banks): 14's first position one larger at the top and without
+	   ce, 13's last as its others */
+	EXPECT_EQ(x2_rate_for(14)->lv[0][0], 0x9d);
+	EXPECT_EQ(x2_rate_for(14)->lv[1][0], 0x9e);
+	EXPECT_EQ(x2_rate_for(13)->n[5], 62);
+	EXPECT_EQ(x2_rate_for(8)->lv[0][31], 0xf5);
+	EXPECT_EQ(x2_rate_for(15)->n[0], 82);
+}
+
+/* across a digital pad: the same B, the levels the client gets
+   distinct, and the octets sent for them the pad (3 or 6 dB) louder */
+TEST(X2Map, Pads)
+{
+	for (s16 m = 1; m < X2_MODES; m++)
+		for (s16 n = 1; n <= 15; n++) {
+			const X2Rate *r = x2_rate_for(n, m);
+			ASSERT_NE(r, nullptr);
+			EXPECT_EQ(r->B, x2_rate_for(n)->B);
+			double v = 1;
+			for (int i = 0; i < X2_FRAME; i++) {
+				v *= r->n[i];
+				ASSERT_NE(r->tx[i], nullptr);
+				for (int j = 0; j < r->n[i]; j++) {
+					if (j)
+						EXPECT_LT(r->lv[i][j - 1],
+							  r->lv[i][j]);
+					/* (14 bit linear values; below
+					   256 the steps are too coarse) */
+					double a = k56_value(x2_code(*r, i, j),
+							     0),
+					       b = k56_value(k56_code(
+							     r->lv[i][j], 0), 0);
+					if (b < 256)
+						continue;
+					EXPECT_NEAR(20 * log10(a / b),
+						    m == 1 ? 3 : 6, 0.6)
+						<< "pad " << m << " n " << n
+						<< " position " << i << " level "
+						<< j;
+				}
+			}
+			EXPECT_GE(v, static_cast<double>(INT64_C(1) << r->B));
+		}
+	/* 6 dB: the levels of no pad */
+	for (int j = 0; j < 9; j++)
+		EXPECT_EQ(x2_rate_for(1, 2)->lv[0][j], x2_rate_b.lv[0][j]);
+	/* 3 dB, 32000 bit/s: levels B again, sent as 9d 9f a3 a7 ac b2 ba
+	   c5 db */
+	EXPECT_EQ(x2_rate_for(1, 1)->lv[0][0], 0xa5);
+	EXPECT_EQ(x2_rate_for(1, 1)->tx[0][0], 0x9d);
+	EXPECT_EQ(x2_rate_for(1, 1)->tx[0][8], 0xdb);
 }
 
 /* the training's segments, their lengths and levels */

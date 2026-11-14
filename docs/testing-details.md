@@ -437,7 +437,7 @@ libvo-amrwbenc-dev; without them netsim says so).
 
 What the modulations and the codecs make of each other is in
 [cellular/](cellular/v_cvm.tex), a proposed Recommendation for data over
-mobile telephony's speech paths ([v_cvm.pdf](v_cvm.pdf)).
+mobile telephony's speech paths ([v_cvm.pdf](specs/v_cvm.pdf)).
 
 ### Impairments toward the 9600 Hz modem
 

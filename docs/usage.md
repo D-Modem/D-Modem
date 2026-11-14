@@ -8,6 +8,8 @@ Configure the SIP account in the SIP_LOGIN environment variable (`SIP_PORT` sets
 
 With no account, `SIP_LOGIN=anonymous` runs an anonymous user agent: nothing is registered, calls go out from `"Anonymous" <sip:anonymous@anonymous.invalid>` (RFC 3323) to a SIP URI dialled as it is (see [Dialing](#dialing)), and with `-L` calls that come straight to the machine's address and `SIP_PORT` are answered.  A far end that asks for credentials (401, 407) gets none, and the call ends.
 
+A host's name, the account's domain or a dialled `sip:user@host`, is found as RFC 3263 has it when it has no port: its NAPTR records first (`SIP+D2U` for UDP, `SIP+D2T` for TCP), else its SRV records (`_sip._tcp`, then `_sip._udp`), else its address (A/AAAA) at port 5060; with a port (`sip.example.com:5070`) its address alone.  SIP runs over UDP and, on the same port, TCP, so a provider whose records name TCP is reached over it (`SIP_TCP=no` keeps it to UDP).  The DNS servers are the system's; `SIP_DNS=<address>[:port],...` names others.  `SIP_LOG_LEVEL=3` logs each lookup, 4 where each message went.
+
 `SIP_LOG_LEVEL` sets how much the SIP user agent logs (a number, 4 by
 default; higher logs more), and `DMODEM_REC=<base>` records each call's
 line audio as it passes the modem, what it receives in `<base>.rx` and

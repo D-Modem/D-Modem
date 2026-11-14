@@ -9,8 +9,9 @@
  *                       digital (G.711) line.
  *
  *    stdin: frames of a little-endian 16 bit count and that many mu-law
- *    octets from the line; stdout: the same number of octets to the
- *    line, for each frame.  The log goes to stderr.
+ *    octets from the line (A-law with COURIER_PEER_LAW=alaw); stdout:
+ *    the same number of octets to the line, for each frame.  The log
+ *    goes to stderr.
  *
  *    COURIER_PEER_AT: the AT commands before the answer (AT+MS=X2 by
  *    default); COURIER_PEER_DEBUG: the log level (default 5);
@@ -87,7 +88,9 @@ int main()
 	struct dmodem_config cfg = {};
 	cfg.name = "courier-peer";
 	cfg.dte_fd = sv[0];
-	cfg.law = DMODEM_LAW_ULAW;
+	const char *law = getenv("COURIER_PEER_LAW");
+	cfg.law = law && !strcmp(law, "alaw") ? DMODEM_LAW_ALAW :
+		DMODEM_LAW_ULAW;
 	std::string init = std::string(at ? at : "AT+MS=X2") + "\r";
 	cfg.init = init.c_str();
 	struct dmodem *d = dmodem_create(&cfg);

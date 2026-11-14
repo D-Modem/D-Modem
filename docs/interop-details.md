@@ -1510,10 +1510,17 @@ transfer each way, past N(S)'s wrap, also gets through.
 
 Not yet:
 
-- **V.FC and V.34.** Between two Couriers both start (the overlay
-  loaded, line probing at 10266.67 Hz), but training does not finish,
-  and they retrain over and over: the emulation is short of something
-  there.
+- **V.FC.** The open modem calls the Courier (`courier_vfc_open_calls`,
+  `AT&M0S56=96S58=33` on the Courier): the whole start-up, then CONNECT
+  26400 on both sides. The test stops at CONNECT (`CONNECT_ONLY=1`). The
+  open modem reads the Courier's data; the Courier reads only the first
+  frames of the open modem's data. Calls from the Courier do not start:
+  it does not reply to the open modem's answer tone. Two Couriers stop
+  at the table of phase 4. See [V.FC's technical
+  details](dsp/vfc-details.md).
+- **V.34.** Between two Couriers both start (the overlay loaded, line
+  probing at 10266.67 Hz), but training does not finish, and they
+  retrain over and over: the emulation is short of something there.
 
 ## The open modem on an HD-audio modem codec
 
@@ -1831,6 +1838,12 @@ escape 6 s in:
   `<peer>_34_dte_retrain_<peer>_calls`); and renegotiations with us
   calling Agere and Broadcom (`<peer>_34_dte_reneg_open_calls`). Each
   peer answers, and the data carries on whole.
+- V.32bis renegotiations by us against Agere, Broadcom and ESS calling
+  (`<peer>_132_dte_reneg_<peer>_calls`) and the Courier
+  (`courier_v32_dte_reneg`). None of them has V.32bis's renegotiation:
+  each answers our S with a retrain within about 200 ms, ours follows,
+  and the data carries on whole. Their own `ATO3` in V.32bis is a
+  retrain too.
 - Between two of ours: V.90 as the analogue modem
   (`open_v90a_dte_retrain`, `open_v90a_dte_reneg`) and as the digital
   modem (`open_v90_dte_reneg`); and V.92 with PCM upstream, as either
