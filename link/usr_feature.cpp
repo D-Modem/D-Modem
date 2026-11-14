@@ -23,6 +23,7 @@ namespace dlink {
 /* T401's rate when the pump's is not known (as LAPM's) */
 static const s32 NO_RATE = 28800;
 
+/* (see usr_feature.h) */
 const char *usr_result_name(UsrResult r)
 {
 	switch (r) {
@@ -46,6 +47,7 @@ static bool has_x2(const u8 *recs)
 	return recs[USR_REC_FEATURES - 1] & 1 << (USR_BIT_X2 - 1);
 }
 
+/* (see usr_feature.h) */
 void UsrFeature::init(Link *link, UsrMode mode)
 {
 	link_ = link;
@@ -58,6 +60,7 @@ void UsrFeature::init(Link *link, UsrMode mode)
 	rep_ = UsrReport();
 }
 
+/* (see usr_feature.h) */
 void UsrFeature::start()
 {
 	if (mode_ == UsrMode::Off || step_ != Step::Idle || done_)
@@ -91,6 +94,7 @@ void UsrFeature::send(UsrMsg m, s16 sel)
 		link_->logf("x2up: sent message %d.", static_cast<int>(m));
 }
 
+/* (see usr_feature.h) */
 void UsrFeature::clock(s32 bits)
 {
 	if (!timer_ || (timer_ -= bits) > 0)
@@ -149,6 +153,7 @@ void UsrFeature::next()
 	}
 }
 
+/* (see usr_feature.h) */
 void UsrFeature::rx(const u8 *info, s16 n)
 {
 	if (n < 2 || info[0] != USR_UI_TYPE) {
