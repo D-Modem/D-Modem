@@ -2,25 +2,27 @@
 
 The plain-English overview is [v150.md](v150.md).
 
-dmodemd on SIP is a V.150.1 modem-over-IP endpoint: the modem and its
-gateway in one (U-MR, `mr=1`). The far end is a V.150.1 gateway that
-terminates its own modem's modulation, or another such endpoint. All
-the references here are to ITU-T V.150.1 (01/2003).
+dmodemd on SIP is a V.150.1 modem-over-IP endpoint. It is the modem and
+its gateway in one unit (U-MR, `mr=1`). The far end is a V.150.1 gateway
+that terminates the modulation of its own modem, or another endpoint of
+this type. All of the references on this page are to ITU-T V.150.1
+(01/2003).
 
 ## The parts
 
 | Part | Where | What it does |
 |---|---|---|
-| `DP_RELAY` (151) | `dsp/dp_relay.cpp` | The relay pump. It waits for the relay to come up, `CONNECT`s at its rates, then moves octets between the host and the core's asynchronous link as start-stop characters (8N1), within the rate each way, and sends silence. No relay within S7, or the relay over, is `DPSTAT_ERROR` (`NO CARRIER`). It has no `AT+MS` name: the core picks it |
-| `struct dp_relay`, `MDMPRM_RELAY` (75) | `dsp/modem_defs.h`, `core/interface.cpp` | The pump's view of the host: `state()` (0 not up, 1 up with the rates, -1 over), `read()`, `write()` |
-| `Host::relay_line()`, `relay_state()`, `relay_read()`, `relay_write()` | `core/dcore.h` | The host says a call is relayed. `Modem::relay_channel()` is true for one at 8000 Hz in data mode (`+FCLASS=0`); `change_dp()` then starts `DP_RELAY` in place of `+MS`'s pump: at once when answering (the answer delay is short, as on a clear channel), after call progress hears the answer tone when calling. `DP_RELAY` is in the list of pumps with no V.42 and MNP of the core's own: the far gateway's link carries the error correction |
-| `dmd::v150::Sse`, `Sprt`, `Session` | `frontend/dmodemd/v150.h`, `v150.cpp` | Annex C's SSE coding, Annex B's SPRT, and the MoIP messages of clause 15.4 as a session, as plain data (the caller's clock, packets as octets) |
-| `Relay`, `Media` | `frontend/dmodemd/sip.cpp` | The session and its SPRT socket, shared by the audio thread (the SSEs, SPRT's packets every 20 ms, ANSam as events) and the modem thread (`sip::relay_state()` and friends, through `SipLine`) |
+| `DP_RELAY` (151) | `dsp/dp_relay.cpp` | The relay pump. It waits until the relay starts, and `CONNECT`s at its rates. Then it moves octets between the host and the asynchronous link of the core as start-stop characters (8N1), in the limit of the rate in each direction, and sends silence. If no relay starts in S7, or if the relay stops, the result is `DPSTAT_ERROR` (`NO CARRIER`). It has no `AT+MS` name. The core selects it |
+| `struct dp_relay`, `MDMPRM_RELAY` (75) | `dsp/modem_defs.h`, `core/interface.cpp` | The interface of the pump to the host: `state()` (0 not started, 1 started with the rates, -1 stopped), `read()`, `write()` |
+| `Host::relay_line()`, `relay_state()`, `relay_read()`, `relay_write()` | `core/dcore.h` | The host tells that a call is relayed. `Modem::relay_channel()` is true for a relayed call at 8000 Hz in data mode (`+FCLASS=0`). Then `change_dp()` starts `DP_RELAY` in place of the pump of `+MS`. When the modem answers, it starts immediately (the answer delay is short, as on a clear channel). When the modem calls, it starts after call progress hears the answer tone. `DP_RELAY` is in the list of pumps without the V.42 and MNP of the core. The link of the far gateway does the error correction |
+| `dmd::v150::Sse`, `Sprt`, `Session` | `frontend/dmodemd/v150.h`, `v150.cpp` | The SSE coding of Annex C, the SPRT of Annex B, and the MoIP messages of clause 15.4 as a session, as plain data (the clock of the caller, packets as octets) |
+| `Relay`, `Media` | `frontend/dmodemd/sip.cpp` | The session and its SPRT socket. The audio thread (the SSEs, the packets of SPRT each 20 ms, ANSam as events) and the modem thread (`sip::relay_state()` and the related functions, through `SipLine`) share them |
 
 ## The call set-up (Annex E)
 
-With `SIP_V150=yes`, a data call's offer (not one for `AT+MS=CLEAR`, not
-in fax mode) has, beside the G.711 audio:
+With `SIP_V150=yes`, the offer of a data call has these lines, together
+with the G.711 audio. This does not apply to a call for `AT+MS=CLEAR` or
+to a call in fax mode:
 
     m=audio <port> RTP/AVP 0 8 101 118
     a=rtpmap:101 telephone-event/8000
@@ -30,18 +32,22 @@ in fax mode) has, beside the G.711 audio:
     a=sprtmap:120 v150mr/8000
     a=fmtp:120 mr=1;mg=2;CDSCselect=1;mrmods=1,3-4,12;jmdelay=no
 
-The SSE format (`v150fw`) goes on the audio line; the modem relay line
-has its own UDP socket. An answer with the `udpsprt` line on (port not
-0) and `v150fw` on its audio starts the relay; one without it is an
-ordinary audio call, our `udpsprt` line turned off in the call's SDP
-from then on. An offer with both is answered with both (the far end's
-payload types) unless `SIP_V150` is not `yes` or the modem is in fax
-mode; the call is then relayed as soon as the modem's pump asks
-(`sip::relay()`). The far end's `mg` comes from its `a=fmtp`; no
-`sprtparm` is sent or read, so both ends use Table B.2's defaults.
+The SSE format (`v150fw`) goes on the audio line. The modem relay line
+has its own UDP socket. If an answer has the `udpsprt` line enabled (port
+not 0) and `v150fw` on its audio, the relay starts. If an answer does not
+have them, the call is a usual audio call. From then on, our `udpsprt`
+line is disabled in the SDP of the call.
 
-`line_of()` skips `udpsprt` lines when it looks for the audio, and
-`take_relay()` makes the `Relay` once per call (a re-INVITE keeps it).
+If an offer has the two lines, dmodemd answers with the two lines (with
+the payload types of the far end). This does not occur if `SIP_V150` is
+not `yes` or if the modem is in fax mode. Then the call is relayed when
+the pump of the modem asks (`sip::relay()`). The `mg` of the far end
+comes from its `a=fmtp`. dmodemd does not send or read `sprtparm`. Thus,
+the two ends use the defaults of Table B.2.
+
+`line_of()` skips `udpsprt` lines when it looks for the audio.
+`take_relay()` makes the `Relay` one time for each call (a re-INVITE
+keeps it).
 
 ## Call discrimination (clause 20, Figure 21)
 
@@ -50,41 +56,46 @@ RFC 4733 events (20.4.3).
 
 | | Caller (G1) | Answerer (G2) |
 |---|---|---|
-| 1 | Call progress hears the answer tone (the far end's RFC 4733 event 34 or 32, played by `EventPlayer`, or the tone in the audio) and hands over to `DP_RELAY` | `DP_RELAY` starts at `ATA` (or S0) and asks for the relay's state, which starts the session: ANSam goes as RFC 4733 event 34 (volume -12 dBm0) every 20 ms in place of the audio, its duration growing, a new event before 60000 samples |
-| 2 | `SSE:M`, reason CM, the information Table 13's bits for V.34, V.32/V.32bis, V.22/V.22bis and V.21 (`0x5808`) | |
-| 3 | | On `SSE:M`: ANSam ends (three end packets), `SSE:M` back with reason p' (19), modem relay on |
-| 4 | On `SSE:M` (or the first SPRT packet): modem relay on | |
+| 1 | Call progress hears the answer tone and gives control to `DP_RELAY`. The answer tone is the RFC 4733 event 34 or 32 of the far end, which `EventPlayer` plays, or the tone in the audio | `DP_RELAY` starts at `ATA` (or S0) and asks for the state of the relay. This starts the session. ANSam goes as RFC 4733 event 34 (volume -12 dBm0) each 20 ms in place of the audio. Its duration increases, and a new event starts before 60000 samples |
+| 2 | `SSE:M`, reason CM, with the bits of the information Table 13 for V.34, V.32/V.32bis, V.22/V.22bis and V.21 (`0x5808`) | |
+| 3 | | On `SSE:M`: ANSam stops (three end packets), `SSE:M` goes back with reason p' (19), and modem relay starts |
+| 4 | On `SSE:M` (or the first SPRT packet): modem relay starts | |
 | 5 | `INIT` on TC2 (no optional data types) | `INIT` on TC2 |
-| 6 | | On the caller's `INIT`: `JM_INFO` (call function data `0x8600`, the modulations chosen `0xA000 \| mods >> 3`, LAPM `0x5800`) and `CONNECT` with the best modulation both have (V.34 33600, V.32bis 14400, V.22bis 2400, V.21 300), EC V.42/LAPM, no compression |
-| 7 | On the answerer's `CONNECT`: `CONNECT` back, its SELMOD, its rates the other way round. Up | On the caller's `CONNECT`: up |
+| 6 | | On the `INIT` of the caller: `JM_INFO` (call function data `0x8600`, the selected modulations `0xA000 \| mods >> 3`, LAPM `0x5800`) and `CONNECT` with the best modulation that the two ends have (V.34 33600, V.32bis 14400, V.22bis 2400, V.21 300), EC V.42/LAPM, no compression |
+| 7 | On the `CONNECT` of the answerer: `CONNECT` back, with its SELMOD and its rates in the opposite direction. The relay is started | On the `CONNECT` of the caller: the relay is started |
 
-Each SSE is sent three times, 20 ms apart, with the same RTP timestamp
-(C.3.1). While modem relay is on, the RTP audio stops and the modem gets
-silence; the audio thread still exchanges a frame with the modem every
-20 ms, which is the modem's clock.
+The endpoint sends each SSE three times, 20 ms apart, with the same RTP
+timestamp (C.3.1). While modem relay operates, the RTP audio stops and
+the modem gets silence. The audio thread continues to exchange a frame
+with the modem each 20 ms. This is the clock of the modem.
 
-The relay's rates (`state()`) are the far end's `CONNECT`'s TDSR (ours
-towards the far modem) and RDSR, or SELMOD's best if they are 0.
+The rates of the relay (`state()`) are the TDSR (our rate to the far
+modem) and RDSR of the `CONNECT` of the far end. If they are 0, the rates
+are the best rate of SELMOD.
 
-An `SSE` of the audio, VBD, fax relay or text relay states, or with the
-Cleardown reason, after the relay started ends it; so does a
-`CLEARDOWN`. A `BREAK` is answered with `BREAKACK`; `JM_INFO`,
-`XID_XCHG`, `MR_EVENT`, `PROF_XCHG` and `START_JM` are taken and not
-acted on.
+After the relay starts, these messages stop it:
+
+- An `SSE` of the audio, VBD, fax relay or text relay states.
+- An `SSE` with the Cleardown reason.
+- A `CLEARDOWN`.
+
+The endpoint answers a `BREAK` with `BREAKACK`. It accepts `JM_INFO`,
+`XID_XCHG`, `MR_EVENT`, `PROF_XCHG` and `START_JM`, but does nothing with
+them.
 
 ## The data (clause 14, 15.4.11)
 
-Both ends declare V.42/LAPM in `CONNECT`, so the data type is octet
-without formatting (`I_OCTET`, 14.5) both ways, at most 131 octets a
-message on TC1. `I_RAW-OCTET` (with its repeated segments) and
-`I_CHAR-STAT`/`I_CHAR-DYN` are taken too.
+The two ends declare V.42/LAPM in `CONNECT`. Thus, the data type is
+octet without formatting (`I_OCTET`, 14.5) in the two directions, with a
+maximum of 131 octets in each message on TC1. The endpoint also accepts
+`I_RAW-OCTET` (with its repeated segments) and `I_CHAR-STAT`/`I_CHAR-DYN`.
 
-Trans-compression (clause 22.2): dmodemd says `mg=2` (D-TCX) and has no
-compression on IP. A D-TCX far end then sends plain octets whatever its
-modem compresses. A far end that is not D-TCX, whose `CONNECT` shows
-compression, would send its modem's compressed data for ours to
-decompress: the session sends `CLEARDOWN` (reason 3, data compression
-disconnect) and ends.
+Trans-compression (clause 22.2): dmodemd tells `mg=2` (D-TCX) and has no
+compression on IP. Thus, a D-TCX far end sends plain octets, also when
+its modem compresses. A far end that is not D-TCX, and whose `CONNECT`
+shows compression, sends the compressed data of its modem for our modem
+to decompress. In this condition, the session sends `CLEARDOWN` (reason 3,
+data compression disconnect) and stops.
 
 ## SPRT (Annex B)
 
@@ -92,37 +103,42 @@ disconnect) and ends.
 
 - The header of Figure B.3: SSID 0, the payload type of the SDP, TC, the
   SEQUENCE NUMBER (0 on TC0 and on packets with no payload), NOA and the
-  BASE SEQUENCE NUMBER (TC1 and TC2's: the next the user takes), up to
-  three acknowledgements.
-- TC1 and TC2 reliable: every payload received is acknowledged, in the
-  next packet out or in an acknowledgement-only packet on TC0 after TA01
-  (90 ms), or at once when three are owed. Packets out of order are held
-  within the window and delivered in order; copies are acknowledged and
-  dropped. Unacknowledged packets go again after TR03 (500 ms).
+  BASE SEQUENCE NUMBER (for TC1 and TC2: the next number that the user
+  accepts), and up to three acknowledgements.
+- TC1 and TC2 are reliable. The endpoint acknowledges each payload that it
+  receives. The acknowledgement goes in the next packet out, or in an
+  acknowledgement-only packet on TC0 after TA01 (90 ms). If three
+  acknowledgements are waiting, it goes immediately. The endpoint holds
+  packets that are out of order in the window and delivers them in
+  order. It acknowledges copies and discards them. It sends packets
+  without acknowledgement again after TR03 (500 ms).
 - Flow control (B.2.3.5): a channel sends only while its next SEQUENCE
-  NUMBER is within its window (TC1 32, TC2 8) of the far end's BASE
-  SEQUENCE NUMBER. Our BSN moves when the session takes a payload, which
-  it does only while it holds fewer than 1024 octets the modem has not
-  read; when it moved and nothing carried it, an empty packet on that
-  channel carries it after TA02 (130 ms on TC1, 500 ms on TC2).
-- TC3 unreliable sequenced: older packets than the last are dropped.
-- Table B.2's payload sizes (132 on TC1 and TC2).
+  NUMBER is in its window (TC1 32, TC2 8) of the BASE SEQUENCE NUMBER of
+  the far end. Our BSN moves when the session accepts a payload. The
+  session does this only while it holds fewer than 1024 octets that the
+  modem has not read. If the BSN moved and no packet sent it, an empty
+  packet on that channel sends it after TA02 (130 ms on TC1, 500 ms on
+  TC2).
+- TC3 is unreliable sequenced. The endpoint discards packets that are
+  older than the last packet.
+- The payload sizes of Table B.2 (132 on TC1 and TC2).
 
 ## Tests
 
 | Test | What it covers |
 |---|---|
-| `V150.*` (`frontend/dmodemd/test/v150_test.cpp`, label `quick`) | The SSE and `CONNECT` codings; SPRT's header, acknowledgement timing and BSN update; 5000 octets on TC1 with every third packet lost and a slow reader; two sessions through the start (V.34 33600), a V.22bis-only answerer, no modulation in common (cleared down), 20000 octets each way with every fifth packet lost, a hang-up (`CLEARDOWN`), and a far end that is not D-TCX and compresses |
-| `CoreRelay.*` (`core/test/core_test.cpp`, label `quick`) | Two modems on relayed lines joined by the test's own relay: the answerer in `DP_RELAY` at once, the caller after call progress hears 2100 Hz; `CONNECT 33600` at both, 2000 and 1500 octets through a 64-octet window, and `NO CARRIER` at both when the relay ends |
-| `dmodemd_v150` (`frontend/dmodemd/test/v150_test.py`, label `quick`) | dmodemd with `SIP_V150=yes` against the script's own SIP peer and gateway (SSE on RTP, SPRT with its acknowledgements): calling out (the offer's lines, ANSam events from the gateway, `SSE:M` CM, `INIT`, `JM_INFO`, `CONNECT`, a line each way, the gateway's `CLEARDOWN` giving `NO CARRIER`) and answering (dmodemd's ANSam events, `SSE:M` p', `INIT`, `JM_INFO`, `CONNECT`, a line each way) |
+| `V150.*` (`frontend/dmodemd/test/v150_test.cpp`, label `quick`) | The SSE and `CONNECT` codings. The header of SPRT, the acknowledgement timing and the BSN update. 5000 octets on TC1 with each third packet lost and a slow reader. Two sessions through the start (V.34 33600), an answerer with only V.22bis, no modulation in common (cleared down), 20000 octets in each direction with each fifth packet lost, a hang-up (`CLEARDOWN`), and a far end that is not D-TCX and compresses |
+| `CoreRelay.*` (`core/test/core_test.cpp`, label `quick`) | Two modems on relayed lines, connected by the relay of the test. The answerer is in `DP_RELAY` immediately, and the caller after call progress hears 2100 Hz. `CONNECT 33600` at the two ends, 2000 and 1500 octets through a 64-octet window, and `NO CARRIER` at the two ends when the relay stops |
+| `dmodemd_v150` (`frontend/dmodemd/test/v150_test.py`, label `quick`) | dmodemd with `SIP_V150=yes` against the SIP peer and gateway of the script (SSE on RTP, SPRT with its acknowledgements). Calls out: the lines of the offer, ANSam events from the gateway, `SSE:M` CM, `INIT`, `JM_INFO`, `CONNECT`, a line in each direction, and the `CLEARDOWN` of the gateway that gives `NO CARRIER`. Answers: the ANSam events of dmodemd, `SSE:M` p', `INIT`, `JM_INFO`, `CONNECT`, a line in each direction |
 
 ## Not done
 
-- VBD (voice band data) as the call discrimination's outcome: an
-  `SSE:V` from the far end ends the relay.
+- VBD (voice band data) as the result of the call discrimination. An
+  `SSE:V` from the far end stops the relay.
 - The mixed and VBD-select call discrimination modes (`CDSCselect` 2
   and 3).
 - `sprtparm`, `jmdelay=yes` (`START_JM`), XID exchange and profiles.
-- Modulations beyond the four offered (V.17, V.23, V.90 and up).
+- Modulations other than the four that the endpoint offers (V.17, V.23,
+  V.90 and higher).
 - Retrains and rate renegotiations (`MR_EVENT`) do not change the rate.
-- Interoperation with a commercial gateway has not been tried.
+- Nobody has tried interoperation with a commercial gateway.
