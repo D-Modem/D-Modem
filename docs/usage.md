@@ -14,6 +14,14 @@ If you have no account, `SIP_LOGIN=anonymous` runs an anonymous user agent. In t
 
 If a far end asks for credentials (401, 407), it gets none, and the call stops.
 
+The user agent finds a host name (the domain of the account, or a dialed `sip:user@host`) as RFC 3263 tells. If the name has no port, it uses these records in this sequence:
+
+1. The NAPTR records (`SIP+D2U` for UDP, `SIP+D2T` for TCP).
+2. If there are no NAPTR records, the SRV records (`_sip._tcp`, then `_sip._udp`).
+3. If there are no SRV records, the address (A/AAAA) at port 5060.
+
+If the name has a port (`sip.example.com:5070`), the user agent uses only its address. SIP runs on UDP and also on TCP on the same port. Thus, if the records of a provider give TCP, the user agent uses TCP (`SIP_TCP=no` keeps SIP on UDP). The user agent uses the DNS servers of the system. To use different servers, set `SIP_DNS=<address>[:port],...`. `SIP_LOG_LEVEL=3` logs each lookup. `SIP_LOG_LEVEL=4` also logs the destination of each message.
+
 `SIP_LOG_LEVEL` sets the quantity of log data from the SIP user agent (a number, 4 by
 default; a higher number gives more data). `DMODEM_REC=<base>` records the line audio of each call
 as it goes through the modem. The received audio goes in `<base>.rx`, and the

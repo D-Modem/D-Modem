@@ -1,37 +1,35 @@
 # V.FC: Rockwell's V.Fast Class
 
 **V.FC** ("V.Fast Class") was the 28800 bit/s modem protocol of Rockwell,
-from 1993 to 1995. Modems with Rockwell chips and the Couriers of
-USRobotics had it, before the ITU completed V.34. It was the first
-protocol to get 28800 bit/s on a telephone line. It changed the symbol
-rate for the line (2400 to 3429 baud), and did not only add points. V.34
-used this idea and many other parts of it. But the two protocols do not
-understand each other. V.FC went out of use when V.34 modems became
-common. Rockwell never published it.
+from 1993 to 1995. Modems with Rockwell chips used it, and the USRobotics
+Courier also used it, before the ITU completed V.34. It was the first
+protocol to get 28800 bit/s on a telephone line. It changes the symbol
+rate for the line (2400 to 3429 baud), and does not only add points. V.34
+used this idea and many other parts of V.FC. But the two protocols do not
+understand each other. Rockwell never published V.FC.
 
 The V.FC of D-Modem comes from the DSP firmware of the USRobotics Courier
-V.Everything (refer to [the technical details](vfc-details.md)). Its data
-mode changes the bits into points on the line. This data mode is the same
-as that of the Courier: the same frames, the same constellations and the
-same trellis codes. We compared it point for point with the code of the
-Courier at all speeds. Its start-up is not that of V.FC now. D-Modem uses
-the start-up of V.34 and then changes to the data mode of V.FC. Thus, two
-D-Modems use V.FC with each other, but a real V.FC modem does not
-understand the call.
+V.Everything (refer to [the technical details](vfc-details.md)). It has the
+start-up of V.FC and the data mode of V.FC:
 
-## How to use it
+- The start-up is the same as that of the Courier: the same tones,
+  messages, trainings and rate words, in the same sequence and at the
+  same times.
+- The data mode is the same as that of the Courier: the same frames,
+  constellations, trellis codes and scramblers. The data points of the
+  Courier are the points of the encoder of D-Modem, symbol for symbol.
+
+## How to use V.FC
 
     AT+MS=VFC        (or AT+MS=128)
 
-1. The call starts as a V.34 call: V.8, then the line probing and
-   training of V.34. These select the symbol rate.
-2. In the last step of V.34 (the MP messages), each D-Modem tells that it
-   wants V.FC.
-3. If the two modems want V.FC, the data goes in the data mode of V.FC at
-   14400 to 28800 bit/s. The speed is the fastest speed that V.34
-   selected and that V.FC has at that symbol rate.
-4. If the other modem does not ask for V.FC (all usual V.34 modems), the
-   call continues as plain V.34.
+1. The answerer sends the answer tone (2100 Hz). The caller replies with
+   800 Hz. There is no V.8.
+2. The two modems exchange their symbol rates at 800 baud. They use the
+   fastest rate that the two modems have.
+3. Each modem trains the receiver of the other modem.
+4. The two modems exchange the data rates that each modem accepts. They
+   use the fastest rate that the two modems accept.
 
 `+MS` sets the limits of the speeds as usual, for example
 `AT+MS=VFC,0,14400,19200`.
@@ -41,14 +39,24 @@ understand the call.
 | 2400 | 14400 to 19200 bit/s |
 | 2743, 2800 | 14400 to 24000 bit/s |
 | 3000 | 14400 to 26400 bit/s |
-| 3200, 3429 | 14400 to 28800 bit/s |
+| 3200, 3429 | 14400 to 26400 bit/s (V.FC goes to 28800) |
+
+## What works
+
+| Call | Result |
+|---|---|
+| D-Modem to D-Modem | CONNECT at 26400, data in the two directions. |
+| D-Modem calls the Courier | The full start-up. CONNECT at 26400. D-Modem receives the data of the Courier. |
+| The Courier calls D-Modem | Not yet. The Courier does not reply to the answer tone of D-Modem. |
 
 ## What is missing
 
-- The start-up of V.FC, which is necessary for a real V.FC modem. The
-  firmware of the Courier has the script of the answering modem (tones
-  as in V.32 and training at 2400 baud, then a rate signal). But we did
-  not read the line probing and rate negotiation after it.
-- The speeds below 14400 bit/s.
-- Precoding and the non-linear encoder of V.FC. The Courier has them,
-  but D-Modem does not use them.
+- 28800 bit/s. The receiver of D-Modem has a noise floor of about 30 dB
+  below the signal. This floor is too high for 28800. Thus, D-Modem
+  offers a maximum of 26400.
+- Data from D-Modem to the Courier. The Courier decodes the first frames
+  of the data of D-Modem, and then it loses the data. The cause is not known.
+- Calls from the Courier.
+- A fallback to V.34. `+MS=VFC` is only V.FC.
+- The speeds below 14400 bit/s, precoding, the non-linear encoder and
+  rate renegotiation.

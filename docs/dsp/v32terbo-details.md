@@ -121,10 +121,67 @@ back runs: 19200 from an estimate of 29.5 dB, 16800 from 26.5 dB. On
 the line of `pump_test`, this selects 19200 from 34 dB of SNR and 16800 from
 26 dB. When we force the rate, 19200 runs without errors from about 32 dB, and 16800 from 24 dB.
 
+## Rate renegotiation
+
+V.32bis and V.32terbo can change their rate during data without a
+retrain (8.5/V.32bis). The equalizers and the echo canceller keep the
+values that they learned. Thus, a renegotiation takes a fraction of a
+second, but a retrain takes about three seconds.
+
+1. The modem that starts the renegotiation (the initiator) sends S for
+   128 symbols and S-bar for 16 symbols. Then it sends a short TRN (64
+   symbols of the two-point part, then the four-point part to 256). Then
+   it sends R4: the rates of the call that it can use now.
+2. The other modem (the responder) receives S in its data. S contains the
+   1800 Hz of AA and the 600 Hz and 3000 Hz of AC. Thus, the receiver
+   looks for the +-90 degree steps of S first (10 ms). It does this
+   before the tone trackers can identify a retrain (20 ms). The responder
+   sends the same S, S-bar and TRN and waits for R4. Then it sends R5:
+   the rates of R4 that its own receiver can use. It uses the error on
+   the training to find these rates.
+3. The initiator selects the fastest rate of R5 and sends E, then B1 and
+   data. The responder sends E after it receives E from the initiator.
+   Then it sends data.
+
+If the two modems start at the same time, each modem uses the R4 of the
+other modem as an R5. Then the two modems use the fastest rate that the
+two words have in common.
+
+Some modems do not renegotiate. None of the peers here renegotiate:
+Agere, Broadcom, ESS and the Courier all answer S with a retrain. Also,
+their own `ATO3` in V.32bis starts a retrain. With such a modem, its AA
+or AC alone shows in about 200 ms, and the pump answers that retrain. If
+neither shows, the pump retrains after 3 s.
+
+These items start a renegotiation:
+
+- `ATO3`.
+- `<EM><rrn>` of V.80 (`MDMPRM_LINK_REQ` 2).
+- The rate shifts of MNP 10 in V.32bis and V.32terbo, up or down. The new
+  rate is the maximum.
+
+Plain V.32 has no renegotiation. Thus, in V.32, `ATO3` starts a retrain.
+`ATI11` counts each renegotiation as a renegotiation of the local modem
+or of the remote modem.
+
+Back-to-back tests showed two details:
+
+- **The modem clears the tone trackers after a renegotiation.** When S
+  starts the 1800 Hz tracker, the spectrum of the data near 1800 Hz goes
+  above the threshold frequently. This keeps the tracker on. Before this
+  fix, the answerer identified the data of the caller as AA (a retrain)
+  immediately after the renegotiation.
+- **The receiver listens during its own S and TRN.** At the start-up,
+  the receiver ignores the line while the echo canceller learns. In a
+  renegotiation, the canceller is already trained, and the two trainings
+  overlap.
+
+The words are the words of the start-up (`0FF9` for all the V.32bis
+rates). We did not have the text of V.32bis on R4 and R5, and no peer
+here sends them. Thus, we checked these words only against our own pump.
+
 ## Not done
 
-- **Rate renegotiation.** The rate renegotiation of V.32bis is not
-  implemented for any member of the V.32 family. D-Modem retrains instead.
 - **V.8.** V.8 has no code for V.32terbo. The modem uses V.32terbo only when you select it
   with `AT+MS=V32T`.
 
@@ -133,6 +190,18 @@ the line of `pump_test`, this selects 19200 from 34 dB of SNR and 16800 from
 - `pump_test`: `v32terbo*` (clean, 27 dB, no band limit, 8000 Hz,
   300 ppm clock offset, an echo), and `V32Terbo.Rates` (19200 at 40 dB,
   16800 at 27 dB, 14400 at 25 dB, each without a bit error).
+- `V32bis.Renegotiation` of `pump_test`: a renegotiation of the caller
+  and then of the answerer, down to 9600 bit/s
+  (`DSP_V32_RENEG=<ms>[:<bit/s>][a|c]`). The other modem answers without
+  a retrain. All the errors are in the one burst of the change.
+- `v32_reneg_both`, `v32_reneg_a`, `v32_reneg_c` of `dmodem_test`: the
+  same tests through the full modem, with V.42 data.
+- `Core.Mnp10Climbs` of `core_test`: MNP 10 increases the rate from
+  V.32bis 4800 to 14400, and from V.32terbo 16800 to 19200, with
+  renegotiations.
+- `<peer>_132_dte_reneg_<peer>_calls` (Agere, Broadcom, ESS) and
+  `courier_v32_dte_reneg`: our `ATO3` in V.32bis against a modem that
+  answers with a retrain. All the data arrives.
 - `agere_232_agere_calls`, `agere_232_open_calls`: the Agere modem
   and D-Modem, both with `AT+MS=V32T`, call each other and connect at
   19200 bit/s in the two directions (`ctest -L agere`).

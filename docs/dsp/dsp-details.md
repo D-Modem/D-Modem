@@ -181,7 +181,9 @@ Then each side offers the rates that its training quality supports:
 
 A V.32bis call retrains automatically when the error of its receiver
 increases to 4 dB below the SNR at which the modem selected its rate
-(7 dB for 4800).
+(7 dB for 4800). The call changes rate without a retrain through the rate
+renegotiation of V.32bis
+([v32terbo-details.md](v32terbo-details.md#rate-renegotiation)).
 
 ### How the QAM receiver works
 

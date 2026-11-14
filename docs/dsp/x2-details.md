@@ -66,6 +66,8 @@ FFFF, polynomial 8408 reflected, not inverted). The MP of the client has
   (1).
 - Word 1, bits 0 to 11: the upstream rates that it can send (bit n-1 for
   n × 2400 bit/s).
+- Word 0, bits 11 to 14: the digital pad that it measured (0: none, 1: 3 dB,
+  2: 6 dB. Refer to [Digital pads](#digital-pads)).
 - Word 3, high byte: the downstream signs in each frame (5).
 
 The record of the server has 3 words, `F33C 7FFF 0000`. The server pads
@@ -106,6 +108,13 @@ running sum that starts from zero at that point. (A leaky sum agrees with
 it about 87% of the time on three calls.) D-Modem sets the sign against
 the running sum.
 
+The mapper of the Quad (the lift of QF060003 in courier-emu) has a
+different rule. It selects the free sign that gives the smallest magnitude of 8 times a
+running sum of eighths of the sent values plus the other
+five values of the frame. This is not the rule of the I-modem. On a new I-modem call (32000, then
+54666 bit/s, 50,666 frames), it agrees with the free sign of the I-modem
+half of the time. A sum that leaks 1% for each sample agrees 85% of the time.
+
 ### The rate change
 
 The data starts at the start-up rate. At frame 16882 of the data levels
@@ -126,31 +135,44 @@ items. They are the same in all calls:
   With them, the call continues.
 
 The next rate is the rate that the renegotiation MP of the client
-accepts (bits 2 to 5 of word 0, n). B = 22 + n and MD = 5. Thus, the rate
-is (27 + n) × 4000/3 bit/s. The levels come from calls on lines 0 to
-18 dB down. (A Courier on a worse line accepts a lower rate.)
+accepts (bits 2 to 5 of word 0, n, from 1 to 15). MD is always 5. B is
+19, 22 and 25 for n = 1 to 3, and 22 + n for larger n. Thus, from n = 3,
+the rate is (27 + n) × 4000/3 bit/s.
 
-| n | bit/s | levels per position |
-| --- | --- | --- |
-| 8 | 46666 | 32 in each: `a3`-`b0`, `b2`-`c0` by 2, `c3 c6 c9 cc cf d4 d9 de e8 f5` |
-| 11 | 50666 | 47 in the first, 45 in the others (see below) |
-| 12 | 52000 | 50 in the first, 51 in the others (see below) |
-| 13 | 53333 | 52 in the first, 62 in the next four, 45 in the last |
-| 14 | 54666 | 64 in each (the first's list one larger at the top and without `ce`) |
+The levels for each n are the levels that the firmware of the Quad x2
+modem (QF060003, the Total Control x2 server of USRobotics) builds for
+it. We ran its bank constructor in courier-emu (as in its
+`tools/trace_x2_rate_handoff.py`) with the record that a Courier sends
+(words 2 and 3: `0000` and `0500`). Then we read back its six banks. For
+n = 1, 8, 11, 12, 13 and 14, they are the lists that the I-modem used
+on the line, entry for entry, and n = 1 is levels B. Its mapper (the
+lift in courier-emu) gives the same digits and signs as the mapper of
+D-Modem for all 15 rates. The D24A table of the I-modem has the same B
+for each n.
 
-For 11: the first position has `a0`-`bf`, `c1`-`cf` by 2,
-`d2 d6 da de e5 ec f8`. The other positions have the same, from `a2`.
-For 12:
+| n | B | bit/s | levels per position |
+| --- | --- | --- | --- |
+| 1 | 19 | 32000 | 9 in each (levels B) |
+| 2 | 22 | 36000 | 12 in the first, 13 in the others |
+| 3 | 25 | 40000 | 18 in each |
+| 4 | 26 | 41333 | 21, then 20 |
+| 5 | 27 | 42666 | 27, then 22 |
+| 6 | 28 | 44000 | 28, then 25 |
+| 7 | 29 | 45333 | 28, then 29 |
+| 8 | 30 | 46666 | 32 in each |
+| 9 | 31 | 48000 | 41, then 35 |
+| 10 | 32 | 49333 | 42, then 40 |
+| 11 | 33 | 50666 | 47, then 45 |
+| 12 | 34 | 52000 | 50, then 51 |
+| 13 | 35 | 53333 | 52, then 62 |
+| 14 | 36 | 54666 | 64 in each |
+| 15 | 37 | 56000 | 82, then 70 |
 
-- First position: `9e`-`bf`, `c1 c3 c5 c7 c9 cb cd d1 d4 d7 da dd e2 e8 ee f9`.
-- Other positions: `9f`-`bf`, `c1 c3 c5 c7 c9 cb cd cf d1 d4 d7 da dd e0 e5 ea
-  f0 fa`.
-
-For 13: the first position has `9e`-`bf`, `c1`-`cf` by 2,
-`d2 d5 d8 db de e2 e7 ec f1 fa`. The next four have `a0`-`cf`, `d1`-`df`
-by 2, `e2 e6 ea ee f4 fb`. The last has `a0`-`cc`. With these lists and
-the level rule above, the ones of the I-modem after each change decode
-with no errors.
+The lists are in `dsp/x2.cpp`. At most rates, the list of the first
+position is different from the lists of the other positions. A list can
+have more levels than the digits of B bits can select. At 53333, the
+digit of the last position goes only to 44. Thus, the frames of the
+I-modem show 45 of its 62 levels.
 
 Repeated and crossed I-modem calls show that the settings of the two
 sides do not cause it. With all defaults, the first renegotiation of the
@@ -161,11 +183,9 @@ the rate that it accepted and no other levels. A Courier that accepted 14
 and got the levels of 52000 renegotiated in 3 s (and accepted 9). Then it
 hung up.
 
-D-Modem changes to the rate that an MP accepts when it knows that rate
-(8, 11 to 14). The I-modem does the same at each renegotiation, to a
-higher rate or to the same rate (8 three times on an 18 dB line). For all
-other rates, D-Modem answers with its record and no marker. The Courier
-waits for a marker, and then hangs up.
+D-Modem changes to the rate that each MP accepts. The I-modem does the
+same at each renegotiation, to a higher rate or to the same rate (8
+three times on an 18 dB line).
 
 At about that time, the Courier renegotiates its upstream on its own
 timer. It sends S in data mode, S-bar, a short TRN and its MP (bits 2 to
@@ -197,8 +217,10 @@ Courier renegotiates about 100 ms later all the same, but on 16 points and
 without an MP. After 2.6 s of TRN, it hangs up. A second marker in that
 TRN does not help. Thus, D-Modem does not send its marker at the time of
 the I-modem. It waits for the MP of the Courier and answers it. It sends
-the marker 3 s later (frame 20882) only if no renegotiation came before
-then.
+the marker 12 s later (frame 32882) only if no renegotiation came before
+then. In one call behind a 6 dB pad, the S of the Courier came 3 s after
+the time of the I-modem. A marker at 3 s, 0.1 s before the S, caused the
+loss of the call.
 
 Upstream is V.34 data at the symbol rate of the client with GPA,
 expanded shaping, the 64 state trellis code and non-linear encoding
@@ -223,3 +245,48 @@ second, the receiver of D-Modem is still settling into the 320 point
 constellation. It can decode an unwanted HDLC flag. The detection accepts
 two flags in a row as V.42. Thus, it waits for the ODPs of the Courier and
 answers them.
+
+### Digital pads
+
+A digital pad is a loss on the digital side of the network: the network
+decodes the octet, attenuates it and encodes it again. The pad changes
+the levels that the client receives. The Courier measures the pad in the
+training and reports it in bits 11 to 14 of word 0 of its MP. Behind a
+3 dB pad, it sent `0B44`. Behind a 6 dB pad, it sent `1344`. The bank
+constructor of the Quad uses the same field (it calls it the mode). It
+builds banks only for 0, 1 and 2.
+
+Each entry has two octets:
+
+- The level that the client receives. The lists, the digits and the
+  signs use this level.
+- The octet that the server sends, so that this level arrives after the pad.
+
+With 2 (6 dB), the received levels are levels B again, at 32000
+bit/s. Behind a 3 dB pad, the octets of the I-modem (rates 1 and 14) are the
+octets of the Quad, entry for entry. D-Modem takes the pad from each MP and sends
+the octets of the Quad for it. D-Modem refuses a different value, as the Quad does.
+
+Behind a 6 dB pad, the call continued through 52000, 53333 and 54666 bit/s.
+In one of these calls, the first renegotiation of the Courier came 3 s after the
+marker time of the I-modem, not 50 ms before it (refer to
+[The rate change](#the-rate-change)). A marker at 3 s caused the loss of the call.
+Behind a 3 dB pad, the call went to 50666 and then 52000 bit/s with the
+default timing of courier-emu. With the frame interrupt that follows the
+timer of the DSP (`COURIER_INT0_TOUT`), the result was different. The
+Courier did not start LAPM, renegotiated 5 s into the data with a request
+for rate 0, and hung up. This occurred for all the data that D-Modem
+sent. We tried the I-modem only with the default timing.
+
+### A-law
+
+The mapper of the Quad has an A-law flag. This flag only changes its
+µ-law octets into the A-law octets with the same code number (XOR `2A`):
+the same banks, and the same levels by number. The Courier is a µ-law
+modem, and it does not accept this. In courier-emu, on an A-law line,
+with those octets, it sent no MP. Thus, D-Modem sends the µ-law levels
+without a change, and the codec of the network changes them into the
+nearest A-law octets. With these levels, the Courier reported a 3 dB pad
+and used the levels of the Quad for it. It got to LAPM, and cleared down
+the call about 2 s later. A-law with a Courier is not complete. A client
+that knows A-law can possibly need the method of the Quad.

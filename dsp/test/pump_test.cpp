@@ -295,6 +295,49 @@ TEST(V32Terbo, Rates)
 	}
 }
 
+/* V.32bis's rate renegotiation (8.5/V.32bis, DSP_V32_RENEG) by the
+   caller or the answerer, down to 9600 bit/s: the other modem answers
+   it (no retrain), both go on at 9600; the errors all in the one burst
+   of the change over (the count realigned once after it, no errors
+   since: SHOW_ERRORS with V32_RENEG_LOG shows them) */
+TEST(V32bis, Renegotiation)
+{
+	const char *only = getenv("V32_RENEG_ONLY");
+	for (const char *who : { "c", "a" }) {
+		if (only && *only != *who)
+			continue;
+		setenv("DSP_V32_RENEG", (std::string("3000:9600") + who).c_str(),
+		       1);
+		setenv("DSP_DEBUG", "2", 1);
+		testing::internal::CaptureStderr();
+		LoopbackResult r = loopback_run(line(132, 35, 15));
+		std::string log = testing::internal::GetCapturedStderr();
+		if (getenv("V32_RENEG_LOG"))
+			fputs(log.c_str(), stdout);
+		unsetenv("DSP_V32_RENEG");
+		unsetenv("DSP_DEBUG");
+		dsplibs_debug_level = 0;
+
+		EXPECT_NE(log.find("rate renegotiation 1 (ours)"),
+			  std::string::npos) << who;
+		EXPECT_NE(log.find("rate renegotiation 1 (remote)"),
+			  std::string::npos) << who;
+		EXPECT_EQ(log.find("retrain 1"), std::string::npos) << who;
+		for (int k = 0; k < 2; k++) {
+			const char *side = k ? "answerer" : "caller";
+			EXPECT_TRUE(r.side[k].connected) << who << " " << side;
+			EXPECT_EQ(r.side[k].tx_rate, 9600) << who << " " << side;
+			EXPECT_EQ(r.side[k].rx_rate, 9600) << who << " " << side;
+			EXPECT_LE(r.side[k].resyncs, 1) << who << ": "
+							 << r.side[k].text(side);
+			EXPECT_LT(r.side[k].errors, 2000) << who << ": "
+							  << r.side[k].text(side);
+			EXPECT_GT(r.side[k].checked, 60000) << who << ": "
+							    << r.side[k].text(side);
+		}
+	}
+}
+
 /* HST's forward channel follows the line: 16800 bit/s at 40 dB of SNR,
    14400 at 27, 12000 at 23, 7200 at 17, 4800 at 12; each without
    errors, the back channel at 300 bit/s */

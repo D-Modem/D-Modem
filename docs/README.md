@@ -41,7 +41,8 @@ measurements, and test lists.
     56k modem of the customer
   - [V.92](dsp/v92.md): quick connect, modem-on-hold and faster uploads
   - [V.91](dsp/v91.md): about 62000 bit/s between two digital modems
-  - [V.cvm](dsp/vcvm.md): data through mobile phone calls
+  - [V.cvm](dsp/vcvm.md): data through mobile phone calls (the
+    proposed standard: [The V.cvm proposal](vcvm-spec.md))
   - [V.wb](dsp/vwb.md): about 149000 bit/s on a bare pair of wires
   - [K56flex](dsp/k56flex.md): the older 56k standard (as the server and
     as the modem of the customer)
@@ -54,6 +55,7 @@ measurements, and test lists.
   - [Fax](dsp/fax.md): fax modem classes 1, 2 and 2.0, a built-in fax
     machine, and fax over the internet (T.38)
 - [The data link layer](link.md): error correction and compression
+- [The MNP protocol suite](mnp/README.md): MNP 1 to 10 and 10EC, one class at a time
 - [The modem core](core.md): AT commands, settings and how a call operates
 - [ISDN](isdn.md): 64000 bit/s ISDN data calls
 - [Voice and data together (V.70)](v70.md): DSVD, a telephone
@@ -119,10 +121,13 @@ measurements, and test lists.
   [the LaTeX source](at/at_commands.tex). The
   [AT manual](../.github/workflows/at-manual.yml) workflow builds them again and
   commits them each time the LaTeX changes on main.
-- [Data over mobile telephony's speech paths](v_cvm.pdf): the
+- [Data over mobile telephony's speech paths](specs/v_cvm.pdf): the
   proposed V.cvm standard of D-Modem, written as an ITU-T Recommendation, with
   measurements of the effects of mobile codecs on modem signals. Its source is
   in [cellular/](cellular/v_cvm.tex). `docs/cellular/build.sh` builds it,
   and `cellular/measure/` does the measurements again.
+  [The V.cvm proposal](vcvm-spec.md) tells what the standard says in simple words.
+  [Its technical details](vcvm-spec-details.md) give a guide to each
+  clause.
 - [Unimodem diagnostics](specs/umud10.rtf): the specification of Microsoft,
   which `AT#UD` obeys

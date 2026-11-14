@@ -30,7 +30,7 @@ operation of the receiver, refer to [the technical details](dsp-details.md).
 | [HST](hst.md) | 16800 bit/s one way, 300 the other | the protocol of USRobotics for bulletin boards, made again from the DSP firmware of the Courier |
 | [PEP](pep.md) | about 20000 bit/s, one way at a time | the TrailBlazer protocol of Telebit with hundreds of carriers, made again from its patents |
 | [V.61](v61.md) | 4800 bit/s with speech, 14400 without | speech and data at the same time, with the voice added onto the carrier of the modem (ASVD) |
-| [V.FC](vfc.md) | 28800 bit/s | the protocol of Rockwell before V.34. Its data mode is made again from the DSP firmware of the Courier |
+| [V.FC](vfc.md) | 26400 bit/s (V.FC: 28800) | the protocol of Rockwell before V.34. Its start-up and data mode are made again from the DSP firmware of the Courier |
 | V.34 | 33600 bit/s | the fastest modem that is only analogue |
 | [V.90](v90.md) | 56000 bit/s down, 33600 up | "56k" modems |
 | [V.92](v92.md) | 56000 down, up to 48000 up | V.90 with a faster start-up, call waiting and a faster upload |

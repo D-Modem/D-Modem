@@ -56,15 +56,47 @@ also operates in these conditions:
 - With an echo on the line of the customer.
 - Against a server that has only V.90 (then the call uses V.90).
 
+The network can make the signal weaker by 3 or 6 dB (a "digital pad").
+On some lines, the network also uses the last bit of each sixth value for its own
+signals ("robbed bits"). The modem of the customer measures the two items during the
+training and tells the server. Then the server uses only the values that
+the modem of the customer can still identify. The tests send data with these conditions:
+
+- A 3 dB pad (54000 bit/s).
+- A 6 dB pad (56000 bit/s).
+- Robbed bits (54000 bit/s).
+- A 6 dB pad with robbed bits (46000 bit/s).
+
+The SM56 modem also receives our data correctly when there are robbed bits on its
+line.
+
+The modems can also change speed during a call. If the line becomes
+worse or better, the modem of the customer asks for a new speed, as the
+SM56 modem does. The server can also start a speed change. If the
+line becomes much worse, the modems retrain: they measure the line
+again and train again, without a new CONNECT. Each of the two modems can start
+a retrain. The tests change the speed and retrain in the two directions, and
+also when noise starts during a call. The data stays correct.
+
 ## What is missing
 
 - We tried the modem of the customer only against the server of D-Modem.
   We built that server from the behavior of one K56flex client. The K56flex server
   of a real provider can be different.
-- The modem of the customer does not measure the digital loss or the
-  robbed bits of the network, and it does not ask for them. It assumes a clean line.
+- The SM56 modem cannot train on a line with a digital pad. This is a
+  fault in SM56 itself, not in D-Modem.
 - A-law with a real K56flex modem: the code is written, but we did not try it.
-- Retrains and speed changes during a call.
+- After a speed change, the SM56 modem does not receive our data
+  correctly. Then it retrains, and after the retrain the data is
+  correct. In a retrain, the training of the SM56 modem fails about half
+  of the time. Then the modems retrain again. The probable cause is
+  in the SM56 modem: it keeps values that it changed in data mode.
 
 The modem driver of Conexant is the other driver in the test suite. Its K56flex
 support is disabled, thus it cannot help.
+
+We also read the firmware of two K56flex modems (Rockwell and Zoom/Lucent).
+The firmware contains only the controller code, not the signal
+processing. Thus, it does not show how the protocol operates. It shows the
+data that these modems report about a K56flex call, for example the digital pad
+and the robbed bits.

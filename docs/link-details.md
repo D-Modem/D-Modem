@@ -273,7 +273,7 @@ with the text of `link/v44_preset.cpp`
 zstd is a small Zstandard codec that we wrote from RFC 8878
 (`link/zstd_codec.{h,cpp}`, approximately 1700 lines, no libzstd), with
 its negotiation in XID. Annex F of the V.cvm Recommendation
-(`docs/v_cvm.pdf`) is its specification, but the link also uses it
+(`docs/specs/v_cvm.pdf`) is its specification, but the link also uses it
 outside V.cvm.
 
 ### Negotiation
@@ -585,53 +585,127 @@ or cellular environments. An MNP 10 connection is established when an
 MNP 2-4 connection is negotiated with a remote modem supporting MNP
 10". With MNP Extended Services (`-K1`), a V.42 connection changes to
 MNP 10 when the two modems have it (the RCV336ACF designer's guide of
-Rockwell, 1105, 2.6).
+Rockwell, 1105, 2.6). MNP 10EC ("Enhanced Cellular", from Rockwell) adds
+its own tuning of the modulations for cellular fades and hand-offs.
 
-MNP 10EC ("Enhanced Cellular", from Rockwell) does more:
+Microcom and Rockwell did not publish MNP 10 or MNP 10EC. The MNP 10 of
+D-Modem comes from the firmware of the Microcom DeskPorte 28.8P
+(M042116P). We compared it with the firmware of the TravelCard FAST
+(M012315), which runs the same code. The wire rules (frames, parameters,
+the exchanges) are exactly the rules of the firmware. Thus, a DeskPorte
+or a different MNP 10 modem sees a modem of its own type. The decisions
+about when to shift and about the packet size also come from the
+firmware. We tuned them where only the result shows. The code is in
+`link/mnp10.cpp` (`Mnp`). The side of the pumps is in `core/modem.cpp`
+(`Modem::mnp10_shift()`).
 
-- at the physical layer, "optimizing [the modulation's] responses to
-  sudden changes in the cellular connection" (fades, hand-offs);
-- at the protocol layer, "dynamically adjusting speed and packet size
-  based on signal quality and data error performance" (2.7).
+**The negotiation.** When S113 bit 0 is on (the default), our LR offers
+MNP 10 (parameter 8 bit 4) with these parameters:
 
-`-SEC=1[,<tx level>]` sets it to on, with a transmit level of 0 to -30
-dBm. These commands are related to it: `)M` (power level adjustment),
-`@M` (initial cellular power level), `*H` (link negotiation speed) and
-`-Q` (fallback to V.22bis/V.22). The guide of a cellular modem (the
-CDS-9022 of Data Remote, 2002) lists `)M`, `@M`, `*H` and `-Q` as
-"included only for compatibility and [performing] no function". In the
-detection phase, a 10EC answerer sends "EM" five times or more, and then
-"EC" (Appendix VI/V.42: "a proprietary cellular phone modem protocol").
+- `0x0C`: the shifts (fallback and fall forward), the 1200 and 2400
+  bit/s rungs (`-Q`), cellular (`)M`), and the V.32bis and V.34 rates
+  up to the top speed (`+MS`). Each side keeps the items that the two
+  sides have.
+- `0x0D`: our receive level (G) and eye quality (E).
+- `0x11`: the mark of the originator.
+- `0xC0`, the parameter of D-Modem (S113 bit 1, the default): the
+  modulations that our pumps can run on this line, the top speed and
+  `-Q`. A DeskPorte uses its length to skip it. When the two sides send
+  it, the call can change between all the modulations that the two
+  sides have.
 
-**Why D-Modem does not support them:**
+With `-K1`, a V.42 originator puts the same parameters in its XID (the
+`FF` group of the user data subfield, with "MNPI"). An answerer with
+`-K1` answers in the same way. Then the link runs MNP 10 in HDLC frames,
+from the first LA of the originator. The default of D-Modem is `-K0`.
+Thus, a call between two D-Modems keeps V.42bis or V.44. The default of
+the firmware is `-K1`.
 
-- Microcom and Rockwell did not publish MNP 10 or 10EC. They gave
-  licences for them to modem manufacturers. The physical layer of 10EC
-  is in the modulations of Rockwell.
-- There is no modem to test against. None of the soft modems above has
-  a sign of MNP 10 or 10EC (no code, no strings, no `-SEC` command).
-  They were in Rockwell and Conexant controller-based modems (RCV336ACF
-  and similar) and in cellular data devices.
-- The modems negotiate MNP 10 as an MNP 2 to 4 connection (which D-Modem
-  now has) with the parameters of MNP 10. These parameters are not
-  published.
-- Its use was data over analogue (AMPS) cellular, which is gone (in the
-  US since 2008). Digital cellular voice codecs do not carry modem
-  signals. Circuit-switched data used the modems of the network (the
-  interworking function). On the lines of D-Modem (G.711 over SIP or a
-  PBX), the impairments that 10EC corrects do not occur at our end.
+**In the data phase:**
 
-**What D-Modem does with a 10EC modem** is V.42:
+- **Probes** (type 8, `08 0A S R [G E]`, answered by a type 9 LA)
+  measure the line. The arithmetic of the answer increases the size P
+  of the LTs from 64 octets up to 256 on a clean line. It decreases P
+  when the LTs go again.
+- **Errors**: X (the mean of the LTs that are sent again) and H (a
+  health count) show when the line is bad. A fall forward occurs on a
+  clean line with these conditions: P is at its maximum for a
+  sufficient time, X is low, and the eye quality (mean squared error)
+  is low.
+- **Shifts** use type 8 signals: 02 asks for a fallback, 03 answers
+  it, 04 asks for a fall forward, 05 answers it, 09 refuses. Hold-off
+  times prevent a call that goes up and down. The hold-off is 30 s
+  after the start. It doubles up to 1920 s after each failed fall
+  forward. It is 10 s after each shift.
+- **Cellular** (`)M1`): the probes carry G and E. The reports of the
+  other end set our transmit level (0 to 25 dB down, from the level of
+  `@M` at the start). The fallbacks occur sooner.
+- `:T19`: at 1200 bit/s, if no frame comes from the other end for 120 s,
+  the modem hangs up.
 
-- As the originator, it ignores the "EM" ADPs and accepts the "EC" after
-  them (LAPM; `Link.AdpCellular`).
-- As the answerer, it sends only "EC". A 10EC originator accepts this as
-  a V.42 answerer.
-- D-Modem accepts the Rockwell cellular commands (`-SEC`, `-K`, `-Q`,
-  `)M`, `@M`, `*H`), but they have no effect. A setup string for a
-  cellular-ready modem, for example the CDS-9022 string
-  `AT&F;+MS=V32,1,4800,9600;-SEC=1,12;)M1;\N2`, gives OK (refer to the
-  AT reference, "Setup strings from other modems").
+**The ladder.** The rungs are the rates of each modulation, highest
+first. With the MNP 10 of a different manufacturer, the call changes in
+its class: the rates of V.34, or V.32bis, V.22bis and V.22. Between two
+D-Modems, the ladder has all the modulations that the two modems have
+registered on this line:
+
+- V.92 and V.90, only while the call runs one of them (their server
+  side is digital).
+- V.34, V.FC, V.32terbo, V.32bis, V.26ter, V.22bis, V.22, Bell 212A,
+  V.23, V.21 and Bell 103.
+- On a 4-wire leased line, V.33, V.29, V.27ter, V.26 and the Bell 201,
+  202 and 208.
+
+HST is not on the ladder: its start-up is the start-up of V.22bis, and
+its link is its own link. A step goes to the nearest rate. The step
+tries the same modulation first.
+
+**The change of the pumps.** In V.32bis and V.32terbo, a shift is a rate
+renegotiation (8.5/V.32bis). In V.34, a shift is a retrain (when it goes
+up: a rate renegotiation). The new rate is the maximum
+(`MDMPRM_MAX_RATE`). When V.34 and PCM go up, there is no maximum: they
+select their own rate. Only the side that asked starts the shift, and
+the pump of the other side follows. For a change to a different
+modulation, the pumps start again, as the DeskPorte does:
+
+1. The two sides stop sending. The pump stops, and the timers of the
+   link stop.
+2. The silence lasts S10/8 + 3 s (4 s with 14 in S10), then 250 ms.
+   The caller waits 600 ms more.
+3. The new pump starts in the roles of the call. The pump of the
+   answerer does not send its answer tone. It goes immediately to the
+   next step of its handshake (`dp_runtime_set_restart()`). V.34, V.FC,
+   V.90 and V.92 start through V.8 again.
+4. The pump has 25 s to connect. The link continues from where it was,
+   and sends the outstanding LTs again.
+
+If a start-up fails, the call goes back (a fall forward) or further
+down. Between two D-Modems, the call does not try again the modulation
+that did not start. In cellular mode, the call goes to its lowest rung.
+More than 4 failures in sequence stop the call. `*H1` and `*H2` start a
+caller at V.22, or at 4800 bit/s of V.32bis. The fall forwards go up
+from there.
+
+**What D-Modem does not have:**
+
+- The physical layer of MNP 10EC (the tuning of Rockwell for its own
+  modulations). D-Modem never sends bit 5 of LR parameter 8, and it
+  ignores this bit from a 10EC modem. In the detection phase, a 10EC
+  answerer sends "EM" five times or more, and then "EC" (Appendix
+  VI/V.42). As the originator, D-Modem ignores the "EM" ADPs and accepts
+  the "EC" after them (LAPM; `Link.AdpCellular`). As the answerer, it
+  sends only "EC".
+- Link resume (LR parameter `0x82`), MNP security and the async
+  protocol (`0x0B`, `0x80`). D-Modem does not offer them, and it ignores
+  them when it receives them.
+- `-SEC` and `-C`. D-Modem accepts them, but they have no effect.
+
+**Tests:** `Link.Mnp10Lr` (the bytes of our LR), `Link.Mnp10` (the
+probes, data in the two directions), `Link.Mnp10Fallback`,
+`Link.Mnp10ClimbAcross` (V.22 up to V.34 between two D-Modems),
+`Link.Mnp10NoExtension`, `Link.Mnp10Cellular`, `Link.Mnp10Upgrade`
+(`-K1`) and, with the real pumps, `Core.Mnp10Climbs` (V.22 up to V.34 at
+33600 bit/s, through V.22bis, V.32bis and V.32terbo).
 
 ## V.80
 
@@ -714,7 +788,7 @@ commands:
 | `<EM><ecs>` | the escape (`+++` is data here): answers `<EM><ecs>` and OK in online command state; `ATO` goes back |
 | `<EM><eot>` | answers `<EM><eot>` and hangs up (NO CARRIER) |
 | `<EM><rate>` | sets the highest rate of `+MS` from its `<tx>` code, and the highest receive rate (`MDMPRM_MAX_RX_RATE`) from its `<rx>`, for the next retrain or renegotiation |
-| `<EM><rtn>`, `<EM><rrn>` | ask the pump for a retrain or a renegotiation (`Modem::link_req()`, as `ATO1` and `ATO3`; V.34, V.90 and V.92 only) |
+| `<EM><rtn>`, `<EM><rrn>` | ask the pump for a retrain or a renegotiation (`Modem::link_req()`, as `ATO1` and `ATO3`; V.34, V.90, V.92 and the V.32 family only) |
 
 To the DTE:
 

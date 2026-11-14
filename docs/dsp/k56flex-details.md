@@ -338,9 +338,13 @@ depend on the digital pad (the attenuation of the network: 0, 3 or 6 dB)
 
 | Pad | 2 bits (`d1 d0` = 0..3) | 1 bit (0, 1) |
 |---|---|---|
-| 0 dB | `2f 45 51 57` | `55 3d` |
-| 3 dB | `35 4d 58 60` | `5d 44` |
-| 6 dB | `3d 54 61 67` | `65 4c` |
+| 0 dB | `2f 45 51 57` | `3d 55` |
+| 3 dB | `35 4d 58 60` | `44 5d` |
+| 6 dB | `3d 54 61 67` | `4c 65` |
+
+The 1-bit order is the order of the client (`SC_A56_Sym2Bits`: `0x3d` is 0, `0x55`
+is 1) [seen]. The server uses 1 bit for each symbol only in a rate
+renegotiation (section 5).
 
 ## 5. Data mode
 
@@ -437,6 +441,28 @@ entries that `mask_RBS` fills from the RBS detector: 2 tells not robbed.)
   bits. The index is shifted left by L − n, so that its range stays the
   same. With 3 robbed in 6, K' = K, and the frame sends R/1000 − n bits.
 
+The pattern comes from the J of the client [seen in `SC_A56_Gen_JA_RBS`]. The
+24-bit J is the J of V.34 and one more octet. This table gives the octet:
+
+| Bits | Meaning |
+|---|---|
+| 0 to 5 | bit k set: symbol k of the 6 symbol cycle is robbed |
+| 6 and 7 | the pad: 0 none, 1 3 dB, 2 6 dB |
+
+Symbol k is counted from the first symbol of TRN1B. The symbol counter
+of the client (MOD + 0x340c) is set to 0 in
+`State_TRN1B_RefDirInit`. Then it counts modulo 24 into data mode
+[seen]. The decoder of the client takes the robbed pattern from the first
+data symbol. Thus, the server must start the data on that grid: the
+number of symbols from the start of TRN1B to the first data symbol must
+be a multiple of 24. Our server makes TRN2B longer until this is true
+(`dsp/v34_k56.h`, `K3_TRN2`) [seen: with NET_RBS on the line to sm56,
+its data arrives correctly only with this alignment].
+
+With a pad, the server sends TRN2B, MP, MP' and E at the levels of the pad
+(section 4) [seen in `K56_TRN2B_8LVL_CONSTL` and `K56_TRN2B_4LVL_CONSTL`].
+The constellation of the data is the constellation of the rate, as without a pad.
+
 ### Codes on the line
 
 The code of the encoder is the magnitude index with the sign in bit 7,
@@ -450,6 +476,119 @@ for negative codes, and lets its hardware layer do the final inversion
 
 In the encoder of sm56, data mode starts immediately after E, and B1 is
 data. The client discards its first 48 symbols (B1) [seen].
+
+### Rate renegotiation
+
+Each of the two modems can start a rate renegotiation in data mode [seen in
+`SC_A56Data_Handler`, `SC_A56_Rate_Renego_Init` and
+`SC_A56_Phase4_Renego_Init`]:
+
+- The client starts it with the S of V.34. Then the server stops the data at
+  the start of a frame and sends R.
+- The server starts it with R in place of the data. The client finds R
+  in its data (`MOD_R_Det` in `State_Data`) and sends S.
+
+After that, the two modems do phase 4 again from R:
+
+| Direction | Sequence |
+|---|---|
+| Up (client) | S 128 T, S-bar 16 T, TRN (4 points), MP until the MP of the server, MP', E, B1, data |
+| Down (server) | R 288, TRN2A, MARK 32, TRN2B until the MP of the client, MP 704, MP' 704, E 24, data (B1 first) |
+
+These are the differences from the first phase 4 [seen]:
+
+- MP, MP' and E down carry 1 bit for each symbol, as one of 2 magnitudes
+  (section 4). Thus, E is 24 symbols. The number of codes from MP to the
+  data is 1432. The data must start on the grid of 24 of TRN1B, as
+  before.
+- sm56 has time limits for each step (`SC_A56_RnegoState_testRtrn`).
+  It looks for MARK from 924 symbols into TRN2A. It stops after
+  about 5000 symbols. Our server sends 2048 symbols of TRN2A
+  (`K56_RN_TRN2A`). The full 16336 symbols of the first phase 4 are too long.
+- The front end of sm56 does not do the silence and the first R search. In TRN2B,
+  it adapts with different step sizes and for 4096 symbols.
+
+When does the client start a renegotiation? sm56 checks the mean error of
+the decisions of its data each 501 interrupts (`SC_A56_Data_setRtrnOrRnego`).
+It uses limits that `SC_A56_getRateNegoThd` calculates from the error
+that each rate accepts. In this table, L(r) is the error that rate r
+accepts:
+
+| Limit | Value | Result |
+|---|---|---|
+| Down | (L(r) + L(r − 1)) / 2; none at 32000 bit/s | 4 checks in sequence above it: down one rate |
+| Retrain | 4 × the down limit | 3 checks in sequence above it: a retrain |
+| Up | 0.8 L(r + 1) + 0.2 L(r + 2); none at the top, or at the rate that the last renegotiation went down to | 17 checks in sequence below it: up |
+
+More than 5 renegotiations down also cause a retrain.
+
+Our modems do the same (`dsp/v34_k56.h`):
+
+- The client (`k56c_watch()`) checks each 500 ms. L(r) is
+  d(r)² / (91.4 · 0.675), as in its rate rule (section 6). When sm56
+  retrains, our client also retrains (refer to "Retrains" below).
+- The client finds R in its data: two frames that agree with the first
+  16 codes of R2. It finds MARK from the descrambled bits, because the
+  server sets the length of TRN2A. When it goes down, it asks for a
+  maximum of one rate less.
+- The server answers the S of the client. It starts a renegotiation only for
+  a test (`DSP_K56_RENEG`).
+
+For a test, `DSP_K56_RENEG=<ms>[:<rate>][a|c]` starts a renegotiation
+at that time in the data mode. On the client, rate (1 is 32000 bit/s,
+13 is 56000) is the maximum rate that it asks for.
+
+Against sm56 (our server starts the renegotiation), sm56 does all of
+phase 4 again and goes back to data mode. But then its decisions in data
+mode have about 10 times the error of the first data mode, and
+it retrains after about 4 s [seen with `SM56_TRACE=1`]. The cause is
+not known. sm56 keeps the code levels that it adapted in the first
+data mode (MOD + 0x4040, copied to + 0x3840) [inferred: a possible
+cause]. After this retrain, the data is correct again (refer to "Retrains"
+below).
+
+### Retrains
+
+A retrain is phase 2 again, as in V.34 (11.5/V.34), and then phases 3
+and 4 as in a new call. The modem that starts it sends silence and
+then its tone (the client tone B, the server tone A). The other modem
+finds the tone in data mode and does the same. There is no new
+CONNECT [seen in our modems; the retrain causes of sm56 are in
+`SC_A56_Data_setRtrnOrRnego`].
+
+Our modems (`dsp/v34_k56.h`, `V34Retrain::retrain()`):
+
+- In data mode, the server finds the tone B of the client in its
+  upstream receiver. The client finds the tone A of the server on the PCM line.
+- The client retrains in these conditions, as sm56 does (causes `0x10`
+  and `0x23`): its data error is more than 4 times the down limit for 3
+  checks in sequence, or the 6th renegotiation down occurs.
+- If a phase of a retrain fails (for example, no MP), the modem
+  retrains again. After 4 retrains, it stops the call.
+- The time limit of a retrain is 30 s, because phase 3 is long.
+- For a test, `DSP_V34_RETRAIN=<ms>[a|c]` starts a retrain at that time
+  in the data mode. A test renegotiation (`DSP_K56_RENEG`) occurs only
+  one time in a call, also when there are retrains.
+
+Against sm56 [seen with `SM56_TRACE=1`]:
+
+- sm56 retrains with tone B, for example after the renegotiation of our
+  server (cause `0x10`). Our server answers, and the call goes
+  back to data mode with correct data.
+- When our server starts the retrain, sm56 does not identify our tone A as
+  a retrain. Its front end goes to the R search of a renegotiation
+  (state 16), and its time limit expires (cause `0x26` or `0x27`). Its V.34 part does
+  phase 2 again with us.
+- In phases 3 and 4 of a retrain, sm56 fails about half of the time.
+  Its front end stays in TRN2A (state 19) for more than 840 calls of
+  `SC_A56Phase4_Handler`, and it retrains with cause `0x21`. Then our
+  modem retrains again. `State_TRN2A_DecDir` takes its
+  references from the table at MOD + 0x3840. sm56 copies this table from
+  the table that it adapted in data mode (+ 0x4040). The first
+  training uses the table from power-up [seen]. Thus, the adapted table
+  is the probable cause of this fault and of the bad data after a
+  renegotiation [inferred]. We did not add the sm56 retrain tests to
+  the test suite, because they do not pass each time.
 
 ## 6. The client: D-Modem as the analogue modem
 
@@ -500,14 +639,54 @@ taps), least squares solution and timing loop of the V.90 analogue modem:
 3. **Js**: decisions. The signs of the even symbols are descrambled (from
    the state of the scrambler of the training at the start of Js), 16 bits
    LSB first, two times. Our S follows (`KC3_S`): S 128 T, S-bar 16,
-   PP 288, TRN 2048, then J (`V34Tx::j24`: `0x89b0` and the robbed-bit
-   octet 0, 12 symbols for each J) until the TRN2A of the server. The echo
+   PP 288, TRN 2048, then J (`V34Tx::j24`: `0x89b0` and the octet that
+   TRN1B found, 12 symbols for each J) until the TRN2A of the server. The echo
    canceller trains from S until the R of the server. The server is silent
    before R.
 4. **The silence and R**: the equaliser is held, and the timing stays on
    its frequency. R is the first loud symbol after a minimum of 12288
    symbols. It is put on the grid of 8 from the start of the silence (the
    server keeps it there).
+
+### Pad and robbed-bit detection
+
+This is a copy of the method of sm56 (`MOD_Det_DL_RBS`, `mask_RBS`) [seen]:
+
+1. During TRN1B, the equaliser adapts only its timing. `K56Rx` adds the
+   received value without its sign for each of the 24 positions of the
+   24 symbol cycle and each of the 6 TRN1B magnitudes
+   (`40 41 4b 4c 50 51`). It ignores the first 240 symbols.
+2. A model (`k56_rbs_value()`) gives the value of each magnitude for
+   these conditions: a pad (0, 3 or 6 dB), a robbed bit before the pad
+   (a), and a robbed bit after the pad (b). The pad is a new G.711
+   encoding of the value that is 3 or 6 dB lower. The model gives the
+   same values as all 30 rows of the tables `expectTRN1B_Mlaw` and
+   `expectTRN1B_Alaw` of sm56 (test `K56flex.RbsTemplates`).
+3. For each position, the receiver finds the model and the gain that
+   agree best with the 6 means. The pad that most positions find is the
+   pad of the line.
+4. With that pad, the receiver finds a and b again for each position. A clean
+   model wins when the result is almost equal (5 %). The 24 positions become 6: a position of
+   the 6 is clean only if all 4 of its repeats are clean.
+5. The gain is the mean of the gains of the positions. Then the receiver
+   makes a table of the expected value of each code at each position,
+   for each sign. The remaining training and the data use this table.
+
+The receiver sends the result in the octet of its J. `DSP_K56_NORBS=1`
+disables the detection.
+
+The rate: for each rate, the receiver finds the minimum distance between
+two points of the constellation of the rate in the table. At a robbed
+position, a code and the same code with its last bit inverted are one point. A rate is
+possible if 91.4 · 0.675 · e < d², where e is the error of the equaliser and
+d is that distance, and d is 2 or more. This is the rule of sm56
+(`MOD_rate_det`) with a measured d. sm56 itself uses fixed tables of d.
+With A-law and a 3 dB pad, the rate is 36000 or less, as in sm56. Our MP
+asks for that rate or less (`DSP_K56_MAX` makes it lower).
+
+An A-law 6 dB pad moves each value by exactly one segment. Thus, it is
+the same as no pad. The receiver finds 0 dB. This has no effect on the
+data.
 
 ### Phase 4
 
@@ -545,13 +724,53 @@ the data is 0.55 rms (77 dB below the signal). The tests:
 | `open_k56flex_ppm` | our codec 100 ppm fast, 0.3 of a sample off: the timing finds +100 ppm |
 | `open_k56flex_echo` | our own echo 10 dB down (`DSP_TEST_ECHO`): the canceller takes 54 dB of it away |
 | `open_k56flex_v90` | a V.90 server: V.90 |
+| `open_k56flex_pad3` | a 3 dB pad: found, J's octet `0x40`, 54000 |
+| `open_k56flex_rbs` | robbed bits (`NET_RBS=0x24`): found as `0x12`, 50000 to 59000 |
+| `open_k56flex_pad6_rbs` | a 6 dB pad and robbed bits: J's octet `0x98`, 46000 |
+| `open_k56flex_reneg` | the client renegotiates to 50000, then its watch goes up to 56000 again; 200000 octets each way |
+| `open_k56flex_reneg_dm` | the server renegotiates (its R in the data) |
+| `open_k56flex_noise` | noise from 4 s into the data mode: the error is more than 4 times the limit, the client retrains, and the new training gives 4x000 |
+| `open_k56flex_noise_ramp` | noise that increases during 20 s: the client renegotiates down one rate at a time |
+| `open_k56flex_retrain` | the client retrains (`DSP_V34_RETRAIN=2000c`), the server finds its tone B; 200000 octets each way |
+| `open_k56flex_retrain_dm` | the server retrains, the client finds its tone A |
+| `sm56_k56flex_rbs` | sm56 with robbed bits on the codes to it (`NET_RBS_TO=a`): its J's octet `0x04`, data on the grid of 24 |
+
+If the line of a modem is digital, `NET_RBS_TO=a` (or `b`) of netsim
+applies `NET_PAD` and `NET_RBS` to the 8000 Hz codes to that modem. This
+is for a PCM client, for example sm56, that takes the codes without a
+change.
+
+A pad on the line to sm56 causes its training to fail [seen with
+`SM56_TRACE=1` in `half_sm56`]. Its error in TRN2B is very large, and it
+retrains with cause `0x2a` (no rate possible, from
+`SC_Phase4_Wait_TRN`). `State_TRN2B_Init` sets its decision thresholds
+from the table at MOD + 0x3840 (the values before the pad), not from
+the values of the pad [inferred: a fault in sm56]. Thus, sm56 cannot train
+on a line with a pad, with our server or with a different server.
 
 ### Not done
 
-- No pad or robbed-bit measurement. The octet of our J is 0, and `K56Dec`
-  operates with no pad and no robbed bits. The client of sm56 finds them
-  in TRN1A to TRN1C (`SC_A56_Gen_JA_RBS`). We did not read this code.
-- 8000 Hz analogue lines, retrains and rate renegotiation.
+- 8000 Hz analogue lines.
+- The data of sm56 after a renegotiation, and the training of sm56 in a
+  retrain (section 5).
+
+## 7. The firmwares
+
+We read the firmware of two K56flex modems: a Rockwell VDI56SP (its
+controller is a C39, a 65C02 CPU) and a Zoom modem with a Lucent chip
+set (a Z180 CPU) [seen]. The firmware contains only the code of the
+controller. The code of the signal processor is in a mask ROM that we do
+not have. Thus, the firmware does not show how the protocol operates.
+The octets of the NS block are not in the two firmwares as a literal.
+
+The firmware shows the data that the modems report about a call:
+
+- Rockwell `AT&V` (call report): "RBS Pattern", "Digital Pad" (-3dB,
+  -6dB or None), "V8bis K56Flex successful" (or "not successful"),
+  "Rate Drop", and the local and remote retrain counts.
+- Zoom `ATI11`: "Robbed-Bit Signaling", "Digital Loss (dB)", "Remote
+  Server ID" and "Last PCM S PTR". Its table of string pointers starts at
+  0x3b2c. Its K56flex rates are 32000 to 60000 bit/s.
 
 ## Open questions
 
@@ -561,4 +780,6 @@ the data is 0.55 rms (77 dB below the signal). The tests:
 - An A-law client: what sets its law, and do the INFO1a codes 5 and 13
   operate? Not tested.
 - The meaning of the x bit of INFO1a and of NS octets 3 to 7.
-- Retrains and rate renegotiation.
+- Why is the data of sm56 after a renegotiation wrong? Why does its
+  training in a retrain fail about half of the time? The probable cause
+  is the table that sm56 adapts in data mode.

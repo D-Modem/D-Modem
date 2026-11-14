@@ -41,7 +41,12 @@
 #endif
 #endif
 
-namespace dlink { class Link; enum class SyncCommand; }
+namespace dlink {
+class Link;
+enum class SyncCommand;
+enum class Mod : u8;
+struct Shift;
+}
 
 namespace tones {
 struct Country;
@@ -464,6 +469,15 @@ public:
 	void hst_turn() { hst_turns_++; }
 	/* HST's rates for XID, 0 none */
 	u8 hst_offer() const;
+	/* MNP 10's rate shifts (dlink's mnp.h, LinkOwner): the
+	   modulations the pumps can change to on this line, the one
+	   running, the receiver's level and eye quality, a shift's
+	   change of the pumps begun, the cellular transmit level */
+	u32 mnp10_mods() const;
+	dlink::Mod mnp10_mod() const;
+	void mnp10_line(s16 &dbm, s16 &eqm) const;
+	bool mnp10_shift(const dlink::Shift &s);
+	void mnp10_tx_level(s16 db);
 	/* the DTE's in-band command in V.80's Synchronous Access Mode */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx);
 	/* a debug line with the modem's name */
@@ -625,6 +639,7 @@ private:
 	void at_process();
 	s16 at_command(char *cmd);
 	s16 at_set_sreg(s16 num, char c, s16 lo, s16 hi, s16 *len);
+	bool mnp10_command(const char *p, s16 *len, s16 *ret);
 	s16 at_A(char *p, s16 *len);
 	s16 at_B(char *p, s16 *len);
 	s16 at_D(char *p, s16 *len);
@@ -815,6 +830,32 @@ private:
 	v13::SimCarrier sim_;
 	bool sim_on_ = false;
 	std::vector<u8> sim_bits_;
+
+	/* MNP 10's change of the pumps (mnp10_shift()): none; the pump's
+	   own retrain or renegotiation (InPump, done when it sets both
+	   rates again); the start-up again in another modulation: the
+	   silence with no pump (Quiet), then the pump's training
+	   (Training); the sample count it times out at, the rates' count
+	   before, the rate cap the shift leaves (MDMPRM_MAX_RATE, 0 none),
+	   the pump to start (its DP_ID) */
+	enum class ShiftPhase { None, InPump, Quiet, Training };
+	ShiftPhase shift_ = ShiftPhase::None;
+	u32 shift_end_ = 0, shift_drop_ = 0;
+	u32 shift_mark_ = 0;
+	u32 shift_cap_ = 0;
+	u32 shift_dp_ = 0;
+	/* the cellular transmit level (a gain on the pump's samples), the
+	   received signal's power (mean square, smoothed) */
+	float tx_gain_ = 1;
+	float rx_pow_ = 0;
+	void shift_tick();
+	void shift_end(bool ok);
+	void shift_pump();
+	/* rate under the shift's cap (0: no limit) */
+	u32 rate_cap(u32 rate) const {
+		return shift_cap_ && (!rate || shift_cap_ < rate) ?
+			shift_cap_ : rate;
+	}
 
 	/* the data pumps */
 	u32 dp_requested_ = 0;

@@ -7,9 +7,11 @@
  *
  *    The instruction set from TI's C5x User's Guide (SPRU056D).  Memory
  *    is the Courier's: data 64 K words, program below 0x0800 the mask
- *    ROM, program 0x2c00 to 0x7fff the same RAM as data 0xac00 to
- *    0xffff, the rest of program the same words as data (the board's
- *    external RAM is one array, the overlays loaded into it as data).
+ *    ROM, program 0x2000 to 0x23ff the C51's single-access RAM (data
+ *    0x0800 to 0x0bff: the firmware sets RAM and OVLY in PMST),
+ *    program 0x2c00 to 0x7fff the same RAM as data 0xac00 to 0xffff,
+ *    the rest of program the same words as data (the board's external
+ *    RAM is one array, the overlays loaded into it as data).
  *    With CNF set program 0xfe00 to 0xffff is block B0 (data 0x100).
  *
  *    What is not modelled: the serial ports, the timer, wait states,
@@ -62,9 +64,13 @@ public:
 	{
 		hooks_[a & 0xffff] = std::move(fn);
 	}
+	/* debugging: fn before every instruction */
+	std::function<void(C5x &)> on_step;
 	/* the hook at a removed */
 	void unhook(unsigned a) { hooks_[a & 0xffff] = nullptr; }
 
+	/* an RPT's count is set and its instruction not yet run */
+	bool rpt_pending() const { return rptc_ >= 0; }
 	/* the hardware stack, 8 deep */
 	w16 top() const { return sp_ ? stack_[sp_ - 1] : 0; }
 	/* the number of words on the stack */
@@ -89,6 +95,8 @@ public:
 			return D[a - 0xfe00 + 0x100];
 		if (a < 0x800)
 			return P[a];
+		if (a >= 0x2000 && a < 0x2400)
+			return D[a - 0x2000 + 0x800];
 		if (a >= 0x2c00 && a < 0x8000)
 			a += 0x8000;
 		return D[a];
@@ -99,7 +107,9 @@ public:
 		a &= 0xffff;
 		if (a < 0x800)
 			return;
-		if (a >= 0x2c00 && a < 0x8000)
+		if (a >= 0x2000 && a < 0x2400)
+			a = a - 0x2000 + 0x800;
+		else if (a >= 0x2c00 && a < 0x8000)
 			a += 0x8000;
 		D[a] = (w16)v;
 	}
@@ -173,6 +183,8 @@ public:
 	void step()
 	{
 		w16 at = pc;
+		if (on_step)
+			on_step(*this);
 		if (hooks_[at]) {
 			hooks_[at](*this);
 			if (pc != at)
@@ -534,10 +546,13 @@ private:
 		case 0x5c: case 0x5d: case 0x5e: case 0x5f: {
 			a = ea(op);
 			w16 k = b >= 0x5c ? imm : d[0x0f];
+			/* XPL, OPL, APL: TC set if the result is 0 (SPRU056D
+			   6-284 and the others); CPL: TC if equal */
+			w16 r;
 			switch ((b - 0x58) & 3) {
-			case 0: wr(a, rdm(a) ^ k); break;
-			case 1: wr(a, rdm(a) | k); break;
-			case 2: wr(a, rdm(a) & k); break;
+			case 0: r = rdm(a) ^ k; wr(a, r); tc = r == 0; break;
+			case 1: r = rdm(a) | k; wr(a, r); tc = r == 0; break;
+			case 2: r = rdm(a) & k; wr(a, r); tc = r == 0; break;
 			default: tc = rdm(a) == k; break;
 			}
 			return -1;
@@ -562,12 +577,12 @@ private:
 		case 0x71: x = pshift(); setT(rdm(ea(op))); acc = x; return -1;
 		case 0x72:
 			x = pshift(); a = ea(op); setT(rdm(a));
-			d[(a + 1) & 0xffff] = rdm(a); addacc(x); return -1;
+			wr((a + 1) & 0xffff, rdm(a)); addacc(x); return -1;
 		case 0x73: setT(rdm(ea(op))); return -1;
 		case 0x74: x = pshift(); setT(rdm(ea(op))); subacc(x); return -1;
 		case 0x75: p = (p & 0xffff) | ((u32)rdm(ea(op)) << 16); return -1;
 		case 0x76: push(rdm(ea(op))); return -1;
-		case 0x77: a = ea(op); d[(a + 1) & 0xffff] = rdm(a); return -1;
+		case 0x77: a = ea(op); wr((a + 1) & 0xffff, rdm(a)); return -1;
 		case 0x78: setar(arp, ar(arp) + lo); return -1;
 		case 0x7c: setar(arp, ar(arp) - lo); return -1;
 		case 0x79: mod(op); return imm;
@@ -610,12 +625,12 @@ private:
 		case 0xa2: case 0xa3:
 			x = pshift(); a = ea(op); setT(rdm(a));
 			p = (u32)(s16(rdm(a)) * s16(pr(imm + (u32)it)));
-			if (b == 0xa3) d[(a + 1) & 0xffff] = rdm(a);
+			if (b == 0xa3) wr((a + 1) & 0xffff, rdm(a));
 			addacc(x); return -1;
 		case 0xaa: case 0xab:
 			x = pshift(); a = ea(op); setT(rdm(a));
 			p = (u32)(s16(rdm(a)) * s16(pr(d[0x1f] + (u32)it)));
-			if (b == 0xab) d[(a + 1) & 0xffff] = rdm(a);
+			if (b == 0xab) wr((a + 1) & 0xffff, rdm(a));
 			addacc(x); return -1;
 		case 0xa4: a = ea(op); wr(a, pr(d[0x1f] + (u32)it)); return -1;
 		case 0xac: a = ea(op); wr(a, rdm(d[0x1f] + it)); return -1;

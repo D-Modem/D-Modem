@@ -436,7 +436,7 @@ libvo-amrwbenc-dev of Debian; without them, netsim tells this).
 
 The effects of the modulations and the codecs on each other are in
 [cellular/](cellular/v_cvm.tex), a proposed Recommendation for data over
-the speech paths of mobile telephony ([v_cvm.pdf](v_cvm.pdf)).
+the speech paths of mobile telephony ([v_cvm.pdf](specs/v_cvm.pdf)).
 
 ### Impairments toward the 9600 Hz modem
 
