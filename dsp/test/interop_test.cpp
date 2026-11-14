@@ -1644,6 +1644,20 @@ std::vector<Call> calls()
 		      "EXPECT_B=(?s)retrain 1 \\(the DTE's\\).*retrained",
 		      i537 });
 	}
+	/* our V.32bis rate renegotiation (ATO3): none of these modems has
+	   it, each answers our S with a retrain, which ours follows */
+	for (const char *p : { "agere", "broadcom", "ess" })
+		add(p, std::string(p) + "_132_dte_reneg_" + p + "_calls", p,
+		    "open", "ATX3;AT+MS=V32B",
+		    { "NET=8000:9600:ulaw", "PROTO_B=ATX3;AT+MS=132",
+		      "STREAM=25", "MIDCALL_B=6:WAIT 0", "MIDCALL_ATO_B=ATO3",
+		      "EXPECT_B=(?s)rate renegotiation 1 \\(ours\\).*"
+		      "retrain 1 .*retrained" });
+	add("courier", "courier_v32_dte_reneg", "courier", "open8", usr_v32,
+	    { "NET=8000:8000:ulaw", "PROTO_B=ATX3;AT+MS=V32B", "STREAM=25",
+	      "COURIER_DEBUG=1", "MIDCALL_B=6:WAIT 0", "MIDCALL_ATO_B=ATO3",
+	      "EXPECT_B=(?s)rate renegotiation 1 \\(ours\\).*"
+	      "retrain 1 .*retrained" });
 	for (const char *p : { "agere", "broadcom" })
 		add(p, std::string(p) + "_34_dte_reneg_open_calls", "open", p,
 		    "ATX3;AT+MS=34",

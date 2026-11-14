@@ -602,9 +602,9 @@ Bell 201, 202 and 208. HST is left out: its start-up is V.22bis's and
 its link is its own. A step goes to the nearest rate, the same
 modulation first.
 
-**The pumps' change.** Within V.32bis, V.32terbo and V.34 a shift is a
-retrain (V.34 going up: a rate renegotiation) with the new rate as the
-cap (`MDMPRM_MAX_RATE`). V.34 and PCM going up have no cap: they pick
+**The pumps' change.** Within V.32bis and V.32terbo a shift is a rate
+renegotiation (8.5/V.32bis), within V.34 a retrain (going up: a rate
+renegotiation), with the new rate as the cap (`MDMPRM_MAX_RATE`). V.34 and PCM going up have no cap: they pick
 their own rate. Only the side that asked starts it, and the
 other's pump follows. Into another modulation the pumps start again, as
 the DeskPorte does:
@@ -635,9 +635,6 @@ from there.
   and then "EC" (Appendix VI/V.42). As the originator D-Modem passes
   over the "EM" ADPs and takes the "EC" after them (LAPM;
   `Link.AdpCellular`), and as the answerer it sends "EC" alone.
-- V.32bis's rate renegotiation. A DeskPorte shifts within V.32bis by
-  renegotiating, and D-Modem by retraining with a cap. Both end at the
-  new rate, but a DeskPorte that renegotiates is answered by a retrain.
 - Link resume (LR parameter `0x82`), MNP security and the async
   protocol (`0x0B`, `0x80`) are not offered, and are ignored when
   received.
@@ -726,7 +723,7 @@ The core (`core/modem.cpp`, the link's owner) handles the commands:
 | `<EM><ecs>` | the escape (`+++` is data here): answers `<EM><ecs>` and OK in online command state; `ATO` goes back |
 | `<EM><eot>` | answers `<EM><eot>` and hangs up (NO CARRIER) |
 | `<EM><rate>` | sets `+MS`'s highest rate from its `<tx>` code, and the highest rate to receive at (`MDMPRM_MAX_RX_RATE`) from its `<rx>`, for the next retrain or renegotiation |
-| `<EM><rtn>`, `<EM><rrn>` | ask the pump for a retrain or a renegotiation (`Modem::link_req()`, as `ATO1` and `ATO3`; V.34, V.90 and V.92 only) |
+| `<EM><rtn>`, `<EM><rrn>` | ask the pump for a retrain or a renegotiation (`Modem::link_req()`, as `ATO1` and `ATO3`; V.34, V.90, V.92 and the V.32 family only) |
 
 Towards the DTE:
 

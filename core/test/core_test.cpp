@@ -1581,8 +1581,9 @@ TEST(Core, RetrainOnRequest)
 
 /* MNP 10 between two D-Modems: the caller starts at V.22 (*H1), and the
    fall forwards climb across the modulations, by start-ups in each new
-   one (V.22bis, V.32bis, V.32terbo, V.34 through V.8) and retrains
-   within V.32bis and V.32terbo, to V.34; the data both ways after */
+   one (V.22bis, V.32bis, V.32terbo, V.34 through V.8) and rate
+   renegotiations within V.32bis and V.32terbo, to V.34; the data both
+   ways after */
 TEST(Core, Mnp10Climbs)
 {
 	if (getenv("SHOW")) {

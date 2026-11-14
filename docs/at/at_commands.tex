@@ -1294,7 +1294,7 @@ Receive Frame Error Count & The frames received with a bad \std{FCS}. \\ \hline
 Retrains by Local Modem, Retrains Requested by Remote Modem & Retrains,
   ours and the other modem's. \\ \hline
 Rate Renegotiation by Local/Remote Modem & Rate renegotiations (\std{V.34},
-  \std{V.90}, \std{V.92}). \\ \hline
+  \std{V.90}, \std{V.92}, \std{V.32bis}). \\ \hline
 Call Duration & From \rc{CONNECT}, \p{h}\cmd{:}\p{mm}\cmd{:}\p{ss}. \\ \hline
 Call Termination Cause & \rc{Local hangup} (\cmdl[H]{ATH},
   \cmdl[Z]{ATZ}, \std{DTR}, a character while connecting), \rc{Remote
@@ -1629,7 +1629,8 @@ H1 & Off hook. \\ \hline
 This command takes the modem back online after the escape
 (\hyperref[sec:online]{Section~\ref*{sec:online}}).  On a call held after a dial string's
 \cmdl[D]{;} it starts the calling modem's handshake (as \cmdl[D]{ATD}).
-\cmdl[O]{O1} and \cmdl[O]{O3} work in \std{V.34}, \std{V.90} and \std{V.92} calls; in the others
+\cmdl[O]{O1} and \cmdl[O]{O3} work in \std{V.34}, \std{V.90}, \std{V.92}, \std{V.32bis}
+and \std{V.32terbo} calls (\std{V.32}'s \cmdl[O]{O3} retrains); in the others
 they only go back.  A retrain or renegotiation counts as the local
 modem's in \cmdl[I]{ATI11}.
 \begin{results}

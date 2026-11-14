@@ -829,8 +829,8 @@ void Mnp::go(s16 target, bool up)
 	pump(target, up, sh_restart_);
 }
 
-/* the pumps' change to rung target: a retrain or V.34's rate
-   renegotiation in the same modulation, else its start-up (or always,
+/* the pumps' change to rung target: a retrain or a rate
+   renegotiation (V.34's going up, V.32bis's) in the same modulation, else its start-up (or always,
    restart: no pump runs); the link waits (shift_done()) */
 void Mnp::pump(s16 target, bool up, bool restart)
 {
@@ -842,7 +842,10 @@ void Mnp::pump(s16 target, bool up, bool restart)
 	s.up = up;
 	s.lead = !sh_responder_;
 	if (!restart && from == t.mod && in_pump(t.mod))
-		s.kind = up && t.mod == Mod::V34 ? ShiftKind::Reneg :
+		/* V.32bis's renegotiation takes either way, V.34's
+		   picks its own rate (no higher than its start-up's) */
+		s.kind = (up && t.mod == Mod::V34) || t.mod == Mod::V32B ||
+			t.mod == Mod::V32T ? ShiftKind::Reneg :
 			ShiftKind::Retrain;
 	else
 		s.kind = ShiftKind::Restart;

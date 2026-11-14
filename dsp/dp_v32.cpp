@@ -27,6 +27,14 @@
  *    bit first.  The caller scrambles with 1 + x^-18 + x^-23, the
  *    answerer with 1 + x^-5 + x^-23.
  *
+ *    A rate renegotiation (8.5/V.32bis) in data, either modem first:
+ *
+ *    initiator: S S-bar TRN R4 ... (until R5), E, data
+ *    responder: (on S) S S-bar TRN R5 ... (after R4, until E), E, data
+ *
+ *    the equalizers and the echo canceller as data left them; a modem
+ *    that answers with a retrain (AA or AC) is followed.
+ *
  *    When the remote modem does not do V.32 the pump falls back to
  *    V.22bis (answerer: no AA after the answer tone, caller: V.22
  *    unscrambled ones instead of AC).
@@ -141,6 +149,10 @@ enum v32_state {
 	C_TRAIN,
 	C_R2,
 	C_E,
+	/* a rate renegotiation (8.5/V.32bis), either modem */
+	RN_TRAIN,               /* S S-bar TRN */
+	RN_R,                   /* R4 (initiator) or R5 (responder) */
+	RN_E,
 	/* both */
 	V32_DATA,
 };
@@ -221,6 +233,14 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	s16 ev_aa, ev_ac, ev_rev, ev_s, ev_r, ev_e, ev_usb1;
 	s16 retraining;         /* a retrain in data mode (no new CONNECT) */
 	s16 retrains;
+	s16 reneg;              /* a rate renegotiation: 1 ours, 2 the
+				   remote's (0: none) */
+	s16 renegs;
+	s32 reneg_end;          /* its time limit (samples) */
+	u16 rn_word;            /* the R4 or R5 we send */
+	s32 reneg_at;           /* test: our own renegotiation this far
+				   into the data, $DSP_V32_RENEG ms ... */
+	s32 reneg_to = 0;       /* ... to this rate at most (bit/s) */
 	s32 retrain_at;         /* test: our own retrain this far (samples)
 				   into the data, $DSP_V32_RETRAIN ms */
 	float lost_mse;         /* the data mse past which the receiver has
@@ -252,6 +272,19 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	void start_word(enum v32_txm m, u16 w);
 	s16 connect();
 	void retrain(bool remote);
+	void renegotiate(bool remote);
+	/* the remote's retrain: AA alone from a caller, AC alone from an
+	   answerer (S, a renegotiation's, has both tones; scrambled data
+	   neither) */
+	bool remote_retrain() const
+	{
+		return caller ? ev_ac && !ev_aa : ev_aa && !ev_ac;
+	}
+	/* the remote's S watched for in data (a renegotiation) */
+	bool s_watch() const
+	{
+		return state == V32_DATA || (reneg == 1 && rxp == RX_DATA);
+	}
 	s16 fallback_to(enum DP_ID id, const char *mode);
 	s16 fallback();
 	u16 quality_caps();
@@ -551,8 +584,8 @@ void V32Pump::rx_symbol()
 
 	/* while we send our own training the line carries mostly our echo
 	   (the echo canceller is still learning): don't listen */
-	if (txm == TXM_S || txm == TXM_SBAR ||
-	    txm == TXM_TRN2 || txm == TXM_TRN4) {
+	if (!reneg && (txm == TXM_S || txm == TXM_SBAR ||
+		       txm == TXM_TRN2 || txm == TXM_TRN4)) {
 		run_s = 0;
 		last_z = z;
 		return;
@@ -567,8 +600,9 @@ void V32Pump::rx_symbol()
 
 	/* S: steps of +-90 degrees with alternating sign; the first
 	   S-bar symbol (C) repeats the sign.  S can start over at any
-	   time before data (a new training). */
-	if (rxp != RX_DATA) {
+	   time before data (a new training), or in data (the remote's
+	   rate renegotiation). */
+	if (rxp != RX_DATA || s_watch()) {
 		st = cplx_mulc(z, last_z);
 		a = atan2f(st.im, st.re);
 		sgn = a > 0 ? 1 : -1;
@@ -576,9 +610,13 @@ void V32Pump::rx_symbol()
 			if (sgn != last_sgn) {
 				if (++run_s >= 24 && rxp != RX_S) {
 					/* whatever was learned on silence or
-					   noise is useless: start over */
-					if (rxp != RX_IDLE)
+					   noise is useless: start over (not
+					   in a renegotiation: the equalizer
+					   goes on from data's) */
+					if (rxp != RX_IDLE && rxp != RX_DATA &&
+					    !reneg)
 						rx.reset();
+					rx_e_seen = 0;
 					rx.agc_hold = 0;
 					rxp = RX_S;
 					ev_s = 1;
@@ -758,8 +796,17 @@ s16 V32Pump::connect()
 		/* the link goes on (V.42 knows nothing of it) */
 		set_rates(tx_rate->bps, rx_rate->bps);
 		retraining = 0;
-		DSP_DBG("v32: retrained, %" PRId32 "/%" PRId32 "\n",
+		DSP_DBG("v32: %s, %" PRId32 "/%" PRId32 "\n",
+			reneg ? "renegotiated" : "retrained",
 			tx_rate->bps, rx_rate->bps);
+		/* S's tones (AA's and AC's) gone: data's own band near
+		   1800 Hz keeps a tracker on once on */
+		if (reneg)
+			for (ToneTrk *t : { &aa, &ac }) {
+				t->on = 0;
+				t->on_count = 0;
+			}
+		reneg = 0;
 		return DPSTAT_OK;
 	}
 	return connect_at(tx_rate->bps, rx_rate->bps);
@@ -775,6 +822,7 @@ void V32Pump::retrain(bool remote)
 		caller ? "AA" : "AC");
 	stat_retrain(remote);
 	retraining = 1;
+	reneg = 0;
 	automode = 0;                /* no falling back now */
 	/* the core's limits as they are now (a rate shift's cap) */
 	caps = offered_caps();
@@ -791,6 +839,30 @@ void V32Pump::retrain(bool remote)
 		set_state(A_AC);
 		set_tx(TXM_AC);
 	}
+}
+
+/* a rate renegotiation (8.5/V.32bis), the remote's (its S heard in
+   data) or ours: S, S-bar and a short TRN, the receiver's equalizer
+   and the echo canceller as they are; the initiator's R4 answered by
+   the responder's R5 (the rates of R4 it can take now), then E and B1
+   at R5's fastest rate.  Both at once (each the other's R4 for an R5)
+   end the same way.  A retrain if it is not over in 3 s, or if the
+   remote retrains instead (a modem without it) */
+void V32Pump::renegotiate(bool remote)
+{
+	DSP_DBG("v32: rate renegotiation %d (%s)\n", ++renegs,
+		remote ? "remote" : "ours");
+	stat_reneg(remote);
+	retraining = 1;
+	reneg = remote ? 2 : 1;
+	/* the core's limits as they are now (a rate shift's cap) */
+	caps = offered_caps();
+	ev_r = ev_e = ev_s = 0;
+	rn_word = 0;
+	reneg_end = total + ms2samples(3000, srate);
+	timeout = total + ms2samples(15000, srate);
+	set_state(RN_TRAIN);
+	set_tx(TXM_S);
 }
 
 /* hands over to the pump id (mode its name for the debug output); an
@@ -1008,6 +1080,81 @@ s16 V32Pump::handshake()
 			start_word(TXM_E, final_word(tx_rate) | RB_HEADER);
 		}
 		break;
+	case RN_TRAIN:
+		/* S 128, S-bar 16, TRN 256 (no echo canceller training);
+		   the responder's TRN until the initiator's R4 */
+		if (remote_retrain() && txm != TXM_S && rxp == RX_DATA) {
+			retrain(true);
+			break;
+		}
+		if (total >= reneg_end) {
+			retrain(false);
+			break;
+		}
+		if (txm == TXM_S && sym >= 128)
+			set_tx(TXM_SBAR);
+		else if (txm == TXM_SBAR && sym >= 16) {
+			set_tx(TXM_TRN2);
+			tx_scr = caller ? 0x673800 : 0x0FF800;
+		} else if (txm == TXM_TRN2 && sym >= 64) {
+			set_tx(TXM_TRN4);
+			tx_scr = caller ? 0x221837 : 0x683C9F;
+		} else if (txm == TXM_TRN4 && sym >= 256 &&
+			   (reneg == 1 || ev_r)) {
+			if (reneg == 1) {
+				rn_word = RB_B4 | RB_SYNC | quality_caps();
+				/* (test: no faster than reneg_to) */
+				for (const auto &t : v32_rates)
+					if (reneg_to && t.bps > reneg_to)
+						rn_word &= ~(t.bits & ~RB_TCM);
+			} else {
+				ev_r = 0;
+				rn_word = RB_B4 | RB_SYNC |
+					(r_word & quality_caps());
+				r = rate_of_word(rn_word);
+				if (!r) {
+					DSP_DBG("v32: no common rate in %04X\n",
+						r_word);
+					retrain(false);
+					break;
+				}
+				tx_rate = r;
+			}
+			DSP_DBG("v32: R%d %04X\n", reneg == 1 ? 4 : 5,
+				rn_word);
+			set_state(RN_R);
+			start_word(TXM_R, rn_word);
+			ev_e = 0;
+		}
+		break;
+	case RN_R:
+		if (remote_retrain() && rxp == RX_DATA) {
+			retrain(true);
+			break;
+		}
+		if (total >= reneg_end) {
+			retrain(false);
+			break;
+		}
+		if (tx_word_bit != 0)
+			break;
+		if (reneg == 1 && ev_r) {
+			/* R5 (or the remote's own R4): its fastest rate
+			   of ours */
+			ev_r = 0;
+			r = rate_of_word(r_word & rn_word);
+			if (!r) {
+				DSP_DBG("v32: no common rate in %04X\n", r_word);
+				retrain(false);
+				break;
+			}
+			tx_rate = r;
+		} else if (!(reneg == 2 && ev_e))
+			break;
+		set_state(RN_E);
+		start_word(TXM_E, final_word(tx_rate) | RB_HEADER);
+		break;
+	case RN_E:
 	case A_E:
 	case C_E:
 		if (txm == TXM_E && sym >= 8) {
@@ -1090,21 +1237,30 @@ s16 V32Pump::handshake()
 		break;
 
 	case V32_DATA:
-		/* the remote retrains: AA from a caller, AC from an
-		   answerer (scrambled data has no such tone) */
-		if ((!caller && ev_aa && !ev_ac) ||
-		    (caller && ev_ac))
+		/* the remote renegotiates (its S heard), or retrains: AA
+		   from a caller, AC from an answerer */
+		if (rxp != RX_DATA) {
+			renegotiate(true);
+			break;
+		}
+		if (remote_retrain())
 			retrain(true);
 		else if (retrain_at && count >= retrain_at &&
 			 !retrains) {
 			retrain(false);
-		}
-		/* the core's retrain or rate renegotiation (V.80's, MNP
-		   10's rate shifts): a retrain either way, at the rates
-		   its limits allow now */
+		} else if (reneg_at && count >= reneg_at && !renegs)
+			renegotiate(false);
+		/* the core's retrain (1) or rate renegotiation (2: V.80's,
+		   ATO3, MNP 10's rate shifts), at the rates its limits
+		   allow now */
 		else if (modem_get_param(modem, MDMPRM_LINK_REQ) > 0) {
+			intptr_t q = modem_get_param(modem, MDMPRM_LINK_REQ);
 			modem_set_param(modem, MDMPRM_LINK_REQ, 0);
-			retrain(false);
+			/* (V.32 has no renegotiation) */
+			if (q == 2 && v32_id != DP_V32)
+				renegotiate(false);
+			else
+				retrain(false);
 		}
 		/* our receiver has lost its equalization (5.5/V.32: either
 		   modem may retrain): its error past its rate's limit for
@@ -1207,6 +1363,12 @@ s16 V32Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 
 	/* test: DSP_V32_RETRAIN=<ms in data mode>[a|c] */
 	retrain_at = static_cast<s32>(test_samples("DSP_V32_RETRAIN"));
+	/* and DSP_V32_RENEG=<ms in data mode>[:<bit/s>][a|c]: a
+	   renegotiation (to that rate at most) */
+	reneg_at = static_cast<s32>(test_samples("DSP_V32_RENEG"));
+	if (const char *e = pump_test_env("DSP_V32_RENEG", caller_))
+		if (const char *c = strchr(e, ':'))
+			reneg_to = static_cast<s32>(strtol(c + 1, nullptr, 10));
 	/* (tests: DSP_V32_LOST=0, no retrain of our own on a lost
 	   equalization) */
 	lost_off = env_off("DSP_V32_LOST");
