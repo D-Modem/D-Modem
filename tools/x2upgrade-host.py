@@ -72,13 +72,17 @@ def wait_report(timeout):
         if not ready:
             break
         data = os.read(fd, 256)
-        if not data:
-            break
         buf += data
-        for line in re.split(rb'[\r\n]', buf):
+        # Only complete lines; the rest waits for more octets, or for
+        # the end of the input.
+        lines = re.split(rb'[\r\n]', buf)
+        buf = lines.pop() if data else b''
+        for line in lines + [buf] * (not data):
             m = REPORT.match(line.decode('ascii', 'replace').strip())
             if m:
                 return m
+        if not data:
+            break
         buf = buf[-200:]
     return None
 

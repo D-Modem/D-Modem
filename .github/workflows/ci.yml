@@ -31,6 +31,9 @@
 # warnings as errors; nothing here runs its programs, so no tests;
 # dmodemd kept as an artifact.
 #
+# x2upgrade-host: the Go version of the x2 upgrade host's caller screen
+# (tools/x2upgrade-host), vetted and tested.
+#
 # asterisk, freeswitch: the modules' tests (frontend/asterisk/test,
 # frontend/freeswitch/test) in a private Asterisk (Ubuntu's packages) and
 # FreeSWITCH (built from source by
@@ -510,6 +513,25 @@ jobs:
 
   # (the steps' scripts in the matrix: one shard each, its calls one after
   # another; shell bash -e, so the first failure ends it)
+  x2upgrade-host:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: tools/x2upgrade-host
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/x2upgrade-host/go.mod
+          cache: false
+
+      - name: Vet and test
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }
+          go vet ./...
+          go test ./...
+
   asterisk:
     name: asterisk (${{ matrix.shard }})
     runs-on: ubuntu-24.04

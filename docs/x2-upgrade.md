@@ -35,8 +35,13 @@ On the host:
 
 - D-Modem on a line that can answer the call, for example
   [app_dmodem](asterisk.md) or [dmodem-ari](ari.md).
-- The program `tools/x2upgrade-host.py`. It shows the caller the
-  result. It needs Python 3 and no other packages.
+- A program that shows the caller the result. There are two versions
+  of this program. They do the same work. Use one of them:
+    - `tools/x2upgrade-host.py`. It needs Python 3 and no other
+      packages.
+    - `tools/x2upgrade-host/`, in Go. It needs Go 1.22 or later to
+      build, and no other packages. It is one file that has no
+      dependencies when it runs.
 
 ## Set up the host
 
@@ -46,6 +51,16 @@ Make a profile for the host in `dmodem.conf`:
     mode = exec
     init = AT+X2UP=2
     command = exec /usr/bin/python3 /opt/d-modem/tools/x2upgrade-host.py --log /var/log/x2upgrade.log
+
+To use the Go version, build it:
+
+    cd tools/x2upgrade-host
+    go build -o /opt/d-modem/bin/x2upgrade-host .
+
+Then, in the profile, use this `command` line. The options are the
+same as the options of the Python version:
+
+    command = exec /opt/d-modem/bin/x2upgrade-host --log /var/log/x2upgrade.log
 
 Then send a number to the profile in `extensions.conf`:
 
