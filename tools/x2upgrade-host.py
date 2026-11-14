@@ -25,7 +25,7 @@ BANNER = """\
 D-Modem x2 upgrade host\r
 =======================\r
 \r
-This host enables x2 in a USRobotics Courier V.Everything that has the\r
+This host enables x2 in an upgradable USRobotics product that has the\r
 x2 code. It reads the serial number and the feature record of your modem\r
 through the error-corrected link. Then it sets the x2 feature bit.\r
 \r

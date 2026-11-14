@@ -31,7 +31,7 @@ const banner = "\r\n" +
 	"D-Modem x2 upgrade host\r\n" +
 	"=======================\r\n" +
 	"\r\n" +
-	"This host enables x2 in a USRobotics Courier V.Everything that has the\r\n" +
+	"This host enables x2 in an upgradable USRobotics product that has the\r\n" +
 	"x2 code. It reads the serial number and the feature record of your modem\r\n" +
 	"through the error-corrected link. Then it sets the x2 feature bit.\r\n" +
 	"\r\n" +
