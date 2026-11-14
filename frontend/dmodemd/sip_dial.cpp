@@ -91,6 +91,41 @@ std::string dial_uri(const char *dial, const std::string &domain)
 	return "sip:" + user + "@" + domain;
 }
 
+/* see sip.h */
+std::string service_host(const std::string &uri, bool *srv_only)
+{
+	std::string u = uri, params;
+	size_t i;
+
+	if (srv_only)
+		*srv_only = false;
+	if ((i = u.find(':')) == std::string::npos)
+		return std::string();
+	u.erase(0, i + 1);              /* the scheme */
+	if ((i = u.find_first_of("?>")) != std::string::npos)
+		u.erase(i);
+	if ((i = u.rfind('@')) != std::string::npos)
+		u.erase(0, i + 1);      /* the user */
+	if ((i = u.find(';')) != std::string::npos) {
+		params = u.substr(i);
+		u.erase(i);
+	}
+	for (char &c : params)
+		c = static_cast<char>(tolower(static_cast<unsigned char>(c)));
+	/* maddr names the host to reach in its place: as it is */
+	if (u.empty() || params.find(";maddr=") != std::string::npos)
+		return std::string();
+	/* an IPv6 address, or host:port */
+	if (u[0] == '[' || u.find(':') != std::string::npos)
+		return std::string();
+	/* an IPv4 address: digits and dots alone */
+	if (u.find_first_not_of("0123456789.") == std::string::npos)
+		return std::string();
+	if (srv_only)
+		*srv_only = params.find(";transport=") != std::string::npos;
+	return u;
+}
+
 namespace {
 
 /* s in lower case */

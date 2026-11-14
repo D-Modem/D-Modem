@@ -425,6 +425,13 @@ if(DMODEM_DMODEMD)
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_anonymous PROPERTIES LABELS quick
 			TIMEOUT 60)
+		# a host's name found as RFC 3263 has it (NAPTR, SRV over
+		# UDP and TCP), the script's own DNS server and SIP peer
+		dmodem_add_test(dmodemd_dns ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/dns_test.py
+			$<TARGET_FILE:dmodemd>)
+		set_tests_properties(dmodemd_dns PROPERTIES LABELS quick
+			TIMEOUT 60)
 		# V.150.1's modem relay (SIP_V150=yes) both ways, the
 		# script's own SIP peer and gateway (SSE, SPRT)
 		dmodem_add_test(dmodemd_v150 ${Python3_EXECUTABLE}
