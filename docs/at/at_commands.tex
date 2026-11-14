@@ -772,6 +772,7 @@ rarer ones.
 \cmdl[plusPCW]{+PCW, +PIG} & \std{V.92} options (kept). & \cmdl[plusPMH]{+PMH, +PMHT} & Modem-on-hold. \\ \hline
 \cmdl[plusPMHR]{+PMHR} & Ask for modem-on-hold. & \cmdl[plusCVM]{+CVM} & \std{V.cvm}. \\ \hline
 \cmdl[minusSEC]{-SEC} & \std{MNP~10EC} (kept). & \cmdl[plusFCLASS]{+FCLASS} & Data, fax or voice. \\ \hline
+\cmdl[plusX2UP]{+X2UP} & x2 upgrade host. & & \\ \hline
 \cmdl[plusFAA]{+FAA} & Adaptive answer. & \cmdl[plusFMI]{+FMI, +FMM, +FMR} & Fax identification. \\ \hline
 \cmdl[plusFTS]{+FTS, +FRS} & Fax silence. & \cmdl[plusFTM]{+FTM, +FRM} & Fax data. \\ \hline
 \cmdl[plusFTH]{+FTH, +FRH} & Fax \std{HDLC} frames. & \cmdl[plusFPR]{+FPR} & Fax \std{DTE} rate (kept). \\ \hline
@@ -2597,6 +2598,27 @@ is \cmd{ZSTD} (70 with \cmdl[V]{V0}); other modems go on with \std{V.44} or
 \item +DSZ=[\p{on}][,[\p{dict}]]
 \item +DSZ? (gives \rc{+DSZ: 1,1})
 \item +DSZ=? (gives \rc{+DSZ: (0,1),(0,1)})
+\end{syntax}
+\begin{results}
+\res{\rc{OK}}{Always.}
+\res{\rc{ERROR}}{For a value outside its range.}
+\end{results}
+\end{command}
+
+\begin{command}{plusX2UP}{+X2UP}{x2 Upgrade Host}
+D-Modem's own: the host side of the USRobotics remote feature upgrade
+(\texttt{docs/x2-upgrade.md}).  After \std{LAPM} connects, \p{mode} 1 reads
+the serial number and the feature records of a Courier, and \p{mode} 2
+also sets its x2 bit (the value 16 in record 2) when it is not set.  The
+modem then sends one line to the \std{DTE}:
+\rc{+X2UP: }\p{result}\rc{,"}\p{serial}\rc{",}\p{before}\rc{,}\p{after}.
+\p{result} is \cmd{ENABLED}, \cmd{ALREADY}, \cmd{REFUSED},
+\cmd{QUERIED} or \cmd{NO REPLY}; \p{before} and \p{after} are record 2
+in decimal, as the Courier's \cmd{ATY14} shows it.  \cmd{0} does nothing.
+\begin{syntax}
+\item +X2UP=[\p{mode}]
+\item +X2UP? (gives \rc{+X2UP: 0})
+\item +X2UP=? (gives \rc{+X2UP: (0-2)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{Always.}

@@ -33,6 +33,7 @@ nav:
     - The modem core: core.md
     - The data pumps: dsp/README.md
     - The data link layer: link.md
+    - The x2 upgrade host: x2-upgrade.md
     - ISDN: isdn.md
     - Voice and data together (V.70): v70.md
     - Modem relay (V.150.1): v150.md

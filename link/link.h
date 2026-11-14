@@ -51,6 +51,7 @@
 #include "v80.h"
 #include "v76.h"
 #include "ppp_sync.h"
+#include "usr_feature.h"
 
 namespace dlink {
 
@@ -137,6 +138,9 @@ struct Config {
 	SyncConfig sync_cfg;
 	/* on a clear channel: X.75 or PPP rather than all of the above */
 	B2 b2 = B2::Modem;
+	/* the USRobotics remote feature upgrade (usr_feature.h, +X2UP):
+	   once LAPM is up, read a Courier's records, and set x2 */
+	UsrMode usr_feature = UsrMode::Off;
 };
 
 /* the error correction a call has */
@@ -239,6 +243,8 @@ public:
 		(void)pcm;
 		(void)n;
 	}
+	/* the remote feature upgrade's end (Config::usr_feature) */
+	virtual void usr_feature(const UsrReport &r) { (void)r; }
 protected:
 	~Owner() = default;
 };
@@ -432,6 +438,13 @@ public:
 	Mnp &mnp() { return mnp_; }
 	/* LAPM keeps characters the DTE did not take; push them on */
 	bool push_pending = false;
+	/* the remote feature upgrade (usr_feature.h): a UI frame of ours
+	   with the n octets of info */
+	void usr_send(const u8 *info, s16 n) { lapm_.tx_ui(info, n); }
+	/* (see usr_send()) a UI frame's information field received */
+	void usr_rx(const u8 *info, s16 n) { usr_.rx(info, n); }
+	/* (see usr_send()) the exchange's end, to the owner */
+	void usr_report(const UsrReport &r) { owner_->usr_feature(r); }
 
 private:
 	void end_detect();
@@ -476,6 +489,7 @@ private:
 	Hdlc hdlc_;
 	Async async_;
 	Lapm lapm_;
+	UsrFeature usr_;
 	Mux mux_;
 	Lapb lapb_;
 	HstLink hst_;

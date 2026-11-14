@@ -300,6 +300,26 @@ struct LinkOwner final : public dlink::Owner {
 			m_.dsvd_path_->ear(pcm, n);
 	}
 
+	/* the remote feature upgrade's end (+X2UP): one line to the DTE,
+	   +X2UP: <result>,"<serial>",<features before>,<after> (the
+	   records' second, as ATC8 and ATY14 show it, in decimal) */
+	void usr_feature(const dlink::UsrReport &r) override {
+		char line[96];
+		if (r.has_records)
+			snprintf(line, sizeof(line),
+				 "+X2UP: %s,\"%s\",%03u,%03u",
+				 dlink::usr_result_name(r.result), r.serial,
+				 r.before[dlink::USR_REC_FEATURES - 1],
+				 r.after[dlink::USR_REC_FEATURES - 1]);
+		else
+			snprintf(line, sizeof(line), "+X2UP: %s,\"%s\"",
+				 dlink::usr_result_name(r.result), r.serial);
+		m_.logf("%s\n", line);
+		m_.crlf();
+		m_.puts(line);
+		m_.crlf();
+	}
+
 	Modem &m_;
 };
 
@@ -984,6 +1004,8 @@ s16 Modem::link_init()
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
 	c.hst = hst_offer();
+	/* +X2UP: the remote feature upgrade, with LAPM */
+	c.usr_feature = static_cast<dlink::UsrMode>(kept("+X2UP")[0]);
 	/* MNP 10 (S113, -K, -Q, )M, @M, :T19): with MNP, not synchronous;
 	   the D-Modem extension's top rate +MS's */
 	c.mnp10 = cfg_.mnp && !cfg_.sync && (sregs_[SREG_MNP10] & 1) &&
