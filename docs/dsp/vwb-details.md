@@ -1,34 +1,34 @@
 # V.wb: wideband DMT on a bare pair: technical details
 
-This is the technical companion to [V.wb: wideband on a bare pair](vwb.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
+This page gives the technical details for [V.wb: wideband on a bare pair](vwb.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
-`AT+MS=VWB` (or `AT+MS=200`) runs D-Modem's own wideband mode. On a
-line sampled at 48000 Hz or more it is the default, and the only mode
-the core will run there.
+`AT+MS=VWB` (or `AT+MS=200`) starts the own wideband mode of D-Modem. On
+a line sampled at 48000 Hz or more, it is the default. It is also the only
+mode that the core operates on such a line.
 
-It is meant for a **bare copper pair** between two D-Modems: a dry pair,
-an alarm or leased circuit, or a pair of your own in a building or
-between buildings. The line hardware is pico-serial's WB stick
-(`SPEC-WB.md` in pico-serial: a codec at 96 kHz, a wideband transformer,
-protection), or any codec that samples the pair at 48000 Hz or more.
+It is for a **bare copper pair** between two D-Modems: a dry pair, an
+alarm or leased circuit, or your own pair in a building or between
+buildings. The line hardware is the WB stick of pico-serial (`SPEC-WB.md`
+in pico-serial: a codec at 96 kHz, a wideband transformer, protection),
+or a different codec that samples the pair at 48000 Hz or more.
 
-Both ends are D-Modem, so the modulation follows no Recommendation. It
-is not ADSL: it does not talk to a carrier's DSLAM, and it does not need
-megahertz of band.
+The two ends are D-Modem. Thus, the modulation follows no Recommendation.
+It is not ADSL. It does not communicate with the DSLAM of a carrier, and
+it does not need megahertz of band.
 
 The code is in two files:
 
-- `dsp/vwb.cpp`: the modem itself, `VwbModem`;
-- `dsp/dp_vwb.cpp`: the pump the core runs, `DP_VWB`. It refuses to
-  start below 48000 Hz.
+- `dsp/vwb.cpp`: the modem, `VwbModem`.
+- `dsp/dp_vwb.cpp`: the pump that the core operates, `DP_VWB`. It does
+  not start below 48000 Hz.
 
-V.42 (LAPM) and V.44 run on top, as on any other call.
+V.42 (LAPM) and V.44 operate on it, as on all other calls.
 
 ## The signal
 
-The signal is discrete multitone (DMT, the same idea as OFDM) in
-frequency-division duplex: many narrow tones, each with its own QAM,
-and each direction on its own part of the band.
+The signal is discrete multitone (DMT, the same principle as OFDM) in
+frequency-division duplex. It has many narrow tones, each with its own
+QAM. Each direction has its own part of the band.
 
 | Line rate | FFT | Cyclic prefix | Symbol | Tones used |
 |---|---|---|---|---|
@@ -36,190 +36,195 @@ and each direction on its own part of the band.
 | 96000 Hz | 512 | 40 | 552 samples | 21 to 192 (3.9 to 36 kHz) |
 | 192000 Hz | 1024 | 80 | 1104 samples | 21 to 192 |
 
-- The tones are 187.5 Hz apart at every rate, and there are 173.9
-  symbols a second.
-- The band is the WB stick's. Its transformer and DC block cut below
-  about 2.7 kHz. Its codec's ADC passes up to 37 kHz at 96 kHz, and
-  only 21 kHz at 192 kHz. So 96000 Hz is the stick's rate, and 192000
-  Hz is kept for tests and for other hardware.
-- The caller sends on the lower part of the band and the answerer on
-  the upper part, with a guard of 4 tones between them. The split is
-  chosen at training, so that both ways get about the same rate.
-- Each tone carries 0 to 12 bits. Its QAM has ceil(b/2) bits on I and
-  floor(b/2) on Q, Gray coded on each axis, at unit power. Each tone
-  also has a fine gain within ±2.5 dB.
-- In data, each band has 8 pilot tones, which carry the sync symbol's
-  point. They keep the receiver's timing.
+- The tones are 187.5 Hz apart at all rates, and there are 173.9 symbols
+  each second.
+- The band is that of the WB stick. Its transformer and DC block remove
+  the signal below about 2.7 kHz. The ADC of its codec passes up to
+  37 kHz at 96 kHz, and only 21 kHz at 192 kHz. Thus, 96000 Hz is the
+  rate of the stick. We keep 192000 Hz for tests and for other hardware.
+- The caller sends on the lower part of the band, and the answerer sends
+  on the upper part. There is a guard of 4 tones between them. The modems
+  select the split at training. Thus, the two directions get about the
+  same rate.
+- Each tone sends 0 to 12 bits. Its QAM has ceil(b/2) bits on I and
+  floor(b/2) on Q, Gray coded on each axis, at unit power. Each tone also
+  has a fine gain in the range ±2.5 dB.
+- In data, each band has 8 pilot tones, which send the point of the sync
+  symbol. They keep the timing of the receiver.
 
 ### Timing and the two clocks
 
-Each receiver resamples its input onto the far end's clock, with a
+Each receiver resamples its input onto the clock of the far end, with a
 32-tap Kaiser windowed sinc at 256 phases (`VwbInterp`).
 
-A type 2 timing loop drives the resampler. Its error is the slope of
-the pilots' phase errors across the band (or of every tone's, while the
-sync symbols are on). The loop changes only the resampler's rate, never
-its phase in steps. So a correction never puts a step into a symbol, and
-the receiver's own echo stays clean.
+A type 2 timing loop controls the resampler. Its error is the slope of
+the phase errors of the pilots across the band (or of all tones, while
+the sync symbols are on). The loop changes only the rate of the
+resampler. It never changes its phase in steps. Thus, a correction never
+puts a step into a symbol, and the echo of the receiver stays clean.
 
 The answerer is **loop timed**:
 
-1. It sends on the caller's clock: its transmitter goes through the
+1. It sends on the clock of the caller. Its transmitter goes through the
    same mapping as its receiver.
-2. It lines its symbols up with the caller's as they reach its own
+2. It aligns its symbols with those of the caller as they get to its own
    receiver. It measures the delay of its own echo while it sends its
    full-band sync.
 
-Its echo therefore lands on the same symbol boundaries as what it
-receives, and in its own band it is orthogonal to the far signal. At
-the caller, the two are apart by twice the pair's delay. The caller
-measures that offset (its own echo's delay comes from its full-band
-sync). The plan then moves the answerer's symbols by half of it, so
-that at both ends the echo is the same few samples ahead.
+Thus, its echo falls on the same symbol boundaries as the signal that it
+receives. In its own band, the echo is orthogonal to the far signal. At
+the caller, the two are apart by two times the delay of the pair. The
+caller measures that offset (the delay of its own echo comes from its
+full-band sync). Then the plan moves the symbols of the answerer by half
+of it. Thus, at the two ends, the echo is the same few samples ahead.
 
-The FFT window starts half the cyclic prefix (20 samples at 96 kHz)
-before the prefix's end. That leaves 20 samples for the pair's
-dispersion and 20 for the echo's offset.
+The FFT window starts half of the cyclic prefix (20 samples at 96 kHz)
+before the end of the prefix. This leaves 20 samples for the dispersion
+of the pair and 20 for the offset of the echo.
 
-The hybrid's leak of each side's own signal (10 to 20 dB down on the
-stick, -15 dB in the tests) therefore costs nothing measurable. The
-clock offset is tracked whatever it is. The tests run ±100 ppm (the
-stick's crystals are within ±50 ppm), and the receivers report the
-offset they track.
+Thus, the hybrid leak of the own signal of each side (10 to 20 dB down on
+the stick, -15 dB in the tests) has no measurable effect. The receiver
+tracks the clock offset, whatever its value. The tests use ±100 ppm (the
+crystals of the stick are in the range ±50 ppm). The receivers give the
+offset that they track.
 
 ## The start-up
 
 | Step | Caller | Answerer |
 |---|---|---|
 | 1 | probe: tone 24 (4.5 kHz) | listens for it (20 dB over the other tones for 6 symbols) |
-| 2 | finds the sync, goes quiet; measures the timing, the clock, H and the SNR of every tone | sync symbol on the whole band, 160 symbols, then 2 segues (the symbol negated); measures its echo's delay |
-| 3 | sync on the whole band, 160 symbols, then 2 segues; measures its echo's delay | finds it (looking only once its own echo has gone by), measures the same, then locks its transmitter to the caller's clock |
-| 4 | idle (the sync symbol on its message band); looks for the answerer's sync once its own echo has gone by | sync on its message band, 80 symbols, 2 segues, then frames carrying its SNR table |
-| 5 | finds the answerer's sync; on the SNR frame: the plan, then 2 segues and frames carrying the plan | |
-| 6 | | on the plan: GO frames (2, 1), then the plan's sync, 24 symbols, then data |
-| 7 | on the answerer's GO: its own GOs (2, 1), the plan's sync, then data | |
+| 2 | finds the sync, becomes quiet; measures the timing, the clock, H and the SNR of each tone | sync symbol on the full band, 160 symbols, then 2 segues (the symbol negated); measures the delay of its echo |
+| 3 | sync on the full band, 160 symbols, then 2 segues; measures the delay of its echo | finds it (it looks only after its own echo has gone by), measures the same, then locks its transmitter to the clock of the caller |
+| 4 | idle (the sync symbol on its message band); looks for the sync of the answerer after its own echo has gone by | sync on its message band, 80 symbols, 2 segues, then frames with its SNR table |
+| 5 | finds the sync of the answerer; on the SNR frame: the plan, then 2 segues and frames with the plan | |
+| 6 | | on the plan: GO frames (2, 1), then the sync of the plan, 24 symbols, then data |
+| 7 | on the GO of the answerer: its own GOs (2, 1), the sync of the plan, then data | |
 
-The timeline is from `vwb_test`'s logs at 96 kHz:
+The timeline is from the logs of `vwb_test` at 96 kHz:
 
-- the probe is heard after 35 ms;
-- both full-band syncs are done after 2.1 s;
-- the plan is made after 2.8 s;
-- data runs both ways after 5.0 s.
+- The answerer hears the probe after 35 ms.
+- The two full-band syncs are complete after 2.1 s.
+- The plan is complete after 2.8 s.
+- Data moves in the two directions after 5.0 s.
 
-**The echo's tail.** Each side hears its own full-band sync through the
-hybrid, delayed by as much as the host's buffers and the pair take. A
-USB or ALSA line holds tens of milliseconds each way (dmodemd's USB line
-sends its samples about 50 ms ahead). If that echo were taken for the far
-end's sync, the receiver would lock onto it.
+**The tail of the echo.** Each side hears its own full-band sync through
+the hybrid, with the delay of the buffers of the host and the pair. A USB
+or ALSA line holds tens of milliseconds in each direction (the USB line of
+dmodemd sends its samples about 50 ms ahead). If the receiver identified
+that echo as the sync of the far end, it would lock onto it.
 
-So each side looks for the far end's next sync only 32 symbols (184 ms)
-after its own has ended:
+Thus, each side looks for the next sync of the far end only 32 symbols
+(184 ms) after its own sync has ended:
 
-- the answerer, for the caller's full-band sync;
-- the caller, for the answerer's sync on its message band. That sync is
-  80 symbols long (48, plus those 32), so that it is still there to be
-  found and trained on.
+- The answerer looks for the full-band sync of the caller.
+- The caller looks for the sync of the answerer on its message band. That
+  sync is 80 symbols long (48, plus those 32). Thus, it is still there
+  for the caller to find and train on.
 
-**The message channel** is QPSK on the lowest 30% of the tones (the
-caller's) and the highest 30% (the answerer's), at least 16 tones each,
-with 4 pilots each. The plan's split always falls between these two
-bands. So while one side has switched to the plan and the other has not,
-neither side's echo lands on tones it receives.
+**The message channel** is QPSK on the lowest 30% of the tones (for the
+caller) and the highest 30% (for the answerer), with a minimum of 16
+tones each, and 4 pilots each. The split of the plan is always between
+these two bands. Thus, while one side uses the plan and the other side
+does not, the echo of neither side falls on tones that it receives.
 
-- Each bit goes on 2 tones (the caller's) or 4 (the answerer's). The
-  receiver adds the copies, each weighed by its tone's measured SNR.
-- A frame is a type octet, a length (2 octets), the payload and a
-  CRC-32. It is whitened by a PRBS (x^15 + x^14 + 1); a frame of zeros
-  would otherwise peak and clip. It fills a whole number of symbols,
-  the same number for every frame of one direction.
+- Each bit goes on 2 tones (for the caller) or 4 (for the answerer). The
+  receiver adds the copies. It weighs each copy by the measured SNR of
+  its tone.
+- A frame is a type octet, a length (2 octets), the payload and a CRC-32.
+  A PRBS (x^15 + x^14 + 1) whitens it. If not, a frame of zeros would
+  peak and clip. It fills a whole number of symbols, the same number for
+  all frames of one direction.
 - Frames repeat until the far end answers them.
-- The answerer's SNR frame is one octet a tone (dB × 2).
-- The caller's plan frame holds:
-  - the split (as an offset from the band's first tone);
-  - the guard;
-  - the answerer's shift (2 octets);
-  - a code for each tone: its bits, 15 for a pilot, 0 unused;
-  - each tone's gain (128 + 0.1 dB steps).
+- The SNR frame of the answerer has one octet for each tone (dB × 2).
+- The plan frame of the caller holds:
+  - The split (as an offset from the first tone of the band).
+  - The guard.
+  - The shift of the answerer (2 octets).
+  - A code for each tone: its bits, 15 for a pilot, 0 unused.
+  - The gain of each tone (128 + 0.1 dB steps).
 
 **The plan:**
 
-1. Each tone's bits are the most whose SNR need is met with a 4 dB
-   margin. A b-bit QAM needs q²P/2, with q = 4.75 and P the
-   constellation's power at unit spacing.
-2. The split is the one that maximizes the slower direction's bits.
-3. Each band gets 8 pilots, each on the best tone near its place.
-4. Gains equalize the margins within ±2.5 dB, and the band's power is
-   kept.
+1. The bits of each tone are the maximum for which the SNR is sufficient
+   with a 4 dB margin. A b-bit QAM needs q²P/2, with q = 4.75 and P the
+   power of the constellation at unit spacing.
+2. The split is the split that gives the most bits to the slower
+   direction.
+3. Each band gets 8 pilots, each on the best tone near its position.
+4. Gains make the margins equal in the range ±2.5 dB. The power of the
+   band does not change.
 
 ## Data
 
-1. The core's octets go through the self-synchronizing scrambler
-   1 + x^-18 + x^-23 (V.34's GPC, `bits.h`).
+1. The octets of the core go through the self-synchronizing scrambler
+   1 + x^-18 + x^-23 (the GPC of V.34, `bits.h`).
 2. Then RS(255,239) (`rs.cpp`: 8 octets corrected in each codeword).
-3. Then a block interleaver of D codewords. D is as many codewords as
-   30 ms of the line hold, from 1 to 8: 2 at 150 kbit/s.
+3. Then a block interleaver of D codewords. D is the number of codewords
+   that 30 ms of the line hold, from 1 to 8: 2 at 150 kbit/s.
 4. The bits go onto the tones in tone order, least significant first.
 
-The reported rate is the octets' rate: the bits of a symbol, times
-239/255, times 173.9.
+The rate that the modem gives is the rate of the octets: the bits of a
+symbol, times 239/255, times 173.9.
 
-The interleaver is shallow on purpose. V.42's window (15 frames of 128
-octets) waits a round trip for its acknowledgement, and a deeper
-interleaver's delay cut LAPM to 53 kbit/s on a 149 kbit/s pump in the
-tests. At D = 2 it gets 138 kbit/s.
+The interleaver is shallow intentionally. The window of V.42 (15 frames
+of 128 octets) waits a round trip for its acknowledgement. In the tests,
+the delay of a deeper interleaver decreased LAPM to 53 kbit/s on a
+149 kbit/s pump. At D = 2, it gets 138 kbit/s.
 
-The receiver follows the channel on its decisions (LMS, 0.01) and on
-the pilots. It **retrains** (the start-up again; `ATI11` counts it, and
-the core keeps the call) when:
+The receiver follows the channel on its decisions (LMS, 0.01) and on the
+pilots. It **retrains** (it does the start-up again; `ATI11` counts it,
+and the core keeps the call) in these conditions:
 
-- the pilots are lost for 8 symbols;
-- half of the last 32 codewords fail;
-- a start-up phase times out.
+- The pilots are lost for 8 symbols.
+- Half of the last 32 codewords fail.
+- A start-up phase times out.
 
-If there is no data again within S7 seconds, the pump gives up (NO
-CARRIER).
+If there is no data again in S7 seconds, the pump stops (NO CARRIER).
 
 ## Leased lines: AT&L1
 
-A bare pair has no exchange: no dial tone, no ringing, no hook. At 48000
-Hz and above the core treats the line as one without an exchange, with
-or without `AT&L1`:
+A bare pair has no exchange: no dial tone, no ring signal, no hook. At
+48000 Hz and higher, the core operates the line as a line without an
+exchange, with or without `AT&L1`:
 
-- it never runs call progress;
-- `ATD` (with any number, or none) starts the data pump as the caller at
-  once;
-- `ATA` starts it as the answerer, which waits for the caller's probe for
-  S7 seconds.
+- It never does call progress.
+- `ATD` (with a number or with no number) starts the data pump as the
+  caller immediately.
+- `ATA` starts it as the answerer, which waits for the probe of the
+  caller for S7 seconds.
 
-`AT&L1` (S47=1, the leased line setting; the voice band's leased lines
-are in [leased.md](../leased.md)) adds the behaviour of a permanent
+`AT&L1` (S47=1, the leased line setting; the leased lines of the voice
+band are in [leased.md](../leased.md)) adds the behaviour of a permanent
 connection:
 
-- `ATS0=1` (any S0 but 0) answers with no ring as soon as the modem is
-  idle. Each time a call ends, it waits for the caller's probe again.
-- When the line ends a call (NO CARRIER: no data again within S7), the
-  modem starts it again by itself 2 s later. The caller dials again, and
+- `ATS0=1` (all values of S0 except 0) answers with no ring signal
+  immediately when the modem is idle. Each time a call ends, it waits for
+  the probe of the caller again.
+- When the line ends a call (NO CARRIER: no data again in S7), the modem
+  starts it again automatically 2 s later. The caller dials again, and
   the answerer waits for the probe again.
 
-`ATH`, dropping DTR, `ATZ` or `AT&L0` stop this until the next command
-line, so that a command can be typed between the attempts.
+`ATH`, a drop of DTR, `ATZ` or `AT&L0` stop this until the next command
+line. Thus, you can type a command between the attempts.
 
 ## Rates measured in simulation
 
-Both ends run on the simulated pair of `dsp/test/vwb_line.cpp` at 96 kHz:
+The two ends operate on the simulated pair of `dsp/test/vwb_line.cpp` at
+96 kHz:
 
-- the cable is 24 AWG with a loss of k·sqrt(f)·length (k = 0.025
-  dB/km/sqrt(Hz), about 8 dB/km at 100 kHz), its skin-effect phase,
-  and 5 µs/km of delay;
-- each end's transformer is a high pass at 2.7 kHz;
-- white noise at the receivers;
-- -15 dB of each side's own signal at its receiver (the hybrid);
-- the answerer's clock 100 ppm fast (resampled to and from the line);
-- about 5.3 ms of latency each way (the two sides' converters and
-  buffers), in blocks of at most 5 ms.
+- The cable is 24 AWG with a loss of k·sqrt(f)·length (k = 0.025
+  dB/km/sqrt(Hz), about 8 dB/km at 100 kHz), its skin-effect phase, and
+  5 µs/km of delay.
+- The transformer of each end is a high pass at 2.7 kHz.
+- White noise at the receivers.
+- -15 dB of the own signal of each side at its receiver (the hybrid).
+- The clock of the answerer is 100 ppm fast (resampled to and from the
+  line).
+- About 5.3 ms of latency in each direction (the converters and buffers
+  of the two sides), in blocks of a maximum of 5 ms.
 
-All rates are octets after RS, each way, both ways at once. Every case
-ran with no bit error.
+All rates are octets after RS, in each direction, with the two directions
+at the same time. All cases had no bit errors.
 
 | Pair | Noise (below a tone as sent) | Caller → answerer | Answerer → caller |
 |---|---|---|---|
@@ -233,31 +238,33 @@ ran with no bit error.
 | 1 km at 48000 Hz | 60 dB | 60636 | 60636 |
 | 1 km at 192000 Hz | 60 dB | 148656 | 148656 |
 
-148656 bit/s is the most there is at 96 kHz: 76 data tones a way at 12
-bits. More would need tones above 36 kHz (the stick's ADC passes 37
-kHz) or more bits a tone. That is about 300 kbit/s both ways together,
-as SPEC-WB expected.
+148656 bit/s is the maximum at 96 kHz: 76 data tones in each direction at
+12 bits. For more, tones above 36 kHz (the ADC of the stick passes
+37 kHz) or more bits on each tone are necessary. This is about 300 kbit/s
+for the two directions together, as SPEC-WB expected.
 
 Other results:
 
-- **Through V.42.** Under libdmodem (`vwb_call_test`), 400 kB each way
-  at once, byte for byte, went at 138558 bit/s each way through V.42 on
-  the 148656 bit/s pump.
-- **Through a host's buffers.** With each end's samples 4672 ahead and
-  in 20 ms frames, as dmodemd's USB line has them (`vwb_call_test`'s
-  HostLatency), the call connects as before; V.42 then carries 83 kbit/s
-  each way (LAPM's window waits a longer round trip). dmodemd itself
-  runs the call between two fake WB sticks on this pair in real time
+- **Through V.42.** Under libdmodem (`vwb_call_test`), 400 kB in each
+  direction at the same time, byte for byte, went at 138558 bit/s in each
+  direction through V.42 on the 148656 bit/s pump.
+- **Through the buffers of a host.** The samples of each end were 4672
+  ahead and in 20 ms frames, as on the USB line of dmodemd (the
+  HostLatency test of `vwb_call_test`). The call connects as before. V.42
+  then sends 83 kbit/s in each direction (the window of LAPM waits a
+  longer round trip). dmodemd itself operates the call between two fake
+  WB sticks on this pair in real time
   (`frontend/dmodemd/test/pico_wb_test.py`, [hardware.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).
-- **Dropout.** A 0.5 s cut of the pair costs one retrain. The data goes
-  on after it, and LAPM sends again what was lost.
-- **CPU.** One end takes about 1.5% of one x86 core at 96 kHz.
+- **Dropout.** A 0.5 s cut of the pair causes one retrain. The data
+  continues after it, and LAPM sends again the data that was lost.
+- **CPU.** One end uses about 1.5% of one x86 core at 96 kHz.
 
 ## Left to do
 
-- Bit swapping in a call (a tone's bits moved as its noise changes).
+- Bit swapping in a call (the bits of a tone move when its noise
+  changes).
 - Trellis coding.
-- V.42's extended windows, which a long interleaver, and a host's
-  buffers, would need.
-- A real pair, and a real WB stick (dmodemd's `--usb` drives it:
+- The extended windows of V.42, which a long interleaver and the buffers
+  of a host would need.
+- A real pair, and a real WB stick (the `--usb` of dmodemd operates it:
   [hardware.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).
