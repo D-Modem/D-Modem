@@ -61,7 +61,7 @@ The LR parser starts at offset 0x14BBD (CPU address 0xABBD).
   class 1 flag.
 - If the LR has no parameter 2, the framing mode stays at 1.
 
-Thus the DeskPorte accepts class 1. It does not reject an LR that asks
+Thus, the DeskPorte accepts class 1. It does not reject an LR that asks
 for framing mode 1, and it treats an LR with no framing mode parameter
 as class 1.
 
@@ -75,7 +75,7 @@ When the class 1 flag is set, the firmware adds waits:
 We did not find the unit of the wait routine. If the unit is the 12.5 ms
 tick of the MNP 10 timers, the waits are 2 s and 0.5 s. These waits
 agree with a two-way alternate line, where the modem must wait for the
-line to turn around. This is our interpretation. We did not see it on a
+line to change direction. This is our interpretation. We did not see it on a
 line.
 
 ## F3: parameters 3 and 4
@@ -99,9 +99,9 @@ the value 2.
 - A value of 1 sets the 0x02 bit of the flags at 0x7E41. Nothing else
   changes in the LR exchange.
 - The LR that the DeskPorte sends has the stored value in this octet
-  (offset 0x14F5B). Thus it answers a 1 with a 1.
+  (offset 0x14F5B). Thus, it answers a 1 with a 1.
 
-Thus a value of 1 probably marks an older MNP modem. We did not find
+Thus, a value of 1 probably marks an older MNP modem. We did not find
 which older modems send it.
 
 ## F5: parameter 9
@@ -116,7 +116,7 @@ The parser reads parameter 9 at offset 0x14CEA:
 - 0x02 bit and the 0x20, 0x40, 0x80 bits: the parser does not read
   them.
 
-Thus the DeskPorte has no MNP 7 in parameter 9. If MNP 7 has a bit in
+Thus, the DeskPorte has no MNP 7 in parameter 9. If MNP 7 has a bit in
 parameter 9, it is probably the 0x02 bit, because the other low bits
 have a meaning. This is a guess.
 

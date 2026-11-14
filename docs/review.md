@@ -1,48 +1,54 @@
 # Code review (October 2026)
 
-In October 2026 the whole of D-Modem's code was reviewed. Every function
-got a comment explaining what it does, small and clearly correct fixes
-were made straight away (each with a test where a test could catch the
-bug), and anything bigger was written down to be dealt with.
+In October 2026, we reviewed all of the code of D-Modem. During the review, we did these tasks:
 
-**Result: every problem the review found has now been fixed.** Nothing
-is left open.
+- We gave each function a comment that tells what it does.
+- We made small fixes that were clearly correct immediately. Each fix has a test, where a test can find the bug.
+- We wrote down each larger problem, to correct it later.
 
-The [technical details](review-details.md) list each fix: the file, what
-was wrong, and the test that now checks it.
+**Result: we corrected all the problems that the review found.** No problem
+stays open.
+
+The [technical details](review-details.md) give each fix: the file, the
+problem, and the test that now checks it.
 
 ## What kinds of problems were fixed
 
-- **Error correction and compression.** Bad or oversized data frames
-  from the other modem could overflow a buffer; some timers and retry
-  counts did not match the V.42 standard; one setting combination
-  between two modems was negotiated wrongly. A modem that called a
-  modem without error correction could wait for ever.
-- **The AT commands.** Some commands answered with the result of the
-  previous command; `AT+MS=56` (K56flex) was refused; data left over at
-  the end of a call could later be run as AT commands.
-- **Fax.** Several ways a fax page or frame could be lost or sent twice,
-  and some bad input from a fax file that could crash the program or loop
-  for ever.
-- **The modem's signal processing.** Unusual or bad messages from the
-  other modem during start-up could crash the modem; on noisy lines V.34
-  could choose a speed that could not work; some start-up messages that
-  went missing were never sent again; leftover sound could reach the line
-  at the end of a block; the answer tone came a second late. Code shared
-  between calls running at the same time was made safe for that.
-- **The daemon and the phone-system modules.** Dialling `ATDT555...`
-  sent the `T` as part of the number; a SIP password containing `@` was
-  read wrongly; memory and file handles leaked between calls; files that
-  need root were opened too late; and a slow server could make the call
-  drop while the modem waited for it.
-- **The tests themselves.** Several tests passed when they should have
-  failed, or failed now and then for reasons that had nothing to do with
-  D-Modem (timing, leftover memory in the test harness). These were
-  fixed so a failure now means a real problem.
+- **Error correction and compression.**
+  - Bad or too large data frames from the other modem could cause a buffer overflow.
+  - Some timers and retry counts were different from the V.42 standard.
+  - The two modems negotiated one combination of settings incorrectly.
+  - A modem that called a modem without error correction could wait for ever.
+- **The AT commands.**
+  - Some commands answered with the result of the previous command.
+  - The modem refused `AT+MS=56` (K56flex).
+  - Data that stayed at the end of a call could later run as AT commands.
+- **Fax.**
+  - In some conditions, the modem lost a fax page or frame, or sent it two times.
+  - Some bad input from a fax file could cause the program to crash or to loop for ever.
+- **The signal processing of the modem.**
+  - Unusual or bad messages from the other modem during start-up could cause the modem to crash.
+  - On noisy lines, V.34 could select a speed that could not operate.
+  - When some start-up messages did not arrive, the modem did not send them again.
+  - Sound that stayed at the end of a block could go to the line.
+  - The answer tone was one second late.
+  - We made the code that calls share, when they run at the same time, safe for this use.
+- **The daemon and the phone-system modules.**
+  - When you dialled `ATDT555...`, the modem sent the `T` as part of the number.
+  - The modem read a SIP password that contains `@` incorrectly.
+  - Memory and file handles leaked from one call to the next.
+  - The modem opened files that must have root access too late.
+  - A slow server could cause the call to drop while the modem waited for the server.
+- **The tests themselves.**
+  - Some tests passed when they must fail.
+  - Some tests failed at random times for reasons that were not related to
+    D-Modem (timing, memory that stayed in the test harness).
+
+  We corrected these tests. Now, a failure shows a real problem.
 
 ## Checked and left alone
 
-One thing that looked wrong was checked and kept: in V.92's quick start,
-D-Modem ignores one flag about which carrier frequency the other modem
-uses, because the real modems tested send on the same carrier anyway, and
-following the flag made one of them retrain.
+We examined one item that looked incorrect, and we kept it. In the quick start of V.92,
+D-Modem ignores one flag that tells which carrier frequency the other modem
+uses. The real modems that we tested send on the same carrier, and when D-Modem
+obeyed the flag, one of them retrained.

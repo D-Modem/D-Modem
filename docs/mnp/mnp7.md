@@ -13,7 +13,7 @@ descriptions of MNP, and we did not confirm them.
 ## What it does
 
 - MNP 7 uses Huffman coding. The code of a character depends on the
-  character before it (a first-order Markov model). Thus there are
+  character before it (a first-order Markov model). Thus, there are
   many code tables, one for each previous character.
 - The tables adapt to the data during the call, as in MNP 5.
 - MNP 7 also has run-length coding, as in MNP 5.
@@ -22,7 +22,7 @@ descriptions of MNP, and we did not confirm them.
 
 The difference from MNP 5 is the Markov model. MNP 5 has one table for
 all characters. MNP 7 knows, for example, that "u" occurs very
-frequently after "q". Thus the code for "u" after "q" can be very short.
+frequently after "q". Thus, the code for "u" after "q" can be very short.
 
 ## On the line
 
@@ -30,9 +30,9 @@ We do not know how MNP 7 is negotiated.
 
 - MNP 5 is the 0x01 bit of LR parameter 9.
 - The DeskPorte firmware uses the 0x04, 0x08 and 0x10 bits of
-  parameter 9 for V.42bis. It does not read the 0x02 bit (see
+  parameter 9 for V.42bis. It does not read the 0x02 bit (refer to
   [firmware-findings.md](firmware-findings.md#f5-parameter-9)).
-- Thus the 0x02 bit of parameter 9 is a probable place for MNP 7. This
+- Thus, the 0x02 bit of parameter 9 is a probable place for MNP 7. This
   is a guess. A Microcom ROM with MNP 7 can confirm it.
 
 ## D-Modem

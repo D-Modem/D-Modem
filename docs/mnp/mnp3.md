@@ -32,5 +32,5 @@ D-Modem supports MNP 3. It is the default.
   `link/mnp.cpp`).
 - The data phase uses the HDLC framer of LAPM (`Hdlc` in `link/hdlc.h`).
 - All the interop tests with other soft modems use framing mode 3, with
-  k = 8 and 256-octet LT frames. See
+  k = 8 and 256-octet LT frames. Refer to
   [the technical details of the link layer](../link-details.md#with-the-peers).

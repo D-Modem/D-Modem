@@ -25,7 +25,7 @@ The first octet of each header is the length indication. It does not
 count itself.
 
 The DeskPorte firmware gives the class number 4 when the 0x02 bit is
-negotiated (see
+negotiated (refer to
 [firmware-findings.md](firmware-findings.md#f1-the-class-number)). The
 0x01 bit alone does not give class 4.
 
@@ -51,7 +51,7 @@ Wikipedia gives LT sizes from 64 to 256 octets, and says that the user
 can set a fixed size (secondary source).
 
 The receiver does not have to know about adaptive packet assembly. Any
-LT up to N401 octets is correct. Thus adaptive packet assembly has no
+LT up to N401 octets is correct. Thus, adaptive packet assembly has no
 LR parameter of its own, and it is not a wire rule.
 
 ## The DeskPorte
@@ -79,7 +79,7 @@ assembly.
   octets. Without it, the LT size is N401. `AT\A0` to `AT\A3` set N401 to
   64, 128, 192 or 256 octets.
 - The LT size does not change during a call without MNP 10. On an MNP 10
-  call, the line probes and the retransmissions change it (see
+  call, the line probes and the retransmissions change it (refer to
   [mnp10.md](mnp10.md)).
 - The `Link.MnpOctets` test examines a call with no optimizations.
 
