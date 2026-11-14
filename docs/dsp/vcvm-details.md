@@ -3,7 +3,7 @@
 This is the technical companion to [V.cvm: data over mobile phone calls](vcvm.md), the plain-English overview. Start there; this page keeps the full detail: the code's names, the Recommendations' clauses, the numbers and the test lists.
 
 `AT+MS=VCVM` runs the DCE (the modem) of the proposed Recommendation in
-[docs/cellular](../cellular/v_cvm.tex) ([v_cvm.pdf](../v_cvm.pdf)). It
+[docs/cellular](../cellular/v_cvm.tex) ([v_cvm.pdf](../specs/v_cvm.pdf)). It
 carries data through the speech codecs of mobile calls (AMR, AMR-WB,
 EVS), where V.34 and V.32 do not get through. The Recommendation gives
 the reasons and the measurements; this page describes the
@@ -129,7 +129,7 @@ V.cvm's rates (175 to 3500 bit/s), a call's data is often a few short
 messages, which are over before the dictionary has learnt much.
 
 So both DCEs can start V.44 from the same text: the Recommendation's
-Annex E ([annexes.tex](../cellular/annexes.tex), [v_cvm.pdf](../v_cvm.pdf)).
+Annex E ([annexes.tex](../cellular/annexes.tex), [v_cvm.pdf](../specs/v_cvm.pdf)).
 It has 113 lines, 3505 octets, of HTTP, mail, HTML, JSON and XML, NMEA
 sentences, logins and common English. It uses 7-bit characters only, so
 that V.44's ordinals stay 7 bits.

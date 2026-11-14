@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 D-Modem Authors
  *
- *    vcvm_data.h - V.cvm's data mode (docs/v_cvm.pdf clauses 10.8, 10.9,
+ *    vcvm_data.h - V.cvm's data mode (docs/specs/v_cvm.pdf clauses 10.8, 10.9,
  *                  11, Annex C): the octets through the scrambler
  *                  (GPC from the calling DCE, GPA from the answering
  *                  one), the Reed-Solomon code (RS(32,k)), its

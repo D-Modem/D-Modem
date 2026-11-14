@@ -3,7 +3,7 @@
  * Copyright (C) 2026 D-Modem Authors
  *
  *    vcvm.h - the signal set of V.cvm, data over mobile speech paths
- *             (docs/v_cvm.pdf, clause 10)
+ *             (docs/specs/v_cvm.pdf, clause 10)
  *
  *    The comb: tones k * spacing (Table 10-2's N200 ... S400) at the
  *    signal interface's 8000, 16000 or 32000 Hz, each symbol a useful

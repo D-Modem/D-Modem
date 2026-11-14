@@ -38,7 +38,8 @@ measurements, and test lists.
     customer's 56k modem
   - [V.92](dsp/v92.md): quick connect, modem-on-hold and faster uploads
   - [V.91](dsp/v91.md): about 62000 bit/s between two digital modems
-  - [V.cvm](dsp/vcvm.md): data through mobile phone calls
+  - [V.cvm](dsp/vcvm.md): data through mobile phone calls (the
+    proposed standard: [The V.cvm proposal](vcvm-spec.md))
   - [V.wb](dsp/vwb.md): about 149000 bit/s on a bare pair of wires
   - [K56flex](dsp/k56flex.md): the older 56k standard (as the server and
     as the customer's modem)
@@ -112,10 +113,13 @@ measurements, and test lists.
   [the LaTeX source](at/at_commands.tex), and the
   [AT manual](../.github/workflows/at-manual.yml) workflow rebuilds and
   commits them whenever the LaTeX changes on main.
-- [Data over mobile telephony's speech paths](v_cvm.pdf): D-Modem's
+- [Data over mobile telephony's speech paths](specs/v_cvm.pdf): D-Modem's
   proposed V.cvm standard, written as an ITU-T Recommendation, with
   measurements of what mobile codecs do to modem signals. Its source is
   in [cellular/](cellular/v_cvm.tex); `docs/cellular/build.sh` builds it
   and `cellular/measure/` repeats the measurements.
+  [The V.cvm proposal](vcvm-spec.md) tells what it says in plain words,
+  and [its technical details](vcvm-spec-details.md) give a guide to each
+  clause.
 - [Unimodem diagnostics](specs/umud10.rtf): Microsoft's specification,
   which `AT#UD` follows

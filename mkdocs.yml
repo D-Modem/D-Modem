@@ -36,6 +36,7 @@ nav:
     - ISDN: isdn.md
     - Voice and data together (V.70): v70.md
     - Modem relay (V.150.1): v150.md
+    - The V.cvm proposal: vcvm-spec.md
     - Leased lines and dry pairs: leased.md
   - Phone systems:
     - Modules: modules.md
