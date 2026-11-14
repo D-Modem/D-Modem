@@ -1,13 +1,13 @@
 # platforms/haiku/
 
-D-Modem on [Haiku](https://www.haiku-os.org/) (x86_64).  On Haiku itself
-nothing here is needed: `cmake -B build` there.
+D-Modem on [Haiku](https://www.haiku-os.org/) (x86_64). On Haiku itself, you do not
+need the files in this folder. On Haiku, use `cmake -B build`.
 
 | File | What it does |
 |------|--------------|
-| `haiku.cmake` | Toolchain file for building for Haiku from Linux, with Clang and lld |
-| `haiku_sysroot.py` | Makes the sysroot `haiku.cmake` needs, from Haiku's own packages |
-| `libre-haiku.patch` | libre's patch for Haiku, applied by `cmake/libre.cmake` |
+| `haiku.cmake` | Toolchain file to build for Haiku from Linux, with Clang and lld |
+| `haiku_sysroot.py` | Makes the sysroot that `haiku.cmake` must have, from the packages of Haiku |
+| `libre-haiku.patch` | The patch of libre for Haiku. `cmake/libre.cmake` applies it. |
 
     python3 platforms/haiku/haiku_sysroot.py ~/haiku-sysroot
     cmake -B build-haiku -G Ninja \
