@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 D-Modem Authors
  *
- *    vcvm_modem.h - one V.cvm DCE after V.8 (docs/v_cvm.pdf clauses 8 to
+ *    vcvm_modem.h - one V.cvm DCE after V.8 (docs/specs/v_cvm.pdf clauses 8 to
  *                   11), sample by sample: the start-up (vcvm_startup.h),
  *                   then phase 4 in each direction (vcvm_data.h), its
  *                   renegotiations and its retrains (9.5).

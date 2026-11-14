@@ -242,7 +242,7 @@ where both DCEs indicate it, the core tells the link
 A small Zstandard codec of our own, written from RFC 8878
 (`link/zstd_codec.{h,cpp}`, about 1700 lines, no libzstd), and its
 negotiation in XID. Annex F of the V.cvm Recommendation
-(`docs/v_cvm.pdf`) is its specification, but it is not used on V.cvm
+(`docs/specs/v_cvm.pdf`) is its specification, but it is not used on V.cvm
 alone.
 
 ### Negotiation

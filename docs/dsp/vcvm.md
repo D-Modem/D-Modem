@@ -6,7 +6,7 @@ AMR-WB and EVS, which are built to keep a voice sounding natural, not to
 keep a modem's tones intact. V.34 and V.32 simply do not get through.
 
 **V.cvm** is D-Modem's proposal for a modem that does. It is written in
-the form of an ITU-T Recommendation ([v_cvm.pdf](../v_cvm.pdf), with its
+the form of an ITU-T Recommendation ([v_cvm.pdf](../specs/v_cvm.pdf), with its
 LaTeX source in [cellular/](../cellular/v_cvm.tex)), which explains the
 reasons and the measurements behind it. This page is about D-Modem's
 implementation, which you start with `AT+MS=VCVM`.

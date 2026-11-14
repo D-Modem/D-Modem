@@ -5,7 +5,7 @@
  *    rs.h - a Reed-Solomon code over GF(2^8): the field of x^8 + x^4 +
  *           x^3 + x^2 + 1 and the generator prod (x - a^i), i = 0 ..
  *           2t - 1, of G.975's RS(255,239), shortened to n octets (V.cvm's
- *           inner code, docs/v_cvm.pdf Annex C)
+ *           inner code, docs/specs/v_cvm.pdf Annex C)
  *
  *    A codeword is its k information octets then its n - k check octets,
  *    the first octet the highest order coefficient.  The decoder

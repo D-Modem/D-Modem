@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 D-Modem Authors
  *
- *    vcvm_startup.h - V.cvm's start-up after V.8 (docs/v_cvm.pdf,
+ *    vcvm_startup.h - V.cvm's start-up after V.8 (docs/specs/v_cvm.pdf,
  *                     clauses 8 and 9, Annexes A and B)
  *
  *    The capabilities: the information field of Annex A that CM and JM
