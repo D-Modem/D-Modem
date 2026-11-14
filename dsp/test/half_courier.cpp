@@ -44,7 +44,8 @@
  *    those line times (s); COURIER_WATCH_TRIGGER=<hex>=<hex>: those
  *    times counted from when that word first has that value;
  *    COURIER_WATCH_PC=<hex>: the words logged each time the DSP comes to
- *    that address instead (the trigger and the time as before).
+ *    that address instead, with its data page (the trigger and the time
+ *    as before).
  *
  *    COURIER_DEBUG=1 prints the DTE's traffic, the hook and the codec's
  *    rate, 2 the supervisor's messages to the DSP and the DSP's to it
@@ -247,7 +248,8 @@ int CourierPeer::start()
 				snprintf(b, sizeof(b), " %04x", d.D[w.first & 0xffff]);
 				l += b;
 			}
-			log("<%07.3f> pc%s\n", ms() / 1000.0, l.c_str());
+			log("<%07.3f> pc (dp %03x)%s\n", ms() / 1000.0, d.dp,
+			    l.c_str());
 		});
 	}
 	std::string err;
