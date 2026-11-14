@@ -6,9 +6,11 @@
  *
  */
 
+#include <math.h>
 #include <string.h>
 
 #include "bits.h"
+#include "g711.h"
 #include "k56flex.h"
 #include "reinit.h"
 
@@ -289,6 +291,34 @@ s16 K56Dec::frame(const unsigned char code[8], unsigned char *bits)
 			descramble(&scr, SCR_GPA, static_cast<s16>((w >> i) & 1)));
 	half ^= 1;
 	return nb;
+}
+
+/* see k56flex.h */
+float k56_rbs_value(const s16 *lin, s16 alaw, unsigned char m, s16 pad,
+		    s16 a, s16 b, s16 neg)
+{
+	static const float loss[3] = { 1.0f, 0.70794578f, 0.50118723f };
+	unsigned char q = m & 0x7f;
+	if (a == 1)
+		q &= 0x7e;
+	if (pad > 0 && pad < 3) {
+		/* re-encoded by G.711's encoder (its decision levels are
+		   not half way between two values at a segment's end,
+		   and a negative value's are not a positive one's) */
+		long x = lrintf((neg ? -lin[q] : lin[q]) * loss[pad]);
+		q = k56_code(g711::encode(alaw, static_cast<int>(x)), alaw) &
+			0x7f;
+	}
+	switch (b) {
+	case 0:
+		return lin[q | 1];
+	case 1:
+		return lin[q & 0x7e];
+	case 3:
+		return 0.5f * (lin[q & 0x7e] + lin[q | 1]);
+	default:
+		return lin[q];
+	}
 }
 
 } // namespace dsp

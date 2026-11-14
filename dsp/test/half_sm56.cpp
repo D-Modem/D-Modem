@@ -216,14 +216,82 @@ static u32 thread_info[16];
 static u32 task[0x800];
 static u32 task_signal[0x40];
 
-/* SIGTRAP at a patched place: eax our thread_info, on past the nop */
+/* SM56_TRACE=1: RBS_LOSS_Init's first byte (push %ebp) made int3,
+   which gives us its K56flex front end (eax, "MOD"): its states are
+   then logged as they change (trace_k56) */
+#define RBS_LOSS_INIT_AT 0x9ddf8
+static u32 k56_state;
+static bool trace;
+
+/* SIGTRAP at a patched place: eax our thread_info, on past the nop; or
+   at RBS_LOSS_INIT_AT, its push %ebp done here */
 static void on_trap(int sig, siginfo_t *si, void *ctx)
 {
 	ucontext_t *uc = (ucontext_t *)ctx;
 	greg_t *g = uc->uc_mcontext.gregs;
+	uintptr_t text = (uintptr_t)init_module - INIT_MODULE_AT;
 	(void)sig; (void)si;
+	if ((uintptr_t)g[REG_EIP] == text + RBS_LOSS_INIT_AT + 1) {
+		k56_state = (u32)g[REG_EAX];
+		g[REG_ESP] -= 4;
+		*(u32 *)(uintptr_t)g[REG_ESP] = (u32)g[REG_EBP];
+		return;
+	}
 	g[REG_EAX] = (greg_t)(uintptr_t)thread_info;
 	g[REG_EIP] += 1;        /* (past the nop) */
+}
+
+/* SM56_TRACE: the patch at RBS_LOSS_INIT_AT */
+static int trace_patch(void)
+{
+	uintptr_t text = (uintptr_t)init_module - INIT_MODULE_AT;
+	byte *p = (byte *)(text + RBS_LOSS_INIT_AT);
+	if (p[0] != 0x55 || mprotect((void *)((uintptr_t)p & ~4095u), 8192,
+				     PROT_READ | PROT_WRITE | PROT_EXEC))
+		return -1;
+	p[0] = 0xcc;
+	return 0;
+}
+
+/* SM56_TRACE: the K56flex front end's state (MOD + 0x30f8, the
+   RxFront_StateTableEntries index), the pad it found (+ 0xf390, dB),
+   its gain (+ 0xf4b4), the equaliser's mse (+ 0x3088), and the
+   retrain flag, cause and phase 4 counter of its SC struct (MOD -
+   0x113c4: + 0xb73, + 0x1d5, + 0x20a28), each time the state, the
+   retrain flag or the phase 4 transmitter's or receiver's state (SC
+   + 0xc56c + 0x125, + 0x126) changes; in the data (state 25) the
+   decisions' error (+ 0x3090), its mean (+ 0x308c) and the rates
+   (SC + 0x176, + 0x177) every 100 interrupts */
+static void trace_k56(void)
+{
+	static u32 last = ~0u;
+	static int last_rt = -1;
+	if (!k56_state)
+		return;
+	byte *mod = (byte *)(uintptr_t)k56_state;
+	byte *sc = mod - 0x113c4;
+	u32 st = *(u32 *)(mod + 0x30f8);
+	int rt = sc[0xb73];
+	static int last_p4 = -1;
+	int p4 = sc[0xc56c + 0x125] | sc[0xc56c + 0x126] << 8;
+	static unsigned tick;
+	if (st == 25 && ++tick % 100 == 0)
+		fprintf(stderr, "sm56: data: error %g (mean %g), rates %d/%d, "
+			"symbol %u\n", *(float *)(mod + 0x3090),
+			*(float *)(mod + 0x308c), sc[0x176], sc[0x177],
+			*(u32 *)(mod + 0x30f0));
+	if (st == last && rt == last_rt && p4 == last_p4)
+		return;
+	last = st;
+	last_rt = rt;
+	last_p4 = p4;
+	fprintf(stderr, "sm56: phase 4 tx state %d, rx state %d, count %u\n",
+		p4 & 255, p4 >> 8, *(u32 *)(mod + 0x30f0));
+	fprintf(stderr, "sm56: K56flex front end state %u, pad %d dB, "
+		"gain %.3f, mse %g, retrain %d cause %#x, count %d\n", st,
+		*(int *)(mod + 0xf390), *(float *)(mod + 0xf4b4),
+		*(float *)(mod + 0x3088), rt, sc[0x1d5],
+		*(short *)(sc + 0x20a28));
 }
 
 /* its interrupt and its deferred routine save the FPU (fnsave, 108
@@ -639,6 +707,8 @@ short Sm56::line_sample(short in)
 			run_tasklets();
 		}
 		in_isr = false;
+		if (trace)
+			trace_k56();
 	}
 	return out;
 }
@@ -677,7 +747,8 @@ int Sm56::start()
 	sigaction(SIGSEGV, &sa, NULL);
 	sa.sa_sigaction = on_trap;
 	sigaction(SIGTRAP, &sa, NULL);
-	if (current_patch() || fpu_patch()) {
+	trace = getenv("SM56_TRACE") && atoi(getenv("SM56_TRACE"));
+	if (current_patch() || fpu_patch() || (trace && trace_patch())) {
 		perror("sm56: mprotect");
 		return -1;
 	}

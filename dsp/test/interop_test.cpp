@@ -388,6 +388,72 @@ std::vector<Call> calls()
 	      ".*k56rx: MP at.*K56flex connect [0-9]+/56000 \\(analogue "
 	      "modem\\)",
 	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect 56000/" });
+	/* a digital pad and robbed bits on the way down: TRN1B finds
+	   them (k56rx's means against SM56's models), our J's octet
+	   says them, and the digital modem codes for them; the rate the
+	   least distance allows */
+	add("open", "open_k56flex_pad3", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_PAD=3", "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: TRN1B: pad 3 dB, robbed bits 0000"
+	      ".*K56flex connect [0-9]+/54000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)the caller's J \\(16 point, robbed bits 0x40\\)"
+	      ".*K56flex connect 54000/" });
+	add("open", "open_k56flex_rbs", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_RBS=0x24", "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: TRN1B: pad 0 dB, robbed bits 0x12"
+	      ".*K56flex connect [0-9]+/5[0-9]000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)robbed bits 0x12\\).*K56flex connect 5[0-9]000/" });
+	add("open", "open_k56flex_pad6_rbs", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_PAD=6", "NET_RBS=0x21",
+	      "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: TRN1B: pad 6 dB, robbed bits 0x18"
+	      ".*K56flex connect [0-9]+/46000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)robbed bits 0x98\\).*K56flex connect 46000/" });
+	/* rate renegotiation in the data mode: ours, the analogue
+	   modem's S, to 50000 bit/s; and the digital modem's R, the
+	   analogue modem asking for what its error allows */
+	add("open", "open_k56flex_reneg", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_K56_RENEG=2000:10c",
+	      "EXPECT_A=(?s)K56flex renegotiation \\(test\\).*"
+	      "K56flex renegotiated [0-9]+/50000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)K56flex renegotiation \\(the caller's\\).*"
+	      "K56flex renegotiated 50000/" });
+	add("open", "open_k56flex_reneg_dm", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_K56_RENEG=2000a",
+	      "EXPECT_A=(?s)k56rx: R in data mode.*K56flex renegotiation "
+	      "\\(the digital modem's\\).*K56flex renegotiated "
+	      "[0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)K56flex renegotiation \\(test\\).*"
+	      "K56flex renegotiated 56000/" });
+	/* retrains (phase 2 again) in the data mode, by either modem */
+	add("open", "open_k56flex_retrain", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_V34_RETRAIN=2000c",
+	      "EXPECT_A=(?s)retrain 1 \\(test\\).*"
+	      "K56flex retrained [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)retrain 1 \\(tone B\\).*"
+	      "K56flex retrained 56000/" });
+	add("open", "open_k56flex_retrain_dm", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_V34_RETRAIN=2000a",
+	      "EXPECT_A=(?s)retrain 1 \\(tone A\\).*"
+	      "K56flex retrained [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)retrain 1 \\(test\\).*"
+	      "K56flex retrained 56000/" });
+	/* noise down from 4 s into the data mode: the analogue modem's
+	   watch on the error retrains (the error is over 4 times the
+	   limit), and the new training takes a lower rate */
+	add("open", "open_k56flex_noise", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "NET_NOISE=24:30",
+	      "NET_NOISE_DIR=ba",
+	      "EXPECT_A=(?s)retrain 1 \\(errors\\).*"
+	      "K56flex retrained [0-9]+/4[0-9]000 \\(analogue modem\\)" });
+	/* noise that grows slowly: renegotiations down, one rate at a
+	   time */
+	add("open", "open_k56flex_noise_ramp", "open", "open8",
+	    "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "NET_NOISE=24:30:20",
+	      "NET_NOISE_DIR=ba",
+	      "EXPECT_A=(?s)K56flex renegotiation \\(rate down\\).*"
+	      "K56flex renegotiated [0-9]+/5[0-9]000 \\(analogue modem\\)" });
 	add("open", "open_k56flex_alaw", "open", "open8", "ATX3;AT+MS=56",
 	    { "NET=9600:8000:alaw", "DSP_G711=alaw",
 	      "EXPECT_A=(?s)INFO1a: K56flex \\(0x5\\).*A-law.*"
@@ -1042,6 +1108,14 @@ std::vector<Call> calls()
 	add("sm56", "sm56_k56flex", "sm56", "open8", "ATX3;AT+MS=K56FLEX",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect",
+	      "PROTO_B=ATX3;AT+MS=56" });
+	/* robbed bits on the codes to it (netsim's NET_RBS_TO: its line
+	   digital, as the call above): its J's octet says them, from
+	   TRN1B's start, and our data on that grid of 24 code for them */
+	add("sm56", "sm56_k56flex_rbs", "sm56", "open8", "ATX3;AT+MS=K56FLEX",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "NET_RBS_TO=a", "NET_RBS=0x08",
+	      "EXPECT_B=(?s)robbed bits 0x04\\).*K56flex connect",
 	      "PROTO_B=ATX3;AT+MS=56" });
 	/* V.92: its QC1a on the first call already; on the second, quick
 	   connect with short phase 2.  (Its upstream stays V.34: the module
