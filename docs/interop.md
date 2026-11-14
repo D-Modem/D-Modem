@@ -40,7 +40,9 @@ work is done by its own processors. The tests emulate all of it (its
 them) and run USRobotics' firmware on it, so the Courier's own HST,
 V.32terbo and V.32bis go on the line. Two emulated Couriers call each
 other at HST 16800 and V.32terbo 21600, and D-Modem calls a Courier
-and is called by one in HST, V.32bis and V.22bis. V.FC and V.34 do not
+and is called by one in HST, V.32bis and V.22bis. D-Modem also calls a
+Courier in V.FC: the start-up completes and both modems say CONNECT
+26400, but the Courier does not yet read D-Modem's data. V.34 does not
 get through yet.
 
 The test suite also runs D-Modem itself on an emulated HD-audio modem

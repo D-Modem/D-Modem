@@ -1321,6 +1321,11 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 						     fail) != std::string::npos);
 			if (!connected)
 				done(false);
+			/* CONNECT_ONLY=1: the call passes at CONNECT (a
+			   modulation whose start-up works but not yet its
+			   data) */
+			if (env("CONNECT_ONLY") == "1")
+				done(true);
 			/* (B answered the ringing, not by itself) */
 			if (ringing &&
 			    dte.buf[1].find("RING") == std::string::npos) {
