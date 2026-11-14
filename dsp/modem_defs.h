@@ -219,7 +219,7 @@ enum DP_ID {
 	DP_V22BIS   = 122,
 	DP_SINUS    = 127,      /* a test pump */
 	DP_VCVM     = 150,      /* V.cvm, data over a mobile speech path
-				   (docs/v_cvm.pdf), after V.8 */
+				   (docs/specs/v_cvm.pdf), after V.8 */
 	DP_V32BIS   = 132,
 	DP_HST      = 168,      /* USRobotics HST: 4800 to 16800 bit/s one
 				   way, 300 back (dp_hst.cpp); not in V.250,

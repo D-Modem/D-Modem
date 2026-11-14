@@ -46,7 +46,8 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.42](https://www.itu.int/rec/T-REC-V.42) | Error correction (LAPM) | `link/lapm.cpp`, `link/hdlc.cpp` | [V.42.pdf](V.42.pdf) |
 | [V.42bis](https://www.itu.int/rec/T-REC-V.42bis) | Data compression | `link/v42bis.cpp` | [V.42bis.pdf](V.42bis.pdf) |
 | [V.44](https://www.itu.int/rec/T-REC-V.44) | Data compression (LZJH) | `link/v44.cpp` | [V.44.pdf](V.44.pdf) |
-| [V.52](https://www.itu.int/rec/T-REC-V.52) | Test patterns (the 511-bit pattern) | `core/v54.cpp` (`AT&T7`, `AT&T8`) | [V.52.pdf](V.52.pdf) |
+| [V.52](https://www.itu.int/rec/T-REC-V.52) | Test patterns (the 511-bit pattern). Withdrawn. Use O.153 | `core/v54.cpp` (`AT&T7`, `AT&T8`) | none (see below) |
+| [O.153](https://www.itu.int/rec/T-REC-O.153) | Error performance measurement below the primary rate (the 511-bit pattern, 2.1/O.153) | `core/v54.h` (`Prbs9`), `core/v54.cpp` | [O.153.pdf](O.153.pdf) |
 | [V.54](https://www.itu.int/rec/T-REC-V.54) | Loop test devices (loops 2 and 3) | `core/v54.cpp` (`AT&T`) | [V.54.pdf](V.54.pdf) |
 | [V.58](https://www.itu.int/rec/T-REC-V.58) | Management information model for V-series DCEs (its test objects, V.250's `+T` commands; its codes in `AT#UD`) | `core/v58.cpp`, `core/modem.cpp` (`unimodem_diag()`) | [V.58.pdf](V.58.pdf) |
 | [V.59](https://www.itu.int/rec/T-REC-V.59) | Managed objects for diagnostic information (V.250's `+TMO`) | `core/v59.cpp` | [V.59.pdf](V.59.pdf) |
@@ -79,11 +80,34 @@ implements (`link/mnp.cpp`), was deleted from V.42 in 2002; it is in the
 superseded V.42 (10/96), `T-REC-V.42-199610-S` at itu.int
 ([link-details.md](../link-details.md#mnp)).
 
+V.52 is withdrawn. Its only edition at itu.int is V.52 (12/72),
+`T-REC-V.52-197212-W`, and itu.int has no PDF of it. Thus `fetch.sh`
+does not download V.52 by default. O.153 (10/92) is in force and
+gives the same 511-bit pattern in its section 2.1: a 9-stage shift
+register, with the outputs of stages 5 and 9 added modulo 2 and fed
+back to stage 1. `Prbs9` in `core/v54.h` uses this pattern.
+
+When a Recommendation has no edition in force, `fetch.sh` tries the
+newest superseded or withdrawn edition and shows a warning. If
+itu.int has no PDF of that edition, `fetch.sh` shows an error and
+continues with the next Recommendation.
+
 Microsoft's Unimodem Diagnostics Command Reference Specification,
-version 1.0 (2 July 1998), is here as [umud10.rtf](umud10.rtf): `AT#UD`
+version 1.0 (2 July 1998), is here as [umud10.rtf](umud10.rtf) and as
+[umud10.pdf](umud10.pdf) (the same text, in PDF format): `AT#UD`
 (`core/modem.cpp`, `unimodem_diag()`) follows it.  Microsoft grants the
 right to reproduce and distribute it for making hardware that complies
 with it.
+
+D-Modem's own proposal for a new Recommendation, "Draft new
+Recommendation ITU-T V.cvm" (data over the speech paths of mobile
+networks), is here as [v_cvm.pdf](v_cvm.pdf). It is in the form of an
+ITU-T Recommendation, but ITU-T did not approve it. The D-Modem Authors
+wrote it, so the PDF is in the repository. `docs/cellular/build.sh`
+builds it from its LaTeX source in [docs/cellular](../cellular/v_cvm.tex).
+[The V.cvm proposal](../vcvm-spec.md) and
+[its technical details](../vcvm-spec-details.md) describe it.
+`AT+MS=VCVM` (`dsp/dp_vcvm.cpp`, [vcvm.md](../dsp/vcvm.md)) implements it.
 
 Not from the ITU: Bell 103 and Bell 212A (AT&T), Bell 202 caller ID (Telcordia
 GR-30), TIFF-F (RFC 3949), Contact ID (SIA DC-05, `dsp/dp_contactid.cpp`), fixed-line SMS (ETSI ES 201 912 protocol 1, `dsp/dp_sms.cpp`; its messages are 3GPP TS 23.040's SMS-SUBMIT and SMS-DELIVER in TS 23.038's alphabets, `dsp/sms_pdu.cpp`). Section references in the code and in these

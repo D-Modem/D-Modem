@@ -867,7 +867,7 @@ std::vector<Call> calls()
 #ifdef INTEROP_HAVE_AMR
 	/* --- two open modems (8000 Hz) through a mobile network's speech
 	   codec (netsim's NET_CODEC): V.22 passes AMR at 12.2 kbit/s with
-	   its data intact, V.21 AMR-WB at 23.85 (docs/cellular/v_cvm.pdf
+	   its data intact, V.21 AMR-WB at 23.85 (docs/specs/v_cvm.pdf
 	   has the whole picture) */
 	add("open", "open_22_amr122", "open8", "open8", "ATX3;AT+MS=22",
 	    { "NET=8000:8000:ulaw", "NET_CODEC=amr:12.2", "STREAM=10" });
@@ -1591,6 +1591,16 @@ std::vector<Call> calls()
 	    "ATX3;AT+MS=V22B", { "STREAM=5", "COURIER_DEBUG=1",
 				 "PROTO_B=" + usr_hst + "&N3",
 				 "EXPECT_B=CONNECT 2400/ARQ" });
+	/* V.FC: the open modem calls (S56=96: the Courier's V.FC, not its
+	   V.34; &M0: no error control).  The whole start-up to CONNECT at
+	   the open modem's fastest, 26400.  Only to CONNECT: the Courier
+	   does not yet read the open modem's data (it reads the first
+	   frames, then loses them) */
+	add("courier", "courier_vfc_open_calls", "open8", "courier",
+	    "ATX3;AT+MS=VFC", { "CONNECT_ONLY=1", "COURIER_DEBUG=1",
+				"PROTO_B=AT&M0S56=96S58=33",
+				"EXPECT_A=vfc: connect 26400/26400",
+				"EXPECT_B=CONNECT 26400" });
 
 	/* --- Intel's 537EP soft modem, its line at 9600 Hz (its codec's
 	   rates are 7200 to 16000 Hz, 9600 by default, 72000 / 7 for V.34,
