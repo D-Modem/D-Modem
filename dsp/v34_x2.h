@@ -35,9 +35,10 @@
 #define X2_ONES_AFTER   681
 /* our marker as the answer to the client's MP when it renegotiates
    (its S about 50 ms before the I-modem's marker); without one that
-   many frames (3 s) after the I-modem's. A marker before its S makes
-   it renegotiate on 16 points without an MP, and it hangs up */
-#define X2_MARK_WAIT    4000
+   many frames (12 s) after the I-modem's. A marker before its S makes
+   it renegotiate on 16 points without an MP, and it hangs up; in one
+   call behind a 6 dB pad its S came 3 s late */
+#define X2_MARK_WAIT    16000
 /* (a marker's or switch's frame that does not come) */
 #define X2_NEVER        INT32_C(0x3fffffff)
 /* the data's first frame by that count: after the start's 680 in the
@@ -71,6 +72,8 @@ struct V34X2 {
 	const X2Rate *x2_cur;   /* the data's rate */
 	const X2Rate *x2_next;  /* the next rate's (at x2_switch_fr) */
 	s16 x2_down;            /* the client's MP: the most it takes */
+	s16 x2_mode;            /* and the digital pad it measured (0 to
+				   2: none, 3 dB, 6 dB) */
 	s32 x2_ones;            /* frames of ones still to send */
 	unsigned char x2_raw[X2_FRAME];
 	unsigned char x2_bits[X2_MAXBITS];
@@ -114,8 +117,9 @@ s16 V34X2<P>::x2_start()
 	x2_switch_fr = x2_mark_fr + X2_SWITCH_AFTER;
 	x2_cur = &x2_rate_b;
 	/* (without an MP that says, the rate of the tests' Courier) */
-	x2_next = &x2_rate_c;
+	x2_next = x2_rate_for(14);
 	x2_down = 0;
+	x2_mode = 0;
 	x2_ones = 0;
 	x2_t0 = self.total;
 	/* PCM once our tone is out of the converters */
@@ -130,27 +134,31 @@ s16 V34X2<P>::x2_start()
 /* the client's MP (x2.h's four words): the rates both ways.  Down: its
    word 0's bits 2 to 5 the most it takes (1 to 15: the start-up's MP
    has 1, its renegotiations' 8 to 14 in the I-modem's calls; the next
-   rate by x2_rate_for(); test: DSP_X2_DOWN_MAX=<n> takes no more than
-   n); up: the highest rate of its word 1's mask that our record
-   allows (12), at expanded shaping, 64 states and non-linear encoding */
+   rate by x2_rate_for(), which knows all 15; test: DSP_X2_DOWN_MAX=<n>
+   takes no more than n); up: the highest rate of its word 1's mask
+   that our record allows (12), at expanded shaping, 64 states and
+   non-linear encoding */
 template <class P>
 s16 V34X2<P>::x2_data_setup()
 {
 	P &self = static_cast<P &>(*this);
 	const u16 *w = self.prx.x2_w;
 	V34Params p;
-	s16 down = (w[0] >> 2) & 15, md = w[3] >> 8, n;
+	s16 down = (w[0] >> 2) & 15, mode = (w[0] >> 11) & 15,
+		md = w[3] >> 8, n;
 	u16 mask = static_cast<u16>(w[1] & 0x0fff);
 	/* (no line probing to go by: our record's 12 at most; test:
 	   DSP_V34_RX_MAX=<n> as for V.34) */
 	s16 max = 12;
 	if (s32 m = env_int("DSP_V34_RX_MAX"); m > 0 && max > m)
 		max = static_cast<s16>(m);
-	if (down < 1 || md != x2_rate_b.MD)
+	/* (the Quad's firmware builds no levels for another pad) */
+	if (down < 1 || md != x2_rate_b.MD || mode >= X2_MODES)
 		return -1;
 	if (s32 m = env_int("DSP_X2_DOWN_MAX"); m > 0 && down > m)
 		down = static_cast<s16>(m);
 	x2_down = down;
+	x2_mode = mode;
 	for (n = max; n >= 1; n--)
 		if ((mask >> (n - 1)) & 1 &&
 		    v34_rates[self.prx.baud][n - 1].b)
@@ -165,8 +173,8 @@ s16 V34X2<P>::x2_data_setup()
 	self.rate_rx = p.rate;
 	self.rate_tx = (x2_cur->B + x2_cur->MD) * 8000 / X2_FRAME;
 	DSP_DBG("v34: x2 rates: down %" PRId32 ", up %" PRId32 " (the "
-		"client's MP: down %d, mask %04x, %d signs)\n", self.rate_tx,
-		self.rate_rx, down, w[1], md);
+		"client's MP: down %d, mask %04x, %d signs, pad %d)\n",
+		self.rate_tx, self.rate_rx, down, w[1], md, mode);
 	return 0;
 }
 
@@ -198,7 +206,7 @@ s16 V34X2<P>::x2_sample()
 			   the rate's largest level in each position */
 			s16 k = x2_fr == x2_mark_fr + X2_MARK_N - 1;
 			for (s16 i = 0; i < X2_FRAME; i++)
-				x2_raw[i] = k56_code(x2_cur->lv[i][0], 0) &
+				x2_raw[i] = x2_code(*x2_cur, i, 0) &
 					((i < 3) != k ? 0xff : 0x7f);
 			x2t.raw = x2_raw;
 			if (x2_fr == x2_mark_fr)
@@ -254,12 +262,17 @@ s16 V34X2<P>::x2_sample()
 			   I-modem sends them after a second marker too */
 			x2t.map.scr = 0;
 			x2t.map.last = 1;
-			x2t.map.init(x2_rate_b);
+			x2t.map.init(*x2_rate_for(1, x2_mode));
 		}
 	} else
 		code = x2t.next();
 	if (x2t.seg != s0)
 		DSP_DBG("v34: x2: segment %d\n", x2t.seg);
+	/* the code's mu-law value, whatever the network's law: on an
+	   A-law line the codec sends the A-law octet nearest it.  (The
+	   Quad's A-law mode sends the A-law octet of the same code number
+	   instead; with that the emulated Courier sent no MP, with this it
+	   reached LAPM and then cleared down: x2-details.md) */
 	s16 v = v90_ucode_linear(0, code & 0x7f);
 	return code & 0x80 ? v : static_cast<s16>(-v);
 }
@@ -324,6 +337,9 @@ s16 V34X2<P>::x2_step(s32 c)
 				DSP_DBG("v34: x2: no common rate\n");
 				return self.fallback("no common data rate");
 			}
+			/* the start-up's data levels (B) across its pad */
+			x2t.data_rate = x2_cur = x2_rate_for(1, x2_mode);
+			x2_next = x2_rate_for(14, x2_mode);
 		}
 		/* frames of ones (X2_SYNC_MIN codes at least) until its MP; then our
 		   record */
@@ -387,7 +403,7 @@ s16 V34X2<P>::x2_step(s32 c)
 			   rate (12, then 14) or the same one (8 three times
 			   on a 18 dB line); one we do not know, our record
 			   until its E */
-			const X2Rate *nr = x2_rate_for(x2_down);
+			const X2Rate *nr = x2_rate_for(x2_down, x2_mode);
 			if (x2_fr + 1 < x2_mark_fr && !nr) {
 				/* none: no marker, and no next rate */
 				x2_mark_fr = x2_switch_fr = X2_NEVER;
