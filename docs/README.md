@@ -52,6 +52,7 @@ measurements, and test lists.
   - [Fax](dsp/fax.md): fax modem classes 1, 2 and 2.0, a built-in fax
     machine, and fax over the internet (T.38)
 - [The data link layer](link.md): error correction and compression
+- [The MNP protocol suite](mnp/README.md): MNP 1 to 10 and 10EC, class by class
 - [The modem core](core.md): AT commands, settings and how a call runs
 - [ISDN](isdn.md): 64000 bit/s ISDN data calls
 - [Voice and data together (V.70)](v70.md): DSVD, a telephone

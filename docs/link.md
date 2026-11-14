@@ -36,6 +36,9 @@ V.32bis, for instance). With `AT-K1` a V.42 call can turn into MNP 10.
 MNP 10EC's own cellular modulations are not supported; such a modem
 connects with V.42 or MNP 10.
 
+For each MNP class (1 to 10 and 10EC), see
+[the MNP protocol suite](mnp/README.md).
+
 ## Compression
 
 | Protocol | What it is |
