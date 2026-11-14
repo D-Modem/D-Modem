@@ -42,6 +42,7 @@
 #include "k56flex.h"
 #include "k56flex_rx.h"
 #include "x2.h"
+#include "x2_rx.h"
 #include "v90.h"
 #include "v90a.h"
 #include "v91.h"
@@ -77,6 +78,10 @@ static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x13, 0x94, 0x2a, 0x0d
 /* and a fax call's (V.34 half-duplex): the call function (filled in),
    V.34 half-duplex; V.17, V.29 and V.27ter, V.21; PSTN access */
 static const unsigned char v8_fax_msg[] = { 0xe0, 0x81, 0x85, 0x74, 0x90, 0x0d };
+/* x2's client's CM, the Courier's: V.34 alone, no protocol octet, PSTN
+   access (the I-modem offers x2 in its INFO0 after this one, and not
+   after ours) */
+static const unsigned char v8_x2c_msg[] = { 0xe0, 0xc1, 0x45, 0x10, 0x10, 0x0d };
 /* half-duplex phase 3's TRN (INFOh), 35 ms units: about 1.5 s */
 #define HDX_TRN         43
 /* the trellis code we ask the remote to send: 0, 1, 2 for 16, 32, 64
@@ -183,6 +188,31 @@ enum v34_state {
 	X3_SEQ,
 	X4_REC,
 	X4_DATA,
+	/* and the client's (calling): our tone and marker after the
+	   server's L1; silence, S, S-bar, PP, TRN, J until its preamble,
+	   silence until its J words; S, S-bar, TRN, our MP until its
+	   record, MP', E until its start; the data */
+	XC2_MARK,
+	XC3_WAIT,
+	XC3_S,
+	XC3_SBAR,
+	XC3_PP,
+	XC3_TRN,
+	XC3_J,
+	XC3_QUIET,
+	XC4_S,
+	XC4_SBAR,
+	XC4_TRN,
+	XC4_MP,
+	XC4_E,
+	XC4_DATA,
+	/* its renegotiation in the data (the rate it measured): S, S-bar,
+	   TRN, our MP until the server's marker and records, MP', E */
+	XC5_S,
+	XC5_SBAR,
+	XC5_TRN,
+	XC5_MP,
+	XC5_E,
 	/* phase 2 answerer */
 	P2A_INFO0,
 	P2A_A,
@@ -1154,7 +1184,9 @@ void V34Info0<P>::make_info0(BitQ *q)
 		q->put(6, 3);
 		q->put(1, 1);
 	} else {
-		q->put(0, 1);        /* power reduction */
+		/* power reduction: x2's client (as the Courier's INFO0c),
+		   its mark to the server */
+		q->put(self.x2c && self.caller && !self.retraining, 1);
 		q->put(0, 3);        /* symbol rate difference */
 		q->put(0, 1);        /* CME */
 	}
@@ -1411,6 +1443,10 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 	const unsigned char *msg = self.hdx ? v8_fax_msg : v8_msg;
 	s16 msg_n = self.hdx ? static_cast<s16>(sizeof(v8_fax_msg)) :
 		static_cast<s16>(sizeof(v8_msg));
+	if (!self.hdx && self.x2c && self.caller) {
+		msg = v8_x2c_msg;
+		msg_n = static_cast<s16>(sizeof(v8_x2c_msg));
+	}
 	s16 callf = !self.hdx ? 0 : self.caller ?
 		(self.hdx_send ? V8_CALLF_SEND : V8_CALLF_POLL) :
 		v8_remote_cat(V8_CAT_CALLF);
@@ -2218,6 +2254,13 @@ void V34Cc<P>::info_frame(CcRx *r)
 		} else
 			rinfo0.parse(r->frame);
 		ev_info0 = 1;
+		/* x2's server: its bits 23 and 24 (a difference of 4 or
+		   more, CME) */
+		if (self.x2c && self.caller && !self.retraining &&
+		    (rinfo0.max_diff & 4) && rinfo0.cme && !self.x2c_on) {
+			self.x2c_on = 1;
+			DSP_DBG("v34: INFO0a: an x2 server\n");
+		}
 		self.info0_at = self.total;
 		self.v92_on = self.pcm && self.v92 && rinfo0.v92;
 		self.short2 = self.v92_on && rinfo0.short2 &&
@@ -2229,9 +2272,11 @@ void V34Cc<P>::info_frame(CcRx *r)
 				self.v92_on ? ": V.92" : "");
 		r->snap = 1;
 		DSP_DBG("v34: INFO0 rates %02x 3429 %d "
-			"diff %d\n", rinfo0.rates,
+			"diff %d, power reduction %d, CME %d, 1664 %d, "
+			"clock %d, ack %d\n", rinfo0.rates,
 			rinfo0.allow_3429,
-			rinfo0.max_diff);
+			rinfo0.max_diff, rinfo0.power_red, rinfo0.cme,
+			rinfo0.c1664, rinfo0.clock, rinfo0.ack);
 	} else if (self.hdx_on) {
 		self.rinfoh.parse(r->frame);
 		ev_info1 = 1;
@@ -3030,12 +3075,16 @@ void V34Pump::ec_schedule()
 		   modem's R */
 		(k56_rx && (state == KC3_S || state == KC3_SBAR ||
 			    state == KC3_PP || state == KC3_TRN ||
-			    (state == KC3_J && !k56rx.ev_r2)));
+			    (state == KC3_J && !k56rx.ev_r2))) ||
+		/* x2's client: S to J, until the server's preamble */
+		(x2_rx && (state == XC3_S || state == XC3_SBAR ||
+			   state == XC3_PP || state == XC3_TRN ||
+			   (state == XC3_J && !x2rx.ev_pre)));
 	s16 training;
 
 	if (ours && !e->on) {
 		e->on = 1;
-		e->ls = v90a_rx || k56_rx;
+		e->ls = v90a_rx || k56_rx || x2_rx;
 		e->ls_free();
 		e->ls_n = 0;
 		e->n = e->since = e->filled = 0;
@@ -3058,10 +3107,10 @@ void V34Pump::ec_schedule()
 	   the receiver meanwhile drags its equalizer and carrier off, so
 	   that it misses the remote's S of phase 4.  When the echo hides the
 	   J from the receiver, at the round trip measured as before */
-	training = ours && (!caller || v90a_rx || k56_rx ||
+	training = ours && (!caller || v90a_rx || k56_rx || x2_rx ||
 		(e->since > rtd + ms2samples(150, srate) &&
 		 (e->n || !remote_j())));
-	if (ours && caller && !v90a_rx && !k56_rx && !training &&
+	if (ours && caller && !v90a_rx && !k56_rx && !x2_rx && !training &&
 	    e->since > rtd + ms2samples(150, srate) && !e->waited) {
 		e->waited = 1;
 		DSP_DBG("v34: echo canceller: the remote's J still there, "
@@ -3191,7 +3240,7 @@ void V34Pump::pump_rx_sample(float x)
 		return;
 	}
 	/* (K56flex's phases 3 and 4 come before phase 2 in the list) */
-	if (state < P2A_INFO0 && !(state >= K3_TRAIN && state <= X4_DATA)) {
+	if (state < P2A_INFO0 && !(state >= K3_TRAIN && state <= XC5_E)) {
 		bit = v21.run(x);
 		if (bit >= 0 && v21.carrier)
 			v8_rx_bit(bit);
@@ -3222,6 +3271,19 @@ void V34Pump::pump_rx_sample(float x)
 				toneq_blocks = toneq_g.power > tone_power(150) &&
 					toneq_space_g.power < toneq_g.power / 10 ?
 					toneq_blocks + 1 : 0;
+		}
+		return;
+	}
+	if (x2_rx) {
+		/* x2's client: the server's PCM, our echo taken away */
+		ec_schedule();
+		if (!ec.bypass)
+			x = ec.run(last_tx, x);
+		x2rx.line(x);
+		if (state >= XC4_DATA && state <= XC5_E && x2rx.qn) {
+			unsigned char b[X2RX_Q];
+			s16 m = x2rx.take(b, X2RX_Q);
+			CoreBits{ modem }.put(b, m);
 		}
 		return;
 	}
@@ -5888,6 +5950,26 @@ s16 V34Pump::handshake()
 	case K4_MP:
 	case K4_DATA:
 		return k56_step(c);
+	case XC2_MARK:
+	case XC3_WAIT:
+	case XC3_S:
+	case XC3_SBAR:
+	case XC3_PP:
+	case XC3_TRN:
+	case XC3_J:
+	case XC3_QUIET:
+	case XC4_S:
+	case XC4_SBAR:
+	case XC4_TRN:
+	case XC4_MP:
+	case XC4_E:
+	case XC4_DATA:
+	case XC5_S:
+	case XC5_SBAR:
+	case XC5_TRN:
+	case XC5_MP:
+	case XC5_E:
+		return x2c_step(c);
 	case P2A_X2MARK:
 	case X3_WAIT:
 	case X3_TRAIN:
@@ -6206,6 +6288,14 @@ s16 V34Pump::handshake()
 				set_state(P2C_WAIT_INFO1);
 				break;
 			}
+		}
+		/* x2: the server's L1 (160 ms) over, our marker */
+		if (x2c_on && l1_start && total - l1_start >=
+		    ms2samples(170, srate)) {
+			set_state(XC2_MARK);
+			cctx.reset();
+			cc_tone();
+			break;
 		}
 		if (l1_start && total - l1_start >=
 		    ms2samples(465, srate)) {
@@ -7466,6 +7556,7 @@ s16 V34Pump::sample(float x, float *y, const float *ref)
 	}
 	if (state != V34_DATA && state != V90A_DATA && state != K4_DATA &&
 	    state != KC4_DATA && state != X4_DATA &&
+	    !(state >= XC4_DATA && state <= XC5_E) &&
 	    !hdx_up && total >= timeout) {
 		DSP_DBG("v34: start-up timeout in state %d\n", state);
 		return DPSTAT_ERROR;
@@ -7695,6 +7786,9 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	   line; V.90 and V.34 for a caller without it */
 	x2 = id == DP_X2 && !caller_ && line_rate == 8000;
 	x2_on = 0;
+	/* (and the client's, calling: below) */
+	x2c = id == DP_X2 && caller_;
+	x2c_on = x2_rx = 0;
 	x2_jm_sign = 1;
 	if (id == DP_X2)
 		id = DP_V90;
@@ -7769,6 +7863,10 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	k56c = k56c && analog && line_rate == V34_SRATE &&
 		env_on("DSP_K56A");
 	k8_init();
+	/* x2's client, calling on an analogue line at 9600 Hz (DSP_X2C=0
+	   leaves it out: V.90 then): V.8 for V.34 alone, the server known
+	   by its INFO0 */
+	x2c = x2c && analog && line_rate == V34_SRATE && env_on("DSP_X2C");
 	/* V.90 as the analogue modem, on an analogue line at 9600 Hz
 	   (DSP_V90A=0 leaves it out).  At 8000 Hz only with DSP_V90A=1:
 	   there the band's top folds onto itself in the codec, and half a
@@ -7781,6 +7879,8 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 			(line_rate == V34_SRATE ? !(e && !atoi(e)) :
 			 e && atoi(e));
 	}
+	if (x2c)
+		v90a = 0;
 	v90a_on = v90a_rx = 0;
 	v92a = v90a && id == DP_V92 &&
 		env_on("DSP_V92A");

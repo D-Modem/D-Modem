@@ -393,6 +393,54 @@ std::vector<Call> calls()
 	      "EXPECT_A=(?s)INFO1a: K56flex \\(0x5\\).*A-law.*"
 	      "K56flex connect [0-9]+/56000 \\(analogue modem\\)",
 	      "EXPECT_B=K56flex connect 56000/" });
+	/* x2 both ways: the open modem as the client (the analogue modem,
+	   calling at 9600 Hz) and as the server (8000 Hz): INFO0a marked
+	   x2, our marker after its L1, its preamble and TRN train the PCM
+	   receiver and its J words decode; our MP, its record, our MP'
+	   and E; the data at the start-up's rate (docs/dsp/x2.md) */
+	add("open", "open_x2", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "BULK=100000",
+	      "EXPECT_A=(?s)INFO0a: an x2 server.*x2: our marker 0x4d.*"
+	      "x2rx: J words: 99 good.*x2rx: the server's record f33c.*"
+	      "x2 connect [0-9]+/32000 \\(client\\)",
+	      "EXPECT_B=(?s)x2 marker 0x4d.*x2 connect 32000/" });
+	/* and its renegotiation 12.7 s into the data, as the Courier's: the
+	   rate its noise allows (here the most), the server's marker and
+	   records, the next rate's ones and data; 28800 up */
+	add("open", "open_x2_reneg", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "BULK=300000",
+	      "EXPECT_A=(?s)x2 connect 24000/32000 \\(client\\).*"
+	      "x2: our renegotiation: down 15.*x2rx: the server's marker"
+	      ".*x2: renegotiated, up 28800.*x2rx: the next rate: 15 .*"
+	      "x2: down 56000 from here",
+	      "EXPECT_B=(?s)x2 connect 32000/24000.*x2: down 56000 from "
+	      "here" });
+	/* behind a 6 dB pad: the client finds it in the sync frames'
+	   levels and says so in its MP (pad 2), the server's levels are
+	   that pad's from the start on and at the next rate */
+	add("open", "open_x2_pad", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "NET_PAD=6", "BULK=300000",
+	      "EXPECT_A=(?s)x2rx: the pad: 6 dB.*x2 connect 24000/32000 "
+	      "\\(client\\).*x2: our renegotiation: down 1[0-5].*"
+	      "x2: down 5[0-9]+ from here",
+	      "EXPECT_B=(?s)pad 2\\).*x2 connect 32000/" });
+	/* a noisy line: the rate the client takes is the one its noise
+	   allows, below the most, and its data are good */
+	add("open", "open_x2_noise", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "NET_FLOOR=20", "BULK=300000",
+	      "EXPECT_A=(?s)x2 connect 24000/32000 \\(client\\).*"
+	      "x2: our renegotiation: down ([2-9]|1[0-4]) .*"
+	      "x2: down [0-9]+ from here",
+	      "EXPECT_B=x2 connect 32000/" });
+	/* the client's codec 100 ppm fast, a third of a sample off: the
+	   timing loop finds it */
+	add("open", "open_x2_ppm", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "NET_PPM=100", "NET_PHASE=0.3",
+	      "BULK=300000",
+	      "EXPECT_A=(?s)x2rx: timing \\+(99.[5-9]|100.[0-4])[0-9]* "
+	      "ppm.*x2 connect 24000/32000 \\(client\\).*"
+	      "x2: down 5[0-9]+ from here",
+	      "EXPECT_B=x2 connect 32000/" });
 	/* its codec's clock 100 ppm fast, half a sample off */
 	add("open", "open_k56flex_ppm", "open", "open8", "ATX3;AT+MS=56",
 	    { "NET=9600:8000:ulaw", "NET_PPM=100", "NET_PHASE=0.3",
