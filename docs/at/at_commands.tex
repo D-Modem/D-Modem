@@ -772,6 +772,7 @@ rarer ones.
 \cmdl[plusPCW]{+PCW, +PIG} & \std{V.92} options (kept). & \cmdl[plusPMH]{+PMH, +PMHT} & Modem-on-hold. \\ \hline
 \cmdl[plusPMHR]{+PMHR} & Ask for modem-on-hold. & \cmdl[plusCVM]{+CVM} & \std{V.cvm}. \\ \hline
 \cmdl[minusSEC]{-SEC} & \std{MNP~10EC} (kept). & \cmdl[plusFCLASS]{+FCLASS} & Data, fax or voice. \\ \hline
+\cmdl[plusEF]{+EF} & \std{ETC} transmit filter. & \cmdl[etc]{\&F5, \&F6} & \std{ETC} settings (S114). \\ \hline
 \cmdl[plusFAA]{+FAA} & Adaptive answer. & \cmdl[plusFMI]{+FMI, +FMM, +FMR} & Fax identification. \\ \hline
 \cmdl[plusFTS]{+FTS, +FRS} & Fax silence. & \cmdl[plusFTM]{+FTM, +FRM} & Fax data. \\ \hline
 \cmdl[plusFTH]{+FTH, +FRH} & Fax \std{HDLC} frames. & \cmdl[plusFPR]{+FPR} & Fax \std{DTE} rate (kept). \\ \hline
@@ -1015,8 +1016,11 @@ rest of the line is not read.
 \end{command}
 
 \begin{command}{ampF}{\&F\p{n}}{Restore Factory Defaults}
-Accepted, with or without a digit, and nothing done; see
-\cmdl[ampD]{\&D}.  \cmdl[Z]{ATZ} restores the \emph{defaults}.
+The modem accepts \cmdl[ampF]{\&F}, with or without a digit, and does
+nothing; see \cmdl[ampD]{\&D}.  \cmdl[Z]{ATZ} restores the \emph{defaults}.
+Two exceptions load the \std{ETC} settings of the 3Com cards
+(\hyperref[sec:etc]{Section~\ref*{sec:etc}}): \cmdl[ampF]{\&F5} and
+\cmdl[ampF]{\&F6}.
 \end{command}
 
 \begin{command}{ampV}{\&V\p{n}}{View Active Configuration}
@@ -2391,6 +2395,51 @@ modulations are not there: a modem with it connects with \std{V.42}, or
 with \std{MNP~10}.
 \begin{results}
 \res{\rc{OK}}{For \cmdl[mnp10]{-C0}, \cmdl[mnp10]{-C1}, \cmdl[mnp10]{-K0} to \cmdl[mnp10]{-K2}, \cmdl[mnp10]{-Q0} to \cmdl[mnp10]{-Q2}, \cmdl[mnp10]{)M0} to \cmdl[mnp10]{)M2}, \cmdl[mnp10]{@M0} to \cmdl[mnp10]{@M30}, \cmdl[mnp10]{*H0} to \cmdl[mnp10]{*H2}, \cmdl[mnp10]{:T190}, \cmdl[mnp10]{:T191}.}
+\res{\rc{ERROR}}{Otherwise.}
+\end{results}
+\end{command}
+
+\subsection{ETC (Enhanced Throughput Cellular)}\label{sec:etc}
+
+\std{ETC} is the cellular mode of AT\&T Paradyne.  The 3Com Megahertz PC
+Cards (3CXM556 and others) have it.  The firmware of these cards uses
+\std{V.32bis} or lower, error control, a transmit filter, and other
+timers.  D-Modem uses the parts of this firmware that are known: S114,
+\cmdl[ampF]{\&F5}, \cmdl[ampF]{\&F6} and \cmdl[plusEF]{+EF}.
+
+\begin{command}{etc}{\&F5, \&F6, S114}{ETC Settings}
+S114 holds the \std{ETC} flags, with the bits of the 3Com firmware
+(\emph{default} 0, off).  D-Modem uses these bits:
+\begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{S114 Bits}
+  {\thd{Bit} & \thd{Function}}
+0 to 2 & If one of them is set, \std{ETC} is on: \rc{/ETC} follows the error correction in \rc{CONNECT} (with \cmdl[bsV]{\bs V1}), and \cmd{\#UD} gives 82 for error control (key 40). \\ \hline
+5 & The transmit filter of \cmdl[plusEF]{+EF} is on. \\ \hline
+\end{vtable}
+\begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{ETC Profiles}
+  {\thd{Command} & \thd{Function}}
+\cmdl[ampF]{\&F5} & The cellular side (\texttt{ETC\_CELL}): S114 = 238 (0xEE), \cmdl[plusMS]{+MS=V32B} (\std{V.32bis} and lower), \cmdl[bsN]{\bs N2} (error control is necessary), S10 = 40 (4~s), S7 = 90. \\ \hline
+\cmdl[ampF]{\&F6} & The landline side (\texttt{ETC\_LAND}): S114 = 176 (0xB0), \cmdl[bsN]{\bs N3} (error control if possible).  The modulations do not change. \\ \hline
+\end{vtable}
+The landline side of the firmware sets bit 0 when it finds an \std{ETC}
+peer.  D-Modem cannot find an \std{ETC} peer.  Thus, with
+\cmdl[ampF]{\&F6} alone, \std{ETC} is not on, but the filter is on.  The
+firmware also changes the transmit level and the handshake timers.
+D-Modem does not, because their values are not known.
+\begin{results}
+\res{\rc{OK}}{Always.}
+\end{results}
+\end{command}
+
+\begin{command}{plusEF}{+EF=\p{n}}{ETC Transmit Filter}
+The set of coefficients of the 6-tap transmit filter (0 to 10,
+\emph{default} 5), as the 3Com firmware has them.  The filter operates when
+bit 5 of S114 is set.  Set 0 has a flat response.  Sets 1 to 6 decrease
+the high frequencies, to compensate for the pre-emphasis of a cellular
+voice channel.  Set 5 changes the gain from +3.5~dB at 300~Hz to
+$-$7.6~dB at 3600~Hz.  D-Modem sets the gain of each set to 0~dB at
+1800~Hz.  \cmd{+EF?} gives the set, and \cmd{+EF=?} gives \cmd{(0-10)}.
+\begin{results}
+\res{\rc{OK}}{If \p{n} is 0 to 10.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \end{command}

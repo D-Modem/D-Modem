@@ -28,6 +28,7 @@
 #include <modem_defs.h>
 #include <modem_dp.h>
 
+#include "etc.h"
 #include "modem_homolog.h"
 #include "v13.h"
 #include "v54.h"
@@ -478,6 +479,12 @@ public:
 	void mnp10_line(s16 &dbm, s16 &eqm) const;
 	bool mnp10_shift(const dlink::Shift &s);
 	void mnp10_tx_level(s16 db);
+	/* ETC (S114, core/etc.h): AT&F5's cellular settings or AT&F6's
+	   landline ones */
+	void etc_profile(int n);
+	/* ETC is on (/ETC in CONNECT, 0x82 in #UD's error control):
+	   S114's bits 0 to 2 */
+	bool etc_on() const { return (sregs_[SREG_ETC] & 7) != 0; }
 	/* the DTE's in-band command in V.80's Synchronous Access Mode */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx);
 	/* a debug line with the modem's name */
@@ -847,6 +854,9 @@ private:
 	/* the cellular transmit level (a gain on the pump's samples), the
 	   received signal's power (mean square, smoothed) */
 	float tx_gain_ = 1;
+	/* ETC's transmit filter (S114 bit 5, +EF) on this call */
+	EtcFilter etc_filter_;
+	bool etc_tx_ = false;
 	float rx_pow_ = 0;
 	void shift_tick();
 	void shift_end(bool ok);

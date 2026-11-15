@@ -417,7 +417,7 @@ void Modem::sregs_init()
 		{ SREG_MNP10_UPGRADE, 0 }, { SREG_MNP10_LOWEST, 2 },
 		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
-		{ SREG_MNP10, 3 },
+		{ SREG_MNP10, 3 }, { SREG_ETC, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -721,6 +721,10 @@ s16 Modem::start_call(bool keep_line)
 	shift_cap_ = 0;
 	tx_gain_ = 1;
 	rx_pow_ = 0;
+	/* ETC's transmit filter (S114 bit 5): +EF's set at our rate */
+	etc_tx_ = (sregs_[SREG_ETC] & 0x20) && !wideband();
+	if (etc_tx_)
+		etc_filter_.start(static_cast<int>(kept("+EF")[0]), srate_);
 	if (!(keep_line && started_) && do_start())
 		return fail("the line does not start");
 	return 0;
@@ -2056,6 +2060,8 @@ void Modem::run(s16 *in, s16 *out, s32 n)
 						rx_pow_);
 		}
 		dp_process(in, out, n);
+		if (etc_tx_)
+			etc_filter_.process(out, n);
 		if (tx_gain_ != 1)
 			for (s32 i = 0; i < n; i++)
 				out[i] = static_cast<s16>(lroundf(out[i] *
@@ -2913,6 +2919,10 @@ void Modem::report(Result r)
 		} else if (sregs_[SREG_CONNECT_PROTOCOL]) {
 			const std::string_view comp = compression_name();
 			line = "CONNECT " + rate + "/" + protocol_name();
+			/* ETC, as 3Com's cards show it after the error
+			   correction */
+			if (etc_on())
+				line += "/ETC";
 			if (comp != "NONE")
 				line += "/" + std::string(comp);
 		} else {
@@ -3412,7 +3422,9 @@ void Modem::unimodem_diag()
 		num(0x33, d.retrains_local + d.retrains_remote, 2);
 		num(0x34, stats_.ended ? stats_.tx1 : tx_rate_, 4);
 		num(0x35, stats_.ended ? stats_.rx1 : rx_rate_, 4);
-		num(0x40, cfg_.ec ? 1 : cfg_.mnp_on ? 2 : 0);
+		/* (0x82: ETC with either, Table 7) */
+		num(0x40, etc_on() && (cfg_.ec || cfg_.mnp_on) ? 0x82 :
+		    cfg_.ec ? 1 : cfg_.mnp_on ? 2 : 0);
 		/* the error correction's frame size: the information
 		   field we send */
 		if (cfg_.ec)

@@ -117,6 +117,13 @@ enum S_REGISTER {
 	SREG_MNP10                        = 113, /* MNP 10 offered (bit 0),
 						    and between D-Modems
 						    every modulation (bit 1) */
+	SREG_ETC                          = 114, /* ETC's flags, as 3Com's
+						    TC110 firmware keeps
+						    them (AT&F5: 0xEE
+						    cellular, AT&F6: 0xB0
+						    landline; bit 5 the
+						    transmit filter, bits
+						    0-2 /ETC) */
 	SREG_LEASED                       = 47,  /* AT&L: 1 a 2-wire leased
 						    line, 2 a 4-wire one (no
 						    dial tone or ringing: ATD

@@ -50,6 +50,7 @@ For more data, refer to [docs/dsp/](dsp/README.md). For the tests, refer to [doc
 - V.42 error correction (LAPM, with its detection phase).
 - MNP 2 to 4 (the alternative procedure of V.42) for modems without LAPM.
 - V.44, V.42bis and MNP 5 compression (and zstd between two D-Modems).
+- The ETC cellular mode of the 3Com Megahertz PC Cards (`AT&F5`, `AT&F6`, S114 and the transmit filter of `AT+EF`; [docs/link-details.md](link-details.md)).
 - Plain asynchronous characters. Or, as an alternative, the synchronous access mode of V.80 for DTEs that make their own frames of data, for example H.324 terminals.
 
 `core/` is the modem core in C++ ([docs/core.md](core.md)). It contains the AT commands, the S-registers, the result codes, the state machine of the call and its timers. It has the same behaviour as the slmodemd core of Smart Link. slmodemd, libdmodem and modem_test use it.
