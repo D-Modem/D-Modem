@@ -35,10 +35,39 @@ We do not know how MNP 7 is negotiated.
 - Thus, the 0x02 bit of parameter 9 is a probable place for MNP 7. This
   is a guess. A Microcom ROM with MNP 7 can confirm it.
 
+## Modems that have MNP 7
+
+The sources are product reviews, catalogues, Datapro reports and
+advertisements of the period. We found no ROM dump for these modems.
+
+| Modem | Source |
+|---|---|
+| Microcom QX/12K | More than one source |
+| Microcom QX/2400t | One secondary source (Datapro) |
+| Multi-Tech MT224EM7 (MNP 5 and MNP 7) | One secondary source |
+
+The Microcom QX/4232 family (about 1990) possibly also has MNP 7. This
+is not confirmed. The V.32 modems with MNP 9 also have MNP 7 (refer to
+[MNP 9](mnp9.md)).
+
+## Patents
+
+We found no patent that describes the MNP 7 compression. Two Microcom
+patents describe the MNP 5 coder:
+
+- US 4,748,638.
+- US 5,027,376.
+
+These two patents describe an adaptive code of order 0. That is, the
+code of a character does not use the previous character. They do not
+describe a Markov model. Thus, they do not give the MNP 7 method. Both
+patents are expired.
+
 ## D-Modem
 
-D-Modem does not support MNP 7. D-Modem's LR sets only the 0x01 bit of
-parameter 9. A peer that offers MNP 7 and MNP 5 gets MNP 5.
+D-Modem does not support MNP 7. In parameter 9 of the LR, D-Modem
+sets the 0x01 bit (MNP 5) and, with S114=1, the V.42bis bits. A peer
+that offers MNP 7 and MNP 5 gets MNP 5 or V.42bis.
 
 ## What is necessary to support it
 

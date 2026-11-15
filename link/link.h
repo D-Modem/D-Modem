@@ -80,6 +80,9 @@ struct Config {
 	s16 mnp_info = MNP_MAX_INFO;
 	s16 mnp_opt = 3;
 	bool mnp5 = false;
+	/* the initiator's LR offers V.42bis too (S114; the responder takes
+	   it whenever comp has it: docs/mnp/mnp5.md) */
+	bool mnp_v42_offer = false;
 	/* MNP 10 offered in the LR (mnp.h), with: its cellular mode ()M1,
 	   the DK dial modifier), the lowest rate it may go to (-Q: 0
 	   neither 2400 nor 1200, 1 not 1200, 2 any), the cellular transmit
@@ -404,6 +407,11 @@ public:
 	void hst_turn() { owner_->hst_turn(); }
 	/* what MNP's LRs agreed (cfg()) to the owner */
 	void negotiated() { owner_->negotiated(cfg_); }
+	/* the V.42bis coders are made (MNP may offer V.42bis in its LR) */
+	bool v42bis_coders() const { return enc_.ready() && dec_.ready(); }
+	/* MNP's LRs agreed V.42bis in the directions comp (Config::comp's
+	   bits; 0: none) with N2 and N7: the coders set up, cfg() set */
+	void mnp_v42bis(s16 comp, s32 n2, s32 n7);
 	/* MNP 10's side of the owner (see Owner) */
 	u32 mnp10_mods() { return owner_->mnp10_mods(); }
 	/* (see Owner) */

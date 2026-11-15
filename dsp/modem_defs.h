@@ -117,6 +117,11 @@ enum S_REGISTER {
 	SREG_MNP10                        = 113, /* MNP 10 offered (bit 0),
 						    and between D-Modems
 						    every modulation (bit 1) */
+	SREG_MNP_V42BIS                   = 114, /* 1: our MNP LR offers
+						    V.42bis as the initiator
+						    (the responder always
+						    takes it, with %C2 or
+						    %C3) */
 	SREG_LEASED                       = 47,  /* AT&L: 1 a 2-wire leased
 						    line, 2 a 4-wire one (no
 						    dial tone or ringing: ATD
