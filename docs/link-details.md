@@ -759,7 +759,8 @@ these steps:
   is on.
 - The transmit attenuation is 13 dB from the full scale of the codec for
   `ETC_CELL` (the default) and 20 dB for `ETC_LAND`.
-- In ETC mode, the XID of V.42 gives N401 = 64 octets, not 128.
+- In ETC mode, the XID of V.42 gives N401 = 64 octets, not 128, and
+  T401 is 3.0 s.
 
 The trace found no special ETC modulation. On this card, ETC is V.32bis
 with V.42 or MNP, the calling tone and the settings above. The V.32bis
@@ -779,7 +780,9 @@ commands do nothing, as before.
   -43 dBm0, turn ETC on for the call. S115 does not change. The answerer
   also transmits 6.6 dB lower than the default (the ratio of the two
   gains of the firmware).
-- When S115 is not 0, the link offers N401 = 64 octets.
+- When S115 is not 0, the link offers N401 = 64 octets, and T401 is 3 s
+  plus the time of three frames (not 2 s). The firmware uses 3.0 s in
+  ETC mode, and 1.5 s to 5 s from the rate in other modes.
 - When bit 5 of S115 is set at the start of a call, `core/etc.h` filters
   the samples of the data pump before they go to the line. The filter is
   off during the call progress pump (dial tones and the calling tone), as
@@ -795,8 +798,6 @@ commands do nothing, as before.
 
 **Limits.**
 
-- The firmware probably also changes T401 of V.42 in ETC mode (to 30,
-  in a unit that we do not know). D-Modem does not.
 - The cellular side of the firmware uses a 1500 Hz notch in its receive
   path, so that it does not hear its own calling tone. D-Modem does not
   need it.

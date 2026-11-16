@@ -994,6 +994,10 @@ s16 Modem::link_init()
 	c.tx_win = cfg_.tx_win;
 	c.rx_win = cfg_.rx_win;
 	c.tx_info = cfg_.tx_info;
+	/* ETC (S115): T401 3 s, as 3Com's firmware sets it (data 0xBCE3:
+	   30 ticks of 100 ms, in place of 1.5 to 5 s by the rate) */
+	if (sregs_[SREG_ETC])
+		c.t401_s = 3;
 	c.rx_info = cfg_.rx_info;
 	/* +DS (V.42bis) and +DS44 (V.44): their <direction> from the
 	   DTE's side (bit 0 what it sends: our encoder, Config::comp's bit

@@ -2683,7 +2683,7 @@ S115 holds the \std{ETC} flags, with the bits of the 3Com firmware
 1 & The cellular side: the caller sends a calling tone of 1500~Hz (0.7~s on, 1.5~s off). \\ \hline
 4 & The landline side: if bits 0 to 2 are not set, the answerer listens for the 1500~Hz tone in the first 10~s.  If it finds the tone, \std{ETC} is on for the call.  The transmit level is 6.6~dB lower. \\ \hline
 5 & The transmit filter of \cmdl[plusEF]{+EF} is on. \\ \hline
-any & If S115 is not 0, \std{V.42} offers frames of 64 octets (N401). \\ \hline
+any & If S115 is not 0, \std{V.42} offers frames of 64 octets (N401), and T401 is 3~s plus the time of three frames. \\ \hline
 \end{vtable}
 \begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{ETC Profiles}
   {\thd{Command} & \thd{Function}}
