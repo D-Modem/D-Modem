@@ -349,8 +349,8 @@
       0 A: +CVM=63,8000,0\r\n
       0 A: STORED PROFILES: none\r\n
       0 A: OK\r\n
-      0 A< AT&Z0=5551212\r
-      0 A: AT&Z0=5551212\r\r\n
+      0 A< AT&Z\r
+      0 A: AT&Z\r\r\n
       0 A: ERROR\r\n
       0 A< AT&T1\r
       0 A: AT&T1\r\r\n

@@ -46,13 +46,17 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 	push_pending = false;
 	dec_head_ = dec_count_ = 0;
 	usr_.init(this, cfg.usr_feature);
-	if (cfg.ec && cfg.comp) {
+	if ((cfg.ec || cfg.mnp) && cfg.comp) {
 		if (enc_.init(cfg.dict_size, cfg.max_string) ||
 		    dec_.init(cfg.dict_size, cfg.max_string)) {
 			enc_.exit();
 			return -1;
 		}
-		if (cfg.v44 &&
+		/* V.44 and zstd only with LAPM (an MNP link has V.42bis
+		   alone) */
+		if (!cfg.ec)
+			cfg_.v44 = cfg_.zstd = false;
+		if (cfg.ec && cfg.v44 &&
 		    (enc44_.init(cfg.v44_codewords, cfg.v44_max_string,
 				 cfg.v44_history) ||
 		     dec44_.init(cfg.v44_codewords, cfg.v44_max_string,
@@ -284,6 +288,8 @@ void Link::start_mnp(bool initiator, const BitQueue *rx)
 	mnp_tried_ = true;
 	cfg_.ec = false;
 	cfg_.mnp5 = false;
+	cfg_.comp = 0;
+	cfg_.v44 = cfg_.zstd = false;
 	enc5_.init();
 	dec5_.init();
 	proto_ = Protocol::Mnp;
@@ -308,6 +314,8 @@ void Link::mnp_upgrade(bool initiator)
 	mnp_tried_ = true;
 	cfg_.ec = false;
 	cfg_.mnp5 = false;
+	cfg_.comp = 0;
+	cfg_.v44 = cfg_.zstd = false;
 	enc5_.init();
 	dec5_.init();
 	proto_ = Protocol::Mnp;
@@ -633,6 +641,25 @@ void Link::update_config(const Config &remote)
 	owner_->negotiated(cfg_);
 }
 
+/* (see link.h): the coders at the LRs' N2 and N7 (each is made at
+   least as large: Mnp offers no more than Config's); no compression if
+   they cannot be set up */
+void Link::mnp_v42bis(s16 comp, s32 n2, s32 n7)
+{
+	cfg_.comp = 0;
+	cfg_.v44 = cfg_.zstd = false;
+	if (!comp)
+		return;
+	if (enc_.config(n2, n7) || dec_.config(n2, n7)) {
+		logf("err: v42bis: setup failed (%" PRId32 "/%" PRId32 ").",
+		     n2, n7);
+		return;
+	}
+	cfg_.comp = comp;
+	cfg_.dict_size = n2;
+	cfg_.max_string = n7;
+}
+
 /* zstd (Annex F/V.cvm) in the directions dir, both modems having
    offered it (remote: the other's XID): a frame each way, the smaller
    window, the dictionary if both name the same one (the one we know);
@@ -678,6 +705,8 @@ s16 Link::read_chars(u8 *buf, s16 n)
 		return 0;
 	if (proto_ == Protocol::Mnp && cfg_.mnp5)
 		return comp_read_with(enc5_, buf, n);
+	if (proto_ == Protocol::Mnp && cfg_.comp & 2 && enc_.ready())
+		return comp_read_with(enc_, buf, n);
 	if (cfg_.ec && cfg_.comp & 2 && enc_ready())
 		return comp_read(buf, n);
 	return dte_read(buf, n);
@@ -691,6 +720,8 @@ s16 Link::write_chars(const u8 *buf, s16 n)
 		return 0;
 	if (proto_ == Protocol::Mnp && cfg_.mnp5)
 		return comp_write_with(dec5_, buf, n);
+	if (proto_ == Protocol::Mnp && cfg_.comp & 1 && dec_.ready())
+		return comp_write_with(dec_, buf, n);
 	if (cfg_.ec && cfg_.comp & 1 && dec_ready())
 		return comp_write(buf, n);
 	return dte_write(buf, n);
@@ -750,7 +781,8 @@ s16 Link::comp_write(const u8 *buf, s16 n)
 bool Link::comp_flush_output()
 {
 	if (proto_ == Protocol::Mnp)
-		return comp_flush_with(dec5_);
+		return cfg_.comp & 1 ? comp_flush_with(dec_) :
+			comp_flush_with(dec5_);
 	if (cfg_.zstd)
 		return comp_flush_with(decz_);
 	return cfg_.v44 ? comp_flush_with(dec44_) : comp_flush_with(dec_);

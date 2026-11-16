@@ -451,12 +451,12 @@
   41080 A: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
   41080 A: Protocol Negotiation Result         MNP\r\n
   41080 A: Data Compression Result             MNP5\r\n
-  41080 A: Estimated SNR (dB)                  43.3\r\n
-  41080 A: Estimated Noise Level (dBm0)        -62.0\r\n
-  41080 A: Receive Signal Power Level (dBm0)   -18.7\r\n
+  41080 A: Estimated SNR (dB)                  43.2\r\n
+  41080 A: Estimated Noise Level (dBm0)        -61.8\r\n
+  41080 A: Receive Signal Power Level (dBm0)   -18.6\r\n
   41080 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
   41080 A: Carrier Frequency Offset (Hz)       0.0\r\n
-  41080 A: Timing Offset (ppm)                 2\r\n
+  41080 A: Timing Offset (ppm)                 -5\r\n
   41080 A: Characters Sent                     2000\r\n
   41080 A: Characters Received                 1000\r\n
   41080 A: Transmit Frame Count                16\r\n
@@ -516,7 +516,7 @@
   41080 B: DIAG <2A4D3263 3=0>\r\n
   41080 B: DIAG <2A4D3263 10=12>\r\n
   41080 B: DIAG <2A4D3263 11=11>\r\n
-  41080 B: DIAG <2A4D3263 12=40>\r\n
+  41080 B: DIAG <2A4D3263 12=3C>\r\n
   41080 B: DIAG <2A4D3263 20=B>\r\n
   41080 B: DIAG <2A4D3263 21=B>\r\n
   41080 B: DIAG <2A4D3263 22=0960>\r\n

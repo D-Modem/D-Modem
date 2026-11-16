@@ -295,6 +295,11 @@ enum v34_state {
 	KC4_MP,
 	KC4_E,
 	KC4_DATA,
+	/* and its rate renegotiation, ours or in answer to the digital
+	   modem's R: S, S-bar, TRN; then KC4_MP and KC4_E */
+	KC5_S,
+	KC5_SBAR,
+	KC5_TRN,
 	/* V.92 analogue modem, PCM upstream phase 3 (9.5.2/V.92): the
 	   PAM transmitter's segments follow each other (v92a.h), these
 	   wait for what moves them on */
@@ -3232,7 +3237,11 @@ void V34Pump::pump_rx_sample(float x)
 		if (!ec.bypass)
 			x = ec.run(last_tx, x);
 		k56rx.line(x);
-		if (state == KC4_DATA && k56rx.qn) {
+		/* the digital modem's tone A: a retrain */
+		if (state == KC4_DATA)
+			rt_tone(x);
+		if ((state == KC4_DATA || state == KC5_S ||
+		     state == KC5_SBAR || state == KC5_TRN) && k56rx.qn) {
 			unsigned char b[K56RX_Q];
 			s16 m = k56rx.take(b, K56RX_Q);
 			CoreBits{ modem }.put(b, m);
@@ -3278,7 +3287,8 @@ void V34Pump::pump_rx_sample(float x)
 		if (!ec.bypass)
 			x = ec.run(last_tx, x);
 		prx.sample(x);
-		if (state == V34_DATA || v90_digital() || renegotiating)
+		if (state == V34_DATA || v90_digital() || renegotiating ||
+		    state == K4_DATA)
 			rt_tone(x);
 		return;
 	}
@@ -4423,6 +4433,14 @@ void V34Retrain<P>::retrain(const char *why, s16 by)
 		if (self.rt)
 			self.rt->pcm = 0;
 	}
+	/* K56flex: its PCM receiver off and no renegotiation (phase 2
+	   is V.34's; its phases 3 and 4 come again after it) */
+	if (self.k56_rx) {
+		self.k56_rx = 0;
+		if (self.rt)
+			self.rt->pcm = 0;
+	}
+	self.k56_reneg = 0;
 	/* the control channel as after INFO0 */
 	self.ccr.init(self.caller ? 2400 : 1200);
 	self.ccr.snap = 1;
@@ -4451,7 +4469,8 @@ void V34Retrain<P>::retrain(const char *why, s16 by)
 	self.lost = bad = 0;
 	/* V.90's phase 3 (Jd, the DIL) takes about 8 s more */
 	self.timeout = self.total +
-		ms2samples(self.pcm || self.v90a_on ? 30000 : 15000,
+		ms2samples(self.pcm || self.v90a_on || self.k56_on ||
+			   self.k56c_on ? 30000 : 15000,
 			   self.srate);
 	self.set_state(V34_RT_SILENCE);
 }
@@ -5882,6 +5901,9 @@ s16 V34Pump::handshake()
 	case KC4_MP:
 	case KC4_E:
 	case KC4_DATA:
+	case KC5_S:
+	case KC5_SBAR:
+	case KC5_TRN:
 		return k56c_step(c);
 	case K3_TRAIN:
 	case K3_TRN2:

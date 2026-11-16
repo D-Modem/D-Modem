@@ -266,38 +266,70 @@ void Mnp::m10_local_0c()
 		ext_flags_ours_ |= X_FALLBACK | X_FALLFWD;
 }
 
-/* MNP 10's parameters of our LR from b[n] on: 0x0C, 0x0D, D-Modem's
-   0xC0, the originator's 0x11 (the responder: those the initiator's
-   had); the new length */
+/* the longest LR of the initiator (refer to m10_lr()) */
+enum { M10_LR_MAX = 38 };
+
+/* MNP 10's parameters of our LR from b[n] on: 0x0C, D-Modem's 0xC0,
+   0x0D, the originator's 0x11 (the responder: those the initiator's
+   had); the new length.  The initiator's LR stays within M10_LR_MAX
+   octets (with the length indication), because some modems refuse a
+   longer LR: the SM56 modem one of 39 octets (an LD with reason 3),
+   the HSF and Broadcom modems one of 46 and the Agere modem one of 49
+   (no answer).  0xC0 (shorter: without -Q, then without the top
+   speed, then without the leased-line modulations), 0x0D and 0x11 are
+   only where they fit.  0xC0 comes before 0x0D: the first LR seldom
+   has the eye quality (E 0xFF, which the remote ignores).  0x11 also
+   stops the PCTel modem: thus 0x11 is not sent.  If 0x0C does not fit
+   (V.42bis offered, S114=1), the LR does not offer MNP 10.  S113 bit 2
+   (cfg_long_) sends all of them, with no limit, for a peer that must
+   have them */
 s16 Mnp::m10_lr(u8 *b, s16 n)
 {
 	if (!m10_offer_ || (!initiator_ && !m10_seen_))
 		return n;
+	const bool full = !initiator_ || cfg_long_;
+	auto fits = [&](s16 len) {
+		return full || n + len <= M10_LR_MAX;
+	};
 	m10_local_0c();
+	if (!fits(static_cast<s16>(2 + m10_ours_n_))) {
+		/* (no MNP 10 in this LR: build_lr() clears parameter 8's
+		   bit) */
+		link_->logf("mnp10: no space in the LR: not offered.");
+		m10_cut_ = true;
+		return n;
+	}
 	b[n++] = PI_M10;
 	b[n++] = static_cast<u8>(m10_ours_n_);
 	memcpy(b + n, m10_ours_, static_cast<size_t>(m10_ours_n_));
 	n = static_cast<s16>(n + m10_ours_n_);
-	s16 dbm, eqm;
-	link_->mnp10_line(dbm, eqm);
-	b[n++] = PI_QUALITY;
-	b[n++] = 2;
-	b[n++] = g_code(dbm);
-	b[n++] = e_code(eqm);
-	if (cfg_ext_ && (initiator_ || ext_theirs_)) {
+	if (cfg_ext_ && (initiator_ || ext_theirs_) && fits(5)) {
 		const u32 mods = ext_ours_;
 		const u16 top = static_cast<u16>(cfg_top_ / 100);
+		const u8 len = fits(9) ? 7 : fits(8) ? 6 : fits(6) ? 4 : 3;
 		b[n++] = PI_EXT;
-		b[n++] = 7;
+		b[n++] = len;
 		b[n++] = ext_flags_ours_;
 		b[n++] = static_cast<u8>(mods);
 		b[n++] = static_cast<u8>(mods >> 8);
-		b[n++] = static_cast<u8>(mods >> 16);
-		b[n++] = static_cast<u8>(top);
-		b[n++] = static_cast<u8>(top >> 8);
-		b[n++] = static_cast<u8>(cfg_lowest_);
+		if (len >= 4)
+			b[n++] = static_cast<u8>(mods >> 16);
+		if (len >= 6) {
+			b[n++] = static_cast<u8>(top);
+			b[n++] = static_cast<u8>(top >> 8);
+		}
+		if (len >= 7)
+			b[n++] = static_cast<u8>(cfg_lowest_);
 	}
-	if (initiator_) {
+	if (fits(4)) {
+		s16 dbm, eqm;
+		link_->mnp10_line(dbm, eqm);
+		b[n++] = PI_QUALITY;
+		b[n++] = 2;
+		b[n++] = g_code(dbm);
+		b[n++] = e_code(eqm);
+	}
+	if (initiator_ && cfg_long_) {
 		b[n++] = PI_ORIG;
 		b[n++] = 1;
 		b[n++] = 0;
@@ -346,10 +378,12 @@ void Mnp::m10_rx_lr(const u8 *h, s16 len)
 			}
 			break;
 		case PI_EXT:
-			if (pl >= 4 && (pv[0] & X_ON)) {
+			/* (3 octets: the modulations of the dial-up
+			   line only, without the leased-line ones) */
+			if (pl >= 3 && (pv[0] & X_ON)) {
 				ext_flags_theirs_ = pv[0];
 				ext_theirs_ = pv[1] | static_cast<u32>(pv[2]) << 8 |
-					static_cast<u32>(pv[3]) << 16;
+					(pl >= 4 ? static_cast<u32>(pv[3]) << 16 : 0);
 				if (pl >= 6) {
 					const s32 top = (pv[4] | pv[5] << 8) * 100;
 					if (top > 0 && top < cfg_top_)
@@ -378,7 +412,7 @@ bool Mnp::m10_agree(bool initiator)
 {
 	m10_ = cell_ = ext_ = false;
 	fb_ok_ = ff_ok_ = false;
-	if (!m10_offer_)
+	if (!m10_offer_ || m10_cut_)
 		return true;
 	if (initiator && p11_ && !upgraded_) {
 		link_->logf("mnp10: parameter 0x11 from the answerer.");
@@ -433,12 +467,12 @@ s16 Mnp::upgrade_params(u8 *b, s16 n, bool initiator)
 		tmp[k++] = 1;
 		tmp[k++] = 1;
 	}
-	const bool was = initiator_;
-	initiator_ = true;      /* (0x0C and 0x0D always; 0x11 not) */
+	const bool was = initiator_, lng = cfg_long_;
+	initiator_ = true;      /* (0x0C, 0x0D and 0xC0 fit; 0x11 not) */
+	cfg_long_ = false;
 	k = m10_lr(tmp, k);
 	initiator_ = was;
-	if (k >= 3 && tmp[k - 3] == PI_ORIG)
-		k = static_cast<s16>(k - 3);
+	cfg_long_ = lng;
 	k = std::min(k, n);
 	memcpy(b, tmp, static_cast<size_t>(k));
 	return k;

@@ -1,3 +1,3 @@
 # The data link layer
 
-See [docs/link.md](../docs/link.md).
+Refer to [docs/link.md](../docs/link.md).

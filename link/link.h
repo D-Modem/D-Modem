@@ -81,11 +81,16 @@ struct Config {
 	s16 mnp_info = MNP_MAX_INFO;
 	s16 mnp_opt = 3;
 	bool mnp5 = false;
+	/* the initiator's LR offers V.42bis too (S114; the responder takes
+	   it whenever comp has it: docs/mnp/mnp5.md) */
+	bool mnp_v42_offer = false;
 	/* MNP 10 offered in the LR (mnp.h), with: its cellular mode ()M1,
 	   the DK dial modifier), the lowest rate it may go to (-Q: 0
 	   neither 2400 nor 1200, 1 not 1200, 2 any), the cellular transmit
 	   level's start (@M), :T19's 120 s at 1200 bit/s, V.42's XID
-	   upgrade (-K1), D-Modem's extension (parameter 0xC0), the top
+	   upgrade (-K1), D-Modem's extension (parameter 0xC0), the long
+	   LR (all of MNP 10's parameters and 0x11, with no limit to the
+	   caller's LR, which some modems refuse: off by default), the top
 	   speed its rate masks come from */
 	bool mnp10 = false;
 	bool mnp10_cellular = false;
@@ -94,6 +99,7 @@ struct Config {
 	bool mnp10_t19 = true;
 	bool mnp10_upgrade = true;
 	bool mnp10_ext = true;
+	bool mnp10_long = false;
 	s32 mnp10_top = 33600;
 	s16 tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
 	s16 tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
@@ -410,6 +416,11 @@ public:
 	void hst_turn() { owner_->hst_turn(); }
 	/* what MNP's LRs agreed (cfg()) to the owner */
 	void negotiated() { owner_->negotiated(cfg_); }
+	/* the V.42bis coders are made (MNP may offer V.42bis in its LR) */
+	bool v42bis_coders() const { return enc_.ready() && dec_.ready(); }
+	/* MNP's LRs agreed V.42bis in the directions comp (Config::comp's
+	   bits; 0: none) with N2 and N7: the coders set up, cfg() set */
+	void mnp_v42bis(s16 comp, s32 n2, s32 n7);
 	/* MNP 10's side of the owner (see Owner) */
 	u32 mnp10_mods() { return owner_->mnp10_mods(); }
 	/* (see Owner) */

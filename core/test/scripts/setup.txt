@@ -122,7 +122,7 @@ A AT\\Q4\r
 A AT-V90=0\r
 A AT+GSN\r
 A AT&V\r
-A AT&Z0=5551212\r
+A AT&Z\r
 A AT&T1\r
 A ATX5\r
 # ; between commands, and an extended command's end

@@ -9,15 +9,15 @@ editions extend compatibly).
 
 | Part | Where | What it does |
 |---|---|---|
-| `+DSVD`, `Modem::dsvd_offered()` | `core/at.cpp`, `core/modem.cpp` | D-Modem's own `+DSVD=<on>` (0, 1), kept with the extended parameters: with V.8 bis on (`+A8E`'s `<v8b>` 1, `v8bis_call()`), DSVD is offered and chosen. V.251 leaves the modes a modem runs V.8 bis for to "manufacturer-determined procedures"; V.70's own DTE control (7.2/V.70) is V.251's `+A8M`, which D-Modem does not have |
-| `MDMPRM_V8BIS` (76) | `dsp/modem_param.h`, `core/interface.cpp` | Read by the pumps: bit 0 V.8 bis, bit 1 DSVD offered. Set by `DP_V8BIS`: what it chose, 1 data, 2 DSVD (`Modem::svd_`) |
-| V.8 bis's SVD mode | `dsp/dp_v8bis.cpp` | With DSVD offered, our CL has the SVD mode beside data, with V.70, V.34, V.32 bis, V.14 and V.76 (8.3.2/V.8 bis). The caller's MS chooses SVD when both have V.70, V.76 and V.34 or V.32 bis: V.70, V.76, the faster modulation, V.14 if both have it. The answerer takes an MS with the SVD mode only if it offered DSVD and the MS has what DSVD needs, else NAK(3) and V.8 without V.8 bis. A NAK to the caller's MS undoes its choice |
-| `Link::start_v76()` | `link/link.cpp` | At the pump's connect (`ST_DP_LINK`) with DSVD chosen: no detection phase, no XID and no compression; the link's HDLC frames go to the multiplexer; V.76's initiator is V.8 bis's (6.1.4/V.70), the answerer here |
-| `Mux` | `link/v76.h`, `link/v76.cpp` | V.76's multiplexer and V.75's control entity for the data channel, below |
-| `Lapm` as a DLC | `link/lapm.cpp` | `set_dlc()`: the DLCI and the role in the address octet; `open()`: L-ESTABLISH (a SABME with no XID before it); `set_user_data()`: V.75's messages in our SABME and DISC, or in the UA and DM answering the remote's. The rest is LAPM's data phase, as V.76's ERM with Annex C's defaults is (REJ recovery, k 15, N401 128, the 16 bit FCS) |
-| `g729::Encoder`, `g729::Decoder` | `link/g729a.h`, `link/g729a_*.cpp` | G.729 Annex A, below |
-| `Owner::voice()`, `voice_state()`, `voice_in()`, `voice_out()` | `link/link.h`, `core/modem.cpp` | The voice path: `Host::dsvd_voice()` and its hooks where the host has one (dmodemd's SmartUSB56 with a handset), else `Options::dsvd`'s `VoicePath` (dmodemd's `--dsvd-audio`, `frontend/dmodemd/dsvd_audio.cpp`); with neither, no voice channel |
-| `h245::encode()`, `decode()` | `link/h245.h`, `link/h245.cpp` | H.245's messages in aligned PER (X.691): OpenLogicalChannel (a data or G.729 Annex A channel, V76LogicalChannelParameters both ways), its Ack and Reject, CloseLogicalChannel and its Ack, TerminalCapabilitySet's number, its Ack and Reject. A later encoder's extension additions are passed over; a message cut short is not one |
+| `+DSVD`, `Modem::dsvd_offered()` | `core/at.cpp`, `core/modem.cpp` | The `+DSVD=<on>` (0, 1) of D-Modem, kept with the extended parameters. When V.8 bis is enabled (`<v8b>` 1 of `+A8E`, `v8bis_call()`), the modem offers and selects DSVD. V.251 gives the selection of the modes for V.8 bis to "manufacturer-determined procedures". The DTE control of V.70 itself (7.2/V.70) is the `+A8M` of V.251, which D-Modem does not have |
+| `MDMPRM_V8BIS` (76) | `dsp/modem_param.h`, `core/interface.cpp` | The pumps read it: bit 0 V.8 bis, bit 1 DSVD offered. `DP_V8BIS` sets it to its selection: 1 data, 2 DSVD (`Modem::svd_`) |
+| V.8 bis's SVD mode | `dsp/dp_v8bis.cpp` | When the modem offers DSVD, our CL has the SVD mode together with data, with V.70, V.34, V.32 bis, V.14 and V.76 (8.3.2/V.8 bis). The MS of the caller selects SVD when the two sides have V.70, V.76 and V.34 or V.32 bis: V.70, V.76, the faster modulation, V.14 if the two sides have it. The answerer accepts an MS with the SVD mode only if it offered DSVD and the MS has the items that DSVD must have. If not, it sends NAK(3) and goes to V.8 without V.8 bis. A NAK to the MS of the caller cancels its selection |
+| `Link::start_v76()` | `link/link.cpp` | At the connect of the pump (`ST_DP_LINK`) with DSVD selected: no detection phase, no XID and no compression. The HDLC frames of the link go to the multiplexer. The initiator of V.76 is the initiator of V.8 bis (6.1.4/V.70), here the answerer |
+| `Mux` | `link/v76.h`, `link/v76.cpp` | The multiplexer of V.76 and the control entity of V.75 for the data channel (refer to the subsequent sections) |
+| `Lapm` as a DLC | `link/lapm.cpp` | `set_dlc()`: the DLCI and the role in the address octet. `open()`: L-ESTABLISH (a SABME with no XID before it). `set_user_data()`: the messages of V.75 in our SABME and DISC, or in the UA and DM that answer the SABME and DISC of the remote. The remaining part is the data phase of LAPM, as the ERM of V.76 with the defaults of Annex C is (REJ recovery, k 15, N401 128, the 16 bit FCS) |
+| `g729::Encoder`, `g729::Decoder` | `link/g729a.h`, `link/g729a_*.cpp` | G.729 Annex A (refer to the subsequent section) |
+| `Owner::voice()`, `voice_state()`, `voice_in()`, `voice_out()` | `link/link.h`, `core/modem.cpp` | The voice path: `Host::dsvd_voice()` and its hooks where the host has one (the SmartUSB56 of dmodemd with a handset). If not, the `VoicePath` of `Options::dsvd` (the `--dsvd-audio` of dmodemd, `frontend/dmodemd/dsvd_audio.cpp`). With neither, there is no voice channel |
+| `h245::encode()`, `decode()` | `link/h245.h`, `link/h245.cpp` | The messages of H.245 in aligned PER (X.691): OpenLogicalChannel (a data or G.729 Annex A channel, V76LogicalChannelParameters in the two directions), its Ack and Reject, CloseLogicalChannel and its Ack, the number of TerminalCapabilitySet, its Ack and Reject. The decoder ignores the extension additions of a later encoder. A message that is cut short is not a valid message |
 
 ## The data channel
 
@@ -32,13 +32,13 @@ editions extend compatibly).
 | 7 | The remote's DISC: UA with CloseLogicalChannelAck, Released | the same |
 
 The address octet (6.1/V.76) is the DLCI in bits 8 to 3, C/R in bit 2,
-EA 1: the initiator's commands and the responder's responses have C/R 1,
-the responder's commands and the initiator's responses 0, as LAPM's
-originator and answerer have. The data channel on DLCI 0 is therefore
+and EA 1. The commands of the initiator and the responses of the responder have C/R 1.
+The commands of the responder and the responses of the initiator have C/R 0, as the
+originator and answerer of LAPM have. Thus, the data channel on DLCI 0 is
 what Appendix I/V.70 describes for interworking with a V.42 modem.
 
-The remote opens a data channel first (before our flags are out): it is
-taken, and the initiator opens no other.
+If the remote opens a data channel first (before our flags are sent), the initiator accepts
+it and does not open a different channel.
 
 ### What is refused
 
@@ -54,8 +54,8 @@ taken, and the initiator opens no other.
 
 ## The voice channel
 
-With a voice path at the initiator, its voice channel follows its data
-channel's SABME:
+If the initiator has a voice path, its voice channel follows the SABME of its data
+channel:
 
 | Step | Initiator | Responder |
 |---|---|---|
@@ -66,23 +66,23 @@ channel's SABME:
 | 5 | Hanging up: DISC with CloseLogicalChannel before the data channel's | the same |
 | 6 | The remote's DISC: UA with CloseLogicalChannelAck, closed (`voice_state(false)`) | the same |
 
-An unanswered SABME is sent again after about a second of line bits,
-four times in all. A SABME repeated after the channel is open is
-answered with the UA again.
+If nobody answers a SABME, the modem sends it again after about one second of line bits,
+four times in total. If a SABME comes again after the channel is open, the modem
+answers it with the UA again.
 
 The audio header (clause 9/V.75, Table 7) is one octet: bit 1 silence,
-bit 2 a SID frame, bits 3 to 7 a sequence number counting the frames
-sent modulo 32. A gap in the received numbers of up to 3 is concealed
-with the decoder's erasure (G.729's frame erasure concealment) before
-the frame is decoded.
+bit 2 a SID frame, bits 3 to 7 a sequence number that counts the
+sent frames modulo 32. If there is a gap of up to 3 in the received numbers, the decoder
+conceals it with its erasure (the frame erasure concealment of G.729) before
+it decodes the frame.
 
 ### Silence
 
-V.70 leaves silence compression for further study, and its OLC has no
-Annex B coder to ask for, but V.75 has the audio header carry silence
-for a coder without it (clause 9/V.75). So when we send the header
-(always to another D-Modem: both ask for it) our encoder runs G.729
-Annex B's VAD and DTX (`Encoder::set_dtx(true)`):
+V.70 leaves silence compression for further study, and its OLC cannot ask for an
+Annex B coder. But in V.75, the audio header can carry silence
+for a coder without silence compression (clause 9/V.75). Thus, when we send the header
+(always to a different D-Modem, because the two sides ask for it), our encoder runs the
+VAD and DTX of G.729 Annex B (`Encoder::set_dtx(true)`):
 
 | Encoder's frame | On the DLC |
 |---|---|
@@ -90,18 +90,18 @@ Annex B's VAD and DTX (`Encoder::set_dtx(true)`):
 | SID (the noise has changed, Annex B's DTX) | The header (silence 1, SID 1), 2 octets: Annex B's 15 bits (MA predictor 1, LSF stages 5 and 4, gain 5) and a 0 bit |
 | None (silence, no change) | Nothing; the sequence number does not count it |
 
-The receiver of a frame with the silence bit decodes the SID (or, with
-the silence bit alone, an untransmitted frame) and then, while no frame
-comes, makes 10 ms of comfort noise every 10 ms of the line's bits
-(`Mux::clock()`, half a frame's time behind so a late frame is not
-doubled) until a speech frame comes. The OLC still says g729AnnexA, not
-H.245's `g729AnnexAwSilenceSuppression`, which V.75 does not list.
+When the receiver gets a frame with the silence bit, it decodes the SID (or, with
+only the silence bit, an untransmitted frame). Then, while no frame
+comes, it makes 10 ms of comfort noise for each 10 ms of the bits of the line
+(`Mux::clock()`, half the time of a frame behind, so that a late frame does not
+occur two times). This continues until a speech frame comes. The OLC still gives g729AnnexA, not
+the `g729AnnexAwSilenceSuppression` of H.245, because V.75 does not list it.
 
-The multiplexer (`Mux::clock()`) is told how many bits the pump took:
-each 10 ms of them at the transmit rate (288 bits if it is not known)
-is a voice frame's credit, up to 4 saved. With a credit and 80 samples
-from `voice_in()`, the next frame to send is a voice frame, before any
-of the data channel's; what is decoded goes to `voice_out()`.
+The pump tells the multiplexer (`Mux::clock()`) how many bits it took.
+Each 10 ms of these bits at the transmit rate (288 bits if the rate is not known)
+gives the credit for one voice frame, up to a maximum of 4 saved credits. With a credit and 80 samples
+from `voice_in()`, the next frame to send is a voice frame, before all frames
+of the data channel. The decoded audio goes to `voice_out()`.
 
 | Frame | Answer |
 |---|---|
@@ -111,22 +111,26 @@ of the data channel's; what is decoded goes to `voice_out()`.
 
 ## G.729 Annex A
 
-`g729a_enc.cpp` and `g729a_dec.cpp` are G.729 Annex A's coder in 16 and
-32 bit fixed point, written for D-Modem from the Recommendation's text,
-with the fixed-point operations (`g729_ops.h`, the ETSI basic operators
-with their overflow flag) in the order Annex A's reference uses them so
-that the bits come out the same. `g729a_tab.cpp` holds Annex A's tables.
+`g729a_enc.cpp` and `g729a_dec.cpp` are the coder of G.729 Annex A in 16 and
+32 bit fixed point. We wrote them for D-Modem from the text of the Recommendation.
+The fixed-point operations (`g729_ops.h`, the ETSI basic operators
+with their overflow flag) are in the sequence in which the reference of Annex A uses them. Thus,
+the bits are the same. `g729a_tab.cpp` holds the tables of Annex A.
 A frame is 80 samples (10 ms) in and 11 parameters out, packed MSB first
-into 10 octets as RFC 3551's G729 payload has them.
+into 10 octets, as the G729 payload of RFC 3551 has them.
 
-`g729b.cpp` is Annex B with Annex A (the ITU reference's "BA" coder):
-the VAD (12 autocorrelations, the lag window extended to them), DTX
-(when to send a SID: Itakura distance and energy change), the SID's
-LSF and energy quantisers, and the comfort noise excitation (Gaussian
-plus random pulses at the SID's level), at both ends. The encoder
-returns the frame's type (`encode()`: 10, 2 or 0 octets); the decoder
-takes a SID's 2 octets or none for an untransmitted frame. Off
-(`set_dtx(false)`, the default) the encoder is Annex A's alone.
+`g729b.cpp` is Annex B with Annex A (the "BA" coder of the ITU reference).
+It has these parts, at the two ends:
+
+- The VAD (12 autocorrelations, with the lag window extended to them).
+- DTX (when to send a SID: Itakura distance and energy change).
+- The LSF and energy quantisers of the SID.
+- The comfort noise excitation (Gaussian plus random pulses at the level of the SID).
+
+The encoder
+returns the type of the frame (`encode()`: 10, 2 or 0 octets). The decoder
+accepts the 2 octets of a SID, or none for an untransmitted frame. When DTX is disabled
+(`set_dtx(false)`, the default), the encoder is only the encoder of Annex A.
 
 | Test | Result |
 |---|---|
@@ -134,18 +138,18 @@ takes a SID's 2 octets or none for an untransmitted frame. Off
 | Decoder: all ten `.BIT` (ERASURE, OVERFLOW and PARITY among them) against `.PST` | Every sample the same |
 | Annex B encoder, DTX on: `tstseq1` to `tstseq4` `.bin` against `tstseqNa.bit` | Every frame the same type and bits |
 | Annex B decoder: `tstseq1a` to `tstseq4a.bit`, `tstseq5.bit`, `tstseq6.bit` (erasures in silence) against `.out` | Every sample the same |
-| bcg729 (1.1), both ways, on SPEECH.IN | bcg729 is not bit exact with the vectors itself (0 of 3750 SPEECH frames match ITU's bits), so the bits differ; each decoder's output from the other's frames is as close to the speech as from its own (about 7 dB SDR, the coder's usual on this file), and the two decoders agree to about 34 dB on the same frames |
+| bcg729 (1.1), both ways, on SPEECH.IN | bcg729 itself is not bit exact with the vectors (0 of 3750 SPEECH frames agree with the bits of the ITU). Thus, the bits are different. The output of each decoder from the frames of the other coder is as close to the speech as from its own frames (about 7 dB SDR, the usual value of the coder on this file). The two decoders agree to about 34 dB on the same frames |
 
-The vectors come from ITU-T's G.729 software package
-(`docs/specs/fetch_g729.sh`), Annex A's and Annex B's `tstseq*`; only
-its test vector files are taken, and CI fetches them for its Linux
+The vectors come from the G.729 software package of ITU-T
+(`docs/specs/fetch_g729.sh`), and the `tstseq*` of Annex A and Annex B. We use only
+its test vector files. CI downloads them for its Linux
 build.
 
 ## H.245 in aligned PER
 
-V.75's messages are H.245's MultimediaSystemControlMessage, which H.245
-encodes in X.691's aligned PER. `h245.cpp` writes and reads the subset
-V.75 lists, with what the encoding of these messages needs:
+The messages of V.75 are the MultimediaSystemControlMessage of H.245. H.245
+encodes it in the aligned PER of X.691. `h245.cpp` writes and reads the subset that
+V.75 lists, with the parts of the encoding that these messages use:
 
 | ASN.1 | Encoding |
 |---|---|
@@ -154,8 +158,8 @@ V.75 lists, with what the encoding of these messages needs:
 | INTEGER (lo..hi) | A bit field up to range 255 (windowSize 7 bits), one aligned octet for 256 (SequenceNumber, G.729 Annex A frames), two for up to 65536 (LogicalChannelNumber, N401, portNumber); maxBitRate (0..4294967295) its octet count in 2 bits, then the octets aligned |
 | BOOLEAN, NULL | One bit, nothing |
 
-The tests hold the encodings an ASN.1 compiler (Python's asn1tools, on
-H.245's module) gives for each message.
+The tests hold the encodings that an ASN.1 compiler (the asn1tools of Python, on
+the module of H.245) gives for each message.
 
 ## Tests
 
@@ -173,22 +177,22 @@ H.245's module) gives for each message.
 ## Not done
 
 - Silence without the audio header (a remote that does not ask for
-  it gets every frame), and H.245's g729AnnexAwSilenceSuppression.
-- The voice on real SmartUSB56 hardware: tested only between simulated
+  it gets all frames), and the g729AnnexAwSilenceSuppression of H.245.
+- The voice on real SmartUSB56 hardware: we tested it only between simulated
   modems.
-- A voice channel the responder opens, or one opened after the call
-  has started (the initiator opens it once, at the start).
+- A voice channel that the responder opens, or a voice channel opened after the call
+  started (the initiator opens it one time, at the start).
 - More than one data channel, data channels in UNERM (V.70's synchronous
   data), V.75's segmentation (6.5/V.75) and break (clause 10/V.75),
   compression on a data channel (V.76's XID or H.245's
   v76wCompression).
-- The out-of-band control channel (H.245's dsvdControl) and the
-  capability exchange: our TerminalCapabilitySet is never sent, the
-  remote's is turned down.
+- The out-of-band control channel (the dsvdControl of H.245) and the
+  capability exchange: the modem never sends our TerminalCapabilitySet, and it refuses the
+  TerminalCapabilitySet of the remote.
 - V.76's options: SREJ, the 8 and 32 bit FCS, two-octet addresses,
   suspend/resume (Annex A), UIH frames, TEST.
 - DSVD during an analogue telephone call (V.8 bis's MRd, CRd and ESi in
   the middle of a call, 6.1.3.3/V.70), the return to telephony
   (EndSessionCommand), leased lines (6.1.4/V.70).
 - V.251's DTE control of V.8 bis (`+A8M`).
-- A modulation limited to V.34 or V.32 bis once DSVD is chosen.
+- A modulation limited to V.34 or V.32 bis after the modems select DSVD.

@@ -3230,3 +3230,65 @@ TEST(Core, ConfigAuto)
 	EXPECT_NE(s.find("OK"), std::string::npos) << s;
 	delete m;
 }
+
+/* ZyXEL's type 2 security by itself (zyxel_sec.h): the firmware's
+   limits, 8 characters a password and 26 a number, 3 tries */
+TEST(Core, ZyxelSecurity)
+{
+	using S = dcore::ZyxelSecurity;
+	auto feed = [](S &s, const std::string &t) {
+		for (char c : t)
+			s.feed(static_cast<u8>(c), '\r', '\b');
+	};
+	S s;
+	s.type = 3;
+	s.user[7] = "12345678";
+	ASSERT_TRUE(s.on());
+	s.start();
+	EXPECT_EQ(s.out, "PassWord:");
+	s.out.clear();
+	/* a 9th character is wrong at once (and goes) */
+	feed(s, "123456789");
+	EXPECT_EQ(s.out, "********\r\nError..., try again\r\nPassWord:");
+	EXPECT_EQ(s.step, S::Step::Password);
+	s.out.clear();
+	feed(s, "12345678\r");
+	EXPECT_EQ(s.out, "********\r\nCorrect\r\n");
+	EXPECT_EQ(s.end, S::End::Pass);
+	EXPECT_EQ(s.slot, 7);
+	EXPECT_TRUE(s.holds());
+	s.stop();
+	EXPECT_FALSE(s.holds());
+
+	/* an empty slot never matches; the third wrong one ends it */
+	s.start();
+	feed(s, "\r\r");
+	EXPECT_EQ(s.step, S::Step::Password);
+	feed(s, "\r");
+	EXPECT_EQ(s.end, S::End::Fail);
+	EXPECT_EQ(s.out, "PassWord:\r\nError..., try again\r\nPassWord:"
+		  "\r\nError..., try again\r\nPassWord:");
+
+	/* *G5: S5 erases (not past the start), 26 characters at most */
+	s.type = 5;
+	s.start();
+	feed(s, "12345678\r");
+	EXPECT_EQ(s.step, S::Step::Number);
+	s.out.clear();
+	feed(s, "\b12\b3\r");
+	EXPECT_EQ(s.out, "12\b3");
+	EXPECT_EQ(s.end, S::End::CallNumber);
+	EXPECT_EQ(s.number, "13");
+	s.start();
+	feed(s, "12345678\r" + std::string(26, '5'));
+	EXPECT_EQ(s.step, S::Step::Number);
+	feed(s, "5");
+	EXPECT_EQ(s.step, S::Step::Password);
+
+	/* *G4: the stored number's slot */
+	s.type = 4;
+	s.start();
+	feed(s, "12345678\r");
+	EXPECT_EQ(s.end, S::End::CallStored);
+	EXPECT_EQ(s.slot, 7);
+}

@@ -1,7 +1,7 @@
 # The V.cvm proposal: technical details
 
 This is the technical companion to
-[The V.cvm proposal](vcvm-spec.md), the plain-English overview. Start
+[The V.cvm proposal](vcvm-spec.md), the overview in simple words. Start
 there. This page is a guide to the proposal
 ([specs/v_cvm.pdf](specs/v_cvm.pdf), LaTeX source in
 [cellular/](cellular/v_cvm.tex)), clause by clause. It gives the
@@ -9,7 +9,7 @@ important values of each clause and the source file that holds the
 clause.
 
 The proposal is the reference. If this page and the proposal are
-different, use the proposal. For D-Modem's code, see
+different, use the proposal. For D-Modem's code, refer to
 [V.cvm: technical details](dsp/vcvm-details.md).
 
 ## The source files
@@ -417,7 +417,7 @@ It gives the method and these results:
 - **I.6:** tandem codecs and frame erasures.
 - **I.7:** the parametric mode (Tables I.8 and I.9). P20 has no symbol
   errors through all codec modes except AMR 4.75.
-- **I.8:** the comb and the pulse train in one waveform. It works, but
+- **I.8:** the comb and the pulse train in one waveform. It operates, but
   it gives less than the comb alone.
 - **I.9:** a check of the OpenCORE and VisualOn codecs against the 3GPP
   reference code. The output samples are identical.
@@ -428,7 +428,7 @@ Then run `docs/cellular/tables.py` and `docs/cellular/build.sh`.
 ### Appendix II: EVS
 
 Appendix II is in `evs.tex`. EVS selects an ACELP core or a transform
-core for each frame. Thus its effect on a comb changes with the bit rate:
+core for each frame. Thus, its effect on a comb changes with the bit rate:
 
 - At 7.2 and 9.6 kbit/s, no comb gets through. The parametric mode gives
   400 bit/s at 9.6 kbit/s.
