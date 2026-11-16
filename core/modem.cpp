@@ -430,7 +430,7 @@ void Modem::sregs_init()
 		{ SREG_MNP10_UPGRADE, 0 }, { SREG_MNP10_LOWEST, 2 },
 		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
-		{ SREG_MNP10, 3 },
+		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -916,7 +916,8 @@ void Modem::setup_config()
 	c.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
 	c.tx_win = c.rx_win = dlink::LAPM_MAX_WIN;
 	c.tx_info = c.rx_info = dlink::LAPM_MAX_INFO;
-	c.comp = c.ec && (comp & 2) ? 3 : 0;
+	/* V.42bis with LAPM (XID) or with MNP (its LR: docs/mnp/mnp5.md) */
+	c.comp = (c.ec || c.mnp) && (comp & 2) ? 3 : 0;
 	c.mnp5 = c.mnp && (comp & 1);
 	c.dict_size = dlink::V42BIS_MAX_CODEWORDS;
 	c.max_string = dlink::V42BIS_MAX_STRING;
@@ -942,7 +943,7 @@ s16 Modem::dte_dirs(u32 direction)
    link agreed; logged if not */
 bool Modem::link_compression_ok()
 {
-	s16 agreed = cfg_.mnp_on ? 0 : cfg_.comp;
+	s16 agreed = cfg_.comp;
 	bool v44 = cfg_.v44 || cfg_.zstd;
 	if ((comp_need42_ & ~agreed) == 0 &&
 	    (!comp_need44_ || (v44 && (comp_need44_ & ~agreed) == 0)))
@@ -969,6 +970,7 @@ s16 Modem::link_init()
 	c.required = cfg_.required;
 	c.mnp_info = cfg_.mnp_info;
 	c.mnp5 = cfg_.mnp5;
+	c.mnp_v42_offer = sregs_[SREG_MNP_V42BIS] != 0;
 	c.tx_win = cfg_.tx_win;
 	c.rx_win = cfg_.rx_win;
 	c.tx_info = cfg_.tx_info;
@@ -1349,7 +1351,7 @@ const char *Modem::protocol_name() const
 const char *Modem::compression_name() const
 {
 	if (cfg_.mnp_on)
-		return cfg_.mnp5 ? "MNP5" : "NONE";
+		return cfg_.comp ? "V42bis" : cfg_.mnp5 ? "MNP5" : "NONE";
 	if (cfg_.ec && cfg_.comp)
 		return cfg_.zstd ? "ZSTD" : cfg_.v44 ? "V44" : "V42bis";
 	return "NONE";

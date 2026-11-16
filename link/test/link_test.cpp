@@ -2308,6 +2308,232 @@ TEST(Link, MnpMnp5)
 }
 
 
+/* MNP alone (no LAPM) with V.42bis (comp: Config::comp's directions;
+   offered as the initiator, S114) and MNP 5 */
+static Config mnp_v42_config(s16 comp, bool mnp5 = true)
+{
+	Config c = mnp_config(false, mnp5);
+	c.comp = comp;
+	c.mnp_v42_offer = true;
+	return c;
+}
+
+/* the first LR the link at l sends (the answerer's after in, its
+   initiator's LR, at the line), as its body */
+static std::vector<uint8_t> first_lr(Link &l, Dte &d,
+				     const std::vector<uint8_t> &in_lr)
+{
+	std::vector<uint8_t> in(200, 1), out, b(48);
+	if (!in_lr.empty())
+		char_bits(in, mnp_octets(in_lr));
+	in.resize(in.size() + 9600, 1);
+	in.resize((in.size() + 47) / 48 * 48, 1);
+	for (size_t k = 0; k < in.size(); k += 48) {
+		l.get_bits(1, b.data(), 48);
+		out.insert(out.end(), b.begin(), b.end());
+		l.put_bits(1, in.data() + k, 48);
+	}
+	(void)d;
+	auto frames = mnp_frames(line_chars(out));
+	return frames.empty() ? std::vector<uint8_t>() : frames[0];
+}
+
+/* the value of parameter type in an LR's body (empty if none) */
+static std::vector<uint8_t> lr_param(const std::vector<uint8_t> &lr,
+				     uint8_t type)
+{
+	for (size_t i = 3; i + 2 <= lr.size(); i += 2 + lr[i + 1])
+		if (lr[i] == type && i + 2 + lr[i + 1] <= lr.size())
+			return std::vector<uint8_t>(lr.begin() + i + 2,
+				lr.begin() + i + 2 + lr[i + 1]);
+	return {};
+}
+
+/* the initiator's offer of V.42bis in its LR, as the SM56 sends it:
+   parameter 9 with MNP 5 and the short form (0x10: N2 2048), and
+   parameter 14 (P0 3, N2 2048 with the high octet first, N7 34);
+   one direction only: parameter 14 alone (the short form is both
+   directions) with the initiator's P0 */
+TEST(Link, MnpV42bisLr)
+{
+	Dte d("caller");
+	Link l;
+	l.init(&d, true, mnp_v42_config(3));
+	l.start(true, true);
+	auto lr = first_lr(l, d, {});
+	CHECK(lr_param(lr, 9) == std::vector<uint8_t>{ 0x1d },
+	      "parameter 9: MNP 5 and the short form");
+	CHECK(lr_param(lr, 14) ==
+	      (std::vector<uint8_t>{ 0x03, 0x08, 0x00, 0x20 }),
+	      "parameter 14");
+
+	/* not offered as the initiator (S114 0, the default): the LR of
+	   before, MNP 5 alone */
+	Config off = mnp_v42_config(3);
+	off.mnp_v42_offer = false;
+	Dte d0("caller");
+	Link l0;
+	l0.init(&d0, true, off);
+	l0.start(true, true);
+	auto lr0 = first_lr(l0, d0, {});
+	CHECK(lr_param(lr0, 9) == std::vector<uint8_t>{ 0x01 } &&
+	      lr_param(lr0, 14).empty(), "not offered: MNP 5 alone");
+
+	/* our encoder only (Config::comp 2): P0 0x01, the initiator to
+	   the responder */
+	Dte d2("caller");
+	Link l2;
+	l2.init(&d2, true, mnp_v42_config(2, false));
+	l2.start(true, true);
+	lr = first_lr(l2, d2, {});
+	CHECK(lr_param(lr, 9).empty(), "no parameter 9");
+	CHECK(lr_param(lr, 14) ==
+	      (std::vector<uint8_t>{ 0x01, 0x08, 0x00, 0x20 }),
+	      "parameter 14, one way");
+}
+
+/* our responder against the initiator's offers: the SM56's (MNP 5,
+   the short form and parameter 14): parameter 14 back with the smaller
+   N7 and no MNP 5; the short form alone: the short form back; MNP 5
+   alone: MNP 5 back */
+TEST(Link, MnpV42bisResponder)
+{
+	const std::vector<uint8_t> head = {
+		0x00, 0x01, 0x02, 0x01, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0xff, 0x02, 0x01, 0x03, 0x03, 0x01, 0x08, 0x04, 0x02, 0x40,
+		0x00, 0x08, 0x01, 0x03 };
+	auto lr_with = [&](const std::vector<uint8_t> &tail) {
+		std::vector<uint8_t> lr = head;
+		lr.insert(lr.end(), tail.begin(), tail.end());
+		lr[0] = static_cast<uint8_t>(lr.size() - 1);
+		return lr;
+	};
+	struct Case {
+		const char *name;
+		std::vector<uint8_t> tail, p9, p14;
+		s16 comp;
+		bool mnp5;
+	};
+	const Case cases[] = {
+		{ "SM56", { 0x09, 0x01, 0x11, 0x0e, 0x04, 0x03, 0x08, 0x00,
+			    0x20 }, {}, { 0x03, 0x08, 0x00, 0x20 }, 3, false },
+		{ "short form", { 0x09, 0x01, 0x09 }, { 0x08 }, {}, 3,
+		  false },
+		{ "one way", { 0x0e, 0x04, 0x01, 0x02, 0x00, 0x40 }, {},
+		  { 0x01, 0x02, 0x00, 0x20 }, 1, false },
+		{ "MNP 5", { 0x09, 0x01, 0x01 }, { 0x01 }, {}, 0, true },
+	};
+	for (const Case &c : cases) {
+		Dte d("answerer");
+		Link l;
+		l.init(&d, false, mnp_v42_config(3));
+		l.start(true, true);
+		auto ours = first_lr(l, d, lr_with(c.tail));
+		CHECK(lr_param(ours, 9) == c.p9, "%s: parameter 9", c.name);
+		CHECK(lr_param(ours, 14) == c.p14, "%s: parameter 14",
+		      c.name);
+		/* the confirming LA */
+		std::vector<uint8_t> in(100, 1), b(48);
+		char_bits(in, mnp_octets({ 0x03, 0x05, 0x00, 0x08 }));
+		in.resize((in.size() + 480 + 47) / 48 * 48, 1);
+		for (size_t k = 0; k < in.size(); k += 48) {
+			l.get_bits(1, b.data(), 48);
+			l.put_bits(1, in.data() + k, 48);
+		}
+		CHECK(d.up, "%s: up", c.name);
+		CHECK(d.agreed.comp == c.comp && d.agreed.mnp5 == c.mnp5,
+		      "%s: compression %d, MNP 5 %d", c.name, d.agreed.comp,
+		      d.agreed.mnp5);
+	}
+}
+
+/* two D-Modems: V.42bis both ways in place of MNP 5 (text and noise);
+   one way only; a side without V.42bis: MNP 5; an initiator that
+   refuses a response with a larger N2 than it offered (LD) */
+TEST(Link, MnpV42bis)
+{
+	rnd_state = 12345;
+	Pair p(mnp_v42_config(3), mnp_v42_config(3));
+	p.start(true, true);
+	p.run(9600 * 2);
+	CHECK(p.dc.up && p.da.up, "up");
+	CHECK(p.dc.agreed.comp == 3 && p.da.agreed.comp == 3 &&
+	      !p.dc.agreed.mnp5 && !p.da.agreed.mnp5,
+	      "V.42bis agreed (%d, %d)", p.dc.agreed.comp, p.da.agreed.comp);
+	CHECK(p.dc.agreed.dict_size == 2048 && p.dc.agreed.max_string == 32,
+	      "N2 %d, N7 %d", (int)p.dc.agreed.dict_size,
+	      (int)p.dc.agreed.max_string);
+	transfer("mnp + v42bis, text", p, 60000, 40000, 9600 * 60);
+	transfer("mnp + v42bis, noise", p, 10000, 10000, 9600 * 60, false);
+
+	/* the caller compresses, the answerer does not */
+	Pair q(mnp_v42_config(2), mnp_v42_config(1));
+	q.start(true, true);
+	q.run(9600 * 2);
+	CHECK(q.dc.agreed.comp == 2 && q.da.agreed.comp == 1,
+	      "one way (%d, %d)", q.dc.agreed.comp, q.da.agreed.comp);
+	transfer("mnp + v42bis one way, text", q, 30000, 20000, 9600 * 60);
+
+	/* the answerer without V.42bis */
+	Pair r(mnp_v42_config(3), mnp_v42_config(0));
+	r.start(true, true);
+	r.run(9600 * 2);
+	CHECK(r.dc.agreed.comp == 0 && r.da.agreed.comp == 0 &&
+	      r.dc.agreed.mnp5 && r.da.agreed.mnp5, "MNP 5 in its place");
+	transfer("mnp5 (no v42bis), text", r, 20000, 20000, 9600 * 60);
+
+	/* a smaller N2 at the caller: the answerer takes it */
+	Config small = mnp_v42_config(3);
+	small.dict_size = 512;
+	Pair s2(small, mnp_v42_config(3));
+	s2.start(true, true);
+	s2.run(9600 * 2);
+	CHECK(s2.dc.agreed.dict_size == 512 && s2.da.agreed.dict_size == 512,
+	      "N2 512 (%d, %d)", (int)s2.dc.agreed.dict_size,
+	      (int)s2.da.agreed.dict_size);
+	transfer("mnp + v42bis 512, text", s2, 20000, 20000, 9600 * 60);
+}
+
+/* the initiator refuses a response that has V.42bis with more than it
+   offered: an LD, not the data phase */
+TEST(Link, MnpV42bisRefused)
+{
+	Config c = mnp_v42_config(3);
+	c.dict_size = 1024;
+	Dte d("caller");
+	Link l;
+	l.init(&d, true, c);
+	l.start(true, true);
+	auto lr = first_lr(l, d, {});
+	CHECK(lr_param(lr, 14) ==
+	      (std::vector<uint8_t>{ 0x03, 0x04, 0x00, 0x20 }),
+	      "our offer, N2 1024");
+	/* a response with N2 2048 */
+	std::vector<uint8_t> resp = {
+		0x00, 0x01, 0x02, 0x01, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0xff, 0x02, 0x01, 0x03, 0x03, 0x01, 0x08, 0x04, 0x02, 0x40,
+		0x00, 0x08, 0x01, 0x03, 0x0e, 0x04, 0x03, 0x08, 0x00, 0x20 };
+	resp[0] = static_cast<uint8_t>(resp.size() - 1);
+	Dte d3("caller");
+	Link l3;
+	l3.init(&d3, true, c);
+	l3.start(true, true);
+	/* after its LR (64 characters of marks first) */
+	std::vector<uint8_t> in(2000, 1), out, b(48);
+	char_bits(in, mnp_octets(resp));
+	in.resize((in.size() + 9600 + 47) / 48 * 48, 1);
+	for (size_t k = 0; k < in.size(); k += 48) {
+		l3.get_bits(1, b.data(), 48);
+		out.insert(out.end(), b.begin(), b.end());
+		l3.put_bits(1, in.data() + k, 48);
+	}
+	bool ld = false;
+	for (auto &f : mnp_frames(line_chars(out)))
+		ld |= f.size() >= 2 && f[1] == 0x02;
+	CHECK(ld, "LD");
+	CHECK(!(d3.up && l3.protocol() == Protocol::Mnp), "no data phase");
+}
+
 /*
  *    V.80 Synchronous Access Mode
  *

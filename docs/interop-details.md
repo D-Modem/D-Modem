@@ -1827,6 +1827,10 @@ Special behaviours:
   with MNP waits three times T400 for it.
 - The HSF modem sends LTs without information with MNP 5.
 - None of them has MNP 10 or 10EC.
+- The SM56 and HSF modems have V.42bis on an MNP link. When they call,
+  our answerer uses V.42bis in place of MNP 5. With `S114=1`, our caller
+  offers it to them too. Refer to
+  [V.42bis in MNP](mnp/mnp5.md#v42bis-in-mnp).
 
 Refer to [link-details.md](link-details.md#mnp) for MNP, and for what
 MNP 10EC would need.

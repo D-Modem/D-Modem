@@ -47,6 +47,43 @@ Other protocols of the same period did a similar thing: USRobotics HST
 (a fast channel and a slow back channel), Telebit PEP, the Hayes Express
 96 and the CompuCom SpeedModem.
 
+## Modems that have MNP 6
+
+Only Microcom 9600 bit/s modems are known to have MNP 6. The sources
+are product reviews, catalogues and advertisements of the period. We
+found no ROM dump for these modems.
+
+| Modem | Source |
+|---|---|
+| Microcom AX/9612c | More than one source |
+| Microcom AX/9624c | More than one source |
+| Microcom PC/9624c (internal card) | More than one source |
+| Microcom AX/9600 Plus | One secondary source |
+
+One secondary source lists "MNP 6" for the Multi-Tech MultiModem 696E.
+This is possibly an error in the source. No other source gives MNP 6
+for a modem that Microcom did not make.
+
+## Patents
+
+We found one Microcom patent that is related to ULN:
+
+- US 4,680,781. The inventors are Amundson and Melhorn. The patent was
+  filed on 1985-10-30 and issued on 1987-07-14. It describes a link
+  negotiation that is similar to ULN. We did not compare it with
+  firmware.
+
+We found no patent that describes statistical duplexing. Other
+companies have patents for similar methods. These patents are not
+Microcom patents, and they do not describe MNP 6:
+
+- Racal: US 4,771,417 and EP 0260470.
+- Hayes: US 4,894,847 and US 5,001,729.
+
+We also examined US 5,241,565 and US 4,680,773. They are not related
+to MNP 6. All these patents are older than 20 years, thus they are
+expired.
+
 ## D-Modem
 
 D-Modem does not support MNP 6.

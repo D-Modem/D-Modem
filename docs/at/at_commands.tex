@@ -2577,7 +2577,7 @@ the other modem chooses; \cmdl[plusDS]{+DS}, \cmdl[plusDS44]{+DS44} and
   {\thd{Command} & \thd{Function}}
 \%C0 & No compression. \\ \hline
 \%C1 & \std{MNP~5} (with \std{MNP}). \\ \hline
-\%C2 & \std{V.44} or \std{V.42bis} (with \std{V.42}'s \std{LAPM}). \\ \hline
+\%C2 & \std{V.44} or \std{V.42bis} (with \std{V.42}'s \std{LAPM}); \std{V.42bis} with \std{MNP}, when the other modem offers it (\sreg{114}). \\ \hline
 \%C3 & Either, as the call's error correction has it (\emph{default}). \\ \hline
 \end{vtable}
 \end{command}
@@ -2967,6 +2967,7 @@ set and read back, with no other effect.
 \hyperlink{sreg:104}{S104} & Data compression (\cmdl[pctC]{\%C}). & 0--3 & -- & 3 \\ \hline
 \hyperlink{sreg:105}{S105} & \std{MNP} block size (\cmdl[bsA]{\bs A}). & 0--3 & -- & 3 \\ \hline
 \hyperlink{sreg:106}{S106} & Protocol in \rc{CONNECT} (\cmdl[bsV]{\bs V}). & 0--2 & -- & 0 \\ \hline
+\hyperlink{sreg:114}{S114} & \std{V.42bis} offered in an \std{MNP} call. & 0, 1 & -- & 0 \\ \hline
 \hyperlink{sreg:161}{S161} & \cmdl[Y]{Y} (kept). & 0--3 & -- & 0 \\ \hline
 \end{vtable}
 
@@ -3164,6 +3165,14 @@ answer tone; 0 waits 10 ms.  Elsewhere \sreg{92} is a fax transmit level:
 \sregdef{106}{Protocol in CONNECT}
 \cmdl[bsV]{\bs V}'s setting.
 \facts{0--2}{0}{none}
+
+\sregdef{114}{V.42bis in MNP}
+1: when the modem calls with \std{MNP}, its \std{LR} offers \std{V.42bis}
+(with \cmdl[pctC]{\%C2} or \cmdl[pctC]{\%C3}) in place of \std{MNP~5}.
+0: the \std{LR} offers \std{MNP~5} only.  When the modem answers, it
+always accepts \std{V.42bis} from the other modem.  Some modems do not
+complete a call with this \std{LR}: thus the default is 0.
+\facts{0, 1}{0}{none}
 
 \sregdef{161}{Long Space Disconnect}
 \cmdl[Y]{Y}'s setting, kept.  \cmdl[Z]{ATZ} keeps it.
