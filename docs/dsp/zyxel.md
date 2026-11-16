@@ -47,9 +47,30 @@ signals. The two ends agree on the fastest speed that the two can use.
 The result code and the call statistics show the speed (ZyX 7200 to
 ZyX 19200).
 
-D-Modem does not detect a ZyXEL peer. With `AT+MS=ZYX`, it always uses
-the ZyX modes. This is the same as `AT&N34` to `AT&N39` on a ZyXEL, which
-also connect only to a ZyXEL.
+With `AT+MS=ZYX`, D-Modem always uses the ZyX modes. This is the same as
+`AT&N34` to `AT&N39` on a ZyXEL, which also connect only to a ZyXEL.
+
+### The peer marker (S115)
+
+With `ATS115=1`, D-Modem sends a marker in the V.32bis start-up, and a
+modem that gets the marker of the other end changes to ZyX. Thus two
+D-Modems with `ATS115=1` and `AT+MS=V32B` (or `AT+MS=ZYX`) find each
+other and connect with ZyX. If the other modem does not send the
+marker, the call continues as V.32bis. The default is 0.
+
+- The caller sends its marker after CC (80 ms). The answerer listens for
+  it in the silence before S.
+- The answerer replies with its marker (80 ms). Then it changes to ZyX.
+  The caller changes to ZyX when it gets the reply.
+- With `S115=0`, the modem sends no marker and keeps the V.32bis
+  timing. The answerer still listens for the marker of the caller, and
+  writes it in the debug log. It does not change to ZyX.
+
+Use the same `S115` on the two ends. The caller marker is the probable
+ZyXEL signal (refer to the technical details). The answerer marker is
+not known: D-Modem uses its own signal. Thus a real ZyXEL modem does not
+find D-Modem, and D-Modem does not find a real ZyXEL modem as the
+answerer.
 
 ## Speeds in simulation
 
@@ -71,7 +92,8 @@ the gain of the ring table (shell mapping).
 ## What is not known yet
 
 - The signal that each modem uses to find a ZyXEL peer. D-Modem sends
-  no signal for this.
+  a probable signal only with `S115=1` (refer to
+  [The peer marker](#the-peer-marker-s115)).
 - The scrambler. D-Modem uses the scrambler of V.32bis.
 
 The carrier at 2742.857 baud is now known: 1828.571 Hz, from the ZyX DSP

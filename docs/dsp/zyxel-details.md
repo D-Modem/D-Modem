@@ -242,10 +242,28 @@ symbols at 2400 baud (the V.32 points A A C C ...) sets bit 4. This
 signal has lines at 1200 and 2400 Hz. The result changes with the
 alignment and the phase, and single tones do not set it. Thus the ZyXEL
 signal is probably a V.32-type signal with 2-symbol reversals in place
-of AA or AC. Which modem sends it, and when, is not known. D-Modem does
-not send it or detect it: a wrong signal in the V.32bis start-up can
-stop calls with other modems. A recording of a real ZyXEL call can
-prove it.
+of AA or AC. A recording of a real ZyXEL call can prove it.
+
+The firmware thread found the window of the detector. Each modem
+listens after the reversal that measures the round trip delay, in the
+silence before S. The answerer stops at the delay plus 0x100 ticks. The
+caller starts at the delay minus 0x28 ticks and has no limit. The
+caller detector wants status bits 2 or 3 (a signal with lines at 1500
+and 2100 Hz). Each modem changes to ZyX on its own detection.
+
+D-Modem sends a marker only with `S115=1`, because a wrong signal in
+the V.32bis start-up can stop calls with other modems:
+
+| Modem | Marker that it sends (192 symbols) | It listens for |
+|---|---|---|
+| Caller, after CC | 1800 Hz, a reversal every 2 symbols (A A C C) | The answerer marker, until R1 comes |
+| Answerer, after its marker is detected | 1800 Hz, a reversal every 4 symbols (lines at 1500 and 2100 Hz). This is a guess. | The caller marker, in the silence before S |
+
+A modem finds a marker when its two lines are on, and the V.32 tones are
+off, for 24 symbols. With `S115=0`, the answerer listens only in the
+16 symbols of the V.32 silence (longer while the two lines are on),
+writes a detection in the debug log,
+and does not change to ZyX.
 
 The DSP programs and the 68000 code have no scrambler. For ZyX, the
 68000 writes the same serial hardware registers as for V.32bis. Thus
@@ -283,7 +301,7 @@ For the parts that we do not know, D-Modem uses these guesses:
 
 | Item | Guess in D-Modem |
 |---|---|
-| Peer detection | None. `AT+MS=ZYX` on the two ends selects ZyX. |
+| Peer detection | `AT+MS=ZYX` on the two ends selects ZyX. With `S115=1` on the two ends, the markers above select ZyX from V.32bis. |
 | Change to 2742.857 baud | After the round trip delay is measured: the answerer when it stops AC, the caller when it stops CC. |
 | Roll-off of the pulse | 0.2 (V.32bis uses 0.25). With the carrier of 1828.571 Hz, the band is 183 to 3474 Hz. |
 | Scrambler | The scramblers of V.32bis (the caller GPC, the answerer GPA). The bits of a frame go through it in their sequence. |

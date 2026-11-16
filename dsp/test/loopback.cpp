@@ -269,12 +269,17 @@ long modem_set_param(struct modem *m, unsigned name, int val)
 /* the run's settings (loopback_run()'s, while it runs) */
 static const LoopbackConfig *run_cfg;
 
-/* the S-registers the pumps read: the run's own (LoopbackConfig::sregs),
+/* the S-registers the pumps read: the run's own (LoopbackConfig's
+   side_sregs, then sregs),
    else 50 s for the handshake, 1.4 s of carrier loss, 95 ms DTMF and the
    dial timings, +MS's modulation for PEP (the call progress listens for
    its tones); 0 for all others (blind dialling among them) */
-int modem_get_sreg(struct modem *, unsigned int num)
+int modem_get_sreg(struct modem *m, unsigned int num)
 {
+	if (run_cfg && m)
+		for (const auto &r : run_cfg->side_sregs[m->side])
+			if ((unsigned)r.first == num)
+				return r.second;
 	if (run_cfg)
 		for (const auto &r : run_cfg->sregs)
 			if ((unsigned)r.first == num)
