@@ -1826,7 +1826,23 @@ Special behaviours:
 - The SM56 modem sends its LR 1.1 s after the connection. Our answerer
   with MNP waits three times T400 for it.
 - The HSF modem sends LTs without information with MNP 5.
-- None of them has MNP 10 or 10EC.
+- None of them has MNP 10 or 10EC. Our caller offers MNP 10 to them
+  (`S113` bit 0), and they ignore the offer. But these limits apply to
+  the LR of our caller:
+  - The SM56 modem refuses an LR of more than 38 octets (with the length
+    indication). It sends an LD with reason 3.
+  - The HSF and Broadcom modems do not answer an LR of more than 45
+    octets. The Agere modem does not answer an LR of 49 octets.
+  - The PCTel modem does not answer an LR with parameter 0x11.
+
+  Thus, our LR is 38 octets or less, and it does not include parameter
+  0x11. Refer to [MNP 10](mnp/mnp10.md#d-modem).
+- The ESS modem retrains approximately 0.2 s after the start of the V.34
+  data. If the LR exchange is complete before this retrain, the ESS
+  modem waits for a new LR after the retrain. It does not answer our LA.
+  Thus, when our caller gets no frame in the data phase, and T404 (3 s
+  of bits) stops, it sends its LR again. If the answerer is in the data
+  phase, it sends an LA or an LT, and the data phase continues.
 - The SM56 and HSF modems have V.42bis on an MNP link. When they call,
   our answerer uses V.42bis in place of MNP 5. With `S114=1`, our caller
   offers it to them too. Refer to

@@ -124,9 +124,10 @@ As responders:
 
 - The PCTel modem does not answer an LR in which parameter 9 has the
   short form and no parameter 14.
-- The ESS modem does not complete the call (it gives no `CONNECT`) when
-  the LR of D-Modem has parameter 14. This occurs also when the ESS
-  modem answers with MNP 5 only.
+- The ESS modem agrees on MNP 5. It retrains approximately 0.2 s into
+  the call, and then it waits for a new LR. Our caller sends its LR
+  again, and the call completes. Refer to
+  [interop-details.md](../interop-details.md#mnp).
 - When the LR has the two forms, the SM56 and the HSF modems agree on
   V.42bis. The Agere, PCTel, Broadcom and Intel modems agree on MNP 5.
 

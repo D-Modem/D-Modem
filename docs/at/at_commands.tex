@@ -2646,6 +2646,13 @@ from \std{V.34} and \std{V.32bis} to \std{V.21}.  With other
 \cmdl[mnp10]{*H1}, \cmdl[mnp10]{*H2} & The calling modem starts at \std{V.22} (1200 bit/s) or \std{V.32bis} at 4800, and increases the rate. \\ \hline
 \cmdl[mnp10]{:T19\p{n}} & 1 (\emph{default}): at 1200 bit/s, disconnect after 120~s with no data from the other end (S112). \\ \hline
 \end{vtable}
+The \std{LR} of the caller is 38 octets or less, because some modems
+refuse a longer \std{LR}.  Thus, some \std{MNP~10} parameters are only
+in the \std{LR} when they fit.  With \std{V.42bis} offered (S114=1),
+the \std{LR} does not offer \std{MNP~10}.  S113 bit 2 (\emph{default}
+off) sends the long \std{LR}: all the \std{MNP~10} parameters and the
+mark of the originator (parameter 0x11), with no limit.  Set it only
+for a modem that must have them.
 The modem accepts \cmdl[mnp10]{-C}, but it changes nothing.  The modem
 does not have the modulations of \std{MNP~10EC}.  A modem with
 \std{MNP~10EC} connects with \std{V.42} or with \std{MNP~10}.

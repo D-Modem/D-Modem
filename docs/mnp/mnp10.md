@@ -63,6 +63,18 @@ is in `link/mnp10.cpp`, and the data pump side is
 `Modem::mnp10_shift()` in `core/modem.cpp`.
 
 - `S113` bit 0 (the default) offers MNP 10.
+- `S113` bit 1 (the default) adds parameter 0xC0 (refer to the list
+  below).
+- The LR of the caller is 38 octets or less, because some modems
+  refuse a longer LR. Thus, parameters 0xC0 and 0x0D are only in the LR
+  when they fit, and parameter 0xC0 can be shorter. The LR does not
+  include parameter 0x11, because the PCTel modem refuses it. With
+  V.42bis in MNP (`S114=1`), the LR does not offer MNP 10. Refer to
+  [link-details.md](../link-details.md#mnp) and
+  [interop-details.md](../interop-details.md#mnp).
+- `S113` bit 2 sends the long LR: all the MNP 10 parameters and
+  parameter 0x11, with no limit. This bit is 0 by default. Set it only
+  if an MNP 10 modem that answers must have these parameters.
 - `AT-K`, `AT-Q`, `AT)M`, `AT@M`, `AT*H` and `AT:T19` operate as on the
   DeskPorte.
 - The default of `AT-K` is 0 in D-Modem (1 on the DeskPorte). Thus, a

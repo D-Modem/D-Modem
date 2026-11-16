@@ -2062,6 +2062,22 @@ TEST(Link, Mnp)
 	CHECK(p.dc.released && p.da.released, "released by the LD");
 }
 
+/* no data for 20 s after the start: T404 makes the caller send its LR
+   again (as for the ESS modem); our answerer stays in the data phase,
+   so the data phase of the caller continues and the data goes through */
+TEST(Link, MnpIdleStart)
+{
+	rnd_state = 12345;
+	Config cc = mnp_config(true);
+	cc.mnp_first = true;
+	Pair p(cc, mnp_config(true));
+	p.start(true, true);
+	p.run(9600 * 20);
+	CHECK(p.dc.up && p.da.up, "MNP up");
+	CHECK(!p.dc.released && !p.da.released, "not released");
+	transfer("mnp, after 20 s idle", p, 20000, 20000, 9600 * 60);
+}
+
 /* the caller has V.42 and MNP, the answerer MNP alone: it passes over
    the ODPs, the caller sends its LR after T400 (7.2.1.2/V.42) */
 TEST(Link, MnpAfterOdp)
@@ -2691,14 +2707,17 @@ TEST(Link, Mnp10Upgrade)
 	}
 }
 
-/* the LR with MNP 10's parameters: 8's bit 4, 0x0C, 0x0D, 0x11 */
-TEST(Link, Mnp10Lr)
+/* our first LR (the caller's) with cfg, the pump on mod at rate */
+static std::vector<uint8_t> m10_first_lr(const Config &cfg, u32 mods,
+					 Mod mod = Mod::V32B,
+					 int32_t rate = 14400)
 {
 	M10Dte d("caller");
-	d.mods = 1u << int(Mod::V32B) | 1u << int(Mod::V22B) |
-		1u << int(Mod::V22);
+	d.mods = mods;
+	d.mod = mod;
+	d.rate = rate;
 	Link l;
-	l.init(&d, true, m10_config());
+	l.init(&d, true, cfg);
 	l.start(true, true);
 	std::vector<uint8_t> bits, b(48), idle(48, 1);
 	for (int k = 0; k < 14400 * 2 / 48; k++) {
@@ -2707,20 +2726,89 @@ TEST(Link, Mnp10Lr)
 		l.put_bits(1, idle.data(), 48);
 	}
 	auto frames = mnp_frames(line_chars(bits));
-	CHECK(!frames.empty(), "an LR");
-	if (frames.empty())
-		return;
-	const std::vector<uint8_t> lr = {
-		0x22, 0x01, 0x02, 0x01, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00,
+	return frames.empty() ? std::vector<uint8_t>() : frames[0];
+}
+
+/* v in hex, each octet after a space */
+static std::string hex_of(const std::vector<uint8_t> &v)
+{
+	std::string hex;
+	for (uint8_t c : v)
+		hex += fmt(" %02x", c);
+	return hex;
+}
+
+/* the LR with MNP 10's parameters: 8's bit 4, 0x0C, 0x0D; 0x11 only
+   with S113 bit 2 (the PCTel modem refuses it) */
+TEST(Link, Mnp10Lr)
+{
+	const u32 mods = 1u << int(Mod::V32B) | 1u << int(Mod::V22B) |
+		1u << int(Mod::V22);
+	std::vector<uint8_t> lr = {
+		0x1f, 0x01, 0x02, 0x01, 0x06, 0x01, 0x00, 0x00, 0x00, 0x00,
 		0xff, 0x02, 0x01, 0x03, 0x03, 0x01, 0x08, 0x04, 0x02, 0x40,
 		0x00, 0x08, 0x01, 0x13,
 		0x0c, 0x02, 0x4f, 0x3d,         /* shifts, 1200, 2400; V.32bis */
-		0x0d, 0x02, 0x07, 0x06,         /* -20 dBm, EQM 2 */
-		0x11, 0x01, 0x00 };
-	std::string hex;
-	for (uint8_t c : frames[0])
-		hex += fmt(" %02x", c);
-	CHECK(frames[0] == lr, "our LR:%s", hex.c_str());
+		0x0d, 0x02, 0x07, 0x06 };       /* -20 dBm, EQM 2 */
+	auto got = m10_first_lr(m10_config(), mods);
+	CHECK(got == lr, "our LR:%s", hex_of(got).c_str());
+	Config c = m10_config();
+	c.mnp10_long = true;
+	lr[0] = 0x22;
+	lr.insert(lr.end(), { 0x11, 0x01, 0x00 });
+	got = m10_first_lr(c, mods);
+	CHECK(got == lr, "our LR with 0x11:%s", hex_of(got).c_str());
+}
+
+/* the caller's LR stays within 38 octets (the SM56 modem refuses a
+   longer one): 0xC0 (shorter), 0x0D and 0x11 only where they fit, no
+   MNP 10 offer where 0x0C does not fit; S113 bit 2 (mnp10_long) sends
+   all of them */
+TEST(Link, Mnp10LrLength)
+{
+	const u32 mods = 1u << int(Mod::V34) | 1u << int(Mod::V32B) |
+		1u << int(Mod::V22B) | 1u << int(Mod::V22);
+	struct {
+		bool mnp5, v42, lng;
+		bool m10, p0d;          /* MNP 10 offered, 0x0D sent */
+		int c0;                 /* 0xC0's length, 0 for none */
+	} cases[] = {
+		{ false, false, false, true, false, 6 },
+		{ true, false, false, true, false, 3 },
+		{ true, false, true, true, true, 7 },
+		{ true, true, false, false, false, 0 },
+		{ true, true, true, true, true, 7 },
+	};
+	for (auto &k : cases) {
+		Config c = m10_config(true);
+		c.mnp10_long = k.lng;
+		c.mnp5 = k.mnp5;
+		if (k.v42) {
+			c.comp = 3;
+			c.mnp_v42_offer = true;
+		}
+		auto lr = m10_first_lr(c, mods, Mod::V34, 28800);
+		const std::string h = hex_of(lr);
+		CHECK(!lr.empty() && (k.lng || lr.size() <= 38),
+		      "%zu octets:%s", lr.size(), h.c_str());
+		int c0 = 0, p8 = -1;
+		bool p0c = false, p0d = false, p11 = false;
+		for (size_t i = 3; i + 2 <= lr.size(); i += 2 + lr[i + 1]) {
+			if (lr[i] == 0xc0)
+				c0 = lr[i + 1];
+			if (lr[i] == 8)
+				p8 = lr[i + 2];
+			p0c |= lr[i] == 0x0c;
+			p0d |= lr[i] == 0x0d;
+			p11 |= lr[i] == 0x11;
+		}
+		CHECK(p0c == k.m10 && (p8 >= 0 && !!(p8 & 0x10) == k.m10),
+		      "MNP 10 offered %d:%s", k.m10, h.c_str());
+		CHECK(p0d == k.p0d, "0x0D %d:%s", k.p0d, h.c_str());
+		CHECK(c0 == k.c0, "0xC0 of %d octets (%d):%s", k.c0, c0,
+		      h.c_str());
+		CHECK(p11 == k.lng, "0x11 %d:%s", k.lng, h.c_str());
+	}
 }
 
 /* MNP 10 agreed between two of ours, the probes grow the LTs, data both

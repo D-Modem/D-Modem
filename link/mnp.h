@@ -238,6 +238,8 @@ private:
 	void fail(s16 reason);
 	void fallback();
 	void t401_expired();
+	void t404_expired();
+	void resume_data();
 	bool can_send(u8 ns) const;
 	s32 t401_est() const;
 	s32 t401_data() const;
@@ -353,6 +355,7 @@ private:
 	s32 t19_ticks_ = 0;
 	/* our settings */
 	bool cfg_cell_ = false, cfg_t19_ = true, cfg_ext_ = true;
+	bool cfg_long_ = false;
 	s16 cfg_lowest_ = 2, cfg_level_ = 0;
 	s32 cfg_top_ = 33600;
 
@@ -385,6 +388,10 @@ private:
 	/* establishment */
 	s16 tries_ = 0;
 	bool heard_ = false;            /* a frame came, good or bad */
+	bool data_heard_ = false;       /* a frame came in the data phase */
+	bool relr_ = false;             /* our LR again (t404_expired()) */
+	bool relr_done_ = false;        /* (once in a call) */
+	bool m10_cut_ = false;          /* MNP 10 did not fit in our LR */
 	s16 ld_reason_ = 0;
 	/* control frames to send when the framer asks */
 	bool lr_due_ = false, ld_due_ = false;

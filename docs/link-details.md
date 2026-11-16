@@ -607,12 +607,34 @@ MNP 10 (parameter 8 bit 4) with these parameters:
   up to the top speed (`+MS`). Each side keeps the items that the two
   sides have.
 - `0x0D`: our receive level (G) and eye quality (E).
-- `0x11`: the mark of the originator.
+- `0x11`: the mark of the originator, only with S113 bit 2 (0 by
+  default). The PCTel modem refuses an LR with this parameter.
 - `0xC0`, the parameter of D-Modem (S113 bit 1, the default): the
   modulations that our pumps can run on this line, the top speed and
   `-Q`. A DeskPorte uses its length to skip it. When the two sides send
   it, the call can change between all the modulations that the two
   sides have.
+
+The LR of the caller is 38 octets or less (with the length
+indication), because the SM56 modem refuses a longer LR. The caller
+puts the parameters in this sequence, and each one only when it fits:
+
+1. `0x0C`. If it does not fit, the LR does not offer MNP 10, and
+   parameter 8 does not have bit 4. An example is an LR that also offers
+   V.42bis (`S114=1`).
+2. `0xC0`: 9 octets, or 8 octets without `-Q`, or 6 octets without the
+   top speed, or 5 octets without the modulations of the leased lines
+   (bits 16 to 22).
+3. `0x0D`. It comes after `0xC0`, because the first LR seldom has the
+   eye quality (E is 0xFF, and the remote ignores it).
+
+With MNP 5 and V.34, the LR has `0x0C` and the 5-octet `0xC0`. S113
+bit 2 sends the long LR: all the parameters and `0x11`, with no limit.
+
+When the caller gets no frame in the data phase, and T404 stops, it
+sends its LR again, one time in each call. A responder in the data
+phase sends an LA or an LT, and the data phase continues. A responder
+that started again (the ESS modem after its retrain) answers the LR.
 
 With `-K1`, a V.42 originator puts the same parameters in its XID (the
 `FF` group of the user data subfield, with "MNPI"). An answerer with

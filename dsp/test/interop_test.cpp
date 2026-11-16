@@ -1703,17 +1703,23 @@ std::vector<Call> calls()
 		      "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6", "BULK=20000",
 		      "EXPECT_A=" + mnp5, i537 });
 	}
-	/* and our caller's offer (S114=1) to the two that have it; MNP 10
-	   not offered (S113=0: with it these two refuse our LR or give no
-	   answer, on main too: docs/known-issues.md) */
+	/* and our caller's offer (S114=1) to the two that have it, with
+	   MNP 10 offered too (S113's default) */
 	for (const char *p : { "sm56", "hsf" }) {
 		std::string n = p;
 		add(p, n + "_mnp_v42bis_open_calls", "open", p,
-		    "ATX3;AT+MS=34;AT\\N5S113=0S114=1",
+		    "ATX3;AT+MS=34;AT\\N5S114=1",
 		    { "NET=9600:8000:ulaw",
 		      "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6", "BULK=20000",
 		      "EXPECT_A=" + v42 });
 	}
+	/* the ESS modem with our caller's offer: it answers with MNP 5 (it
+	   retrains 0.2 s into the call, and then it waits for a new LR:
+	   docs/interop-details.md) */
+	add("ess", "ess_mnp_v42bis_open_calls", "open", "ess",
+	    "ATX3;AT+MS=34;AT\\N5S114=1",
+	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6",
+	      "BULK=20000", "EXPECT_A=" + mnp5, i537 });
 	/* and MNP 4 alone (our %C2: no MNP 5) */
 	add("agere", "agere_mnp4_agere_calls", "agere", "open",
 	    "ATX3;AT+MS=V34;AT+ES=4,4,6",

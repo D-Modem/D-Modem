@@ -87,7 +87,9 @@ struct Config {
 	   the DK dial modifier), the lowest rate it may go to (-Q: 0
 	   neither 2400 nor 1200, 1 not 1200, 2 any), the cellular transmit
 	   level's start (@M), :T19's 120 s at 1200 bit/s, V.42's XID
-	   upgrade (-K1), D-Modem's extension (parameter 0xC0), the top
+	   upgrade (-K1), D-Modem's extension (parameter 0xC0), the long
+	   LR (all of MNP 10's parameters and 0x11, with no limit to the
+	   caller's LR, which some modems refuse: off by default), the top
 	   speed its rate masks come from */
 	bool mnp10 = false;
 	bool mnp10_cellular = false;
@@ -96,6 +98,7 @@ struct Config {
 	bool mnp10_t19 = true;
 	bool mnp10_upgrade = true;
 	bool mnp10_ext = true;
+	bool mnp10_long = false;
 	s32 mnp10_top = 33600;
 	s16 tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
 	s16 tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;

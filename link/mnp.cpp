@@ -336,12 +336,48 @@ void Mnp::clock(s32 bits)
 	if (t404_ > 0 && (t404_ -= bits) <= 0) {
 		t404_ = 0;
 		if (phase_ == Phase::Data)
-			la_due_ = true;
+			t404_expired();
 	}
 	if (t401_ > 0 && (t401_ -= bits) <= 0) {
 		t401_ = 0;
 		t401_expired();
 	}
+}
+
+/* T404 ran out in the data phase: an LA (A.7.3.3).  Once in a call,
+   the initiator that has heard nothing from the responder in the data
+   phase, and has sent no LT, sends its LR again in place of the LA: the
+   ESS modem retrains 0.2 s into the call, and after that it waits for
+   a new LR (it does not answer our LAs).  A responder that is in the
+   data phase answers with an LA or LT: then the data phase continues
+   (resume_data()) */
+void Mnp::t404_expired()
+{
+	if (initiator_ && !upgraded_ && !data_heard_ && !relr_done_ &&
+	    vs_ == 1) {
+		link_->logf("mnp: nothing from the responder: the LR again.");
+		relr_ = relr_done_ = true;
+		phase_ = Phase::Request;
+		bit_tx_ = false;
+		tries_ = 1;
+		lr_due_ = true;
+		t401_ = t401_est();
+		return;
+	}
+	la_due_ = true;
+}
+
+/* back to the data phase after the LR again (t404_expired()): the
+   responder did not answer it, or it sent a frame of the data phase */
+void Mnp::resume_data()
+{
+	link_->logf("mnp: the data phase continues.");
+	relr_ = false;
+	phase_ = Phase::Data;
+	bit_tx_ = mode_ == 3;
+	lr_due_ = false;
+	t401_ = 0;
+	la_due_ = true;
 }
 
 /* T401 ran out: the establishment's LR again (after EST_TRIES of them,
@@ -356,6 +392,10 @@ void Mnp::t401_expired()
 	case Phase::Listen:
 	case Phase::Request:
 	case Phase::Respond:
+		if (relr_ && tries_ >= EST_TRIES) {
+			resume_data();
+			return;
+		}
 		if (tries_ >= EST_TRIES) {
 			link_->logf("mnp: no answer to the establishment.");
 			if (!heard_ || phase_ == Phase::Listen)
@@ -608,14 +648,18 @@ Frame *Mnp::build_lr()
 	b[n++] = 2;
 	b[n++] = static_cast<u8>(n401);
 	b[n++] = static_cast<u8>(n401 >> 8);
+	s16 p8 = -1;
 	if (initiator_ || lr_opt_) {
 		b[n++] = 8;
 		b[n++] = 1;
+		p8 = n;
 		b[n++] = static_cast<u8>(initiator_ ?
 			our_opt_ | (m10_offer_ ? 0x10 : 0) : opt_);
 	}
 	n = v42_lr(b, n);
 	n = m10_lr(b, n);
+	if (initiator_ && m10_cut_ && p8 >= 0)
+		b[p8] = static_cast<u8>(b[p8] & ~0x10);
 	return ctrl(n);
 }
 
@@ -1032,8 +1076,14 @@ void Mnp::rx_frame(Frame *f, bool bit)
 		t401_ = t401_est();
 		break;
 	case Phase::Request:
+		if (relr_ && data && type != LR) {
+			resume_data();
+			rx_frame(f, bit);
+			return;
+		}
 		if (type != LR || bit)
 			break;
+		relr_ = false;
 		if (!rx_lr(b, len)) {
 			fail(3);
 			break;
@@ -1067,6 +1117,7 @@ void Mnp::rx_frame(Frame *f, bool bit)
 		}
 		if (m10_ && sh_ == Sh::Pump)
 			break;
+		data_heard_ = true;
 		if (m10_)
 			m10_heard(type);
 		switch (type) {
@@ -1156,6 +1207,7 @@ void Mnp::rx_bad_frame(bool bit)
 void Mnp::data_phase()
 {
 	phase_ = Phase::Data;
+	data_heard_ = false;
 	vs_ = una_ = nxt_ = 1;
 	nr_ = 0;
 	nk_ = static_cast<u8>(k_);
@@ -1234,6 +1286,8 @@ void Mnp::start(bool initiator)
 	initiator_ = initiator;
 	tries_ = 0;
 	heard_ = false;
+	relr_ = relr_done_ = false;
+	m10_cut_ = false;
 	bit_tx_ = false;
 	ld_reason_ = 0;
 	lr_due_ = la_due_ = ld_due_ = lna_due_ = false;
@@ -1294,6 +1348,7 @@ void Mnp::init(Link *link, const Config &cfg)
 	cfg_level_ = cfg.mnp10_level;
 	cfg_t19_ = cfg.mnp10_t19;
 	cfg_ext_ = cfg.mnp10_ext;
+	cfg_long_ = cfg.mnp10_long;
 	cfg_top_ = cfg.mnp10_top > 0 ? cfg.mnp10_top : 33600;
 	m10_ = false;
 	for (auto &s : slot_) {
