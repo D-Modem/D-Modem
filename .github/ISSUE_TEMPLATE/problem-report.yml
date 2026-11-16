@@ -1,0 +1,234 @@
+name: Problem report
+description: Tell us about a call, a connection or a modem that does not operate correctly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for this report. Many problems occur only with one modem, one line or one setting. Thus, we must know all of the parts of the call before we can find the problem.
+
+        Please give us the make and the model of each modem in the call. A report with no modem names is very difficult to examine.
+
+  - type: dropdown
+    id: role
+    attributes:
+      label: Function of D-Modem in the call
+      description: Select the side of the call that D-Modem operates.
+      options:
+        - D-Modem dials (the caller)
+        - D-Modem answers (the answerer)
+        - D-Modem is at the two ends of the call
+        - The problem is not in a call (build, install or other)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frontend
+    attributes:
+      label: How you run D-Modem
+      description: Select all that apply.
+      multiple: true
+      options:
+        - dmodemd on a SIP account
+        - dmodemd on modem hardware (--usb, -a or --misdn)
+        - Asterisk module
+        - FreeSWITCH module
+        - dmodem-ari
+        - FreePBX
+        - The D-Modem app (Android or iOS)
+        - libdmodem in a different program
+        - Other (write it in "Connection path")
+    validations:
+      required: true
+
+  - type: textarea
+    id: far-end
+    attributes:
+      label: Modem at the other end
+      description: |
+        Give the make, the model and the chipset of the modem at the other end of the call. If you know the firmware version, give it too (`ATI3` or `ATI7` on most modems). If the other end is a softmodem or a service, give its name and version.
+      placeholder: |
+        Sitecom DC009, Conexant HCF chipset, firmware V2.200-K56_DLP_HCF
+    validations:
+      required: true
+
+  - type: textarea
+    id: far-end-host
+    attributes:
+      label: Computer and software at the other end
+      description: |
+        Give the operating system and the driver that operate the other modem. Also give the program that uses the modem (terminal program, dial-up networking, BBS, fax program).
+      placeholder: |
+        Windows 98 SE, the original Conexant driver, HyperTerminal
+    validations:
+      required: true
+
+  - type: textarea
+    id: dte
+    attributes:
+      label: Program on the D-Modem side
+      description: |
+        Give the program that sends AT commands to D-Modem (terminal program, pppd, BBS, fax program). Give the port that it uses (pty, COM port, TCP, named pipe or the virtual modem driver).
+      placeholder: |
+        minicom on /dev/ttyDM0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: path
+    attributes:
+      label: Type of line between the two modems
+      description: Select all of the parts that the call goes through.
+      multiple: true
+      options:
+        - A SIP provider
+        - An ATA or a VoIP gateway (FXS or FXO port)
+        - A PBX (Asterisk, FreeSWITCH, FreePBX or other)
+        - The public telephone network (PSTN)
+        - An analogue line with no VoIP (modem hardware)
+        - ISDN
+        - A line simulator
+        - A direct SIP call between two computers
+        - I do not know
+    validations:
+      required: true
+
+  - type: textarea
+    id: path-details
+    attributes:
+      label: Connection path
+      description: |
+        Write the path of the call from D-Modem to the other modem. Give the name of the SIP provider, the make and model of each ATA, gateway or PBX, and the country.
+      placeholder: |
+        D-Modem -> Asterisk 20 (on the same computer) -> Grandstream HT802 (FXS port) -> Conexant HDA D110
+    validations:
+      required: true
+
+  - type: dropdown
+    id: codec
+    attributes:
+      label: Audio codec
+      description: Select the codec of the call. Modems operate correctly only with G.711.
+      options:
+        - G.711 μ-law (PCMU)
+        - G.711 A-law (PCMA)
+        - Other codec (write it in "Connection path")
+        - No codec (modem hardware or ISDN)
+        - I do not know
+    validations:
+      required: true
+
+  - type: dropdown
+    id: modulation
+    attributes:
+      label: Modulation that you expect
+      description: Select the modulation or the protocol that you expect the two modems to use.
+      multiple: true
+      options:
+        - V.92
+        - V.90
+        - K56flex
+        - X2
+        - V.34
+        - V.32bis or V.32
+        - V.22bis or older
+        - Fax (Class 1, 2 or 2.0, or T.38)
+        - Voice, V.18, V.80 or other
+    validations:
+      required: true
+
+  - type: textarea
+    id: at-commands
+    attributes:
+      label: AT commands
+      description: |
+        Give all of the AT commands that each modem receives before the call. Include `+MS`, `\N`, `&F` and `S` registers. If you can, also give the output of `AT&V` from D-Modem.
+      render: text
+      placeholder: |
+        D-Modem: ATZ, AT+MS=V90, ATX3, ATDT5551234
+        Other modem: AT&F, AT\N3, ATS0=1
+
+  - type: dropdown
+    id: stage
+    attributes:
+      label: Where the call stops
+      description: Select the last step that occurs.
+      options:
+        - The modem does not dial or does not answer
+        - The answer tone starts, but no handshake occurs (V.8 or V.8bis)
+        - The handshake starts, but the modems do not train
+        - The modems connect at a lower speed than I expect
+        - The modems connect, but the data has errors
+        - The modems connect, then the call stops
+        - Fax pages do not go through
+        - Other (write it in "What occurs")
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happens
+    attributes:
+      label: What occurs
+      description: |
+        Tell us what you expect and what occurs. Give the result codes (`CONNECT`, `NO CARRIER` and others).
+    validations:
+      required: true
+
+  - type: dropdown
+    id: other-modem
+    attributes:
+      label: Test with a different modem
+      description: Does the same configuration operate correctly with a different modem at the other end?
+      options:
+        - Yes, a different modem operates correctly (write its name in "What occurs")
+        - No, a different modem has the same problem
+        - I did not do this test
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: D-Modem version
+      description: Give the output of `dmodemd --version`. If you built D-Modem from git, also give the output of `git rev-parse --short HEAD`.
+      placeholder: "D-Modem: version 1.0.0 Oct 15 2026, commit 662aeb5"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system of D-Modem
+      description: Give the operating system, its version and the CPU type.
+      placeholder: Debian 12, x86_64
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Do these steps, then paste the output here:
+        1. Start dmodemd with `-d9`.
+        2. Make the call again.
+        3. After the call stops, send `ATI11` to D-Modem.
+        For a SIP problem, also set `SIP_LOG_LEVEL=5`.
+      render: text
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Recordings and other files
+      description: |
+        A recording of the call helps us to find most problems. Set `DMODEM_REC=<base>`, make the call again, then attach `<base>.rx` and `<base>.tx` in a ZIP file. You can also attach `dmodem.log.<name>`, a packet capture or screenshots.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched the open and closed issues for this problem.
+          required: true
+        - label: I read [Known issues](https://github.com/D-Modem/D-Modem/blob/main/docs/known-issues.md).
+          required: true
