@@ -3391,6 +3391,8 @@ TEST(Core, EtcLandPlainCaller)
 	EXPECT_TRUE(p.got_b.find("CONNECT") != std::string::npos &&
 		    p.got_b.find("/ETC") == std::string::npos) << p.got_b;
 	EXPECT_TRUE(p.got_a.find("/ETC") == std::string::npos) << p.got_a;
+}
+
 /* ZyXEL's type 2 security by itself (zyxel_sec.h): the firmware's
    limits, 8 characters a password and 26 a number, 3 tries */
 TEST(Core, ZyxelSecurity)
