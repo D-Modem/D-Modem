@@ -2,7 +2,7 @@
       0 B: ATE0+FCLASS=6#B1#V0#T0#R0#L2#C7#F&N32\r\r\n
       0 B: OK\r\n
       0 B< AT#B2\r
-      0 B: ERROR\r\n
+      0 B: OK\r\n
       0 B< AT#P5552222\r
       0 B: OK\r\n
       0 A< ATE0X3+FCLASS=0\r

@@ -3445,8 +3445,8 @@ INSTANTIATE_TEST_SUITE_P(Zb, CoreZfax, testing::Values(0, 1),
 				 return "B" + std::to_string(i.param);
 			 });
 
-/* class 6's commands: the # settings, ERROR for #B2, #B3, #V2, a #P of
-   26 characters; &N32 taken */
+/* class 6's commands: the # settings, ERROR for #V2, #C8, a #P of 26
+   characters; #B2 taken; &N32 taken */
 TEST(Core, ZfaxCommands)
 {
 	Pair p("");
@@ -3457,11 +3457,126 @@ TEST(Core, ZfaxCommands)
 		return p.got_a;
 	};
 	EXPECT_EQ(cmd("AT#F#B1#V0#T1#R2#L1#C5&N32\r"), "OK\r\n");
-	EXPECT_EQ(cmd("AT#B2\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd("AT#B3\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd("AT#B2\r"), "OK\r\n");
+	EXPECT_EQ(cmd("AT#B4\r"), "ERROR\r\n");
 	EXPECT_EQ(cmd("AT#V2\r"), "ERROR\r\n");
 	EXPECT_EQ(cmd("AT#C8\r"), "ERROR\r\n");
 	EXPECT_EQ(cmd("AT#P" + std::string(25, '1') + "\r"), "OK\r\n");
 	EXPECT_EQ(cmd("AT#P" + std::string(26, '1') + "\r"), "ERROR\r\n");
 	EXPECT_EQ(cmd("AT#CID=1\r"), "OK\r\n");
+}
+
+/* #B3, the ring cadence meter: its two lines; a burst of ring pulses
+   (every 60 ms for 2 s), 4 s with none, another burst: a line at each
+   change, the time of what ended in 10 ms steps; no RING; a key stops
+   it (OK), and the next ring is a RING again */
+TEST(Core, ZfaxRingCadence)
+{
+	Pair p("");
+	auto run = [&p](int ms, bool ring) {
+		for (int t = 0; t < ms; t += 20) {
+			if (ring && t % 60 == 0)
+				p.b->ring();
+			p.step();
+		}
+	};
+	p.b->dte_input("AT#B3\r", 6);
+	p.step();
+	EXPECT_EQ(p.got_b, "\r\nStart to measure ring cadence...\r\n"
+		  "Hit any key to stop!\r\n");
+	p.got_b.clear();
+	run(1000, false);
+	run(2000, true);
+	run(4000, false);
+	run(2000, true);
+	run(500, false);
+	/* (a burst's last pulse at 1980 ms of 2000; the step after
+	   AT#B3 is 20 ms more of the first gap) */
+	EXPECT_EQ(p.got_b, "OFF      1020 ms\r\n"
+		  "ON       1980 ms\r\n"
+		  "OFF      4020 ms\r\n"
+		  "ON       1980 ms\r\n");
+	p.got_b.clear();
+	p.b->dte_input("x", 1);
+	p.step();
+	EXPECT_EQ(p.got_b, "OK\r\n");
+	p.got_b.clear();
+	run(2000, true);
+	run(3000, false);
+	EXPECT_EQ(p.got_b, "\r\nRING\r\n");
+}
+
+/* #B2, polling: A in class 6 calls B, which has a document to be
+   polled (class 2.0, +FLP=1); A sends its CIG (#P) and DTC, and gets
+   CONNECT FAX/... with B's identity, B's page and DISCONNECT0 */
+TEST(Core, ZfaxPoll)
+{
+	Pair p("");
+	auto until = [&p](auto cond, int ms) {
+		for (int t = 0; t < ms; t += 20) {
+			if (cond())
+				return true;
+			p.step();
+		}
+		return cond();
+	};
+	auto has = [](const std::string &s, const std::string &x) {
+		return s.find(x) != std::string::npos;
+	};
+	auto ok_after = [](const std::string &s, const std::string &x) {
+		size_t k = s.find(x);
+		return k != std::string::npos &&
+			s.find("OK\r\n", k) != std::string::npos;
+	};
+	auto type = [](Modem *m, const std::string &l) {
+		m->dte_input(l.data(), l.size());
+	};
+	const std::string id_b = "Polled B" + std::string(12, ' ');
+	dsp::T4Page pg = fax2_page(240, 77);
+	std::string d = fax2_dte_data(pg, false);
+	size_t sent = 0;
+
+	type(p.a, "AT+FCLASS=6#B2#P5551111\r");
+	type(p.b, "AT+FCLASS=2.0;+FLI=\"Polled B\";+FLP=1\r");
+	p.step();
+	EXPECT_EQ(p.got_a, "OK\r\n");
+	EXPECT_EQ(p.got_b, "OK\r\n");
+	p.got_a.clear();
+	p.got_b.clear();
+	type(p.b, "ATA\r");
+	type(p.a, "ATD\r");
+	ASSERT_TRUE(until([&] { return has(p.got_b, "OK\r\n"); }, 30000))
+		<< "B [" << p.got_b << "] A [" << p.got_a << "]";
+	EXPECT_EQ(p.got_b, "+FCO\r\n+FPI:\"5551111\"\r\n"
+		  "+FTC:1,5,0,2,0,0,0,0\r\nOK\r\n");
+	p.got_b.clear();
+	type(p.b, "AT+FDT\r");
+	ASSERT_TRUE(until([&] { return has(p.got_b, "CONNECT"); }, 20000))
+		<< "B [" << p.got_b << "]";
+	while (sent < d.size()) {
+		int n = p.b->dte_space();
+		if (n > (int)(d.size() - sent))
+			n = d.size() - sent;
+		sent += p.b->dte_input(d.data() + sent, n);
+		p.step();
+	}
+	ASSERT_TRUE(until([&] { return ok_after(p.got_b, "CONNECT"); },
+			  5000)) << "B [" << p.got_b << "]";
+	type(p.b, "AT+FET=2\r");
+
+	ASSERT_TRUE(until([&] { return has(p.got_a, "DISCONNECT"); }, 60000))
+		<< "A [" << p.got_a << "]";
+	const std::string c = "CONNECT FAX/S1440V1T0R0L2C7P" + id_b + "\r\n";
+	ASSERT_EQ(p.got_a.find(c), 0u) << p.got_a;
+	size_t end = p.got_a.find("DISCONNECT");
+	std::vector<dsp::T4Page> got =
+		zfax_pages(p.got_a.substr(c.size(), end - c.size()));
+	ASSERT_EQ(got.size(), 1u);
+	EXPECT_EQ(got[0].rows, pg.rows);
+	EXPECT_TRUE(got[0].bits == pg.bits);
+	ASSERT_TRUE(until([&] { return has(p.got_a, id_b + "\r\n"); }, 5000));
+	EXPECT_EQ(p.got_a.substr(end), "DISCONNECT0P" + id_b + "\r\n");
+	EXPECT_TRUE(until([&] {
+		return !p.a->started() && !p.b->started();
+	}, 30000));
 }

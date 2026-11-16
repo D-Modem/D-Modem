@@ -3951,6 +3951,21 @@ These are the ZyXEL fax settings.
   \cmd{<CR><LF>/S\p{rate}V\p{n}T0R0L2C7P\p{id}<CR><LF>} (with 18
   characters of the identity, as the ZyXEL modems do) and the first
   page.  Each subsequent page needs one more \cmd{<DC2>}.
+\item \cmdl[hashF]{\#B2} sets polling for the next call.  After
+  \cmdl[D]{D}, the modem sends its identity (\std{CIG}) and a \std{DTC}
+  in place of the \std{DCS}.  Then it receives the document of the
+  remote, as with \cmdl[hashF]{\#B0} or \cmdl[hashF]{\#B1}.  If the
+  remote has no document to be polled, the modem gives
+  \rc{NO CARRIER}.  The setting is for one call only.
+\item \cmdl[hashF]{\#B3} measures the ring cadence.  The modem must
+  be idle.  It gives \rc{Start to measure ring cadence...} and
+  \rc{Hit any key to stop!}.  Then, at each start and end of a ring
+  burst, it gives one line: \rc{OFF} when a burst starts, \rc{ON} when
+  a burst ends, and the time that ended, in steps of 10~ms (for example
+  \rc{ON~~~~~~~1980~ms}).  The modem gives no \rc{RING} during the
+  measurement.  A character from the \std{DTE} stops it, and the modem
+  gives \rc{OK}.  Only a line with its own ring signal (a sound card or
+  a USB modem) has ring bursts; a \std{SIP} call does not.
 \item \cmdl[hashF]{\#V0} sets normal resolution, \cmdl[hashF]{\#V1}
   (\emph{default}) fine resolution, if the remote fax machine has it.
 \item The modem keeps \cmdl[hashF]{\#T}, \cmdl[hashF]{\#R},
@@ -3967,10 +3982,10 @@ These are the ZyXEL fax settings.
 \item \#P\p{id}
 \end{syntax}
 \begin{results}
-\res{\rc{OK}}{If \p{n} is in its range (\#B 0--1, \#V and \#T 0--1, \#R
-  and \#L 0--2, \#C 0--7) and \p{id} has 25 characters or fewer.}
-\res{\rc{ERROR}}{Otherwise.  \#B2 (polling) and \#B3 (ring cadence) are
-  not available.}
+\res{\rc{OK}}{If \p{n} is in its range (\#B 0--3, \#V and \#T 0--1, \#R
+  and \#L 0--2, \#C 0--7) and \p{id} has 25 characters or fewer.  For
+  \#B3, after a character from the \std{DTE}.}
+\res{\rc{ERROR}}{Otherwise, or \#B3 when the modem is not idle.}
 \end{results}
 \end{command}
 

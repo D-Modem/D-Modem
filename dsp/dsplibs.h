@@ -162,6 +162,9 @@ struct fax2_settings {
 	unsigned zb;            /* class 6, ZyXEL's #B: 1, receiving, the
 				   DTE's DC2 for the parameters and each
 				   page */
+	unsigned zpoll;         /* class 6, ZyXEL's #B2: calling, we poll
+				   (our CIG and DTC after the DIS, then we
+				   receive) */
 };
 /* the class 2 commands for FAX2_command() */
 enum FAX2_CMD { FAX2_CMD_FDT, FAX2_CMD_FDR, FAX2_CMD_FET, FAX2_CMD_FKS };
