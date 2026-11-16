@@ -1042,10 +1042,11 @@ s16 V32Pump::fallback()
    estimate of 29.6), 16800 from 24 dB (25.6) */
 static const float v32_min_snr[] = { 29.5f, 26.5f, 25, 22, 19, 16, 0 };
 /* ZyX's, from back to back calls (pump_test, ZYX_ALPHA 0.2): each
-   rate clean from about 1.5 dB under these estimates, the framed rates
+   rate clean from about 1.5 dB under these estimates (16800 from about
+   0.5 dB under: its errors come in frames), the framed rates
    (the ring table's shaping) about 3 dB better than V.32bis's of the
    same bits a symbol */
-static const float zyx_min_snr[] = { 27.5f, 26.5f, 23, 19.5f, 18, 0 };
+static const float zyx_min_snr[] = { 27.5f, 27, 23, 19.5f, 18, 0 };
 
 /* the data mse (of V32_POWER) past which a receiver at rate r has
    lost its equalization (rate_lost_limit()) */
