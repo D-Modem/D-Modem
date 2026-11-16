@@ -1002,11 +1002,13 @@ s16 Modem::link_init()
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
 	c.hst = hst_offer();
-	/* MNP 10 (S113, -K, -Q, )M, @M, :T19): with MNP, not synchronous;
+	/* MNP 10 (S113: bit 0 the offer, bit 1 parameter 0xC0, bit 2 the
+	   long LR; -K, -Q, )M, @M, :T19): with MNP, not synchronous;
 	   the D-Modem extension's top rate +MS's */
 	c.mnp10 = cfg_.mnp && !cfg_.sync && (sregs_[SREG_MNP10] & 1) &&
 		!clear_channel() && !relay_channel();
 	c.mnp10_ext = (sregs_[SREG_MNP10] & 2) != 0;
+	c.mnp10_long = (sregs_[SREG_MNP10] & 4) != 0;
 	c.mnp10_upgrade = sregs_[SREG_MNP10_UPGRADE] != 0;
 	c.mnp10_lowest = static_cast<s16>(sregs_[SREG_MNP10_LOWEST]);
 	c.mnp10_cellular = sregs_[SREG_MNP10_CELLULAR] != 0;
