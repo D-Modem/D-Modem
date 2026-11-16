@@ -3298,10 +3298,10 @@ TEST(Core, EtcSettings)
 	delete m;
 }
 
-/* a cellular side (&F5) calls a landline side (&F6): V.32bis with
-   V.42, the filter on both transmitters, /ETC in the caller's CONNECT
-   alone (the landline side has no way to find an ETC peer here), 0x82
-   in its #UD; the data both ways */
+/* a cellular side (&F5) calls a landline side (&F6): the caller's 1500
+   Hz calling tone, which the landline side finds; V.32bis with V.42,
+   the filter on both transmitters, /ETC in both CONNECTs, 0x82 and
+   frames of 64 octets in the caller's #UD; the data both ways */
 TEST(Core, EtcCall)
 {
 	Pair p("\\V1");
@@ -3316,8 +3316,8 @@ TEST(Core, EtcCall)
 	EXPECT_GE(p.a->tx_rate(), 4800u);
 	EXPECT_TRUE(std::regex_search(p.got_a,
 		std::regex("CONNECT [0-9]+/LAPM/ETC"))) << p.got_a;
-	EXPECT_TRUE(p.got_b.find("CONNECT") != std::string::npos &&
-		    p.got_b.find("/ETC") == std::string::npos) << p.got_b;
+	EXPECT_TRUE(std::regex_search(p.got_b,
+		std::regex("CONNECT [0-9]+/LAPM/ETC"))) << p.got_b;
 	std::string da = data('a', 8000), db = data('b', 6000);
 	size_t sa = 0, sb = 0;
 	p.got_a.clear();
@@ -3340,4 +3340,55 @@ TEST(Core, EtcCall)
 		return q.got_a.find("OK") != std::string::npos; }, 2000);
 	std::string ud = cmd(p.a, p.la, "AT#UD\r");
 	EXPECT_NE(ud.find(" 40=82"), std::string::npos) << ud;
+	/* V.42's N401: 64 octets, as ETC presets it */
+	EXPECT_NE(ud.find(" 41=40"), std::string::npos) << ud;
+}
+
+/* the landline side's detector: 1500 Hz found (at -10 and -40 dBm0, and
+   under noise 10 dB down), not 1300 or 1800 Hz, nor silence or noise,
+   nor 1500 Hz for 30 ms (one block) */
+TEST(Core, EtcToneDetector)
+{
+	auto found = [](double f, double dbm0, int ms, double noise_db) {
+		dcore::EtcToneDetector d;
+		d.start(8000);
+		const double a = sqrt(2 * 2.49e8 * pow(10, dbm0 / 10));
+		const double na = noise_db > -100 ?
+			sqrt(2.49e8 * pow(10, noise_db / 10)) : 0;
+		std::vector<int16_t> s(8000);
+		unsigned x = 1;
+		for (size_t i = 0; i < s.size(); i++) {
+			x = x * 1103515245 + 12345;
+			const double nz = na * (((x >> 16) & 0x7fff) / 16384.0 -
+						1) * sqrt(3);
+			const double t = static_cast<int>(i) < ms * 8 ?
+				a * sin(2 * M_PI * f * i / 8000) : 0;
+			s[i] = static_cast<int16_t>(lround(t + nz));
+		}
+		return d.process(s.data(), static_cast<int>(s.size()));
+	};
+	EXPECT_TRUE(found(1500, -10, 700, -200));
+	EXPECT_TRUE(found(1500, -40, 700, -200));
+	EXPECT_TRUE(found(1500, -20, 700, -30));
+	EXPECT_FALSE(found(1300, -10, 700, -200));
+	EXPECT_FALSE(found(1800, -10, 700, -200));
+	EXPECT_FALSE(found(1500, -60, 700, -200));
+	EXPECT_FALSE(found(1500, -10, 0, -20));
+	EXPECT_FALSE(found(1500, -10, 30, -200));
+}
+
+/* a caller without ETC: the landline side (&F6) finds no 1500 Hz, so no
+   /ETC */
+TEST(Core, EtcLandPlainCaller)
+{
+	Pair p("\\V1+MS=V32B");
+	cmd(p.b, p.lb, "AT&F6\r");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	EXPECT_TRUE(p.got_b.find("CONNECT") != std::string::npos &&
+		    p.got_b.find("/ETC") == std::string::npos) << p.got_b;
+	EXPECT_TRUE(p.got_a.find("/ETC") == std::string::npos) << p.got_a;
 }

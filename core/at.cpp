@@ -2637,8 +2637,8 @@ const u32 *Modem::kept(const char *name) const
    (its &M5: \N2), and as its cable's attachment sets them a 4 s wait
    for a lost carrier and 90 s for the carrier.  &F6: ETC_LAND, the
    landline side: its flags and error control if the remote has it
-   (&M4: \N3), the modulations as they are.  (The firmware's transmit
-   attenuation and timers are not ours: see docs/link-details.md.) */
+   (&M4: \N3), the modulations as they are; its 1500 Hz detector and
+   lower level are modem.cpp's (docs/link-details.md) */
 void Modem::etc_profile(int n)
 {
 	if (n == 5) {

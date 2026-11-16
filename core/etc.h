@@ -10,10 +10,12 @@
  *    6 are symmetric low-passes about the third sample: they take back
  *    the high frequencies a cellular voice channel's pre-emphasis adds.
  *
- *    The firmware scales the filter's output by a gain we have not read
- *    (its dma 12h); we scale each set to a gain of 1 at 1800 Hz (V.32bis's
- *    carrier), so that the level of the carrier holds.  The taps run at
- *    the pump's rate as the firmware's do at its codec's.
+ *    The firmware scales the filter's output by its transmit gain (data
+ *    0x0392, from its attenuation in dB), not by the taps' own gain; we
+ *    scale each set to a gain of 1 at 1800 Hz (V.32bis's carrier), so
+ *    that the level of the carrier holds.  The taps run at the pump's
+ *    rate (8000 or 9600 Hz) as the firmware's do at its V.32bis pump's
+ *    7200 Hz.
  *
  *    The trace: the project's etc-cellular/firmware-trace.md.
  */
@@ -86,6 +88,67 @@ public:
 
 private:
 	float c_[ETC_TAPS] = {}, x_[ETC_TAPS] = {};
+};
+
+/* the landline side's detector of an ETC caller (the firmware's tone
+   bank at 7200 Hz: a 1500 Hz band-pass, Q14 [-15735, 8311, -325, 0,
+   325], about 50 Hz wide; its energy over a measurement both above a
+   floor and above half of the band's sets the flags' bits 0, 2 and 5).
+   We measure in blocks of 50 ms and need two in a row: an ETC caller
+   sends 1500 Hz for 0.7 s every 2.2 s */
+class EtcToneDetector {
+public:
+	/* the detector at rate Hz, nothing found */
+	void start(double rate)
+	{
+		const double r = exp(-M_PI * 50 / rate);
+		const double w = 2 * M_PI * 1500 / rate;
+		a1_ = static_cast<float>(2 * r * cos(w));
+		a2_ = static_cast<float>(-r * r);
+		g_ = static_cast<float>(1 - r);
+		block_ = static_cast<int>(rate / 20);
+		x1_ = x2_ = y1_ = y2_ = 0;
+		e_tone_ = e_all_ = 0;
+		n_ = hits_ = 0;
+		found_ = false;
+	}
+	/* n received samples; true once the tone is found */
+	bool process(const int16_t *s, int n)
+	{
+		for (int i = 0; i < n && !found_; i++) {
+			const float x = s[i];
+			/* (b0 1, b2 -1: the firmware's band-pass) */
+			const float y = g_ * (x - x2_) + a1_ * y1_ +
+				a2_ * y2_;
+			x2_ = x1_;
+			x1_ = x;
+			y2_ = y1_;
+			y1_ = y;
+			e_tone_ += y * y;
+			e_all_ += x * x;
+			if (++n_ < block_)
+				continue;
+			/* (the band-pass's gain is 1 at 1500 Hz) */
+			const bool on = e_tone_ > 0.5f * e_all_ &&
+				e_all_ / n_ > FLOOR;
+			hits_ = on ? hits_ + 1 : 0;
+			found_ = hits_ >= 2;
+			e_tone_ = e_all_ = 0;
+			n_ = 0;
+		}
+		return found_;
+	}
+	/* the tone was found */
+	bool found() const { return found_; }
+
+private:
+	/* the least mean square (DP_DBM0_POWER: -43 dBm0) */
+	static constexpr float FLOOR = 12500;
+	float a1_ = 0, a2_ = 0, g_ = 0;
+	float x1_ = 0, x2_ = 0, y1_ = 0, y2_ = 0;
+	float e_tone_ = 0, e_all_ = 0;
+	int block_ = 400, n_ = 0, hits_ = 0;
+	bool found_ = false;
 };
 
 } // namespace dcore

@@ -483,8 +483,11 @@ public:
 	   landline ones */
 	void etc_profile(int n);
 	/* ETC is on (/ETC in CONNECT, 0x82 in #UD's error control):
-	   S114's bits 0 to 2 */
-	bool etc_on() const { return (sregs_[SREG_ETC] & 7) != 0; }
+	   S114's bits 0 to 2, or the landline side found an ETC caller */
+	bool etc_on() const
+	{
+		return (sregs_[SREG_ETC] & 7) != 0 || etc_peer_;
+	}
 	/* the DTE's in-band command in V.80's Synchronous Access Mode */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx);
 	/* a debug line with the modem's name */
@@ -857,6 +860,11 @@ private:
 	/* ETC's transmit filter (S114 bit 5, +EF) on this call */
 	EtcFilter etc_filter_;
 	bool etc_tx_ = false;
+	/* the landline side's detector of an ETC caller: samples it still
+	   listens, the caller found */
+	EtcToneDetector etc_det_;
+	s32 etc_listen_ = 0;
+	bool etc_peer_ = false;
 	float rx_pow_ = 0;
 	void shift_tick();
 	void shift_end(bool ok);

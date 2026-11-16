@@ -725,6 +725,18 @@ s16 Modem::start_call(bool keep_line)
 	etc_tx_ = (sregs_[SREG_ETC] & 0x20) && !wideband();
 	if (etc_tx_)
 		etc_filter_.start(static_cast<int>(kept("+EF")[0]), srate_);
+	/* the landline side (S114 bit 4, ETC not on yet): its listening
+	   for an ETC caller's 1500 Hz in the call's first 10 s, and its
+	   transmit level 6.6 dB under ours (the firmware's gains for
+	   ETC_LAND's attenuation of 20, 0x0CCD, and its default 13,
+	   0x1B35) */
+	etc_peer_ = false;
+	etc_listen_ = !caller_ && (sregs_[SREG_ETC] & 0x10) &&
+		!(sregs_[SREG_ETC] & 7) && !wideband() ? 10 * srate_ : 0;
+	if (etc_listen_)
+		etc_det_.start(srate_);
+	if ((sregs_[SREG_ETC] & 0x10) && !wideband())
+		tx_gain_ = 3277.0f / 6965;
 	if (!(keep_line && started_) && do_start())
 		return fail("the line does not start");
 	return 0;
@@ -904,6 +916,10 @@ void Modem::setup_config()
 	c.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
 	c.tx_win = c.rx_win = dlink::LAPM_MAX_WIN;
 	c.tx_info = c.rx_info = dlink::LAPM_MAX_INFO;
+	/* ETC (S114): V.42's N401 64 octets, as the firmware presets it
+	   in its XID (512 bits, not 1024) */
+	if (sregs_[SREG_ETC])
+		c.tx_info = c.rx_info = 64;
 	c.comp = c.ec && (comp & 2) ? 3 : 0;
 	c.mnp5 = c.mnp && (comp & 1);
 	c.dict_size = dlink::V42BIS_MAX_CODEWORDS;
@@ -2059,8 +2075,17 @@ void Modem::run(s16 *in, s16 *out, s32 n)
 				rx_pow_ += a * (static_cast<float>(sq / n) -
 						rx_pow_);
 		}
+		if (etc_listen_ > 0) {
+			etc_listen_ -= n;
+			if (etc_det_.process(in, n)) {
+				etc_listen_ = 0;
+				etc_peer_ = true;
+				logf("ETC: the caller's 1500 Hz tone, ETC on\n");
+			}
+		}
 		dp_process(in, out, n);
-		if (etc_tx_)
+		/* (not on the call progress's tones: the firmware's bit 9) */
+		if (etc_tx_ && !(dp_ && dp_->id == DP_CALLPROG))
 			etc_filter_.process(out, n);
 		if (tx_gain_ != 1)
 			for (s32 i = 0; i < n; i++)

@@ -42,7 +42,8 @@ Paradyne. The 3Com Megahertz PC Cards have it. `AT&F5` loads the settings
 of the cellular side of these cards, and `AT&F6` loads the settings of the
 landline side. In ETC mode, the call uses V.32bis or lower with error
 control, and a filter changes the transmitted signal for a cellular voice
-channel (`AT+EF`). CONNECT shows `/ETC`.
+channel (`AT+EF`). The cellular side sends a calling tone of 1500 Hz. The
+landline side finds this tone and then turns ETC on. CONNECT shows `/ETC`.
 
 For each MNP class (1 to 10 and 10EC), refer to
 [the MNP protocol suite](mnp/README.md).

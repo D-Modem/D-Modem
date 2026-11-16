@@ -2413,18 +2413,18 @@ S114 holds the \std{ETC} flags, with the bits of the 3Com firmware
 \begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{S114 Bits}
   {\thd{Bit} & \thd{Function}}
 0 to 2 & If one of them is set, \std{ETC} is on: \rc{/ETC} follows the error correction in \rc{CONNECT} (with \cmdl[bsV]{\bs V1}), and \cmd{\#UD} gives 82 for error control (key 40). \\ \hline
+1 & The cellular side: the caller sends a calling tone of 1500~Hz (0.7~s on, 1.5~s off). \\ \hline
+4 & The landline side: if bits 0 to 2 are not set, the answerer listens for the 1500~Hz tone in the first 10~s.  If it finds the tone, \std{ETC} is on for the call.  The transmit level is 6.6~dB lower. \\ \hline
 5 & The transmit filter of \cmdl[plusEF]{+EF} is on. \\ \hline
+any & If S114 is not 0, \std{V.42} offers frames of 64 octets (N401). \\ \hline
 \end{vtable}
 \begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{ETC Profiles}
   {\thd{Command} & \thd{Function}}
 \cmdl[ampF]{\&F5} & The cellular side (\texttt{ETC\_CELL}): S114 = 238 (0xEE), \cmdl[plusMS]{+MS=V32B} (\std{V.32bis} and lower), \cmdl[bsN]{\bs N2} (error control is necessary), S10 = 40 (4~s), S7 = 90. \\ \hline
 \cmdl[ampF]{\&F6} & The landline side (\texttt{ETC\_LAND}): S114 = 176 (0xB0), \cmdl[bsN]{\bs N3} (error control if possible).  The modulations do not change. \\ \hline
 \end{vtable}
-The landline side of the firmware sets bit 0 when it finds an \std{ETC}
-peer.  D-Modem cannot find an \std{ETC} peer.  Thus, with
-\cmdl[ampF]{\&F6} alone, \std{ETC} is not on, but the filter is on.  The
-firmware also changes the transmit level and the handshake timers.
-D-Modem does not, because their values are not known.
+With \cmdl[ampF]{\&F6}, \std{ETC} is on only for a call from an
+\std{ETC} caller.
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}

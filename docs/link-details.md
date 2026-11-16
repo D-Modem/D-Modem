@@ -728,18 +728,40 @@ these steps:
   `AT+EF=n` selects one of 11 sets of coefficients. Set 5 is the default.
 - It adds `/ETC` to CONNECT when one of bits 0 to 2 is set.
 - When the cable is attached, it sets S10 to 40 (4 s) and S7 to 90.
-- It changes the transmit attenuation and three handshake timers.
+- The cellular side sends a calling tone of 1500 Hz: 0.7 s on, 1.5 s
+  off. (A normal call sends the CNG of T.30 at 1100 Hz, 0.5 s on, 3 s
+  off.)
+- The landline side has a 1500 Hz detector in its bank of tone
+  detectors. When the 1500 Hz energy is sufficiently high and is more
+  than half of the received energy, it sets bits 0, 2 and 5. Then ETC
+  is on.
+- The transmit attenuation is 13 dB from the full scale of the codec for
+  `ETC_CELL` (the default) and 20 dB for `ETC_LAND`.
+- In ETC mode, the XID of V.42 gives N401 = 64 octets, not 128.
 
-The trace found no special ETC signals on the line. On this card, ETC is
-V.32bis with V.42 or MNP and the settings above.
+The trace found no special ETC modulation. On this card, ETC is V.32bis
+with V.42 or MNP, the calling tone and the settings above. The V.32bis
+pump of the card operates at 7200 Hz.
 
 **What D-Modem does.** S114 holds the flags, with the bits of the
 firmware. `AT&F5` sets S114 to 238 (0xEE), `+MS=V32B`, `\N2`, S10 = 40
 and S7 = 90. `AT&F6` sets S114 to 176 (0xB0) and `\N3`. Other `&F`
 commands do nothing, as before.
 
+- When bit 1 of S114 is set, the caller sends the 1500 Hz calling tone
+  (`dsp/dp_callprog.cpp`).
+- When bit 4 of S114 is set and bits 0 to 2 are not set, the answerer
+  listens for the 1500 Hz tone in the first 10 s of the call
+  (`EtcToneDetector` in `core/etc.h`). It measures blocks of 50 ms. Two
+  blocks in sequence with more than half of the energy at 1500 Hz, above
+  -43 dBm0, turn ETC on for the call. S114 does not change. The answerer
+  also transmits 6.6 dB lower than the default (the ratio of the two
+  gains of the firmware).
+- When S114 is not 0, the link offers N401 = 64 octets.
 - When bit 5 of S114 is set at the start of a call, `core/etc.h` filters
-  the samples of the data pump before they go to the line. The filter
+  the samples of the data pump before they go to the line. The filter is
+  off during the call progress pump (dial tones and the calling tone), as
+  bit 9 of the firmware does. The filter
   uses the coefficients of `+EF` (0 to 10, default 5) at the sample rate
   of the pump. The firmware multiplies the output by a gain that we did
   not read. D-Modem sets the gain of each set to 0 dB at 1800 Hz (the
@@ -751,24 +773,25 @@ commands do nothing, as before.
 
 **Limits.**
 
-- The landline side of the firmware sets bits 0, 2 and 5 when a
-  measurement finds an ETC peer. We do not know the frequency of this
-  measurement. Thus, D-Modem with `AT&F6` does not show `/ETC`.
-- The transmit attenuation (13 for `ETC_CELL`, 20 for `ETC_LAND`) is an
-  index into a 1 dB table with an offset that we did not find. D-Modem
-  does not change the transmit level.
-- The three handshake timers of the cellular side (700, 1500 and 13653,
-  not 500, 3000 and 10012) have units that we do not know. D-Modem does
-  not use them.
+- The firmware probably also changes T401 of V.42 in ETC mode (to 30,
+  in a unit that we do not know). D-Modem does not.
+- The cellular side of the firmware uses a 1500 Hz notch in its receive
+  path, so that it does not hear its own calling tone. D-Modem does not
+  need it.
+- The sample rate of the D-Modem pumps is 8000 Hz or 9600 Hz, not
+  7200 Hz. The filter thus has a slightly different response.
 - On a flat line, the filter decreases the margin of V.32bis. Between two
   D-Modems with ETC on both sides, the call connects at 12000 bit/s, not
   at 14400 bit/s. On a cellular voice channel, the filter compensates for
   the pre-emphasis of the channel.
 
 **Tests:** `Core.EtcFilter` (the response of the coefficients, the levels
-through the filter), `Core.EtcSettings` (`&F5`, `&F6`, S114, `+EF`) and
-`Core.EtcCall` (a call from `&F5` to `&F6`: V.32bis with V.42, `/ETC` on
-the cellular side only, `40=82` in `#UD`, data in the two directions).
+through the filter), `Core.EtcToneDetector` (1500 Hz found at -10 and -40
+dBm0 and in noise; not 1300 Hz, 1800 Hz, noise or a short tone),
+`Core.EtcSettings` (`&F5`, `&F6`, S114, `+EF`), `Core.EtcCall` (a call
+from `&F5` to `&F6`: the calling tone found, V.32bis with V.42, `/ETC` on
+the two sides, `40=82` and `41=40` in `#UD`, data in the two directions)
+and `Core.EtcLandPlainCaller` (no calling tone, no `/ETC`).
 
 ## V.80
 
