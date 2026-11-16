@@ -5,7 +5,10 @@ what a static trace of the ZyXEL U-1496S firmware gave. For an overview,
 refer to [ZyXEL 16800 and 19200](zyxel.md). The trace itself (addresses,
 tools and the tables as JSON) is in the project files, in `zyxel/`.
 
-**Status: write-up only.** D-Modem does not have this protocol yet.
+**Status: D-Modem to D-Modem only.** D-Modem has the ZyX modes
+(`AT+MS=ZYX`, `dsp/dp_v32.cpp`, `dsp/zyx.h`). For the parts that are not
+known, it uses best guesses (refer to
+[The version in D-Modem](#the-version-in-d-modem)).
 
 ## Where it comes from
 
@@ -193,8 +196,43 @@ Thus, we do not know the signal yet.
 5. The order of the bits in time inside a group. We think that bit 0 is
    the first bit, as Q1 is in V.32bis.
 
-A recording of two real ZyXEL modems can settle items 1 to 5. The image
-of the Elite 2864I (1995) has the same ring table. Its release note
-says that its internal modem is in the same firmware. Thus, the image
-probably also has the code of its DSP, and it is the next source to
-trace.
+A recording of two real ZyXEL modems can settle items 1 to 5.
+
+We also traced the image of the Elite 2864I 1.11 (1995). Its 68000 code
+for ZyX is the same as the code of the U-1496S: the same ×8/7 change of
+the delay, the same DSP commands and the same ring table. The image also
+holds programs that the 68000 loads into DSPs. These programs are
+filters for the ISDN side of the modem, not the modem DSPs. The modem
+DSPs of the Elite run from mask ROM, as on the U-1496. Thus, no EPROM
+image that we have gives items 1 to 3.
+
+## The version in D-Modem
+
+D-Modem has the ZyX modes as a mode of its V.32bis pump. The parts that
+we know come from the firmware:
+
+- The rate signals, the 6 speeds and their E words.
+- The 5 constellations of the frame and the 256 point constellation of
+  ZyX 19200 (`dsp/zyx_tables.cpp`, made from the ROM).
+- The ring table (4096 rows, from the ROM).
+- The frame of 8 symbols. A test (`ZyX.FrameMapper` in `pump_test`)
+  compares the mapper of D-Modem with the frame split of the firmware,
+  which runs in an emulator.
+- The trellis code of V.32bis, which starts in state 0.
+- The change of the round trip delay by 8/7.
+
+For the parts that we do not know, D-Modem uses these guesses:
+
+| Item | Guess in D-Modem |
+|---|---|
+| Peer detection | None. `AT+MS=ZYX` on the two ends selects ZyX. |
+| Change to 2742.857 baud | After the round trip delay is measured: the answerer when it stops AC, the caller when it stops CC. |
+| Carrier | 1800 Hz, as V.32bis. |
+| Roll-off of the pulse | 0.2 (V.32bis uses 0.25). The band is 154 to 3446 Hz. |
+| Scrambler | The scramblers of V.32bis (the caller GPC, the answerer GPA). The bits of a frame go through it in their sequence. |
+| Order of the bits in time | Bit 0 of each group first. |
+| B1 | 128 symbols (16 frames) of scrambled ones, through the frame mapper. |
+| Transmit level | Each constellation is scaled to the mean power of the V.32bis constellations. For the speeds with a frame, this is the mean power with the ring frequencies of the ring table. |
+
+When a recording of a real call is available, these guesses can change
+without a change to the parts from the firmware.

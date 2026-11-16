@@ -232,6 +232,11 @@ enum DP_ID {
 	DP_V32TERBO = 232,      /* V.32terbo: V.32bis and 16800, 19200
 				   bit/s (dp_v32.cpp); not in V.250, the
 				   number is D-Modem's */
+	DP_ZYX      = 234,      /* ZyXEL's ZyX 7200 to 19200: V.32bis at
+				   2742.857 baud, an 8 symbol frame with a
+				   ring table (dp_v32.cpp, zyx.h), D-Modem
+				   to D-Modem; not in V.250, the number is
+				   D-Modem's */
 	DP_PEP      = 255,      /* Telebit's PEP: 511 carriers, half duplex
 				   in packets (dsp/pep.h), D-Modem to
 				   D-Modem; not in V.250, the number is
