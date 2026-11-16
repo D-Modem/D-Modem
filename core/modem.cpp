@@ -451,6 +451,7 @@ void Modem::sregs_init()
 		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
 		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 },
+		{ SREG_ZYX_PEER, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;

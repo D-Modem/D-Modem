@@ -51,6 +51,9 @@ struct LoopbackConfig {
 	/* S-registers both sides' pumps read, as register and value
 	   (S49=1: fast connect), over the defaults */
 	std::vector<std::pair<int, int>> sregs;
+	/* S-registers one side's pumps read (the caller's first), over
+	   sregs */
+	std::vector<std::pair<int, int>> side_sregs[2];
 	/* both sides' highest rate (MDMPRM_MAX_RATE, bit/s; 0: none) */
 	int max_rate = 0;
 };

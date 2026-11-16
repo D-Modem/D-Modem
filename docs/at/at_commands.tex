@@ -3474,6 +3474,15 @@ always accepts \std{V.42bis} from the other modem.  Some modems do not
 complete a call with this \std{LR}: thus the default is 0.
 \facts{0, 1}{0}{none}
 
+\sregdef{115}{ZyXEL Peer Marker}
+1: in a \std{V.32bis} or ZyX call (\cmdl[MS]{+MS}), the modem sends a
+marker in the start-up.  If the other modem also sends its marker, the
+two modems change to ZyX.  If not, the call continues as \std{V.32bis}.
+0: the modem sends no marker and does not change to ZyX.  Use the same
+value on the two modems.  The answerer marker is not the ZyXEL signal,
+thus the marker finds only a D-Modem.
+\facts{0, 1}{0}{none}
+
 \sregdef{161}{Long Space Disconnect}
 The setting of \cmdl[Y]{Y}, kept.  \cmdl[Z]{ATZ} does not change it.
 \facts{0--3}{0}{none}

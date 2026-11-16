@@ -122,6 +122,12 @@ enum S_REGISTER {
 						    (the responder always
 						    takes it, with %C2 or
 						    %C3) */
+	SREG_ZYX_PEER                     = 115, /* 1: the V.32bis and ZyX
+						    pumps send ZyXEL's peer
+						    marker, and go to ZyX on
+						    the remote's (the
+						    answerer always listens
+						    for it, and logs it) */
 	SREG_LEASED                       = 47,  /* AT&L: 1 a 2-wire leased
 						    line, 2 a 4-wire one (no
 						    dial tone or ringing: ATD
