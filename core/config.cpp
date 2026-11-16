@@ -139,8 +139,8 @@ const struct {
 	  "S18: how long an AT&T test runs, 0 until AT&T0", 255 },
 	{ 48, "simulated-carrier", "Simulated carrier (V.13)",
 	  "S48: 1 sends V.13's simulated carrier", 1 },
-	{ 114, "etc", "ETC flags",
-	  "S114: ETC as 3Com's cards: 238 (AT&F5) cellular, 176 (AT&F6) "
+	{ 115, "etc", "ETC flags",
+	  "S115: ETC as 3Com's cards: 238 (AT&F5) cellular, 176 (AT&F6) "
 	  "landline, 0 off", 255 },
 	{ 49, "fast-connect", "Fast connect (bits)",
 	  "S49: 1 the short V.22 handshake, 2 with HDLC flags", 3 },

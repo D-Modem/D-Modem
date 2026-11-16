@@ -109,6 +109,8 @@ static const u32 STOP_SAMPLES = 48;
 static const u32 STOP_IDLE_MS = 100;
 /* a leased line's call again so long after its NO CARRIER (AT&L1) */
 static const u32 LEASED_AGAIN_MS = 2000;
+/* ZyXEL's call back (*G4, *G5): the call after the hang-up */
+static const u32 CALLBACK_MS = 2000;
 /* the escape's guard time (before, between and after the S2s) */
 static const u32 ESCAPE_MS = 500;
 /* caller ID listens this long after the first ring */
@@ -135,6 +137,7 @@ static const char *const cause_text[] = {
 	"Training failed", "Protocol failure", "No carrier",
 	/* (ATI11 calls these local hangups too) */
 	"Local hangup", "Local hangup", "Local hangup",
+	"Security check",
 };
 
 /* the result codes in words, by Result */
@@ -207,11 +210,21 @@ struct LinkOwner final : public dlink::Owner {
 
 	/* the DTE's characters for the line */
 	s16 read_chars(u8 *buf, s16 n) override {
+		if (m_.zsec_.holds())
+			return m_.zsec_out(buf, n);
 		return static_cast<s16>(m_.link_chars(
 			reinterpret_cast<char *>(buf), n));
 	}
-	/* the remote's characters for the DTE: what it took */
+	/* the remote's characters for the DTE: what it took (while
+	   ZyXEL's security holds the data, they are its) */
 	s16 write_chars(const u8 *buf, s16 n) override {
+		if (m_.zsec_.holds()) {
+			for (s16 i = 0; i < n; i++)
+				m_.zsec_.feed(buf[i],
+					      m_.sregs_[SREG_CR_CHAR],
+					      m_.sregs_[SREG_BS_CHAR]);
+			return n;
+		}
 		return m_.put_chars(reinterpret_cast<const char *>(buf), n);
 	}
 	/* the link's progress as the modem's */
@@ -417,7 +430,7 @@ void Modem::sregs_init()
 		{ SREG_MNP10_UPGRADE, 0 }, { SREG_MNP10_LOWEST, 2 },
 		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
-		{ SREG_MNP10, 3 }, { SREG_ETC, 0 },
+		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 }, { SREG_ETC, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -721,11 +734,11 @@ s16 Modem::start_call(bool keep_line)
 	shift_cap_ = 0;
 	tx_gain_ = 1;
 	rx_pow_ = 0;
-	/* ETC's transmit filter (S114 bit 5): +EF's set at our rate */
+	/* ETC's transmit filter (S115 bit 5): +EF's set at our rate */
 	etc_tx_ = (sregs_[SREG_ETC] & 0x20) && !wideband();
 	if (etc_tx_)
 		etc_filter_.start(static_cast<int>(kept("+EF")[0]), srate_);
-	/* the landline side (S114 bit 4, ETC not on yet): its listening
+	/* the landline side (S115 bit 4, ETC not on yet): its listening
 	   for an ETC caller's 1500 Hz in the call's first 10 s, and its
 	   transmit level 6.6 dB under ours (the firmware's gains for
 	   ETC_LAND's attenuation of 20, 0x0CCD, and its default 13,
@@ -756,6 +769,9 @@ s16 Modem::stop_call()
 	loop3_ = false;
 	loop3_buf_.clear();
 	sim_on_ = false;
+	zsec_.stop();
+	if (!callback_.empty())
+		callback_at_ms_ = host_.now_ms() + CALLBACK_MS;
 	if (started_) {
 		if (host_.stop(*this))
 			log_printf(1, "err: %s: the line does not stop\n",
@@ -916,11 +932,12 @@ void Modem::setup_config()
 	c.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
 	c.tx_win = c.rx_win = dlink::LAPM_MAX_WIN;
 	c.tx_info = c.rx_info = dlink::LAPM_MAX_INFO;
-	/* ETC (S114): V.42's N401 64 octets, as the firmware presets it
+	/* ETC (S115): V.42's N401 64 octets, as the firmware presets it
 	   in its XID (512 bits, not 1024) */
 	if (sregs_[SREG_ETC])
 		c.tx_info = c.rx_info = 64;
-	c.comp = c.ec && (comp & 2) ? 3 : 0;
+	/* V.42bis with LAPM (XID) or with MNP (its LR: docs/mnp/mnp5.md) */
+	c.comp = (c.ec || c.mnp) && (comp & 2) ? 3 : 0;
 	c.mnp5 = c.mnp && (comp & 1);
 	c.dict_size = dlink::V42BIS_MAX_CODEWORDS;
 	c.max_string = dlink::V42BIS_MAX_STRING;
@@ -946,7 +963,7 @@ s16 Modem::dte_dirs(u32 direction)
    link agreed; logged if not */
 bool Modem::link_compression_ok()
 {
-	s16 agreed = cfg_.mnp_on ? 0 : cfg_.comp;
+	s16 agreed = cfg_.comp;
 	bool v44 = cfg_.v44 || cfg_.zstd;
 	if ((comp_need42_ & ~agreed) == 0 &&
 	    (!comp_need44_ || (v44 && (comp_need44_ & ~agreed) == 0)))
@@ -973,6 +990,7 @@ s16 Modem::link_init()
 	c.required = cfg_.required;
 	c.mnp_info = cfg_.mnp_info;
 	c.mnp5 = cfg_.mnp5;
+	c.mnp_v42_offer = sregs_[SREG_MNP_V42BIS] != 0;
 	c.tx_win = cfg_.tx_win;
 	c.rx_win = cfg_.rx_win;
 	c.tx_info = cfg_.tx_info;
@@ -1004,11 +1022,13 @@ s16 Modem::link_init()
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
 	c.hst = hst_offer();
-	/* MNP 10 (S113, -K, -Q, )M, @M, :T19): with MNP, not synchronous;
+	/* MNP 10 (S113: bit 0 the offer, bit 1 parameter 0xC0, bit 2 the
+	   long LR; -K, -Q, )M, @M, :T19): with MNP, not synchronous;
 	   the D-Modem extension's top rate +MS's */
 	c.mnp10 = cfg_.mnp && !cfg_.sync && (sregs_[SREG_MNP10] & 1) &&
 		!clear_channel() && !relay_channel();
 	c.mnp10_ext = (sregs_[SREG_MNP10] & 2) != 0;
+	c.mnp10_long = (sregs_[SREG_MNP10] & 4) != 0;
 	c.mnp10_upgrade = sregs_[SREG_MNP10_UPGRADE] != 0;
 	c.mnp10_lowest = static_cast<s16>(sregs_[SREG_MNP10_LOWEST]);
 	c.mnp10_cellular = sregs_[SREG_MNP10_CELLULAR] != 0;
@@ -1353,7 +1373,7 @@ const char *Modem::protocol_name() const
 const char *Modem::compression_name() const
 {
 	if (cfg_.mnp_on)
-		return cfg_.mnp5 ? "MNP5" : "NONE";
+		return cfg_.comp ? "V42bis" : cfg_.mnp5 ? "MNP5" : "NONE";
 	if (cfg_.ec && cfg_.comp)
 		return cfg_.zstd ? "ZSTD" : cfg_.v44 ? "V44" : "V42bis";
 	return "NONE";
@@ -1474,6 +1494,11 @@ void Modem::update_status(Status s)
 			}
 		}
 		report(Result::Connect);
+		/* ZyXEL's security: the remote's password first */
+		if (!caller_ && zsec_.on() && !loop3_) {
+			logf("security (*G%d): the password\n", zsec_.type);
+			zsec_.start();
+		}
 		sync_tx_ = tx_rate_;
 		sync_rx_ = rx_rate_;
 		dte_rt_ = dte_rn_ = 0;
@@ -1855,7 +1880,7 @@ bool Modem::link_req(s32 what)
 	    stats_.dp == DP_V91 ||
 	    (id != DP_V8 && id != DP_V34 && id != DP_V90 && id != DP_V92 &&
 	     id != DP_K56 && id != DP_X2 && id != DP_V32 &&
-	     id != DP_V32BIS && id != DP_V32TERBO)) {
+	     id != DP_V32BIS && id != DP_V32TERBO && id != DP_ZYX)) {
 		logf("%s asked: not with this modulation\n", n);
 		return false;
 	}
@@ -2747,8 +2772,11 @@ void Modem::line_failed(Result r)
    nothing if the hook is there already; the Host's result */
 s16 Modem::hook(s16 state)
 {
-	if (state == MODEM_HOOK_ON)
+	if (state == MODEM_HOOK_ON) {
 		leased_stop();
+		callback_.clear();
+		callback_at_ms_ = 0;
+	}
 	if (state == MODEM_HOOK_ON && voice_held_) {
 		stop_call();
 		return 0;
@@ -2768,6 +2796,8 @@ s16 Modem::hook(s16 state)
 s16 Modem::reset()
 {
 	leased_stop();
+	callback_.clear();
+	callback_at_ms_ = 0;
 	/* (V.54: the far end's loop 2 refused again, AT&T5) */
 	test_.set_grant(false);
 	const bool in_call = state_ != IDLE;
@@ -3212,6 +3242,7 @@ void Modem::rockwell_stats()
 		case Cause::LocalHangup:
 		case Cause::DteReset:
 		case Cause::DtrOff:
+		case Cause::Security:
 			reason = "LOCAL REQUEST";
 			break;
 		case Cause::AnyKey:
@@ -3494,7 +3525,8 @@ void Modem::unimodem_diag()
 	if (stats_.ended) {
 		switch (stats_.cause) {
 		case Cause::None: cleared = 0x0; break;
-		case Cause::LocalHangup: cleared = 0x51; break;
+		case Cause::LocalHangup:
+		case Cause::Security: cleared = 0x51; break;
 		case Cause::AnyKey: cleared = 0x50; break;
 		case Cause::DteReset: cleared = 0x52; break;
 		case Cause::DtrOff: cleared = 0x20; break;
@@ -3544,6 +3576,7 @@ void Modem::poll()
 		new_event_ = 0;
 	}
 	leased_poll();
+	zsec_poll();
 	if (test_end_ms_ &&
 	    static_cast<s64>(host_.now_ms() - test_end_ms_) >= 0) {
 		test_end_ms_ = 0;
@@ -3588,6 +3621,63 @@ void Modem::leased_poll()
 	    sregs_[SREG_RINGS_TO_AUTO_ANSWER] && leased_auto_) {
 		logf("leased line: answering (S0)\n");
 		answer(false);
+	}
+}
+
+/* ZyXEL's security (zyxel_sec.h): what it sends to the remote, up to n
+   characters; how many */
+s16 Modem::zsec_out(u8 *buf, s16 n)
+{
+	s16 k = static_cast<s16>(std::min(static_cast<size_t>(n),
+					  zsec_.out.size()));
+	memcpy(buf, zsec_.out.data(), static_cast<size_t>(k));
+	zsec_.out.erase(0, static_cast<size_t>(k));
+	return k;
+}
+
+/* ZyXEL's security: its end once the remote has its last characters
+   (the data passes, a hang-up, a hang-up and a call back); the call
+   back when it falls due */
+void Modem::zsec_poll()
+{
+	if (callback_at_ms_ && state_ == IDLE && !started_ && !dp_ &&
+	    static_cast<s64>(host_.now_ms() - callback_at_ms_) >= 0) {
+		std::string number = callback_;
+		callback_at_ms_ = 0;
+		callback_.clear();
+		logf("security: the call back to %s\n", number.c_str());
+		if (dial(number.c_str()))
+			report(Result::NoCarrier);
+		return;
+	}
+	if (zsec_.step != ZyxelSecurity::Step::Done || !zsec_.out.empty() ||
+	    link_->tx_pending() || state_ != ONLINE)
+		return;
+	ZyxelSecurity::End end = zsec_.end;
+	s16 slot = zsec_.slot;
+	zsec_.stop();
+	switch (end) {
+	case ZyxelSecurity::End::Pass:
+		logf("security: password %d correct\n", slot);
+		break;
+	case ZyxelSecurity::End::Fail:
+		logf("security: three wrong passwords, hanging up\n");
+		set_cause(Cause::Security);
+		hup(true);
+		break;
+	case ZyxelSecurity::End::CallStored:
+	case ZyxelSecurity::End::CallNumber:
+		callback_ = end == ZyxelSecurity::End::CallNumber ?
+			zsec_.number : stored_[slot];
+		logf("security: password %d correct, call back to '%s'\n",
+		     slot, callback_.c_str());
+		if (callback_.empty())
+			logf("security: no stored number (AT&Z%d=)\n", slot);
+		set_cause(Cause::LocalHangup);
+		hup(true);
+		break;
+	case ZyxelSecurity::End::None:
+		break;
 	}
 }
 

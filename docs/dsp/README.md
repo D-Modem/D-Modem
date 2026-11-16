@@ -27,6 +27,8 @@ operation of the receiver, refer to [the technical details](dsp-details.md).
 | [V.26 bis](v26.md) | 2400 bit/s one way, 75 the other | the older dial-up version, which operates as V.23 does |
 | V.32, V.32bis | 9600, 14400 bit/s | |
 | [V.32terbo](v32terbo.md) | 19200 bit/s | the unpublished extension of V.32bis by AT&T, made again from a modem that has it |
+| [ZyXEL](zyxel.md) | 19200 bit/s | the own modes of ZyXEL (ZyX 7200 to 19200) at 2742.857 baud, from the firmware of a U-1496S. D-Modem to D-Modem only (`AT+MS=ZYX`) |
+| [ZyXEL ADPCM](zyxel-adpcm.md) | voice | the voice coder of ZyXEL modems, 2, 3 and 4 bits a sample at 9600 samples a second (`AT+VSM=134` to `136`) |
 | [HST](hst.md) | 16800 bit/s one way, 300 the other | the protocol of USRobotics for bulletin boards, made again from the DSP firmware of the Courier |
 | [PEP](pep.md) | about 20000 bit/s, one way at a time | the TrailBlazer protocol of Telebit with hundreds of carriers, made again from its patents |
 | [V.61](v61.md) | 4800 bit/s with speech, 14400 without | speech and data at the same time, with the voice added onto the carrier of the modem (ASVD) |

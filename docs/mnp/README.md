@@ -17,7 +17,7 @@ what D-Modem does with it now.
 | [MNP 2](mnp2.md) | Start-stop octet frames, two-way simultaneous (full duplex) | V.42 Annex A (framing mode 2) | Supported as the responder. D-Modem offers class 3. |
 | [MNP 3](mnp3.md) | Bit-oriented (HDLC) frames: no start and stop bits | V.42 Annex A (framing mode 3) | Supported (the default) |
 | [MNP 4](mnp4.md) | Data phase optimization and adaptive packet assembly | V.42 Annex A (parameter 8), US 4,691,314 | Optimization supported. The LT size does not change. |
-| [MNP 5](mnp5.md) | Data compression: run-length and adaptive frequency coding | No | Supported |
+| [MNP 5](mnp5.md) | Data compression: run-length and adaptive frequency coding | No | Supported. V.42bis in place of MNP 5 is also supported ([V.42bis in MNP](mnp5.md#v42bis-in-mnp)). |
 | [MNP 6](mnp6.md) | Universal Link Negotiation and statistical duplexing | No | Not supported |
 | [MNP 7](mnp7.md) | Enhanced data compression (Huffman coding with a Markov model) | No | Not supported |
 | MNP 8 | No product is known. Refer to [MNP 7](mnp7.md#mnp-8). | No | Not applicable |

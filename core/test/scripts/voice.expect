@@ -35,6 +35,9 @@
       0 A: 131,"8-BIT ULAW/D-Modem",8,0,(8000),(0),(0)\r\n
       0 A: 132,"IMA ADPCM/D-Modem",4,0,(7200,8000,11025),(0),(0)\r\n
       0 A: 133,"G.726 ADPCM/D-Modem",4,0,(8000),(0),(0)\r\n
+      0 A: 134,"ZYXEL ADPCM 2/D-Modem",2,0,(9600,8000,7200),(0),(0)\r\n
+      0 A: 135,"ZYXEL ADPCM 3/D-Modem",3,0,(9600,8000,7200),(0),(0)\r\n
+      0 A: 136,"ZYXEL ADPCM 4/D-Modem",4,0,(9600,8000,7200),(0),(0)\r\n
       0 A: OK\r\n
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n

@@ -9,6 +9,7 @@ The modem has these functions:
 - V.8 and V.34 (up to 33600 bps).
 - V.8 bis before V.8 (`AT+A8E=1,1,,1`, [docs/dsp/v8bis.md](dsp/v8bis.md)). With V.8 bis, the modem also has V.70 voice and data together (`+DSVD=1`, [docs/v70.md](v70.md)). V.70 gives a data channel and a G.729 Annex A voice channel, with the silence compression of Annex B, through the multiplexer of V.76. The voice goes to the handset of a SmartUSB56 or to a `--dsvd-audio` command.
 - V.32bis (14400 bps) and V.32.
+- The ZyX modes of ZyXEL (7200 to 19200 bps at 2742.857 baud, `AT+MS=ZYX`, [docs/dsp/zyxel.md](dsp/zyxel.md)). They connect D-Modem to D-Modem. A part of the signal is a best guess, thus a real ZyXEL modem probably does not connect yet.
 - V.26 ter (2400 bps duplex, `AT+MS=V26T`) and V.26 bis (2400 bps in one direction with the 75 bps backward channel, `AT+MS=V26B`, [docs/dsp/v26.md](dsp/v26.md)).
 - V.22bis, V.22 and Bell 212A, with the fast connect of point of sale terminals (`ATS49=1`).
 - V.29 FastPOS (`AT+MS=V29FP`, [docs/dsp/fastpos.md](dsp/fastpos.md)). This is half duplex 9600 bit/s for card terminals.
@@ -22,7 +23,8 @@ The modem has these functions:
   - T.43 lossless colour pages.
   - T.44 mixed raster content pages.
   - T.434 binary files.
-- Call progress, caller ID and voice.
+- Call progress, caller ID and voice. The voice formats include ZyXEL's ADPCM of 2, 3 and 4 bits at 9600 samples a second (`AT+VSM=134` to `136`, [docs/dsp/zyxel-adpcm.md](dsp/zyxel-adpcm.md)).
+- ZyXEL's type 2 security: a password from the caller before the data passes, and a call back (`AT*G3` to `AT*G5`, [docs/zyxel-security.md](zyxel-security.md)).
 
 ## PCM modes
 
@@ -50,7 +52,7 @@ For more data, refer to [docs/dsp/](dsp/README.md). For the tests, refer to [doc
 - V.42 error correction (LAPM, with its detection phase).
 - MNP 2 to 4 (the alternative procedure of V.42) for modems without LAPM.
 - V.44, V.42bis and MNP 5 compression (and zstd between two D-Modems).
-- The ETC cellular mode of the 3Com Megahertz PC Cards (`AT&F5`, `AT&F6`, S114 and the transmit filter of `AT+EF`; [docs/link-details.md](link-details.md)).
+- The ETC cellular mode of the 3Com Megahertz PC Cards (`AT&F5`, `AT&F6`, S115 and the transmit filter of `AT+EF`; [docs/link-details.md](link-details.md)).
 - Plain asynchronous characters. Or, as an alternative, the synchronous access mode of V.80 for DTEs that make their own frames of data, for example H.324 terminals.
 
 `core/` is the modem core in C++ ([docs/core.md](core.md)). It contains the AT commands, the S-registers, the result codes, the state machine of the call and its timers. It has the same behaviour as the slmodemd core of Smart Link. slmodemd, libdmodem and modem_test use it.

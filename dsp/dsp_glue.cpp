@@ -686,7 +686,7 @@ struct Voice {
 	   DTE sample falls after it, in line samples */
 	double tx_pos;
 	float tx_prev, tx_cur;
-	s16 tx_more[2], tx_nmore, tx_next;
+	s16 tx_more[voice::Codec::MAX_SAMPLES], tx_nmore, tx_next;
 	double rx_t;
 	float rx_prev;
 	/* this process()'s characters to the DTE */

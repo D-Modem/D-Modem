@@ -1678,9 +1678,17 @@ std::vector<Call> calls()
 	   8 outstanding, of up to 256 octets */
 	const std::string mnp5 = "mnp: LR: framing mode 3, k 8, N401 256, "
 		"optimization 3, MNP 5";
+	/* the SM56 and HSF modems have V.42bis on an MNP link (the SM56's
+	   LR has parameter 14, the HSF's parameter 9's short form): when
+	   they call, our answerer takes V.42bis in place of MNP 5
+	   (docs/mnp/mnp5.md); our caller offers it only with S114=1 */
+	const std::string v42 = "mnp: LR: framing mode 3, k 8, N401 256, "
+		"optimization 3\\.\n.*mnp: LR: V\\.42bis \\(parameter";
 	for (const char *p : { "agere", "pctel", "sm56", "hsf", "broadcom",
 			       "intel", "ess" }) {
 		std::string n = p;
+		const std::string &want = n == "sm56" || n == "hsf" ? v42 :
+			mnp5;
 		/* (the Intel modem's line at 9600 Hz, the others' 8000;
 		   INTEL_RATE only half_intel reads) */
 		bool i = n == "intel";
@@ -1688,13 +1696,30 @@ std::vector<Call> calls()
 		add(p, n + "_mnp5_" + n + "_calls", p, "open",
 		    "ATX3;AT+MS=V34;AT+ES=4,4,6",
 		    { "NET=" + r + ":9600:ulaw", "PROTO_B=ATX3;AT+MS=34",
-		      "BULK=20000", "EXPECT_B=" + mnp5, i537 });
+		      "BULK=20000", "EXPECT_B=" + want, i537 });
 		add(p, n + "_mnp5_open_calls", "open", p,
 		    "ATX3;AT+MS=34;AT\\N5",
 		    { "NET=9600:" + r + ":ulaw",
 		      "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6", "BULK=20000",
 		      "EXPECT_A=" + mnp5, i537 });
 	}
+	/* and our caller's offer (S114=1) to the two that have it, with
+	   MNP 10 offered too (S113's default) */
+	for (const char *p : { "sm56", "hsf" }) {
+		std::string n = p;
+		add(p, n + "_mnp_v42bis_open_calls", "open", p,
+		    "ATX3;AT+MS=34;AT\\N5S114=1",
+		    { "NET=9600:8000:ulaw",
+		      "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6", "BULK=20000",
+		      "EXPECT_A=" + v42 });
+	}
+	/* the ESS modem with our caller's offer: it answers with MNP 5 (it
+	   retrains 0.2 s into the call, and then it waits for a new LR:
+	   docs/interop-details.md) */
+	add("ess", "ess_mnp_v42bis_open_calls", "open", "ess",
+	    "ATX3;AT+MS=34;AT\\N5S114=1",
+	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6",
+	      "BULK=20000", "EXPECT_A=" + mnp5, i537 });
 	/* and MNP 4 alone (our %C2: no MNP 5) */
 	add("agere", "agere_mnp4_agere_calls", "agere", "open",
 	    "ATX3;AT+MS=V34;AT+ES=4,4,6",

@@ -607,12 +607,34 @@ MNP 10 (parameter 8 bit 4) with these parameters:
   up to the top speed (`+MS`). Each side keeps the items that the two
   sides have.
 - `0x0D`: our receive level (G) and eye quality (E).
-- `0x11`: the mark of the originator.
+- `0x11`: the mark of the originator, only with S113 bit 2 (0 by
+  default). The PCTel modem refuses an LR with this parameter.
 - `0xC0`, the parameter of D-Modem (S113 bit 1, the default): the
   modulations that our pumps can run on this line, the top speed and
   `-Q`. A DeskPorte uses its length to skip it. When the two sides send
   it, the call can change between all the modulations that the two
   sides have.
+
+The LR of the caller is 38 octets or less (with the length
+indication), because the SM56 modem refuses a longer LR. The caller
+puts the parameters in this sequence, and each one only when it fits:
+
+1. `0x0C`. If it does not fit, the LR does not offer MNP 10, and
+   parameter 8 does not have bit 4. An example is an LR that also offers
+   V.42bis (`S114=1`).
+2. `0xC0`: 9 octets, or 8 octets without `-Q`, or 6 octets without the
+   top speed, or 5 octets without the modulations of the leased lines
+   (bits 16 to 22).
+3. `0x0D`. It comes after `0xC0`, because the first LR seldom has the
+   eye quality (E is 0xFF, and the remote ignores it).
+
+With MNP 5 and V.34, the LR has `0x0C` and the 5-octet `0xC0`. S113
+bit 2 sends the long LR: all the parameters and `0x11`, with no limit.
+
+When the caller gets no frame in the data phase, and T404 stops, it
+sends its LR again, one time in each call. A responder in the data
+phase sends an LA or an LT, and the data phase continues. A responder
+that started again (the ESS modem after its retrain) answers the LR.
 
 With `-K1`, a V.42 originator puts the same parameters in its XID (the
 `FF` group of the user data subfield, with "MNPI"). An answerer with
@@ -743,22 +765,22 @@ The trace found no special ETC modulation. On this card, ETC is V.32bis
 with V.42 or MNP, the calling tone and the settings above. The V.32bis
 pump of the card operates at 7200 Hz.
 
-**What D-Modem does.** S114 holds the flags, with the bits of the
-firmware. `AT&F5` sets S114 to 238 (0xEE), `+MS=V32B`, `\N2`, S10 = 40
-and S7 = 90. `AT&F6` sets S114 to 176 (0xB0) and `\N3`. Other `&F`
+**What D-Modem does.** S115 holds the flags, with the bits of the
+firmware. `AT&F5` sets S115 to 238 (0xEE), `+MS=V32B`, `\N2`, S10 = 40
+and S7 = 90. `AT&F6` sets S115 to 176 (0xB0) and `\N3`. Other `&F`
 commands do nothing, as before.
 
-- When bit 1 of S114 is set, the caller sends the 1500 Hz calling tone
+- When bit 1 of S115 is set, the caller sends the 1500 Hz calling tone
   (`dsp/dp_callprog.cpp`).
-- When bit 4 of S114 is set and bits 0 to 2 are not set, the answerer
+- When bit 4 of S115 is set and bits 0 to 2 are not set, the answerer
   listens for the 1500 Hz tone in the first 10 s of the call
   (`EtcToneDetector` in `core/etc.h`). It measures blocks of 50 ms. Two
   blocks in sequence with more than half of the energy at 1500 Hz, above
-  -43 dBm0, turn ETC on for the call. S114 does not change. The answerer
+  -43 dBm0, turn ETC on for the call. S115 does not change. The answerer
   also transmits 6.6 dB lower than the default (the ratio of the two
   gains of the firmware).
-- When S114 is not 0, the link offers N401 = 64 octets.
-- When bit 5 of S114 is set at the start of a call, `core/etc.h` filters
+- When S115 is not 0, the link offers N401 = 64 octets.
+- When bit 5 of S115 is set at the start of a call, `core/etc.h` filters
   the samples of the data pump before they go to the line. The filter is
   off during the call progress pump (dial tones and the calling tone), as
   bit 9 of the firmware does. The filter
@@ -788,7 +810,7 @@ commands do nothing, as before.
 **Tests:** `Core.EtcFilter` (the response of the coefficients, the levels
 through the filter), `Core.EtcToneDetector` (1500 Hz found at -10 and -40
 dBm0 and in noise; not 1300 Hz, 1800 Hz, noise or a short tone),
-`Core.EtcSettings` (`&F5`, `&F6`, S114, `+EF`), `Core.EtcCall` (a call
+`Core.EtcSettings` (`&F5`, `&F6`, S115, `+EF`), `Core.EtcCall` (a call
 from `&F5` to `&F6`: the calling tone found, V.32bis with V.42, `/ETC` on
 the two sides, `40=82` and `41=40` in `#UD`, data in the two directions)
 and `Core.EtcLandPlainCaller` (no calling tone, no `/ETC`).

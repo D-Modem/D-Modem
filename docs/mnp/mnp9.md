@@ -37,6 +37,29 @@ V.42 (LAPM) has the same two functions: an I frame carries N(R), and
 the SREJ frame asks for one frame. MNP 9 can have a similar design, but
 this is a guess.
 
+## Modems that have MNP 9
+
+Only Microcom V.32 modems are known to have MNP 9. Datapro says that
+MNP class 9 was not in the products of other vendors. We found no ROM
+dump for these modems.
+
+| Modem | Source |
+|---|---|
+| Microcom QX/V.32c | More than one source |
+| Microcom QX/3295 | One secondary source |
+
+## Patents
+
+We found no patent that describes MNP 9. Two Microcom patents describe
+adaptive packet sizes and idle packets:
+
+- US 5,191,583.
+- US 5,481,562.
+
+MNP 9 possibly uses these methods in its link layer. We have low
+confidence in this relation, because no source connects the patents to
+MNP 9. Both patents are expired.
+
 ## D-Modem
 
 D-Modem does not support MNP 9.
