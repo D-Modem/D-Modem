@@ -31,6 +31,7 @@
 #include "modem_homolog.h"
 #include "v13.h"
 #include "v54.h"
+#include "zyxel_sec.h"
 
 /* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
 #ifndef DMODEM_PRINTF
@@ -506,6 +507,9 @@ private:
 		/* local hangups AT#UD tells apart: a character from the
 		   DTE while the call came up, ATZ, DTR off */
 		AnyKey, DteReset, DtrOff,
+		/* ZyXEL's security (*G3 to *G5): the third wrong
+		   password */
+		Security,
 	};
 	enum { EV_RING_CHECK = 0x01, EV_ESCAPE = 0x02 };
 
@@ -649,6 +653,12 @@ private:
 	s16 at_ampV(char *p, s16 *len);
 	s16 at_S(char *p, s16 *len);
 	s16 at_Z(char *p, s16 *len);
+	/* ZyXEL's security commands (*G, *Hn=, *HS=, *V) and stored
+	   numbers (&Zn=) */
+	static bool zyxel_star(const char *p);
+	s16 at_star(char *p, s16 *len);
+	s16 at_ampZ(char *p, s16 *len);
+	bool sec_unlocked(std::string &arg) const;
 	s16 at_GCI(char *p, s16 *len);
 	s16 at_MS(char *p, s16 *len);
 	s16 at_text(char *p, s16 *len);
@@ -734,6 +744,15 @@ private:
 	Leased leased_role_ = Leased::None;
 	u64 leased_at_ms_ = 0;
 	bool leased_auto_ = true;
+	/* ZyXEL's security on an answered call (zyxel_sec.h), the stored
+	   numbers (AT&Z0= to AT&Z9=), and a call back due: its number,
+	   when (now_ms(), 0: none) */
+	ZyxelSecurity zsec_;
+	std::string stored_[ZyxelSecurity::SLOTS];
+	std::string callback_;
+	u64 callback_at_ms_ = 0;
+	void zsec_poll();
+	s16 zsec_out(u8 *buf, s16 n);
 	/* when the line's samples last went through (now_ms()): a stop due
 	   after samples is done on time once they have stopped coming (a
 	   SIP call ringing without early media has none) */

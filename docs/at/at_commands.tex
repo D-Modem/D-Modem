@@ -760,6 +760,7 @@ rarer ones.
 \cmdl[bsV]{\bs V\p{n}} & Protocol in \rc{CONNECT}. & \cmdl[pctB]{\%B, *B} & Blacklisted numbers. \\ \hline
 \cmdl[pctC]{\%C\p{n}} & Data compression. & \cmdl[pctE]{\%E\p{n}} & Line quality monitor (kept). \\ \hline
 \cmdl[hashCID]{\#CID} & Caller ID. & \cmdl[hashUD]{\#UD} & Unimodem diagnostics. \\ \hline
+\cmdl[starG]{*G, *H\p{n}=, *HS=, *V} & ZyXEL security. & \cmdl[starG]{\&Z\p{n}=} & Stored numbers. \\ \hline
 \cmdl[hashCLS]{\#CLS} & Data, fax or voice (Rockwell, US Robotics). & \cmdl[hashV]{\#V\ldots} & Voice, Rockwell's and US Robotics' commands. \\ \hline
 \cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10}. & \cmdl[mnp10]{)M, @M, *H, :T19} & \std{MNP~10}. \\ \hline
 \cmdl[plusMS]{+MS} & Modulation. & \cmdl[plusGMI]{+GMI, +GMM, +GMR} & Identification. \\ \hline
@@ -1555,7 +1556,9 @@ W & Wait for a dial tone (1 s of it): \rc{NO DIALTONE} if none comes in \sreg{7}
 ; & End the dial string: once the number is dialed the modem is back in
   command state, off hook with the call kept, and says \rc{OK}; the rest of
   the line runs then. \\ \hline
-S=\p{n} & A stored number: \rc{ERROR} (there are none). \\ \hline
+S=\p{n}, S\p{n} & The stored number \p{n} (0--9, \cmdl[starG]{\&Z\p{n}=}): only as the
+  first character of the string (after T or P too); \rc{ERROR} if the slot is
+  empty, and \rc{ERROR} later in the string. \\ \hline
 ! \$ & Hook flash and bong tone: skipped (a \std{SIP} call has no hook to flash). \\ \hline
 \end{vtable}
 
@@ -1568,7 +1571,7 @@ calling modem's handshake, \cmdl[A]{ATA} the answering modem's, and
 \res{\rc{CONNECT}}{When the call is up.}
 \res{\rc{OK}}{After a \cmdl[D]{;}.}
 \res{\rc{BUSY}, \rc{NO ANSWER}, \rc{NO DIALTONE} or \rc{NO CARRIER}}{When it is not.}
-\res{\rc{ERROR}}{For \cmdl[D]{S=}\p{n}, or \cmdl[D]{L} with no number to dial.}
+\res{\rc{ERROR}}{For an empty stored number, \cmdl[D]{S=}\p{n} after the start, or \cmdl[D]{L} with no number to dial.}
 \end{results}
 \end{command}
 
@@ -1658,6 +1661,48 @@ the value in \sreg{161} and does nothing more.
 These commands list the numbers barred from dialing.  None are kept.
 \begin{results}
 \res{\rc{OK}}{Always.}
+\end{results}
+\end{command}
+
+\begin{command}{starG}{*G\p{n}, *H\p{n}=, *HS=, *V, \&Z\p{n}=}{ZyXEL Security and Stored Numbers}
+These are the commands of ZyXEL's type 2 security (the U-1496 and the Elite
+2864). When the modem answers a call with \cmdr{*G3} to \cmdr{*G5}, it
+sends \rc{PassWord:} to the remote after \rc{CONNECT}. The remote's
+characters come back as \rc{*}. \sreg{3} ends the password. The data does
+not pass, in the two directions, until the password is correct. A wrong
+password sends \rc{Error..., try again} and the prompt again. The third
+wrong password hangs up (\cmdl[I]{ATI6}: \rc{Security check}).
+
+\begin{vtable}{2}{|C{0.18\textwidth}|L{0.68\textwidth}|}{ZyXEL Security}
+  {\thd{Command} & \thd{Function}}
+*G0 & No security (the \emph{default}). \\ \hline
+*G1, *G2 & ZyXEL's type 1 (ZyXEL to ZyXEL only): \rc{ERROR}. \\ \hline
+*G3 & The password, then \rc{Correct} and the data. \\ \hline
+*G4 & The password, \rc{Correct}, a hang-up, and 2 s later a call to the
+  stored number of the password's slot. \\ \hline
+*G5 & The password, then \rc{Call back phone number:}. The remote types up
+  to 26 characters (\sreg{5} erases one) and \sreg{3}; a hang-up, and 2 s
+  later a call to that number. \\ \hline
+*H\p{n}=\p{password} & User password \p{n} (0--9): up to 8 characters,
+  with case, no comma; none empties the slot. In quotes, or the rest of the
+  line. With a supervisory password set: \cmdr{*H}\p{n}\cmdr{=}\p{super}\cmdr{,}\p{password}. \\ \hline
+*HS=\p{password} & The supervisory password; with one set:
+  \cmdr{*HS=}\p{old}\cmdr{,}\p{password}. \\ \hline
+*V, *V=\p{super} & The table: \cmdr{*G}\p{n}, then for each slot in use its
+  number, password and stored number. \cmdr{*V=}\p{super} when a
+  supervisory password is set. \\ \hline
+\&Z\p{n}=\p{number} & Stored number \p{n} (0--9), for \cmdl[D]{ATDS=}\p{n}
+  and \cmdr{*G4}. In quotes, or the rest of the line. \\ \hline
+\&Z\p{n}? & Stored number \p{n}. \\ \hline
+\end{vtable}
+
+\cmdr{*H0} to \cmdr{*H2} without \cmdr{=} stay the \std{MNP~10} command
+(\cmdl[mnp10]{*H}). \cmdl[Z]{ATZ} keeps the passwords, the stored numbers and
+\cmdr{*G}, and stops a call back that is due. \cmdl[H]{ATH} also stops it.
+The settings are not stored: put them in the init string.
+\begin{results}
+\res{\rc{OK}}{When the value is valid (and the supervisory password is correct).}
+\res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \end{command}
 

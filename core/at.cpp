@@ -547,6 +547,8 @@ s16 Modem::at_command(char *cmd)
 
 		if (kept_command(p) >= 0) {
 			ret = at_kept(p, &len);
+		} else if (zyxel_star(p)) {
+			ret = at_star(p, &len);
 		} else if (mnp10_command(p, &len, &ret)) {
 		} else if (taken(p, &len)) {
 			ret = 0;
@@ -705,6 +707,9 @@ s16 Modem::at_command(char *cmd)
 				case 'T':
 					ret = at_ampT(p, &len);
 					break;
+				case 'Z':
+					ret = at_ampZ(p, &len);
+					break;
 				default:
 					ret = -1;
 					break;
@@ -839,6 +844,129 @@ bool Modem::mnp10_command(const char *p, s16 *len, s16 *ret)
 }
 
 /*
+ *    ZyXEL's security (zyxel_sec.h) and stored numbers
+ */
+
+/* p is one of ZyXEL's security commands: *G, *V, *HS, *Hn= (*H0 to *H2
+   without '=' are MNP 10's) */
+bool Modem::zyxel_star(const char *p)
+{
+	if (p[0] != '*')
+		return false;
+	char c = upper(p[1]);
+	return c == 'G' || c == 'V' ||
+		(c == 'H' && (upper(p[2]) == 'S' ||
+			      (is_digit(p[2]) && p[3] == '=')));
+}
+
+namespace {
+
+/* a command's text after its '=': in quotes (to the next quote) or the
+   rest of the line; *len the command's characters, from p */
+std::string text_arg(const char *p, const char *eq, s16 *len)
+{
+	const char *v = eq + 1, *e;
+	std::string t;
+	if (*v == '"') {
+		e = strchr(v + 1, '"');
+		if (!e)
+			e = v + strlen(v);
+		t.assign(v + 1, e);
+		if (*e)
+			e++;
+	} else {
+		e = v + strlen(v);
+		t.assign(v, e);
+	}
+	*len = static_cast<s16>(e - p);
+	return t;
+}
+
+} // namespace
+
+/* the supervisory password before a comma in arg (taken out of arg),
+   when one is set: true if it is right, or none is set */
+bool Modem::sec_unlocked(std::string &arg) const
+{
+	if (zsec_.super.empty())
+		return true;
+	size_t c = arg.find(',');
+	if (c == std::string::npos || arg.compare(0, c, zsec_.super))
+		return false;
+	arg.erase(0, c + 1);
+	return true;
+}
+
+/* *G0 to *G5 (type 1, *G1 and *G2, ERROR: ZyXEL to ZyXEL only);
+   *Hn=[<super>,]<password> the user password n (none: the slot
+   empty); *HS=[<old>,]<password> the supervisory one; *V[=<super>]
+   the table: *G, then each slot set, its password and its stored
+   number */
+s16 Modem::at_star(char *p, s16 *len)
+{
+	char c = upper(p[1]);
+	if (c == 'G') {
+		s16 v = is_digit(p[2]) ? p[2] - '0' : 0;
+		*len = static_cast<s16>(2 + is_digit(p[2]));
+		if (v > 5 || v == 1 || v == 2)
+			return -1;
+		zsec_.type = v;
+		return 0;
+	}
+	if (c == 'V') {
+		std::string arg;
+		*len = 2;
+		if (p[2] == '=')
+			arg = text_arg(p, p + 2, len) + ",";
+		if (!sec_unlocked(arg))
+			return -1;
+		puts(("*G" + std::to_string(zsec_.type)).c_str());
+		crlf();
+		for (s16 i = 0; i < ZyxelSecurity::SLOTS; i++) {
+			if (zsec_.user[i].empty() && stored_[i].empty())
+				continue;
+			puts((std::to_string(i) + ": " + zsec_.user[i] + " " +
+			      stored_[i]).c_str());
+			crlf();
+		}
+		return 0;
+	}
+	std::string arg = text_arg(p, p + 3, len);
+	if (!sec_unlocked(arg) || arg.size() > ZyxelSecurity::PW_MAX ||
+	    arg.find(',') != std::string::npos)
+		return -1;
+	if (upper(p[2]) == 'S') {
+		if (p[3] != '=')
+			return -1;
+		zsec_.super = arg;
+	} else {
+		zsec_.user[p[2] - '0'] = arg;
+	}
+	return 0;
+}
+
+/* &Zn=<number> the stored number n (0 to 9; none: empty), &Zn? it */
+s16 Modem::at_ampZ(char *p, s16 *len)
+{
+	if (!is_digit(p[2]))
+		return -1;
+	s16 i = static_cast<s16>(p[2] - '0');
+	if (p[3] == '?') {
+		*len = 4;
+		puts(stored_[i].c_str());
+		crlf();
+		return 0;
+	}
+	if (p[3] != '=')
+		return -1;
+	std::string n = text_arg(p, p + 3, len);
+	if (n.size() >= sizeof(dial_string_))
+		return -1;
+	stored_[i] = n;
+	return 0;
+}
+
+/*
  *    basic commands
  */
 
@@ -873,7 +1001,9 @@ s16 Modem::at_B(char *, s16 *len)
 
 /* ATD<dial string>: the rest of the line; after its first ';' the rest
    of the line runs once the number is dialled; ATDL the last number
-   again; S=<n> (a stored number) ERROR; its result later, or ERROR */
+   again; ATDS=n or ATDSn (after T or P too) the stored number n
+   (AT&Zn=, ERROR if none); S=<n> later in the string ERROR; its result
+   later, or ERROR */
 s16 Modem::at_D(char *p, s16 *len)
 {
 	char *s = p + 1, *semi = strchr(s, ';');
@@ -882,6 +1012,21 @@ s16 Modem::at_D(char *p, s16 *len)
 
 	*len = static_cast<s16>(strlen(p));
 	dial_rest_[0] = '\0';
+	/* DS=n, DSn: the stored number n (AT&Zn=) */
+	{
+		char *q = s;
+		if (upper(*q) == 'T' || upper(*q) == 'P')
+			sregs_[SREG_TONE_OR_PULSE] = upper(*q++) == 'T';
+		if (upper(*q) == 'S' && (is_digit(q[1]) ||
+					 (q[1] == '=' && is_digit(q[2])))) {
+			s16 i = static_cast<s16>(q[q[1] == '=' ? 2 : 1] - '0');
+			if (stored_[i].empty())
+				return -1;
+			if (mode_ == MODEM_MODE_VOICE)
+				return voice_dial(stored_[i].c_str());
+			return dial(stored_[i].c_str()) ? -1 : 1;
+		}
+	}
 	for (char *q = s; *q && q != semi; q++)
 		if (upper(q[0]) == 'S' && q[1] == '=' && is_digit(q[2]))
 			return -1;

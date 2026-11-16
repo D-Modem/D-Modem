@@ -109,6 +109,8 @@ static const u32 STOP_SAMPLES = 48;
 static const u32 STOP_IDLE_MS = 100;
 /* a leased line's call again so long after its NO CARRIER (AT&L1) */
 static const u32 LEASED_AGAIN_MS = 2000;
+/* ZyXEL's call back (*G4, *G5): the call after the hang-up */
+static const u32 CALLBACK_MS = 2000;
 /* the escape's guard time (before, between and after the S2s) */
 static const u32 ESCAPE_MS = 500;
 /* caller ID listens this long after the first ring */
@@ -135,6 +137,7 @@ static const char *const cause_text[] = {
 	"Training failed", "Protocol failure", "No carrier",
 	/* (ATI11 calls these local hangups too) */
 	"Local hangup", "Local hangup", "Local hangup",
+	"Security check",
 };
 
 /* the result codes in words, by Result */
@@ -207,11 +210,21 @@ struct LinkOwner final : public dlink::Owner {
 
 	/* the DTE's characters for the line */
 	s16 read_chars(u8 *buf, s16 n) override {
+		if (m_.zsec_.holds())
+			return m_.zsec_out(buf, n);
 		return static_cast<s16>(m_.link_chars(
 			reinterpret_cast<char *>(buf), n));
 	}
-	/* the remote's characters for the DTE: what it took */
+	/* the remote's characters for the DTE: what it took (while
+	   ZyXEL's security holds the data, they are its) */
 	s16 write_chars(const u8 *buf, s16 n) override {
+		if (m_.zsec_.holds()) {
+			for (s16 i = 0; i < n; i++)
+				m_.zsec_.feed(buf[i],
+					      m_.sregs_[SREG_CR_CHAR],
+					      m_.sregs_[SREG_BS_CHAR]);
+			return n;
+		}
 		return m_.put_chars(reinterpret_cast<const char *>(buf), n);
 	}
 	/* the link's progress as the modem's */
@@ -740,6 +753,9 @@ s16 Modem::stop_call()
 	loop3_ = false;
 	loop3_buf_.clear();
 	sim_on_ = false;
+	zsec_.stop();
+	if (!callback_.empty())
+		callback_at_ms_ = host_.now_ms() + CALLBACK_MS;
 	if (started_) {
 		if (host_.stop(*this))
 			log_printf(1, "err: %s: the line does not stop\n",
@@ -1454,6 +1470,11 @@ void Modem::update_status(Status s)
 			}
 		}
 		report(Result::Connect);
+		/* ZyXEL's security: the remote's password first */
+		if (!caller_ && zsec_.on() && !loop3_) {
+			logf("security (*G%d): the password\n", zsec_.type);
+			zsec_.start();
+		}
 		sync_tx_ = tx_rate_;
 		sync_rx_ = rx_rate_;
 		dte_rt_ = dte_rn_ = 0;
@@ -2716,8 +2737,11 @@ void Modem::line_failed(Result r)
    nothing if the hook is there already; the Host's result */
 s16 Modem::hook(s16 state)
 {
-	if (state == MODEM_HOOK_ON)
+	if (state == MODEM_HOOK_ON) {
 		leased_stop();
+		callback_.clear();
+		callback_at_ms_ = 0;
+	}
 	if (state == MODEM_HOOK_ON && voice_held_) {
 		stop_call();
 		return 0;
@@ -2737,6 +2761,8 @@ s16 Modem::hook(s16 state)
 s16 Modem::reset()
 {
 	leased_stop();
+	callback_.clear();
+	callback_at_ms_ = 0;
 	/* (V.54: the far end's loop 2 refused again, AT&T5) */
 	test_.set_grant(false);
 	const bool in_call = state_ != IDLE;
@@ -3177,6 +3203,7 @@ void Modem::rockwell_stats()
 		case Cause::LocalHangup:
 		case Cause::DteReset:
 		case Cause::DtrOff:
+		case Cause::Security:
 			reason = "LOCAL REQUEST";
 			break;
 		case Cause::AnyKey:
@@ -3457,7 +3484,8 @@ void Modem::unimodem_diag()
 	if (stats_.ended) {
 		switch (stats_.cause) {
 		case Cause::None: cleared = 0x0; break;
-		case Cause::LocalHangup: cleared = 0x51; break;
+		case Cause::LocalHangup:
+		case Cause::Security: cleared = 0x51; break;
 		case Cause::AnyKey: cleared = 0x50; break;
 		case Cause::DteReset: cleared = 0x52; break;
 		case Cause::DtrOff: cleared = 0x20; break;
@@ -3507,6 +3535,7 @@ void Modem::poll()
 		new_event_ = 0;
 	}
 	leased_poll();
+	zsec_poll();
 	if (test_end_ms_ &&
 	    static_cast<s64>(host_.now_ms() - test_end_ms_) >= 0) {
 		test_end_ms_ = 0;
@@ -3551,6 +3580,63 @@ void Modem::leased_poll()
 	    sregs_[SREG_RINGS_TO_AUTO_ANSWER] && leased_auto_) {
 		logf("leased line: answering (S0)\n");
 		answer(false);
+	}
+}
+
+/* ZyXEL's security (zyxel_sec.h): what it sends to the remote, up to n
+   characters; how many */
+s16 Modem::zsec_out(u8 *buf, s16 n)
+{
+	s16 k = static_cast<s16>(std::min(static_cast<size_t>(n),
+					  zsec_.out.size()));
+	memcpy(buf, zsec_.out.data(), static_cast<size_t>(k));
+	zsec_.out.erase(0, static_cast<size_t>(k));
+	return k;
+}
+
+/* ZyXEL's security: its end once the remote has its last characters
+   (the data passes, a hang-up, a hang-up and a call back); the call
+   back when it falls due */
+void Modem::zsec_poll()
+{
+	if (callback_at_ms_ && state_ == IDLE && !started_ && !dp_ &&
+	    static_cast<s64>(host_.now_ms() - callback_at_ms_) >= 0) {
+		std::string number = callback_;
+		callback_at_ms_ = 0;
+		callback_.clear();
+		logf("security: the call back to %s\n", number.c_str());
+		if (dial(number.c_str()))
+			report(Result::NoCarrier);
+		return;
+	}
+	if (zsec_.step != ZyxelSecurity::Step::Done || !zsec_.out.empty() ||
+	    link_->tx_pending() || state_ != ONLINE)
+		return;
+	ZyxelSecurity::End end = zsec_.end;
+	s16 slot = zsec_.slot;
+	zsec_.stop();
+	switch (end) {
+	case ZyxelSecurity::End::Pass:
+		logf("security: password %d correct\n", slot);
+		break;
+	case ZyxelSecurity::End::Fail:
+		logf("security: three wrong passwords, hanging up\n");
+		set_cause(Cause::Security);
+		hup(true);
+		break;
+	case ZyxelSecurity::End::CallStored:
+	case ZyxelSecurity::End::CallNumber:
+		callback_ = end == ZyxelSecurity::End::CallNumber ?
+			zsec_.number : stored_[slot];
+		logf("security: password %d correct, call back to '%s'\n",
+		     slot, callback_.c_str());
+		if (callback_.empty())
+			logf("security: no stored number (AT&Z%d=)\n", slot);
+		set_cause(Cause::LocalHangup);
+		hup(true);
+		break;
+	case ZyxelSecurity::End::None:
+		break;
 	}
 }
 
