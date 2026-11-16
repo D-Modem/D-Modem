@@ -2,11 +2,11 @@
 
 # dmodemd's command line
 
-Every option `dmodemd` takes, from its option table (`frontend/dmodemd/options.cpp`); `dmodemd --help` prints the same. The SIP account and the rest of the line's settings are [environment variables](environment.md); [Usage](../usage.md) shows them in use.
+This page gives all the options of `dmodemd`, from its option table (`frontend/dmodemd/options.cpp`). `dmodemd --help` shows the same list. The SIP account and the other settings of the line are [environment variables](environment.md). [Usage](../usage.md) shows how to use them.
 
     dmodemd [options] [name]
 
-`name` is the modem's: its pty is `/dev/tty<name>` (`/dev/ttyDM0` for the default, `dmodem0`... as the usage says), and its logs are named after it.
+`name` is the name of the modem. Its pty is `/dev/tty<name>` (`/dev/ttyDM0` for the default, `dmodem0`..., as the usage tells). The names of its logs come from `name`.
 
 | option | argument | default | systems | what it does |
 |---|---|---|---|---|

@@ -151,6 +151,14 @@ public:
 	s16 optimization() const { return opt_; }
 	/* (see mode()) */
 	bool mnp5() const { return mnp5_; }
+	/* V.42bis agreed in the LRs (parameter 9's short form or parameter
+	   0x0E): its directions as Config::comp's bits (0: none), N2 and
+	   N7 */
+	s16 v42bis() const { return v42_comp_; }
+	/* (see v42bis()) */
+	s32 v42bis_n2() const { return v42_n2_; }
+	/* (see v42bis()) */
+	s32 v42bis_n7() const { return v42_n7_; }
 	/* MNP 10 agreed; and its cellular mode */
 	bool mnp10() const { return m10_; }
 	/* (see mnp10()) */
@@ -220,6 +228,8 @@ private:
 	Frame *next_lt();
 	void rx_frame(Frame *f, bool bit);
 	bool rx_lr(const u8 *h, s16 len);
+	bool rx_lr_v42bis(const u8 *h, s16 len, s16 p9);
+	s16 v42_lr(u8 *b, s16 n);
 	void rx_lt(const u8 *h, s16 len, const u8 *info, s16 n);
 	void rx_la(const u8 *h, s16 len);
 	void rx_ln(const u8 *h, s16 len);
@@ -354,8 +364,19 @@ private:
 	s16 our_mode_ = 3, our_k_ = MNP_MAX_K, our_n401_ = MNP_MAX_INFO;
 	s16 our_opt_ = 3;
 	bool our_mnp5_ = false;
+	/* V.42bis in the LRs: our directions (Config::comp's bits, 0: not
+	   offered), N2 and N7 */
+	s16 our_v42_ = 0;
+	bool offer_v42_ = false;        /* (as the initiator) */
+	s32 our_n2_ = 0, our_n7_ = 0;
 	s16 mode_ = 2, k_ = 1, n401_ = MNP_DFLT_INFO, opt_ = 0;
 	bool mnp5_ = false;
+	/* V.42bis agreed: the directions (Config::comp's bits), N2, N7;
+	   and in which form the responder gives it (parameter 0x0E, else
+	   parameter 9's short form) */
+	s16 v42_comp_ = 0;
+	s32 v42_n2_ = 0, v42_n7_ = 0;
+	bool v42_long_ = false;
 	s16 lr_n401_ = MNP_DFLT_INFO;   /* N401 agreed (before the 256-octet
 					   optimization) */
 	/* the parameters the initiator's LR had (the responder echoes
@@ -393,7 +414,7 @@ private:
 	s32 lt_sent_ = 0, lt_again_ = 0, lt_rcvd_ = 0;
 	/* the control frame being sent, the LT frames */
 	Frame ctrl_ = {};
-	u8 ctrl_buf_[64];
+	u8 ctrl_buf_[96];
 	Slot slot_[MNP_MAX_K];
 };
 

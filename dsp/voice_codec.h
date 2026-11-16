@@ -26,9 +26,19 @@
  *                        Robotics' ADPCM (#VSM=129, #VBS=4), its state
  *                        from the start at each command as 132's
  *
+ *    134  ZYXEL ADPCM 2  ZyXEL's ADPCM of the U-1496 and the Elite 2864,
+ *    135  ZYXEL ADPCM 3  2, 3 or 4 bits a sample (+VSM=2, 3 or 30, 4 on
+ *    136  ZYXEL ADPCM 4  a ZyXEL), the first sample in the most
+ *                        significant bits of an octet, a code across
+ *                        two octets where it falls so; its step table
+ *                        as the firmware's (the voice overlays of its
+ *                        DSPs), the coder as ZyXEL's vcnvt converter
+ *                        (mgetty's libpvf has a port of it); D-Modem's
+ *                        numbers (ZyXEL's 4 is G.711U here)
+ *
  *    The linear and IMA ADPCM formats run at 7200, 8000 or 11025
- *    samples/s, the G.711 and G.726 ones at 8000.  No silence
- *    compression, no timing marks.
+ *    samples/s, the G.711 and G.726 ones at 8000, ZyXEL's at 9600 (its
+ *    own), 8000 or 7200.  No silence compression, no timing marks.
  *
  *    Header only: the core (AT+VSM) and the voice engine have it.
  *
@@ -43,7 +53,7 @@ namespace dsp {
 namespace voice {
 
 enum Coding : u8 { SIGNED8, UNSIGNED8, ULAW, ALAW, LINEAR16, IMA_ADPCM,
-		   G726_32 };
+		   G726_32, ZYXEL2, ZYXEL3, ZYXEL4 };
 
 /* a format of +VSM=?: its number, its V.253 label, its coding, its bits
    a sample, the rates it runs at (0: none) */
@@ -72,6 +82,12 @@ inline const Format *formats(int *n)
 		{ 132, "IMA ADPCM/D-Modem", IMA_ADPCM, 4,
 		  { 7200, 8000, 11025 } },
 		{ 133, "G.726 ADPCM/D-Modem", G726_32, 4, { 8000, 0, 0 } },
+		{ 134, "ZYXEL ADPCM 2/D-Modem", ZYXEL2, 2,
+		  { 9600, 8000, 7200 } },
+		{ 135, "ZYXEL ADPCM 3/D-Modem", ZYXEL3, 3,
+		  { 9600, 8000, 7200 } },
+		{ 136, "ZYXEL ADPCM 4/D-Modem", ZYXEL4, 4,
+		  { 9600, 8000, 7200 } },
 	};
 	*n = static_cast<int>(sizeof(f) / sizeof(f[0]));
 	return f;
@@ -408,12 +424,86 @@ struct G726 {
 	}
 };
 
+/* ZyXEL's ADPCM of bits (2, 3 or 4) a code, one direction's state: a
+   sign bit (the code's top) and a magnitude of bits - 1 that counts
+   steps of d; the signal a leaks (4093/4096 a sample), d adapts by the
+   magnitude's factor (Q14) and is 5 at least.  Its signal is 14 bits,
+   ours 16. */
+struct Zyxel {
+	s16 bits = 4;
+	s32 a = 0;
+	s32 d = 5;
+
+	/* the factors d takes for each magnitude: the firmware's tables
+	   (the 3 bit one in the U-1496S's voice overlay at A6A2C, the 4
+	   bit one in the Elite 2864I's at 140EC4) */
+	static s32 factor(s16 bits, s16 m)
+	{
+		static const s32 mx[3][8] = {
+			{ 0x3800, 0x5600 },
+			{ 0x399A, 0x3A9F, 0x4D14, 0x6607 },
+			{ 0x3556, 0x3556, 0x399A, 0x3A9F, 0x4200, 0x4D14,
+			  0x6607, 0x6607 },
+		};
+		return mx[bits - 2][m];
+	}
+	/* code's sample, the state moved on */
+	s16 decode(u8 code)
+	{
+		s16 top = static_cast<s16>(1 << (bits - 1));
+		code &= (1 << bits) - 1;
+		/* (the 4 bit code 0 resets the step) */
+		if (bits == 4 && code == 0)
+			d = 4;
+		s32 m = code & (top - 1);
+		a = (a * 4093 + 2048) >> 12;
+		s32 v = ((m << 1) + 1) * d;
+		a += ((code & top) ? -v : v) >> 1;      /* (rounded down) */
+		if (d & 1)
+			a++;
+		d = (d * factor(bits, static_cast<s16>(m)) + 0x2000) >> 14;
+		if (d < 5)
+			d = 5;
+		s32 y = a * 4;
+		return static_cast<s16>(y > 32767 ? 32767 :
+					y < -32768 ? -32768 : y);
+	}
+	/* x's code, the state moved on as the decoder's will */
+	u8 encode(s16 x)
+	{
+		s16 top = static_cast<s16>(1 << (bits - 1));
+		s32 delta = (x >> 2) - a;
+		s16 n = top;
+		u8 code = 0;
+		if (delta < 0) {
+			code = static_cast<u8>(top);
+			delta = -delta;
+		}
+		while (--n && delta > d) {
+			delta -= d;
+			code++;
+		}
+		/* (never the 4 bit code 0, the decoder's reset: a 0 of the
+		   other sign) */
+		if (bits == 4 && code == 0)
+			code = 8;
+		decode(code);
+		return code;
+	}
+};
+
 /* one direction's coder in a format: samples to octets (encode) or
    octets to samples (decode), either one a coder */
 struct Codec {
+	static constexpr int MAX_SAMPLES = 4;   /* decode()'s, an octet */
 	Coding coding = UNSIGNED8;
 	Ima ima;
 	G726 g726;
+	Zyxel zyxel;
+	/* ZyXEL's codes: the bits waiting for an octet (the first in the
+	   most significant of nbits) */
+	u32 acc = 0;
+	s16 nbits = 0;
 	/* the octet waiting for its other half: the low octet of a 16 bit
 	   sample, a first ADPCM nibble */
 	u8 held = 0;
@@ -425,12 +515,16 @@ struct Codec {
 		coding = c;
 		ima = Ima();
 		g726 = G726();
+		zyxel = Zyxel();
+		zyxel.bits = static_cast<s16>(c == ZYXEL2 ? 2 : c == ZYXEL3 ? 3 : 4);
+		acc = 0;
+		nbits = 0;
 		held = 0;
 		holding = false;
 	}
 
 	/* the octets of sample x into b (0 to 2 of them; 0 for an ADPCM
-	   sample that waits for the next): how many */
+	   sample that waits for more): how many */
 	int encode(s16 x, u8 *b)
 	{
 		switch (coding) {
@@ -460,6 +554,17 @@ struct Codec {
 			b[0] = static_cast<u8>(held | (c << 4));
 			return 1;
 		}
+		case ZYXEL2:
+		case ZYXEL3:
+		case ZYXEL4:
+			acc = (acc << zyxel.bits) | zyxel.encode(x);
+			nbits = static_cast<s16>(nbits + zyxel.bits);
+			if (nbits < 8)
+				return 0;
+			nbits = static_cast<s16>(nbits - 8);
+			b[0] = static_cast<u8>(acc >> nbits);
+			acc &= (1u << nbits) - 1;
+			return 1;
 		case UNSIGNED8:
 		default:
 			b[0] = static_cast<u8>((x >> 8) + 128);
@@ -467,8 +572,8 @@ struct Codec {
 		}
 	}
 
-	/* the samples of octet c into x (0 to 2 of them; 0 for the low
-	   octet of a 16 bit sample): how many */
+	/* the samples of octet c into x (0 to 4 of them, MAX_SAMPLES at
+	   most; 0 for the low octet of a 16 bit sample): how many */
 	int decode(u8 c, s16 *x)
 	{
 		switch (coding) {
@@ -499,6 +604,20 @@ struct Codec {
 			x[0] = g726.decode(c & 0x0f);
 			x[1] = g726.decode(c >> 4);
 			return 2;
+		case ZYXEL2:
+		case ZYXEL3:
+		case ZYXEL4: {
+			int n = 0;
+			acc = (acc << 8) | c;
+			nbits = static_cast<s16>(nbits + 8);
+			while (nbits >= zyxel.bits) {
+				nbits = static_cast<s16>(nbits - zyxel.bits);
+				x[n++] = zyxel.decode(static_cast<u8>(
+					acc >> nbits));
+			}
+			acc &= (1u << nbits) - 1;
+			return n;
+		}
 		case UNSIGNED8:
 		default:
 			x[0] = static_cast<s16>((static_cast<s16>(c) - 128) *

@@ -521,8 +521,7 @@
   \node[anchor=north west,text=dmnavy,inner sep=0pt,align=left]
     at ([xshift=1.5cm,yshift=-13.2cm]current page.north west)
     {{\large\bfseries Version \dmversion}\\[4pt]
-     {\normalsize\color{dmgrey}\docedition}\\[8pt]
-     {\normalsize\bfseries\color{dmredtext}Draft: Simplified Technical English}};
+     {\normalsize\color{dmgrey}\docedition}};
   \node[anchor=south west,text=dmgrey,align=left,inner sep=0pt,
     text width=11.8cm]
     at ([xshift=1.5cm,yshift=1.4cm]current page.south west)
@@ -779,6 +778,7 @@ the terms that are less frequent.
 \cmdl[bsV]{\bs V\p{n}} & Protocol in \rc{CONNECT}. & \cmdl[pctB]{\%B, *B} & Blacklisted numbers. \\ \hline
 \cmdl[pctC]{\%C\p{n}} & Data compression. & \cmdl[pctE]{\%E\p{n}} & Line quality monitor (kept). \\ \hline
 \cmdl[hashCID]{\#CID} & Caller ID. & \cmdl[hashUD]{\#UD} & Unimodem diagnostics. \\ \hline
+\cmdl[starG]{*G, *H\p{n}=, *HS=, *V} & ZyXEL security. & \cmdl[starG]{\&Z\p{n}=} & Stored numbers. \\ \hline
 \cmdl[hashCLS]{\#CLS} & Data, fax or voice (Rockwell, US Robotics). & \cmdl[hashV]{\#V\ldots} & Voice, Rockwell's and US Robotics' commands. \\ \hline
 \cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10}. & \cmdl[mnp10]{)M, @M, *H, :T19} & \std{MNP~10}. \\ \hline
 \cmdl[plusMS]{+MS} & Modulation. & \cmdl[plusGMI]{+GMI, +GMM, +GMR} & Identification. \\ \hline
@@ -1670,7 +1670,9 @@ W & Wait for a dial tone (1 s of it).  If no dial tone comes in \sreg{7}
 ; & End the dial string.  After the modem dials the number, it goes back
   to command state.  It stays off hook, keeps the call and gives
   \rc{OK}.  Then the modem does the remainder of the line. \\ \hline
-S=\p{n} & A stored number: \rc{ERROR} (there are no stored numbers). \\ \hline
+S=\p{n}, S\p{n} & The stored number \p{n} (0--9, \cmdl[starG]{\&Z\p{n}=}).  Use it
+  only as the first character of the string (T or P can come before it).  If
+  the slot is empty, \rc{ERROR}.  Later in the string, \rc{ERROR}. \\ \hline
 ! \$ & Hook flash and bong tone: the modem ignores them (a \std{SIP} call has no hook flash). \\ \hline
 \end{vtable}
 
@@ -1688,7 +1690,7 @@ waits, silent, for the \std{DTE}:
 \res{\rc{CONNECT}}{When the call is connected.}
 \res{\rc{OK}}{After a \cmdl[D]{;}.}
 \res{\rc{BUSY}, \rc{NO ANSWER}, \rc{NO DIALTONE} or \rc{NO CARRIER}}{When the call does not connect.}
-\res{\rc{ERROR}}{For \cmdl[D]{S=}\p{n}, or for \cmdl[D]{L} with no number to dial.}
+\res{\rc{ERROR}}{For an empty stored number, for \cmdl[D]{S=}\p{n} after the start of the string, or for \cmdl[D]{L} with no number to dial.}
 \end{results}
 \end{command}
 
@@ -1783,6 +1785,48 @@ These commands list the numbers that the modem must not dial.  The modem
 keeps no numbers.
 \begin{results}
 \res{\rc{OK}}{Always.}
+\end{results}
+\end{command}
+
+\begin{command}{starG}{*G\p{n}, *H\p{n}=, *HS=, *V, \&Z\p{n}=}{ZyXEL Security and Stored Numbers}
+These commands are the type 2 security of ZyXEL (the U-1496 and the Elite
+2864).  When the modem answers a call with \cmdr{*G3} to \cmdr{*G5}, it
+sends \rc{PassWord:} to the remote after \rc{CONNECT}.  The modem echoes each
+character from the remote as \rc{*}.  \sreg{3} ends the password.  The data
+does not go through, in the two directions, until the password is correct.
+If the password is wrong, the modem sends \rc{Error..., try again} and the
+prompt again.  After the third wrong password, the modem disconnects
+(\cmdl[I]{ATI6}: \rc{Security check}).
+\begin{vtable}{2}{|C{0.18\textwidth}|L{0.68\textwidth}|}{ZyXEL Security}
+  {\thd{Command} & \thd{Function}}
+*G0 & No security (the \emph{default}). \\ \hline
+*G1, *G2 & Type 1 of ZyXEL (only from ZyXEL to ZyXEL): \rc{ERROR}. \\ \hline
+*G3 & The password, then \rc{Correct} and the data. \\ \hline
+*G4 & The password and \rc{Correct}.  Then the modem disconnects, and after
+  2 s it calls the stored number of the slot of the password. \\ \hline
+*G5 & The password, then \rc{Call back phone number:}.  The remote types a
+  maximum of 26 characters (\sreg{5} erases one) and \sreg{3}.  Then the modem
+  disconnects, and after 2 s it calls that number. \\ \hline
+*H\p{n}=\p{password} & User password \p{n} (0--9): a maximum of 8 characters,
+  case-sensitive, with no comma.  No characters make the slot empty.  Put the
+  password in quotes, or the modem uses the remainder of the line.  If a
+  supervisory password is set, use \cmdr{*H}\p{n}\cmdr{=}\p{super}\cmdr{,}\p{password}. \\ \hline
+*HS=\p{password} & The supervisory password.  If one is set, use
+  \cmdr{*HS=}\p{old}\cmdr{,}\p{password}. \\ \hline
+*V, *V=\p{super} & The table: \cmdr{*G}\p{n}, then the number, the password
+  and the stored number of each slot that is in use.  If a supervisory
+  password is set, use \cmdr{*V=}\p{super}. \\ \hline
+\&Z\p{n}=\p{number} & Stored number \p{n} (0--9), for \cmdl[D]{ATDS=}\p{n}
+  and \cmdr{*G4}.  Put the number in quotes, or the modem uses the remainder of the line. \\ \hline
+\&Z\p{n}? & Stored number \p{n}. \\ \hline
+\end{vtable}
+\cmdr{*H0} to \cmdr{*H2} without \cmdr{=} are still the \std{MNP~10} command
+(\cmdl[mnp10]{*H}).  \cmdl[Z]{ATZ} keeps the passwords, the stored numbers and
+\cmdr{*G}.  It also stops a call back that is pending.  \cmdl[H]{ATH} also stops it.
+The modem does not store these settings.  Put them in the init string.
+\begin{results}
+\res{\rc{OK}}{When the value is valid (and the supervisory password is correct).}
+\res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \end{command}
 
@@ -2021,6 +2065,9 @@ directions (the modem sends it in its \std{MP} sequences).
 132 & V32B & \std{ITU} \std{V.32bis} & \std{4800} to \std{14400} bit/s. \\ \hline
 232 & V32T, V32TERBO & \std{V.32terbo} & \std{V.32bis} and \std{16800}, \std{19200} bit/s
   (from AT\&T.  The number is from D-Modem). \\ \hline
+234 & ZYX & ZyXEL ZyX & \std{7200} to \std{19200} bit/s: \std{V.32bis} at \std{2742.857} baud, with
+  a frame of 8 symbols and a ring table (from ZyXEL.  Only from D-Modem to
+  D-Modem.  The number is from D-Modem). \\ \hline
 168 & HST & USRobotics HST & \std{4800} to \std{16800} bit/s in one direction, \std{300} bit/s
   in the other.  The channels change direction with the data.  The start
   of a Courier at \std{2400} bit/s (\std{V.22bis} and \std{V.42}), and the
@@ -2759,7 +2806,7 @@ the detailed settings.  \cmdl[ampK]{\&K} sets the same item.
   {\thd{Command} & \thd{Function}}
 \%C0 & No compression. \\ \hline
 \%C1 & \std{MNP~5} (with \std{MNP}). \\ \hline
-\%C2 & \std{V.44} or \std{V.42bis} (with the \std{LAPM} of \std{V.42}). \\ \hline
+\%C2 & \std{V.44} or \std{V.42bis} (with the \std{LAPM} of \std{V.42}).  Also \std{V.42bis} with \std{MNP}, if the other modem offers it (\sreg{114}). \\ \hline
 \%C3 & One of the two, as applicable to the error correction of the call (\emph{default}). \\ \hline
 \end{vtable}
 \end{command}
@@ -3179,6 +3226,7 @@ value, but it has no other effect.
 \hyperlink{sreg:104}{S104} & Data compression (\cmdl[pctC]{\%C}). & 0--3 & -- & 3 \\ \hline
 \hyperlink{sreg:105}{S105} & \std{MNP} block size (\cmdl[bsA]{\bs A}). & 0--3 & -- & 3 \\ \hline
 \hyperlink{sreg:106}{S106} & Protocol in \rc{CONNECT} (\cmdl[bsV]{\bs V}). & 0--2 & -- & 0 \\ \hline
+\hyperlink{sreg:114}{S114} & \std{V.42bis} offered in an \std{MNP} call. & 0, 1 & -- & 0 \\ \hline
 \hyperlink{sreg:161}{S161} & \cmdl[Y]{Y} (kept). & 0--3 & -- & 0 \\ \hline
 \end{vtable}
 
@@ -3387,6 +3435,14 @@ The setting of \cmdl[bsA]{\bs A}.
 \sregdef{106}{Protocol in CONNECT}
 The setting of \cmdl[bsV]{\bs V}.
 \facts{0--2}{0}{none}
+
+\sregdef{114}{V.42bis in MNP}
+1: when the modem calls with \std{MNP}, its \std{LR} offers \std{V.42bis}
+(with \cmdl[pctC]{\%C2} or \cmdl[pctC]{\%C3}) in place of \std{MNP~5}.
+0: the \std{LR} offers \std{MNP~5} only.  When the modem answers, it
+always accepts \std{V.42bis} from the other modem.  Some modems do not
+complete a call with this \std{LR}: thus the default is 0.
+\facts{0, 1}{0}{none}
 
 \sregdef{161}{Long Space Disconnect}
 The setting of \cmdl[Y]{Y}, kept.  \cmdl[Z]{ATZ} does not change it.
@@ -4122,6 +4178,12 @@ keeps them, but the modem does not compress silence.
   sample, two in each octet with the first in the low nibble, at 8000:
   the \std{ADPCM} of US Robotics (\cmdl[hashVBS]{\#VSM=129}).  The coder
   starts again as for 132.  The number is from D-Modem. \\ \hline
+134, 135, 136 & The \std{ADPCM} of the ZyXEL U-1496 and Elite 2864, with 2, 3 or 4 bits for
+  each sample, at 9600 (the rate of ZyXEL), 8000 or 7200.  The first sample
+  is in the most significant bits of an octet.  A sample can go across two
+  octets.  These are the file formats of the ZyXEL \cmd{vcnvt} program and of the
+  \cmd{zyxel} formats of \cmd{vgetty} (the ZyXEL \cmdl[plusVSM]{+VSM=2}, 3 or 30, and 4).  The coder
+  starts again as for 132.  The numbers are from D-Modem. \\ \hline
 \end{vtable}
 \end{command}
 

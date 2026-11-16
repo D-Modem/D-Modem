@@ -1,69 +1,71 @@
 # FreePBX: the D-Modem module
 
-[FreePBX](https://www.freepbx.org/) is a web interface for running an
-Asterisk phone system. D-Modem's FreePBX module (for FreePBX 16 and 17)
-lets you set up D-Modem from that web interface instead of editing
-configuration files. It adds **Applications > D-Modem** to the menu and a
-`fwconsole dmodem` command.
+[FreePBX](https://www.freepbx.org/) is a web interface to operate an
+Asterisk telephone system. The FreePBX module of D-Modem (for FreePBX 16
+and 17) lets you configure D-Modem from that web interface. You do not
+have to edit configuration files. It adds **Applications > D-Modem** to
+the menu, and it adds a `fwconsole dmodem` command.
 
-It works with either [dmodem-ari](ari.md) (the default, and the one you
-can share) or [app_dmodem](asterisk.md) on an Asterisk you built
-yourself.
+It operates with [dmodem-ari](ari.md) (the default, and the one that you
+can share) or with [app_dmodem](asterisk.md) on an Asterisk that you
+built.
 
-For the generated files, the code and the tests, see
+For the generated files, the code and the tests, refer to
 [the technical details](freepbx-details.md).
 
 ## Installing
 
-1. Install [dmodem-ari](ari.md) beside Asterisk, and add an ARI user in
+1. Install [dmodem-ari](ari.md) next to Asterisk. Add an ARI user in
    **Settings > Asterisk REST Interface Users**.
 2. Build the module package:
 
        cmake --build build --target freepbx_module
 
    This makes `build/freepbx/dmodem-<version>.tgz`.
-3. Upload it in **Admin > Module Admin**. FreePBX will warn that it is
-   unsigned; that is expected.
+3. Upload it in **Admin > Module Admin**. FreePBX gives a warning that it
+   is unsigned. This is correct.
 
 ## Using it
 
-- **Profiles.** A profile says where a modem call's data goes: a BBS
-  server, a program such as `pppd`, or a login. Each profile appears as
-  a destination ("D-Modem") you can pick in inbound routes, IVRs, time
-  conditions and so on.
-- **People and modems on one number.** Give a profile a **Voice
-  extension** (an IVR, a voicemail box or a phone). A person calling the
-  profile is put through to it; a modem is answered as usual. The modem
-  answers once the extension hangs up or the caller's modem asks for
-  data. **Modem voice** sends a DSVD or ASVD modem's voice channel to
-  the same extension while the data goes on.
-- **Fax.** The fax destination (on unless you turn it off in the
-  settings) has D-Modem answer as a fax machine and save faxes to a
-  folder.
+- **Profiles.** A profile tells where the data of a modem call goes: a BBS
+  server, a program (for example `pppd`), or a login. Each profile is a
+  destination ("D-Modem") that you can select in inbound routes, IVRs,
+  time conditions and other items.
+- **Persons and modems on one number.** Give a profile a **Voice
+  extension** (an IVR, a voicemail box or a telephone). If a person calls
+  the profile, the call goes to that extension. If a modem calls, the
+  modem answers as usual. The modem answers when the extension hangs up,
+  or when the modem of the caller asks for data. **Modem voice** sends the
+  voice channel of a DSVD or ASVD modem to the same extension while the
+  data continues.
+- **Fax.** With the fax destination, D-Modem answers as a fax machine and
+  saves faxes to a folder. The fax destination is enabled. You can
+  disable it in the settings.
 - **Dial out.** Make D-Modem call a remote modem (a BBS or a provider)
   with a profile, from the page or from a script:
 
       fwconsole dmodem dial <profile> <number>
 
 - **Line check.** Shows the settings on your trunks and extensions that
-  would spoil a modem call (see below).
-- **Backup.** D-Modem's settings and profiles are included in FreePBX's
-  Backup & Restore. `fwconsole dmodem export` and `import` do the same
+  can cause problems for a modem call (refer to the subsequent section).
+- **Backup.** The Backup & Restore of FreePBX includes the settings and
+  profiles of D-Modem. `fwconsole dmodem export` and `import` do the same
   from the command line.
 
-After changing anything, click **Apply Config**. If you use dmodem-ari,
-restart it afterwards so it reads the new settings.
+After you change an item, click **Apply Config**. If you use dmodem-ari,
+restart it after this. It then reads the new settings.
 
 ## Getting good modem calls
 
-Fast modem calls (V.90 especially) need the call's audio to reach the
-modem untouched. In FreePBX:
+For fast modem calls (specially V.90), the audio of the call must get to
+the modem with no changes. In FreePBX, do these steps:
 
-- On the trunk and the modem's extension, allow **one** codec only:
-  `ulaw` in North America and Japan, `alaw` elsewhere. Your provider must
-  not convert it either.
-- Set DTMF to RFC 4733, and turn Fax Detect off.
-- On the modem's inbound route: no fax detection, no call recording, no
-  music or announcement before the call is answered.
+- On the trunk and the extension of the modem, allow **one** codec only:
+  `ulaw` in North America and Japan, `alaw` in other countries. Your
+  provider must not convert it.
+- Set DTMF to RFC 4733, and disable Fax Detect.
+- On the inbound route of the modem, do not use fax detection, call
+  recording, or music or an announcement before the modem answers the
+  call.
 
-The line check page shows what is still set wrongly.
+The line check page shows the settings that are still incorrect.

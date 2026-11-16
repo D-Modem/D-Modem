@@ -80,12 +80,24 @@ struct Config {
 				   when the far end (a gateway) has it:
 				   offered with our audio, and taken
 				   when an offer has it (v150.h) */
-	const char *dns = nullptr;      /* the DNS servers for SRV and
-					   NAPTR, addresses (with :port, 53
-					   if none) apart by commas or
-					   spaces; NULL: /etc/resolv.conf's
-					   (a system without one, Android,
-					   gives them here) */
+	bool tcp = true;        /* $SIP_TCP (not "no"): SIP over TCP too,
+				   on the same port: a host whose NAPTR
+				   or SRV records (RFC 3263) name TCP
+				   (SIP+D2T, _sip._tcp) is reached over
+				   it, and calls taken over it */
+	const char *dns = nullptr;      /* $SIP_DNS: the DNS servers for
+					   SRV and NAPTR, addresses (with
+					   :port, 53 if none) apart by
+					   commas or spaces; NULL: the
+					   system's (/etc/resolv.conf; a
+					   system without one, Android,
+					   gives them here).  A host's
+					   name, dialled or the account's
+					   domain, with no port is found as
+					   RFC 3263 has it: NAPTR, else
+					   SRV (_sip._tcp, _sip._udp),
+					   else A/AAAA at 5060; with a
+					   port, A/AAAA alone */
 	s16 log_level = -1;             /* 1 errors .. 4 the SIP messages,
 					   0 none; -1: $SIP_LOG_LEVEL, or
 					   4.  The lines go to the modem's
@@ -129,6 +141,11 @@ bool dial_is_uri(const char *dial);
    dial_user()'s user at the account's domain; "" when it has none (an
    anonymous user agent, no account: only a URI can be dialled) */
 std::string dial_uri(const char *dial, const std::string &domain);
+/* the host of SIP URI uri that DNS's NAPTR and SRV records find (RFC
+   3263: a name with no port, no maddr; transport= leaves SRV alone, said
+   in *srv_only), "" for one that needs none (an address, or a port)
+   (sip_dial.cpp) */
+std::string service_host(const std::string &uri, bool *srv_only = nullptr);
 void answer(int audio_fd);
 
 /* the caller of a call that rings, as caller ID gives it: a number and

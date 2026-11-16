@@ -52,6 +52,7 @@ int prop_dp_init(void)
 	dp_v26_init();
 	dp_v26bis_init();
 	dp_hst_init();
+	dp_vfc_init();
 	dp_v29fp_init();
 	dp_v61_init();
 	dp_v34_init();
@@ -80,6 +81,7 @@ void prop_dp_exit(void)
 	dp_v26_exit();
 	dp_v26bis_exit();
 	dp_hst_exit();
+	dp_vfc_exit();
 	dp_v29fp_exit();
 	dp_v61_exit();
 	dp_v34_exit();
@@ -684,7 +686,7 @@ struct Voice {
 	   DTE sample falls after it, in line samples */
 	double tx_pos;
 	float tx_prev, tx_cur;
-	s16 tx_more[2], tx_nmore, tx_next;
+	s16 tx_more[voice::Codec::MAX_SAMPLES], tx_nmore, tx_next;
 	double rx_t;
 	float rx_prev;
 	/* this process()'s characters to the DTE */
