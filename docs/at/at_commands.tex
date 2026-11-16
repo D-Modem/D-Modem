@@ -798,6 +798,7 @@ the terms that are less frequent.
 \cmdl[vcmds]{+V\ldots} & Voice (\hyperref[sec:voice]{Section~\ref*{sec:voice}}). & \cmdl[plusFLI]{+FLI, +FPI} & Fax \std{Class 2} identity. \\ \hline
 \cmdl[plusFLP]{+FLP, +FSP} & Fax \std{Class 2} polling. & \cmdl[plusFCC]{+FCC, +FIS, +FCS} & Fax \std{Class 2} capabilities. \\ \hline
 \cmdl[plusFBO]{+FBO, +FHS, \ldots} & Fax \std{Class 2} settings. & \cmdl[plusFDT]{+FDT, +FDR, +FET, +FKS} & Fax \std{Class 2} pages. \\ \hline
+\cmdl[hashF]{\#F, \#B\p{n}, \#V\p{n}, \#P, \ldots} & ZyXEL fax mode (\cmdl[plusFCLASS]{+FCLASS=6}). & \cmdl[hashF]{\&N32} & ZyXEL fax call (accepted). \\ \hline
 \cmdl[plusMV18S]{+MV18S, +MV18R} & \std{V.18} text telephone. & \cmdl[plusMV18AM]{+MV18AM, +MV18P} & \std{V.18} answer message. \\ \hline
 \cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (\std{TTY}, telex) settings. & \cmdl[plusA8E]{+A8E} & \std{V.8} and \std{V.8 bis}. \\ \hline
 \cmdl[plusDSVD]{+DSVD} & \std{V.70} voice and data (\std{DSVD}). & \cmdl[plusASVD]{+ASVD} & \std{V.61} voice and data (\std{ASVD}). \\ \hline
@@ -3488,14 +3489,15 @@ dials, until the flags of the answering modem come in its first
 
 \begin{command}{plusFCLASS}{+FCLASS}{Service Class}
 This command sets the modem as a data modem, a \std{Class 1}, 1.0,
-\std{Class 2} or 2.0 fax modem, or a voice modem.  \cmdl[Z]{ATZ} sets 0.
+\std{Class 2} or 2.0 fax modem, a ZyXEL fax modem, or a voice modem.
+\cmdl[Z]{ATZ} sets 0.
 \begin{syntax}
 \item +FCLASS=\p{n}
 \item +FCLASS? (gives the class)
-\item +FCLASS=? (gives \rc{0,1,1.0,2,2.0,8})
+\item +FCLASS=? (gives \rc{0,1,1.0,2,2.0,6,8})
 \end{syntax}
 \begin{results}
-\res{\rc{OK}}{If \p{n} = 0, 1, 1.0, 2, 2.0 or 8.}
+\res{\rc{OK}}{If \p{n} = 0, 1, 1.0, 2, 2.0, 6 or 8.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+FCLASS Values}
@@ -3506,6 +3508,7 @@ This command sets the modem as a data modem, a \std{Class 1}, 1.0,
   (\std{T.31} Annex B, \cmdl[plusF34]{+F34}). \\ \hline
 2 & Fax \std{Class 2} (\hyperref[sec:class2]{Section~\ref*{sec:class2}}). \\ \hline
 2.0 & Fax \std{Class 2.0} (\std{T.32}, \hyperref[sec:class2]{Section~\ref*{sec:class2}}). \\ \hline
+6 & ZyXEL fax mode (\hyperref[sec:zfax]{Section~\ref*{sec:zfax}}). \\ \hline
 8 & Voice (\std{V.253}, \hyperref[sec:voice]{Section~\ref*{sec:voice}}). \\ \hline
 \end{vtable}
 \end{command}
@@ -3860,6 +3863,106 @@ with a \std{DCN} (\rc{+FHS:02}), as in the example above.
 1 & \std{EOM}: another document follows. \\ \hline
 2 & \std{EOP}: the last page. \\ \hline
 \end{vtable}
+\end{command}
+
+\subsection{ZyXEL Fax Mode (Class 6)}\label{sec:zfax}
+
+With \cmdl[plusFCLASS]{AT+FCLASS=6}, the modem operates as the ZyXEL
+U-1496 and Elite modems do with their \emph{extended fax AT commands}.
+Old ZyXEL fax programs (ZFAX, the \texttt{rcvfax} of a BBS) use this
+mode.  The modem does \std{T.30} itself.  There are no \cmdr{+F}
+commands to control the call:
+\begin{itemize}
+\item \cmdl[D]{ATD} makes a fax call.  The modem sends the \std{DCS} for
+  \std{V.17} at 14400~bit/s at most, with no error correction mode.
+  When the \std{CFR} comes, the modem gives
+  \rc{CONNECT FAX/S\p{rate}V\p{n}T0R0L2C7P\p{id}}.  Then the \std{DTE}
+  sends the pages.
+\item \cmdl[A]{ATA} (or \sreg{0}) answers.  The modem answers as a data
+  modem first, as the ZyXEL modems do.  If the caller is a data modem,
+  the call is a data call (\rc{CONNECT \p{rate}}).  If the caller is a
+  fax machine (\cmdl[plusFAA]{+FAA} tells how the modem finds it), the
+  modem gives \rc{CONNECT FAX/\ldots} when the \std{CFR} goes out.
+  Then the modem sends the pages to the \std{DTE}.
+\item At the end of the fax call, the modem gives
+  \rc{DISCONNECT0P\p{id}} if the remote fax machine confirmed the last
+  page.  Otherwise it gives \rc{DISCONNECT1P\p{id}}.  The modem is then
+  in command mode.  If the call ends before \rc{CONNECT FAX}, the modem
+  gives \rc{NO CARRIER}.
+\item \cmdl[V]{ATV0} and \cmdl[Q]{ATQ1} have no effect on \rc{CONNECT
+  FAX} and \rc{DISCONNECT}.
+\end{itemize}
+The fields of \rc{CONNECT FAX}:
+\begin{vtable}{2}{|C{0.12\textwidth}|L{0.74\textwidth}|}{CONNECT FAX Fields}
+  {\thd{Field} & \thd{Meaning}}
+S\p{rate} & The first four digits of the rate: 1440, 1200, 9600, 7200,
+  4800 or 2400. \\ \hline
+V\p{n} & 0 normal resolution, 1 fine resolution. \\ \hline
+T0 & The data is one-dimensional (MH). \\ \hline
+R0 & 1728 pels for each row. \\ \hline
+L2 & Any page length. \\ \hline
+C7 & No minimum row time: the data has no fill. \\ \hline
+P\p{id} & The identity of the remote fax machine (its \std{CSI} or
+  \std{TSI}), 20 characters, with spaces at the end. \\ \hline
+\end{vtable}
+The page data:
+\begin{itemize}
+\item The data is \std{T.4} MH with \std{EOL}s.  The first bit of each
+  octet is the lowest bit.  There are no \cmd{<DLE>} codes.
+\item An \std{RTC} (six \std{EOL}s) ends each page.  When the modem
+  sends, it finds the \std{RTC} in the data of the \std{DTE}.  If more
+  data follows, the modem sends \std{MPS} and the next page.
+\item The ZyXEL modems end the document when the \std{DTE} sets RTS
+  off.  D-Modem has no RTS signal.  Thus the document ends when the
+  \std{DTE} sends no data for 2~s.  If the \std{DTE} sends no data for
+  30~s after \rc{CONNECT FAX}, the modem stops the call.
+\item When the modem receives, it sends each page to the \std{DTE} when
+  the page is complete.
+\end{itemize}
+
+\example{Example session: send two pages}
+\begin{verbatim}
+AT+FCLASS=6#P5551111     OK
+ATD<number>              CONNECT FAX/S1440V1T0R0L2C7P5552222
+<page><RTC><page><RTC>   (then no data for 2 s)
+                         DISCONNECT0P5552222
+\end{verbatim}
+
+\begin{command}{hashF}{\#F, \#B\p{n}, \#V\p{n}, \#T\p{n}, \#R\p{n}, \#L\p{n}, \#C\p{n}, \#P\p{id}, \&N32}{ZyXEL Fax Settings}
+These are the ZyXEL fax settings.
+\begin{itemize}
+\item \cmdl[hashF]{\#F} and \cmdl[hashF]{\&N32} set a \std{V.17} fax
+  call on the ZyXEL modems.  In \std{Class 6} all calls are fax calls,
+  thus the modem accepts them with no effect.
+\item \cmdl[hashF]{\#B0} (\emph{default}): the modem sends the pages to
+  the \std{DTE} after \rc{CONNECT FAX/\ldots}.
+\item \cmdl[hashF]{\#B1} is for a BBS.  The modem gives \rc{CONNECT FAX}
+  and \rc{ZyXEL} on two lines.  Then it waits for a \cmd{<DC2>} (hex 12)
+  from the \std{DTE}.  After the \cmd{<DC2>}, it sends
+  \cmd{<CR><LF>/S\p{rate}V\p{n}T0R0L2C7P\p{id}<CR><LF>} (with 18
+  characters of the identity, as the ZyXEL modems do) and the first
+  page.  Each subsequent page needs one more \cmd{<DC2>}.
+\item \cmdl[hashF]{\#V0} sets normal resolution, \cmdl[hashF]{\#V1}
+  (\emph{default}) fine resolution, if the remote fax machine has it.
+\item The modem keeps \cmdl[hashF]{\#T}, \cmdl[hashF]{\#R},
+  \cmdl[hashF]{\#L} and \cmdl[hashF]{\#C}, but they have no effect: the
+  data is always MH, 1728 pels, any length, with no fill.
+\item \cmdl[hashF]{\#P\p{id}} sets the identity of the modem (its
+  \std{CSI} and \std{TSI}).  It is the remainder of the command line,
+  or a string in quotes.  The \std{CSI} and the \std{TSI} have the first
+  20 characters.
+\end{itemize}
+\begin{syntax}
+\item \#F, \&N32
+\item \#B\p{n}, \#V\p{n}, \#T\p{n}, \#R\p{n}, \#L\p{n}, \#C\p{n}
+\item \#P\p{id}
+\end{syntax}
+\begin{results}
+\res{\rc{OK}}{If \p{n} is in its range (\#B 0--1, \#V and \#T 0--1, \#R
+  and \#L 0--2, \#C 0--7) and \p{id} has 25 characters or fewer.}
+\res{\rc{ERROR}}{Otherwise.  \#B2 (polling) and \#B3 (ring cadence) are
+  not available.}
+\end{results}
 \end{command}
 
 \section{Text Telephone Commands}\label{sec:text}

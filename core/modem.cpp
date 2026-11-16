@@ -792,9 +792,10 @@ s16 Modem::stop_call()
 	dial_rest_[0] = '\0';
 	/* an adaptive answer from fax mode that found out nothing: back in
 	   fax mode */
-	if (adapt_ == Adapt::Fax)
+	if (adapt_ == Adapt::Fax || z6_data_)
 		set_mode(MODEM_MODE_FAX);
 	adapt_ = Adapt::Off;
+	z6_data_ = false;
 	/* a leased line's call that the line ended (not ATH, DTR, ATZ):
 	   started again by itself in 2 s (poll()) */
 	if (leased_role_ != Leased::None && sregs_[SREG_LEASED] &&
@@ -1390,8 +1391,11 @@ void Modem::update_status(Status s)
 	case ST_OK:
 		break;
 	case ST_DP_LINK:
-		/* adaptive answer: a data call (DATA, then its CONNECT) */
-		if (adaptive_answering())
+		/* adaptive answer: a data call (DATA, then its CONNECT;
+		   from class 6 only CONNECT, and class 6 again after it) */
+		if (adapt_ == Adapt::Fax && fax_class_ == 6)
+			z6_data_ = true;
+		else if (adaptive_answering())
 			report(Result::Data);
 		adapt_ = Adapt::Off;
 		if (loop3_ || (dp_ && (dp_->id == DP_V23 ||
@@ -2628,9 +2632,11 @@ s16 Modem::answer(bool adaptive)
 	cng_->init(srate_);
 	cng_cut_ = 0;
 	answer_tone_at_ = 0;
-	if (adaptive && kept("+FAA")[0] && (mode_ == MODEM_MODE_DATA ||
-					    (mode_ == MODEM_MODE_FAX &&
-					     !fax2_class()))) {
+	/* (class 6 answers so whatever +FAA says, as ZyXEL's do) */
+	bool z6 = mode_ == MODEM_MODE_FAX && fax_class_ == 6;
+	if (adaptive && (z6 || (kept("+FAA")[0] &&
+				(mode_ == MODEM_MODE_DATA ||
+				 (mode_ == MODEM_MODE_FAX && !fax2_class()))))) {
 		adapt_ = mode_ == MODEM_MODE_FAX ? Adapt::Fax : Adapt::Data;
 		set_mode(MODEM_MODE_DATA);
 		logf("adaptive answer (+FAA=1, from %s mode)\n",
@@ -2646,14 +2652,17 @@ s16 Modem::answer(bool adaptive)
    CNG, its V.8 CM, T.38).  With +FAA=1: FAX to the DTE, class 1
    (+FCLASS=1), the fax engine as the answerer after the answer tone
    sent already (its CED cut short), its CONNECT for +FTH=3 to follow.
-   For the program's fax receiver (Options::fax_detect): fax_caller(),
+   From class 6 (ZyXEL's): class 6's engine, no FAX.  For the program's fax receiver (Options::fax_detect): fax_caller(),
    and after a V.8 CM no more data answer (the line silent) */
 void Modem::fax_found(const char *why)
 {
 	if (fax_caller_ || adapt_ == Adapt::Off)
 		return;
+	/* (from class 6: class 6's engine, its CONNECT FAX later) */
+	bool z6 = adapt_ == Adapt::Fax && fax_class_ == 6;
 	fax_caller_ = true;
-	fax_class_ = 1;
+	if (!z6)
+		fax_class_ = 1;
 	logf("adaptive answer: a fax call (%s)\n", why);
 	if (adapt_ == Adapt::Detect) {
 		adapt_ = Adapt::Off;
@@ -2666,6 +2675,10 @@ void Modem::fax_found(const char *why)
 	adapt_ = Adapt::Off;
 	set_mode(MODEM_MODE_FAX);
 	stats_.fax = true;
+	if (z6) {
+		fax_start();
+		return;
+	}
 	report(Result::Fax);
 	if (fax_start() == 0 && DCORE_HAS(FAX_answer_tone))
 		FAX_answer_tone(fax_, static_cast<unsigned>(sent));
@@ -4410,6 +4423,19 @@ s16 Modem::fax_start()
 		s.bo = f2_bo_;
 		s.lp = f2_lp_;
 		f2_pi_.copy(s.pi, sizeof(s.pi) - 1);
+		if (fax_class_ == 6) {
+			/* ZyXEL's: V.17 at most, no ECM, the data's first
+			   bit lowest, the identity #P's */
+			std::memset(s.ident, 0, sizeof(s.ident));
+			zfax_.p.copy(s.ident, sizeof(s.ident) - 1);
+			s.vr = zfax_.v;
+			s.br = 5;
+			s.ec = 0;
+			s.sp = 0;
+			s.bo = 0;
+			s.lp = 0;
+			s.zb = zfax_.b;
+		}
 		fax_ = DCORE_HAS(FAX2_create) ?
 			FAX2_create(handle(), caller_, srate_, &s) : nullptr;
 	} else {
@@ -4434,7 +4460,8 @@ s16 Modem::fax_start()
 		return -1;
 	}
 	logf("fax engine%s, %s%s\n", fax2_ ? fax_class_ == 2 ? ", class 2" :
-	     ", class 2.0" : "", caller_ ? "caller" : "answerer",
+	     fax_class_ == 6 ? ", class 6" : ", class 2.0" : "",
+	     caller_ ? "caller" : "answerer",
 	     t38_ ? ", T.38" : "");
 	return 0;
 }
@@ -4478,7 +4505,9 @@ void Modem::fax_process(s16 *in, s16 *out, s32 n)
 			stats_.up = static_cast<u32>(host_.now_ms());
 		}
 		set_state(ONLINE);
-		report(Result::Connect);
+		/* (class 6: the engine's CONNECT FAX/... went already) */
+		if (fax_class_ != 6)
+			report(Result::Connect);
 		command_ = false;
 		break;
 	case FAX_STATUS_NOCARRIER:

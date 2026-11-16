@@ -1,0 +1,22 @@
+      0 B< ATE0+FCLASS=6#B1#V0#T0#R0#L2#C7#F&N32\r
+      0 B: ATE0+FCLASS=6#B1#V0#T0#R0#L2#C7#F&N32\r\r\n
+      0 B: OK\r\n
+      0 B< AT#B2\r
+      0 B: ERROR\r\n
+      0 B< AT#P5552222\r
+      0 B: OK\r\n
+      0 A< ATE0X3+FCLASS=0\r
+      0 A: ATE0X3+FCLASS=0\r\r\n
+      0 A: OK\r\n
+      0 B< ATA\r
+      0 A< ATD\r
+   6300 B: CONNECT 62666\r\n
+   6300 until B 'CONNECT': yes
+   6320 A: CONNECT 62666\r\n
+   6320 until A 'CONNECT': yes
+   6340 A: NO CARRIER\r\n
+   6360 B: NO CARRIER\r\n
+   6360 until B 'NO CARRIER': yes
+   6860 B< AT+FCLASS?\r
+   6860 B: 6\r\n
+   6860 B: OK\r\n

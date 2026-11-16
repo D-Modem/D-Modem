@@ -218,7 +218,7 @@
       0 A: ERROR\r\n
       0 A< AT+FCLASS=?\r
       0 A: AT+FCLASS=?\r\r\n
-      0 A: 0,1,1.0,2,2.0,8\r\n
+      0 A: 0,1,1.0,2,2.0,6,8\r\n
       0 A: OK\r\n
       0 A< AT+FCLASS?\r
       0 A: AT+FCLASS?\r\r\n
