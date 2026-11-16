@@ -29,7 +29,7 @@ std::vector<s16> round_trip(Coding c, const std::vector<s16> &x)
 	dec.reset(c);
 	for (s16 v : x) {
 		u8 b[2];
-		s16 out[2];
+		s16 out[Codec::MAX_SAMPLES];
 		int n = enc.encode(v, b);
 		for (int i = 0; i < n; i++) {
 			int m = dec.decode(b[i], out);
@@ -54,9 +54,9 @@ std::vector<s16> tone(double f, int n, double a = 8000)
 TEST(VoiceCodec, Formats)
 {
 	for (unsigned cml : { 0u, 1u, 4u, 5u, 128u, 129u, 130u, 131u, 132u,
-			       133u })
+			       133u, 134u, 135u, 136u })
 		EXPECT_NE(format(cml), nullptr) << cml;
-	for (unsigned cml : { 2u, 3u, 6u, 7u, 8u, 127u, 134u, 255u })
+	for (unsigned cml : { 2u, 3u, 6u, 7u, 8u, 127u, 137u, 255u })
 		EXPECT_EQ(format(cml), nullptr) << cml;
 	EXPECT_TRUE(runs_at(1, 8000));
 	EXPECT_TRUE(runs_at(129, 11025));
@@ -181,4 +181,86 @@ TEST(VoiceCodec, G726)
 	EXPECT_EQ(g->bps, 4);
 	EXPECT_TRUE(runs_at(133, 8000));
 	EXPECT_FALSE(runs_at(133, 7200));
+}
+
+/* ZyXEL's ADPCM, 2, 3 and 4 bits: the first code in the most
+   significant bits, codes across octets (3 bits: 8 samples in 3
+   octets); a tone at its 9600 samples/s back with the quality each
+   width gives once the step has adapted; the 4 bit coder never sends
+   code 0 (the decoder's reset) */
+TEST(VoiceCodec, Zyxel)
+{
+	Codec c;
+	u8 b[2];
+	s16 x[Codec::MAX_SAMPLES];
+
+	c.reset(ZYXEL4);
+	EXPECT_EQ(c.encode(4000, b), 0);
+	ASSERT_EQ(c.encode(-4000, b), 1);
+	EXPECT_EQ(b[0] & 0x80, 0);              /* the first up */
+	EXPECT_NE(b[0] & 0x08, 0);              /* the second down */
+	c.reset(ZYXEL3);
+	int octets = 0;
+	for (int i = 0; i < 8; i++)
+		octets += c.encode(static_cast<s16>(i * 100), b);
+	EXPECT_EQ(octets, 3);
+	c.reset(ZYXEL2);
+	EXPECT_EQ(c.decode(0x00, x), 4);
+	c.reset(ZYXEL3);
+	EXPECT_EQ(c.decode(0x00, x), 2);        /* 2 codes, 2 bits left */
+	EXPECT_EQ(c.decode(0x00, x), 3);
+
+	/* the decoder alone: code 7 of 4 bits steps up by 15 d / 2 */
+	Zyxel z;
+	z.bits = 4;
+	EXPECT_EQ(z.decode(7), ((15 * 5) >> 1) * 4 + 4);
+
+	const double min_snr[3] = { 16.0, 22.0, 27.0 };
+	const Coding cs[3] = { ZYXEL2, ZYXEL3, ZYXEL4 };
+	for (int k = 0; k < 3; k++) {
+		std::vector<s16> in(9600);
+		for (size_t i = 0; i < in.size(); i++)
+			in[i] = static_cast<s16>(8000 * sin(2 * M_PI * 440 *
+							     i / 9600.0));
+		std::vector<s16> out = round_trip(cs[k], in);
+		ASSERT_GE(out.size(), in.size() - 4);
+		double e = 0, p = 0;
+		for (size_t i = 960; i < out.size(); i++) {
+			double d = out[i] - in[i];
+			e += d * d;
+			p += static_cast<double>(in[i]) * in[i];
+		}
+		printf("ZyXEL %d bits: %.1f dB\n", k + 2, 10 * log10(p / e));
+		EXPECT_GT(10 * log10(p / e), min_snr[k]) << k + 2 << " bits";
+	}
+	Codec e4;
+	e4.reset(ZYXEL4);
+	for (int i = 0; i < 2000; i++) {
+		int n = e4.encode(static_cast<s16>(i & 1 ? 3 : -3), b);
+		for (int j = 0; j < n; j++) {
+			EXPECT_NE(b[j] & 0xf0, 0);
+			EXPECT_NE(b[j] & 0x0f, 0);
+		}
+	}
+	/* the codes of a 440 Hz tone's first 24 samples, as ZyXEL's vcnvt
+	   (mgetty's libpvf port of it) gives them */
+	static const u8 want[3][24] = {
+		{ 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 3, 3, 3, 3, 3, 3, 2, 0, 0,
+		  1, 0, 1, 1 },
+		{ 0, 3, 3, 3, 3, 3, 3, 3, 3, 4, 7, 5, 6, 5, 5, 4, 4, 4, 1, 1,
+		  2, 2, 2, 1 },
+		{ 8, 7, 7, 7, 7, 7, 7, 7, 9, 11, 12, 13, 12, 12, 10, 10, 9, 8,
+		  3, 4, 6, 4, 4, 4 },
+	};
+	for (int k = 0; k < 3; k++) {
+		Zyxel zk;
+		zk.bits = static_cast<s16>(k + 2);
+		for (int i = 0; i < 24; i++)
+			EXPECT_EQ(zk.encode(static_cast<s16>(8000 * sin(
+				2 * M_PI * 440 * i / 9600.0))), want[k][i])
+				<< k + 2 << " bits, sample " << i;
+	}
+	EXPECT_TRUE(runs_at(135, 9600));
+	EXPECT_FALSE(runs_at(135, 11025));
+	EXPECT_EQ(format(135)->bps, 3);
 }
