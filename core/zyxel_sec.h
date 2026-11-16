@@ -102,6 +102,7 @@ private:
 	s16 tries_ = 0;
 	std::string buf_;
 
+	/* the password's prompt, a new try */
 	void prompt()
 	{
 		out += "PassWord:";
@@ -121,6 +122,7 @@ private:
 		prompt();
 	}
 
+	/* one character of the password (cr: S3, its end) */
 	void password_char(u8 c, u8 cr)
 	{
 		if (c != cr) {
@@ -148,6 +150,8 @@ private:
 		step = Step::Done;
 	}
 
+	/* one character of the call-back number (cr: S3, its end; bs:
+	   S5, the last one erased) */
 	void number_char(u8 c, u8 cr, u8 bs)
 	{
 		if (c == bs) {
