@@ -46,6 +46,7 @@ nav:
       - MNP 10: mnp/mnp10.md
       - MNP 10EC: mnp/mnp10ec.md
       - Firmware findings: mnp/firmware-findings.md
+    - The x2 upgrade host: x2-upgrade.md
     - ISDN: isdn.md
     - Voice and data together (V.70): v70.md
     - Modem relay (V.150.1): v150.md

@@ -45,6 +45,7 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 	timer_what_ = Timer::None;
 	push_pending = false;
 	dec_head_ = dec_count_ = 0;
+	usr_.init(this, cfg.usr_feature);
 	if ((cfg.ec || cfg.mnp) && cfg.comp) {
 		if (enc_.init(cfg.dict_size, cfg.max_string) ||
 		    dec_.init(cfg.dict_size, cfg.max_string)) {
@@ -114,6 +115,9 @@ void Link::logf(const char *fmt, ...)
 void Link::status(Status s)
 {
 	owner_->status(s);
+	/* LAPM up: the remote feature upgrade, if asked for */
+	if (s == Status::Up && mode_ == Mode::Lapm && proto_ != Protocol::V76)
+		usr_.start();
 }
 
 /* the data pump has connected (on: error correction is possible): V.80
@@ -456,6 +460,9 @@ s32 Link::get_bits(s16 nbits, u8 *buf, s32 n)
 		memset(buf, (1 << nbits) - 1, n);
 		break;
 	}
+	/* the remote feature upgrade's timers too */
+	if (usr_.running() && mode_ == Mode::Lapm)
+		usr_.clock(static_cast<s32>(nbits) * n);
 	/* the bit timer counts what goes out */
 	if (timer_ && (timer_ -= static_cast<s32>(nbits) * n) <= 0) {
 		timer_ = 0;

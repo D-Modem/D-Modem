@@ -55,6 +55,9 @@ public:
 	void set_user_data(bool cmd, const std::vector<u8> &u);
 	/* in the data phase */
 	bool up() const { return state_ == DATA; }
+	/* a UI command with the n octets of info (the USRobotics remote
+	   feature upgrade, usr_feature.h); -1 if it cannot go */
+	s16 tx_ui(const u8 *info, s16 n);
 	/* I frames not sent yet or not acknowledged */
 	bool tx_pending() const override {
 		return sent_info_ && info_list_ && sent_info_ != info_list_;

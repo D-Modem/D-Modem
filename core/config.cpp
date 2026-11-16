@@ -99,6 +99,7 @@ const struct {
 	{ "+DS44", "V.44 compression" },
 	{ "+DSZ", "zstd compression" },
 	{ "+B2", "Clear channel link layer" },
+	{ "+X2UP", "x2 upgrade host" },
 	{ "+CBST", "Bearer service" },
 	{ "+CRC", "Cellular result codes" },
 	{ "+PCW", "V.92 call waiting" },
