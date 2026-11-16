@@ -707,6 +707,10 @@ struct Dte : Owner {
 		if (verbose)
 			printf("    %s: %s\n", name, line);
 	}
+	/* the remote feature upgrade's reports */
+	std::vector<UsrReport> usr;
+	/* (see usr) */
+	void usr_feature(const UsrReport &r) override { usr.push_back(r); }
 };
 
 /* two Links back to back: the caller lc and the answerer la, bit
@@ -1081,6 +1085,131 @@ TEST(Link, LapmUnsolicitedDm)
 	CHECK(!p.da.up, "up again on a DM after the release");
 	CHECK(std::find(out.begin(), out.end(), sabme) == out.end(),
 	      "an SABME after the release");
+}
+
+/* a Courier's side of the USRobotics remote feature upgrade
+   (usr_feature.h), as its firmware has it: UI commands of type 0x0a
+   answered (1 the records, 3 the serial number), a set or clear kept
+   only when allowed (S30 bit 0 in the builds after 7.1.4) */
+struct CourierFeatures {
+	uint8_t recs[USR_RECORDS] = { 0, 15, 0, 0, 0, 0 };  /* record 1.. */
+	bool allowed = true;
+	bool answers = true;
+	std::vector<std::vector<uint8_t>> heard;
+	/* a frame from the host: the answers to send */
+	std::vector<std::vector<uint8_t>> rx(const std::vector<uint8_t> &f) {
+		std::vector<std::vector<uint8_t>> out;
+		if (f.size() < 4 || f[1] != 0x03 || f[2] != USR_UI_TYPE)
+			return out;
+		heard.push_back(f);
+		const uint8_t m = f[3];
+		if (m == 1 && answers) {
+			std::vector<uint8_t> a = { 0x03, 0x03, USR_UI_TYPE, 0 };
+			for (int i = USR_RECORDS; i >= 1; i--)
+				a.push_back(recs[i - 1]);
+			out.push_back(a);
+		} else if (m == 3 && answers) {
+			const char *sn = "7309550013402381";
+			std::vector<uint8_t> a = { 0x03, 0x03, USR_UI_TYPE, 4,
+						   (uint8_t)strlen(sn) };
+			a.insert(a.end(), sn, sn + strlen(sn));
+			out.push_back(a);
+		} else if ((m == 2 || m == 5) && f.size() >= 5 && allowed) {
+			const int rec = f[4] >> 4, bit = f[4] & 15;
+			if (rec >= 1 && rec <= USR_RECORDS && bit >= 1) {
+				const uint8_t mask = (uint8_t)(1 << (bit - 1));
+				if (m == 2)
+					recs[rec - 1] |= mask;
+				else
+					recs[rec - 1] &= (uint8_t)~mask;
+			}
+		}
+		return out;
+	}
+};
+
+/* a call to the Courier cf with the host's side in mode once LAPM is
+   up: its one report */
+static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode)
+{
+	rnd_state = 12345;
+	/* (the 16-bit FCS: the Courier's frames below have it) */
+	Config cc = lapm_config(0), ca = lapm_config(0);
+	cc.fcs32 = ca.fcs32 = false;
+	ca.usr_feature = mode;
+	Pair p(cc, ca);
+	p.start(true, true);
+	/* until LAPM is up, less than a second before the first ask */
+	for (int k = 0; k < 60 && !(p.dc.up && p.da.up); k++)
+		p.run(480);
+	CHECK(p.dc.up && p.da.up, "LAPM up");
+	/* the Courier from here: frames to the answerer, its frames read */
+	NullOwner o;
+	Link side;
+	side.init(&o, true, Config());
+	Hdlc tx, rx;
+	FrameSource src, dst;
+	tx.start(&side);
+	rx.start(&side);
+	tx.set_framer(&src, true);
+	rx.set_framer(&dst, false);
+	uint8_t bits[96];
+	size_t seen = 0;
+	for (int k = 0; k < 9600 * 30 / 96 && p.da.usr.empty(); k++) {
+		tx.get_bits(1, bits, sizeof(bits));
+		p.la.put_bits(1, bits, sizeof(bits));
+		p.la.get_bits(1, bits, sizeof(bits));
+		rx.put_bits(1, bits, sizeof(bits));
+		for (; seen < dst.rx.size(); seen++)
+			for (auto &a : cf.rx(dst.rx[seen]))
+				src.tx.push_back(a);
+	}
+	CHECK(p.da.usr.size() == 1, "one report (%zu)", p.da.usr.size());
+	return p.da.usr.empty() ? UsrReport() : p.da.usr[0];
+}
+
+/* the host's side (+X2UP=2) against a Courier that lets the set
+   through, the same again (x2 already), one that does not, and a
+   remote that never answers; then +X2UP=1, which only reads */
+TEST(Link, UsrFeature)
+{
+	CourierFeatures cf;
+	UsrReport r = x2up_call(cf, UsrMode::EnableX2);
+	CHECK(r.result == UsrResult::Enabled, "enabled (%s)",
+	      usr_result_name(r.result));
+	CHECK(!strcmp(r.serial, "7309550013402381"), "serial %s", r.serial);
+	CHECK(r.has_records && r.before[1] == 15 && r.after[1] == 31,
+	      "features %u -> %u", r.before[1], r.after[1]);
+	CHECK(cf.recs[1] == 31, "the Courier's record 2 is %u", cf.recs[1]);
+	/* the set: 0a 02 25 in a UI command of the answerer's (address 1) */
+	const std::vector<uint8_t> set = { 0x01, 0x03, 0x0a, 0x02, 0x25 };
+	CHECK(std::find(cf.heard.begin(), cf.heard.end(), set) !=
+	      cf.heard.end(), "the set frame 01 03 0a 02 25");
+
+	r = x2up_call(cf, UsrMode::EnableX2);
+	CHECK(r.result == UsrResult::Already, "already (%s)",
+	      usr_result_name(r.result));
+
+	CourierFeatures locked;
+	locked.allowed = false;
+	r = x2up_call(locked, UsrMode::EnableX2);
+	CHECK(r.result == UsrResult::Refused, "refused (%s)",
+	      usr_result_name(r.result));
+	CHECK(r.after[1] == 15, "features after %u", r.after[1]);
+
+	CourierFeatures mute;
+	mute.answers = false;
+	r = x2up_call(mute, UsrMode::EnableX2);
+	CHECK(r.result == UsrResult::NoReply && !r.has_records,
+	      "no reply (%s)", usr_result_name(r.result));
+	CHECK(mute.heard.size() == 6, "3 asks for each (%zu)",
+	      mute.heard.size());
+
+	CourierFeatures ro;
+	r = x2up_call(ro, UsrMode::Query);
+	CHECK(r.result == UsrResult::Queried && ro.recs[1] == 15,
+	      "query only (%s, %u)", usr_result_name(r.result), ro.recs[1]);
+	printf("  x2up: enabled, already, refused, no reply, queried\n");
 }
 
 /* USRobotics HST in XID as a Courier sends it: the XID command and

@@ -498,7 +498,7 @@ public:
 	static const char *const author, *const product, *const version;
 	/* the extended parameters of other modems' setup strings it keeps
 	   (at most), their values (at most) */
-	enum { KEPT_PARAMS = 28, KEPT_VALUES = 9 };
+	enum { KEPT_PARAMS = 30, KEPT_VALUES = 9 };
 
 private:
 	enum State {

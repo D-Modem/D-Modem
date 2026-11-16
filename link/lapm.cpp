@@ -526,6 +526,21 @@ s16 Lapm::tx_unnum(u8 addr, u8 ctrl)
 	return 0;
 }
 
+/* (see lapm.h): in the data phase only */
+s16 Lapm::tx_ui(const u8 *info, s16 n)
+{
+	if (state_ != DATA || n < 0 || n > LAPM_MAX_INFO)
+		return -1;
+	Frame *f = ctrl_frame();
+	if (!f)
+		return -1;
+	f->buf[0] = cmd_addr_;
+	f->buf[1] = U_UI;
+	memcpy(f->buf + 2, info, static_cast<size_t>(n));
+	f->size = static_cast<s16>(2 + n);
+	return 0;
+}
+
 /* an S frame queued: address addr, function ctrl, N(R) = V(R) now and
    P/F pf; -1 if the queue is full */
 s16 Lapm::tx_super(u8 addr, u8 ctrl, s16 pf)
@@ -985,7 +1000,9 @@ void Lapm::rx_super_rsp(Frame *f)
 /* a U command, in any state: SABME (re-)establishes and is always
    accepted (8.3.2.1, 8.4.9.1); DISC releases (8.7.2), or gets a DM
    while disconnected (8.8); an XID is answered with what was agreed
-   (8.10); UI (break) and TEST (loop-back) are not implemented */
+   (8.10); a UI in the data phase goes to the USRobotics remote feature
+   upgrade (usr_feature.h), as a Courier sends its answers in UI
+   commands; break (UI) and TEST (loop-back) are not implemented */
 void Lapm::rx_unnum_cmd(Frame *f)
 {
 	const u8 pf = f->buf[1] & PF;
@@ -1026,6 +1043,9 @@ void Lapm::rx_unnum_cmd(Frame *f)
 		}
 		break;
 	case U_UI:
+		if (state_ == DATA)
+			link_->usr_rx(f->buf + 2, static_cast<s16>(f->count - 2));
+		break;
 	case U_TEST:
 		break;
 	default:
@@ -1039,8 +1059,9 @@ void Lapm::rx_unnum_cmd(Frame *f)
    the link; DM with F 0 asks for the link while it has not been up in
    this call (8.8, Table 9), and ends the data phase (8.4.9.1); the
    XID answering ours ends the negotiation, then the establishment
-   begins (or, in the data phase, our receiver is free again); UI and
-   FRMR are ignored */
+   begins (or, in the data phase, our receiver is free again); a UI
+   goes to the remote feature upgrade as a command's does; FRMR is
+   ignored */
 void Lapm::rx_unnum_rsp(Frame *f)
 {
 	const bool fin = f->buf[1] & PF;
@@ -1114,6 +1135,9 @@ void Lapm::rx_unnum_rsp(Frame *f)
 		}
 		break;
 	case U_UI:
+		if (state_ == DATA)
+			link_->usr_rx(f->buf + 2, static_cast<s16>(f->count - 2));
+		break;
 	case U_FRMR:
 		break;
 	default:

@@ -78,10 +78,29 @@ struct V34X2 {
 	unsigned char x2_raw[X2_FRAME];
 	unsigned char x2_bits[X2_MAXBITS];
 
+	/* the client (the analogue modem, calling): x2 offered (+MS=X2 on
+	   an analogue line at 9600 Hz; DSP_X2C=0 leaves it out), the
+	   server's INFO0 marked so, the line into x2rx */
+	s16 x2c;
+	s16 x2c_on;
+	s16 x2_rx;
+	X2Rx x2rx;
+	s32 x2c_t0;             /* when the state began (total) */
+	s32 x2c_quiet;          /* data mode samples without the signal */
+	s32 x2c_rn_at;          /* our renegotiation, samples into the
+				   data (-1 none) */
+	s16 x2c_rn_n;           /* the rate it asks for */
+
 	s16 x2_start();
 	s16 x2_step(s32 c);
 	s16 x2_sample();
 	s16 x2_data_setup();
+	void x2c_marker();
+	s16 x2c_start();
+	s16 x2c_data_setup();
+	void x2c_mp(s16 down, u16 mask);
+	s16 x2c_reneg(s32 c);
+	s16 x2c_step(s32 c);
 };
 
 /* the client's marker: its V.34 transmitter at the symbol rate and on
@@ -433,6 +452,356 @@ s16 V34X2<P>::x2_step(s32 c)
 			DSP_DBG("v34: x2: the client's renegotiation timed "
 				"out\n");
 			return DPSTAT_ERROR;
+		}
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+/*
+ *    the client's phases 2 to 4 (the analogue modem, calling)
+ */
+
+/* the Courier's MP at the start: the start-up's rate (1) down, 13 up
+   (word 0), the upstream's mask, 5 signs (word 3's high octet) */
+#define X2C_MP_W0       0x0344
+#define X2C_MP_MASK     0x03fe
+#define X2C_MP_W3       0x0500
+/* the upstream rate the server's record allows at most */
+#define X2C_UP_MAX      12
+
+/* the Courier's renegotiation: about 12.7 s into the data, its MP with
+   the rate it measured and this mask */
+#define X2C_RENEG_MS    12700
+#define X2C_RN_MASK     0x1ffe
+#define X2C_RN_TRN      512
+
+/* our MP's words: the rate down (1 to 15), 13 up, the pad we measured,
+   the mask up, 5 signs */
+template <class P>
+void V34X2<P>::x2c_mp(s16 down, u16 mask)
+{
+	P &self = static_cast<P &>(*this);
+	V34Tx &t = self.ptx;
+	t.x2_w[0] = static_cast<u16>((X2C_MP_W0 & ~0x783c) | down << 2 |
+				     x2rx.mode << 11);
+	t.x2_w[1] = mask;
+	/* (the Courier's behind a pad) */
+	t.x2_w[2] = x2rx.mode ? 0x8888 : 0;
+	t.x2_w[3] = static_cast<u16>(X2C_MP_W3 | (x2rx.mode ? 0x88 : 0));
+	t.ack_mp = 0;
+	t.mp_sent = 0;
+}
+
+/* our marker in place of L1, L2 and INFO1c, once the server's L1 is
+   over: the high carrier (bit 0), 6 (bits 1 to 3), our symbol rate
+   (bits 4 to 6), 3200 baud as the Courier's: 4d */
+template <class P>
+void V34X2<P>::x2c_marker()
+{
+	P &self = static_cast<P &>(*this);
+	s16 m = static_cast<s16>(1 | 6 << 1 | V34_BAUD_3200 << 4);
+	self.cctx.info_start();
+	self.cctx.put(static_cast<u32>(m), 7);
+	self.cctx.info_end();
+	self.cc_send();
+	DSP_DBG("v34: x2: our marker %#04x\n", m);
+}
+
+/* after our marker: our V.34 transmitter at 3200 baud on the high
+   carrier with the answerer's scrambler (GPA), J asking for 16 points;
+   the PCM receiver on the line */
+template <class P>
+s16 V34X2<P>::x2c_start()
+{
+	P &self = static_cast<P &>(*this);
+	self.baud_tx = V34_BAUD_3200;
+	self.high_tx = 1;
+	self.ptx.init(self.baud_tx, self.high_tx, 0);
+	self.ptx.jword = 0x89b0;
+	self.ptx.x2 = 1;
+	self.txm = TXM_PRIMARY;
+	x2rx.init(self.alaw, self.line_rate);
+	x2_rx = 1;
+	x2c_quiet = 0;
+	x2c_t0 = self.total;
+	if (self.rt)
+		self.rt->pcm = 1;
+	self.set_state(XC3_WAIT);
+	DSP_DBG("v34: x2 phase 3, the client at %.0f baud, high carrier\n",
+		v34_symbol_rate(self.baud_tx));
+	return 0;
+}
+
+/* the server's record: the rates both ways.  Up: the highest of our
+   mask that the record allows (as x2_data_setup()), at expanded
+   shaping, 64 states and non-linear encoding; down: the start-up's */
+template <class P>
+s16 V34X2<P>::x2c_data_setup()
+{
+	P &self = static_cast<P &>(*this);
+	V34Params p;
+	s16 n;
+	u16 mask = static_cast<u16>(self.ptx.x2_w[1] & 0x0fff);
+	for (n = X2C_UP_MAX; n >= 1; n--)
+		if ((mask >> (n - 1)) & 1 &&
+		    v34_rates[self.ptx.baud][n - 1].b)
+			break;
+	if (n < 1 || p.init(self.ptx.baud, n, 1))
+		return -1;
+	p.states = 64;
+	p.set_nonlinear(0.3125);
+	self.ptx.start_data(&p, CoreBits{ self.modem });
+	self.rate_tx = p.rate;
+	if (!self.connected)
+		self.rate_rx = static_cast<s32>(x2rx.lv_d.r->B +
+						x2rx.lv_d.r->MD) * 8000 /
+			X2_FRAME;
+	DSP_DBG("v34: x2 rates: up %" PRId32 ", down %" PRId32 " (the "
+		"server's record %04x %04x %04x)\n", self.rate_tx,
+		self.rate_rx, x2rx.rec_w[0], x2rx.rec_w[1], x2rx.rec_w[2]);
+	return 0;
+}
+
+/* our renegotiation in the data (XC5_*), c samples into the state:
+   S, S-bar, TRN, our MP until a record of the server's after its
+   marker, MP', E; then the data again */
+template <class P>
+s16 V34X2<P>::x2c_reneg(s32 c)
+{
+	P &self = static_cast<P &>(*this);
+	V34Tx &t = self.ptx;
+	(void)c;
+	switch (self.state) {
+	case XC5_S:
+		if (t.n >= 128)
+			self.tx_next(XC5_SBAR, V34_TX_SBAR);
+		break;
+	case XC5_SBAR:
+		if (t.n >= 16)
+			self.tx_next(XC5_TRN, V34_TX_TRN);
+		break;
+	case XC5_TRN:
+		if (t.n >= X2C_RN_TRN)
+			self.tx_next(XC5_MP, V34_TX_MP);
+		break;
+	case XC5_MP:
+		/* our MP until the server's marker and a record after it;
+		   then MP' and E */
+		if (x2rx.ev_rn_rec && !t.ack_mp) {
+			if (x2c_data_setup()) {
+				DSP_DBG("v34: x2: no common rate\n");
+				return DPSTAT_ERROR;
+			}
+			t.ack_mp = 1;
+		}
+		if (t.ack_mp && t.mp.ack && t.pos >= t.nbits)
+			self.tx_next(XC5_E, V34_TX_E);
+		break;
+	case XC5_E:
+		if (t.seg == V34_TX_DATA) {
+			x2rx.ev_rn_rec = 0;
+			self.set_state(XC4_DATA);
+			self.set_rates(self.rate_tx, self.rate_rx);
+			DSP_DBG("v34: x2: renegotiated, up %" PRId32 "\n",
+				self.rate_tx);
+		}
+		break;
+	default:
+		break;
+	}
+	if (self.state != XC4_DATA && self.total - x2c_t0 >=
+	    ms2samples(5000, self.srate)) {
+		DSP_DBG("v34: x2: our renegotiation timed out\n");
+		return DPSTAT_ERROR;
+	}
+	return 0;
+}
+
+/* the client's phases 3 and 4 and data, c samples into the state */
+template <class P>
+s16 V34X2<P>::x2c_step(s32 c)
+{
+	P &self = static_cast<P &>(*this);
+	V34Tx &t = self.ptx;
+	switch (self.state) {
+	case XC2_MARK:
+		/* our tone for the marker's phase reference, then it */
+		if (!self.cc_busy() && self.cctx.n == 0 &&
+		    c >= 2 * self.srate / CC_BAUD)
+			x2c_marker();
+		else if (self.cctx.n && !self.cc_busy()) {
+			self.cc_silence();
+			self.cctx.reset();
+			if (x2c_start())
+				return DPSTAT_ERROR;
+		}
+		break;
+	case XC3_WAIT:
+		if (c >= ms2samples(70, self.srate))
+			self.tx_next(XC3_S, V34_TX_S);
+		break;
+	case XC3_S:
+		if (t.n >= 128)
+			self.tx_next(XC3_SBAR, V34_TX_SBAR);
+		break;
+	case XC3_SBAR:
+		if (t.n >= 16)
+			self.tx_next(XC3_PP, V34_TX_PP);
+		break;
+	case XC3_PP:
+		if (t.n >= 288)
+			self.tx_next(XC3_TRN, V34_TX_TRN);
+		break;
+	case XC3_TRN:
+		if (t.n >= TRN3_LEN) {
+			self.tx_next(XC3_J, V34_TX_J);
+			x2c_t0 = self.total;
+		}
+		break;
+	case XC3_J:
+		/* J until the server's preamble has begun (the Courier's
+		   about 150 ms into it), then silence */
+		if (x2rx.ev_pre && t.n % 8 == 0 &&
+		    self.total - x2c_t0 >= ms2samples(150, self.srate)) {
+			x2c_t0 = self.total;
+			self.tx_next(XC3_QUIET, V34_TX_SILENCE);
+			DSP_DBG("v34: x2: the server's preamble; quiet\n");
+		} else if (!x2rx.ev_pre) {
+			x2c_t0 = self.total;
+			if (c >= ms2samples(3000, self.srate)) {
+				DSP_DBG("v34: x2: no preamble after our J\n");
+				return self.fallback("no x2 training");
+			}
+		}
+		break;
+	case XC3_QUIET:
+		/* the server's TRN until its J words: our phase 4 (16
+		   points) */
+		if (x2rx.k >= X2RX_K_JS) {
+			t.trn16 = 1;
+			x2c_mp(1, X2C_MP_MASK);
+			self.tx_next(XC4_S, V34_TX_S);
+		} else if (c >= ms2samples(5000, self.srate)) {
+			DSP_DBG("v34: x2: no TRN from the server\n");
+			return self.fallback("no x2 TRN");
+		}
+		break;
+	case XC4_S:
+		if (x2rx.ev_js < 0) {
+			DSP_DBG("v34: x2: the J words do not decode\n");
+			return self.fallback("no x2 J words");
+		}
+		if (t.n >= 128)
+			self.tx_next(XC4_SBAR, V34_TX_SBAR);
+		break;
+	case XC4_SBAR:
+		if (t.n >= 16)
+			self.tx_next(XC4_TRN, V34_TX_TRN);
+		break;
+	case XC4_TRN:
+		if (t.n >= TRN4_LEN) {
+			/* the pad the sync frames show, in our MP */
+			x2rx.measure_pad();
+			x2c_mp(1, X2C_MP_MASK);
+			self.tx_next(XC4_MP, V34_TX_MP);
+			x2c_t0 = self.total;
+		}
+		break;
+	case XC4_MP:
+		/* our MP until the server's record, then MP' and E after
+		   a whole one */
+		if (x2rx.ev_rec && !t.ack_mp) {
+			if (x2c_data_setup()) {
+				DSP_DBG("v34: x2: no common rate\n");
+				return self.fallback("no common data rate");
+			}
+			t.ack_mp = 1;
+		}
+		if (t.ack_mp && t.mp.ack && t.pos >= t.nbits) {
+			self.tx_next(XC4_E, V34_TX_E);
+			x2rx.e_sent = 1;
+			x2c_t0 = self.total;
+		} else if (self.total - x2c_t0 >= ms2samples(10000,
+							      self.srate)) {
+			DSP_DBG("v34: x2: no record from the server\n");
+			return self.fallback("no x2 record");
+		}
+		break;
+	case XC4_E:
+		if (t.seg == V34_TX_DATA && x2rx.ev_data) {
+			self.set_state(XC4_DATA);
+			self.set_rates(self.rate_tx, self.rate_rx);
+			self.connected = 1;
+			DSP_DBG("v34: x2 connect " RATE_FMT " (client)\n",
+				self.rate_tx, self.rate_rx);
+			self.stat_dp(DP_X2);
+			/* our renegotiation (test: DSP_X2C_RENEG=<ms>, 0
+			   none) */
+			{
+				s32 ms = env_int("DSP_X2C_RENEG", X2C_RENEG_MS);
+				x2c_rn_at = ms > 0 ? ms2samples(ms, self.srate) :
+					-1;
+			}
+			return DPSTAT_CONNECT;
+		} else if (self.total - x2c_t0 >= ms2samples(4000,
+							      self.srate)) {
+			DSP_DBG("v34: x2: no start from the server\n");
+			return self.fallback("no x2 start");
+		}
+		break;
+	case XC4_DATA:
+	case XC5_S:
+	case XC5_SBAR:
+	case XC5_TRN:
+	case XC5_MP:
+	case XC5_E:
+		/* the PCM signal gone: carrier lost */
+		x2c_quiet = x2rx.dpow < 1e-3f * x2rx.level * x2rx.level ?
+			x2c_quiet + 1 : 0;
+		self.stat_carrier(!x2c_quiet);
+		if (x2c_quiet >= self.carrier_loss) {
+			DSP_DBG("v34: x2: carrier lost\n");
+			return DPSTAT_ERROR;
+		}
+		/* the next rate's data (ours, or the server's own) */
+		if (x2rx.ev_rn_data) {
+			x2rx.ev_rn_data = 0;
+			self.rate_rx = static_cast<s32>(x2rx.lv_d.r->B +
+							x2rx.lv_d.r->MD) *
+				8000 / X2_FRAME;
+			self.set_rates(self.rate_tx, self.rate_rx);
+			DSP_DBG("v34: x2: down %" PRId32 " from here\n",
+				self.rate_rx);
+		}
+		if (self.state != XC4_DATA)
+			return x2c_reneg(c);
+		if (c % ms2samples(1000, self.srate) == 0)
+			DSP_DBG("v34: x2 data: error %.2f rms (%.1f dB), "
+				"timing %+.2f ppm\n", sqrtf(x2rx.de_mse),
+				10 * log10f(x2rx.dpow / (x2rx.de_mse + 1e-6f)),
+				x2rx.ppm());
+		if (x2c_rn_at >= 0 && c >= x2c_rn_at &&
+		    x2rx.rn == X2Rx::RN_NONE) {
+			/* the rate the sync frames' noise allows (test:
+			   DSP_X2C_DOWN=<n> for another) */
+			s16 n = static_cast<s16>(env_int("DSP_X2C_DOWN",
+							 x2rx.best_rate()));
+			x2c_rn_at = -1;
+			if (n < 1 || n > 15 || !x2_rate_for(n, x2rx.mode))
+				break;
+			x2c_rn_n = n;
+			x2rx.rn_want = n;
+			x2c_mp(n, X2C_RN_MASK);
+			t.trn16 = 0;
+			x2c_t0 = self.total;
+			DSP_DBG("v34: x2: our renegotiation: down %d (%d "
+				"bit/s; the decisions' error %.2f rms)\n", n,
+				(x2_rate_for(n, x2rx.mode)->B + 5) * 8000 /
+				X2_FRAME, sqrtf(x2rx.de_mse));
+			self.tx_next(XC5_S, V34_TX_S);
 		}
 		break;
 	default:

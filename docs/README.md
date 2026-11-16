@@ -55,6 +55,8 @@ measurements, and test lists.
   - [Fax](dsp/fax.md): fax modem classes 1, 2 and 2.0, a built-in fax
     machine, and fax over the internet (T.38)
 - [The data link layer](link.md): error correction and compression
+- [The x2 upgrade host](x2-upgrade.md): enable x2 in a USRobotics
+  Courier that calls in, as the U.S. Robotics host did in 1997
 - [The MNP protocol suite](mnp/README.md): MNP 1 to 10 and 10EC, one class at a time
 - [The modem core](core.md): AT commands, settings and how a call operates
 - [ISDN](isdn.md): 64000 bit/s ISDN data calls

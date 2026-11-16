@@ -520,6 +520,10 @@ struct V34Tx {
 	V34Mp mp;       /* the MP we send */
 	s16 mp_sent;            /* complete MP / MP' sequences sent */
 	s16 ack_mp;             /* set the acknowledge bit from the next MP on */
+	/* x2's client: the MP is a record of these 4 words (x2.h), the
+	   acknowledge bit word 0's bit 15, and 2 zeros after it */
+	s16 x2;
+	u16 x2_w[4];
 	/* CP: the frame to send from the end of the current one on (0
 	   bits: the same again), whole frames of it sent, E instead */
 	unsigned char cp_next[1024];

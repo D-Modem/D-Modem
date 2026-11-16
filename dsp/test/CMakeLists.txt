@@ -141,6 +141,10 @@ dmodem_gtest(k56flex_test LABELS quick)
 dmodem_test_exe(x2_test x2_test.cpp ${S}/x2.cpp ${S}/x2_tables.cpp ${S}/k56flex.cpp
 	${S}/k56flex_tables.cpp)
 dmodem_gtest(x2_test LABELS quick)
+# x2's client receiver on the server's training through a line
+dmodem_test_exe(x2_rx_test x2_rx_test.cpp)
+target_link_libraries(x2_rx_test PRIVATE dmodem_loopback dmodem_dsp)
+dmodem_gtest(x2_rx_test LABELS quick)
 dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
 dmodem_gtest(rs_test LABELS quick)
 # jbig.h: T.82's coder test and artificial image, T.85's markers
