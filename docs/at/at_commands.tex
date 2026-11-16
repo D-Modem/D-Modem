@@ -3751,6 +3751,12 @@ are accepted (0 to 255) and kept, though the modem compresses no silence.
   octet with the first in the low nibble, at 8000: US Robotics'
   \std{ADPCM} (\cmdl[hashVBS]{\#VSM=129}); the coder starts afresh as 132's.
   D-Modem's own number. \\ \hline
+134, 135, 136 & ZyXEL's \std{ADPCM} of the U-1496 and the Elite 2864, 2, 3 and 4 bits a
+  sample, the first sample in the most significant bits of an octet and a
+  sample across two octets where it falls so, at 9600 (ZyXEL's own rate),
+  8000 or 7200: the files of ZyXEL's \cmd{vcnvt} and of \cmd{vgetty}'s
+  \cmd{zyxel} formats (ZyXEL's \cmdl[plusVSM]{+VSM=2}, 3 or 30, and 4). The coder
+  starts afresh as 132's. D-Modem's own numbers. \\ \hline
 \end{vtable}
 \end{command}
 
