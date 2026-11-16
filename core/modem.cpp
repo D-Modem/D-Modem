@@ -126,6 +126,9 @@ static const u32 CID_PRE_MS = 5000;
    on and 1 off, Syria's 1 and 0.5), how long after a burst's first pulse
    the next pulse starts another */
 static const u32 RING_GAP_MS = 1500, RING_CHECK_MS = 2510;
+/* #B3: no pulse for this long, the burst is over (a ring signal's
+   cycle is 67 ms at most, 15 Hz) */
+static const u32 CADENCE_GAP_MS = 100;
 static const u32 RING_MIN_MS = 150;
 static const u16 RING_PULSES = 4;
 static const u32 RING_GONE_MS = 8010, RING_AGAIN_MS = 6000;
@@ -2706,6 +2709,7 @@ s16 Modem::adaptive_param() const
 void Modem::hangup()
 {
 	conf_close();
+	cadence_ = false;
 	leased_stop();
 	if (state_ != IDLE)
 		set_cause(Cause::DtrOff);
@@ -3583,6 +3587,7 @@ void Modem::poll()
 		test_end(true);
 	}
 	conf_poll();
+	cadence_poll();
 	if (!event_)
 		return;
 	ev = event_;
@@ -3722,6 +3727,11 @@ s32 Modem::next_timer_ms()
 		if (c >= 0 && (left < 0 || c < left))
 			left = c;
 	}
+	{
+		s32 c = cadence_next_ms();
+		if (c >= 0 && (left < 0 || c < left))
+			left = c;
+	}
 	if (test_end_ms_) {
 		s32 t = std::max<s32>(0, static_cast<s32>(test_end_ms_ -
 							  host_.now_ms()));
@@ -3797,6 +3807,17 @@ void Modem::ring()
 {
 	u32 now = static_cast<u32>(host_.now_ms());
 
+	if (cadence_) {
+		/* a burst starts: the time with no ring */
+		u64 t = host_.now_ms();
+		if (!cadence_on_) {
+			cadence_line("OFF ", t - cadence_edge_ms_);
+			cadence_edge_ms_ = t;
+			cadence_on_ = true;
+		}
+		cadence_pulse_ms_ = t;
+		return;
+	}
 	if (state_ != IDLE)
 		return;
 	if (!ring_count_) {
@@ -3814,6 +3835,50 @@ void Modem::ring()
 	}
 	ring_last_ = now;
 	ring_count_++;
+}
+
+/* #B3, ZyXEL's ring cadence meter (U-1496S 0x89622): its two lines,
+   then a line at each change of the ring signal (cadence_line()) until
+   a key (at_process()); no RING meanwhile */
+void Modem::cadence_start()
+{
+	puts("\r\nStart to measure ring cadence...\r\n"
+	     "Hit any key to stop!\r\n");
+	cadence_ = true;
+	cadence_on_ = false;
+	cadence_edge_ms_ = host_.now_ms();
+	logf("ring cadence: started\n");
+}
+
+/* a change: the label ("ON  ": a burst ended, "OFF ": one started) and
+   the time of what ended, as ZyXEL's: 8 characters of 10 ms steps,
+   then "0 ms" */
+void Modem::cadence_line(const char *label, u64 ms)
+{
+	char b[32];
+	snprintf(b, sizeof(b), "%s%8u0 ms\r\n", label,
+		 static_cast<unsigned>(std::min<u64>((ms + 5) / 10, 65535)));
+	puts(b);
+}
+
+/* #B3: a burst ends CADENCE_GAP_MS after its last pulse */
+void Modem::cadence_poll()
+{
+	if (!cadence_ || !cadence_on_ ||
+	    host_.now_ms() - cadence_pulse_ms_ < CADENCE_GAP_MS)
+		return;
+	cadence_line("ON  ", cadence_pulse_ms_ - cadence_edge_ms_);
+	cadence_edge_ms_ = cadence_pulse_ms_;
+	cadence_on_ = false;
+}
+
+/* the ms until cadence_poll() has a burst's end, -1 none */
+s32 Modem::cadence_next_ms() const
+{
+	if (!cadence_ || !cadence_on_)
+		return -1;
+	u64 at = cadence_pulse_ms_ + CADENCE_GAP_MS, now = host_.now_ms();
+	return at > now ? static_cast<s32>(at - now) : 0;
 }
 
 /* see dcore.h: a change only (the line may say it twice) */
@@ -3863,6 +3928,9 @@ void Modem::line_reversal()
    (idle, line stopped); on false the rings are over */
 void Modem::ring_signal(bool on)
 {
+	/* (#B3 measures a line's own ring signal alone) */
+	if (on && cadence_)
+		return;
 	if (!on) {
 		sregs_[SREG_RING_COUNTER] = 0;
 		ring_count_ = 0;
@@ -4436,6 +4504,11 @@ s16 Modem::fax_start()
 			s.bo = 0;
 			s.lp = 0;
 			s.zb = zfax_.b;
+			/* #B2: this call polls, with #P as the CIG */
+			s.zpoll = caller_ && zfax_.poll;
+			zfax_.poll = false;
+			std::memset(s.pi, 0, sizeof(s.pi));
+			zfax_.p.copy(s.pi, sizeof(s.pi) - 1);
 		}
 		fax_ = DCORE_HAS(FAX2_create) ?
 			FAX2_create(handle(), caller_, srate_, &s) : nullptr;

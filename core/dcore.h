@@ -1007,7 +1007,16 @@ private:
 	struct ZFax {
 		u8 b = 0, v = 1, t = 0, r = 0, l = 2, c = 0;
 		std::string p;
+		bool poll = false;      /* #B2: the next call polls */
 	} zfax_;
+	/* #B3, ZyXEL's ring cadence meter: on until a key; a ring burst
+	   on now, the time of the last change and of the last pulse */
+	bool cadence_ = false, cadence_on_ = false;
+	u64 cadence_edge_ms_ = 0, cadence_pulse_ms_ = 0;
+	void cadence_start();
+	void cadence_line(const char *label, u64 ms);
+	void cadence_poll();
+	s32 cadence_next_ms() const;
 	/* class 6 answered a data call: class 6 again after it */
 	bool z6_data_ = false;
 	/* +F34 (T.31 class 1.0): the primary channel's highest and lowest

@@ -573,9 +573,10 @@ void Fax2::zend(const struct t30_status &st)
 	ending = true;
 }
 
-/* class 6, ATD or ATA: the DCS at once; CONNECT FAX/... once the CFR
-   came (sending) or went out (receiving; #B1: CONNECT FAX and ZyXEL);
-   NO CARRIER if the call ends before */
+/* class 6, ATD or ATA: the DCS at once (#B2, calling: the DTC, and we
+   receive); CONNECT FAX/... once the CFR came (sending) or went out
+   (receiving; #B1: CONNECT FAX and ZyXEL); NO CARRIER if the call ends
+   before (a remote with no document to be polled among them) */
 void Fax2::zcall(const struct t30_status &st)
 {
 	if (st.done) {
@@ -587,6 +588,11 @@ void Fax2::zcall(const struct t30_status &st)
 		if (!caller) {
 			/* a poller: there is nothing to send */
 			t30_abort(t30);
+			return;
+		}
+		if (set.zpoll) {
+			if (t30_poll(t30) < 0)
+				t30_abort(t30);
 			return;
 		}
 		t30_session(t30, set.vr != 0, 14400, 0);
@@ -601,7 +607,8 @@ void Fax2::zcall(const struct t30_status &st)
 		zrx.init(&zpage, 0);
 		zlast = 0;
 		start(CMD_Z_SEND);
-	} else if (!caller && !rx.empty() && rx.front().session) {
+	} else if ((!caller || set.zpoll) && !rx.empty() &&
+		   rx.front().session) {
 		RxItem &it = rx.front();
 		zsession(it.ident, br_bps(it.params[1]), it.params[0] != 0);
 		rx.pop_front();

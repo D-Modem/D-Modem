@@ -479,6 +479,15 @@ void Modem::at_process()
 	};
 	char c;
 
+	/* (#B3's meter: a key ends it, OK) */
+	if (cadence_) {
+		if (get_chars(&c, 1) != 1)
+			return;
+		cadence_ = false;
+		cadence_on_ = false;
+		logf("ring cadence: stopped\n");
+		report(Result::Ok);
+	}
 	while (!conf_ && get_chars(&c, 1) == 1) {
 		bool echo = sregs_[SREG_ECHO] != 0;
 		char bs = static_cast<char>(sregs_[SREG_BS_CHAR]);
@@ -2586,8 +2595,8 @@ s16 Modem::at_hash(char *p, s16 *len)
    at once, or for the DTE's DC2), #V0 and #V1 (the resolution), #T,
    #R, #L, #C (kept: the DTE's data is MH, 1728 pels, any length, no
    fill), #P<number> (the local identity, up to 25 characters, 20 of
-   them in the TSI or CSI).  #B2 (polling) and #B3 (the ring cadence):
-   ERROR */
+   them in the TSI or CSI).  #B2: the next call polls (calling).  #B3,
+   idle: the ring cadence meter (cadence_start()), its OK at a key */
 s16 Modem::at_zfax(char *p, s16 *len)
 {
 	static const struct {
@@ -2610,6 +2619,17 @@ s16 Modem::at_zfax(char *p, s16 *len)
 			return -1;
 		zfax_.p = id;
 		return 0;
+	}
+	if (c == 'B' && (p[2] == '2' || p[2] == '3') && !is_digit(p[3])) {
+		*len = 3;
+		if (p[2] == '2') {
+			zfax_.poll = true;
+			return 0;
+		}
+		if (state_ != IDLE || started_)
+			return -1;
+		cadence_start();
+		return 1;
 	}
 	for (const auto &k : cmds) {
 		if (k.name != c)

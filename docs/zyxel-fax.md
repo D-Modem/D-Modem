@@ -1,8 +1,7 @@
 # ZyXEL fax mode (class 6)
 
-Status: in D-Modem. `AT+FCLASS=6`, `#F`, `#B0`, `#B1`, `#V`, `#T`, `#R`,
-`#L`, `#C`, `#P` and `&N32`. `#B2` (polling) and `#B3` (ring cadence)
-are not.
+Status: in D-Modem. `AT+FCLASS=6`, `#F`, `#B0` to `#B3`, `#V`, `#T`,
+`#R`, `#L`, `#C`, `#P` and `&N32`.
 
 ## What it is
 
@@ -28,6 +27,8 @@ ATD5552222
 | `AT#F`, `AT&N32` | A V.17 fax call on the ZyXEL modems. In class 6 all calls are fax calls, thus D-Modem accepts them with no effect. |
 | `AT#B0` | Receiving: the pages go to the DTE after `CONNECT FAX/...` (the default). |
 | `AT#B1` | Receiving for a BBS: `CONNECT FAX` and `ZyXEL`, then the parameters and each page after a DC2 from the DTE. |
+| `AT#B2` | Polling: the next call receives the document of the remote. Refer to [Polling](#polling-b2). |
+| `AT#B3` | Measures the ring cadence until a key. Refer to [Ring cadence](#ring-cadence-b3). |
 | `AT#V0`, `AT#V1` | Normal or fine resolution (fine is the default). |
 | `AT#Tn`, `#Rn`, `#Ln`, `#Cn` | Kept, with no effect. The data is always MH, 1728 pels, any length, with no fill. |
 | `AT#P<id>` | The local identity (the CSI and the TSI). It is the remainder of the line or a string in quotes, up to 25 characters. The CSI and the TSI have the first 20. |
@@ -93,6 +94,58 @@ remaining pages and gives `DISCONNECT`.
 
 `ATV0` and `ATQ1` have no effect on `CONNECT FAX` and `DISCONNECT`.
 
+## Polling (#B2)
+
+```
+AT+FCLASS=6#B2#P5551111
+ATD5552222
+CONNECT FAX/S1440V1T0R0L2C7P5552222
+<page 1><RTC>
+DISCONNECT0P5552222
+```
+
+1. `#B2` sets polling for the next call only. ATD dials.
+2. When the DIS comes, the modem sends its CIG (`#P`) and a DTC in
+   place of the DCS.
+3. The remote sends its document. The modem gives it to the DTE as when
+   it receives a call: `CONNECT FAX/...`, or `CONNECT FAX` and `ZyXEL`
+   with `#B1`.
+4. At the end the modem gives `DISCONNECT0P<id>` or `DISCONNECT1P<id>`.
+
+If the DIS of the remote does not show a document to be polled, the
+modem ends the call and gives `NO CARRIER`. The ZyXEL firmware sends
+the DTC also in this case. A fax machine with no document then ends the
+call.
+
+## Ring cadence (#B3)
+
+`AT#B3` is a test of the ring detector. The modem must be idle.
+
+```
+AT#B3
+
+Start to measure ring cadence...
+Hit any key to stop!
+OFF      1020 ms
+ON       1980 ms
+OFF      4020 ms
+ON       1980 ms
+                       (the DTE sends a character)
+OK
+```
+
+- The modem gives one line at each start and end of a ring burst.
+  `OFF` is the time with no ring before a burst. `ON` is the time of
+  the burst. The first `OFF` starts at the command.
+- The time has 8 characters of 10 ms steps, then `0 ms`.
+- The modem gives no `RING` during the measurement, and it does not
+  answer.
+- One character from the DTE stops the measurement. The modem gives
+  `OK`.
+- A ring burst ends 100 ms after the last cycle of the ring signal.
+  Only a line with its own ring signal (a sound card line, a pipe or a
+  USB modem) has ring bursts. A SIP call gives no lines.
+
 ## The CONNECT FAX fields
 
 | Field | Meaning |
@@ -117,7 +170,9 @@ values that agree with the data the DTE gets or sends.
 | The pages to the DTE | As they come from the line | Each page when it is complete, coded again as MH |
 | Flow control while sending | CTS | The DTE buffer of D-Modem |
 | `#T1` (MR data) | MR | MH only |
-| `#B2` polling, `#B3` ring cadence | Yes | No (ERROR) |
+| `#B2` with no document at the remote | DTC | `NO CARRIER` (no DTC) |
+| `#B3`, the label of a line | `ON` or `OFF` at a change of the ring status bit (the polarity is not traced) | `ON` gives the time of a burst, `OFF` the time between bursts |
+| `#B3`, the end of a burst | The ring status bit of the DSP | 100 ms with no cycle of the ring signal |
 | `+FCLASS=?` | `0,2,8` (6 is not in the list) | `0,1,1.0,2,2.0,6,8` |
 | `&N32` in class 0 or 2 | A class 2 fax call | Accepted, no effect |
 | The bit order of the data | Not traced | The first bit in the lowest bit (as `+FBO=0`) |
@@ -131,5 +186,11 @@ hex 12 (DC2). Hex 18 (CAN) sets a different flag. D-Modem uses hex 12.
   pages to B. A gets `CONNECT FAX/...` and `DISCONNECT0`. B gets the same
   pages. With `#B1`, B gets nothing until each DC2.
 - `core_test` (`Core.ZfaxCommands`): the ranges of the `#` settings.
+- `core_test` (`Core.ZfaxPoll`): A in class 6 with `#B2` polls B (class
+  2.0, `+FLP=1`). A gets `CONNECT FAX/...`, the page of B and
+  `DISCONNECT0`.
+- `core_test` (`Core.ZfaxRingCadence`): two ring bursts give four
+  lines. No `RING` comes. A key gives `OK`, and the next ring gives
+  `RING`.
 - `core/test/scripts/zfax.txt`: a data call to a modem in class 6, and
   class 6 after it.
