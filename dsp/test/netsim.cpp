@@ -31,7 +31,10 @@
  *    codec at 8000 Hz, on
  *    the same line as a 9600 Hz one (the raised cosine, NET_PHASE and
  *    NET_PPM, the pad and robbed bits), its samples on the network's
- *    clock only at phase 0 and no ppm.
+ *    clock only at phase 0 and no ppm.  NET_RBS_TO=a (or b): the pad
+ *    and the robbed bits on the codes to A (or B) at 8000 Hz with no
+ *    analogue line (no codec's filter): a PCM client, such as a K56flex
+ *    one, that samples the codes as they are.
  *
  *    NET_RING=<country> (tones.h's names: USA, UK, GERMANY, ...):
  *    the call is put through as that country's exchange puts it.  The
@@ -431,6 +434,9 @@ static int frac_run(struct frac_rs *r, float x, float *out)
 
 struct dir {
 	int in, out, rate_in, rate_out;
+	int rbs_pad;            /* NET_RBS_TO: on the way to a modem at
+				   8000 Hz with no analogue line, the pad
+				   and the robbed bits all the same */
 	int to_codec;           /* to an analogue modem's codec: 8000 Hz to
 				   9600, or to 8000 with NET_ANALOG */
 	int from_codec;         /* from one, to the network's 8000 Hz */
@@ -1005,6 +1011,8 @@ int Net::run(struct dir *d, int a_out, int a_in)
 			echo_r++;
 		if (!d->to_codec && !d->from_codec) {
 			int s = line_sample(d, ibuf[i]);
+			if (d->rbs_pad && !d->codec)
+				s = digital(s, d->nin - 1);
 			if (loop_on && a_in) {
 				float v = loop_run((float)s);
 				d->lbuf[o] = v;
@@ -1180,7 +1188,12 @@ int main(int argc, char **argv)
 		fprintf(stderr, "netsim: NET_ANALOG needs NET=8000:8000\n");
 		return 1;
 	}
+	/* NET_RBS_TO=a or b: NET_PAD and NET_RBS on the codes to that
+	   modem at 8000 Hz, its line digital (no codec's filter): a
+	   PCM client that samples the codes as they are */
+	const char *rt = getenv("NET_RBS_TO");
 	for (k = 0; k < 2; k++) {
+		d[k].rbs_pad = rt && (k == (*rt == 'b' ? 0 : 1));
 		d[k].to_codec = d[k].rate_in == 8000 &&
 			(d[k].rate_out == 9600 || (analog && k == k_to));
 		d[k].from_codec = d[k].rate_out == 8000 &&

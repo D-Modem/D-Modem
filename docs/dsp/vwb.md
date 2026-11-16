@@ -1,37 +1,37 @@
 # V.wb: wideband on a bare pair
 
-A phone line only carries sound up to about 3.4 kHz, which is why
-dial-up modems top out around 56 kbit/s. A **bare pair** of copper wires
-(one you own between two buildings, an old alarm circuit, a dry pair
-rented from a phone company) has no such limit. **V.wb** is D-Modem's
-own mode for such a pair. It uses frequencies up to 36 kHz and reaches
-about 149000 bit/s each way.
+A phone line carries sound only up to about 3.4 kHz. Because of this, the
+maximum speed of dial-up modems is about 56 kbit/s. A **bare pair** of copper wires
+does not have this limit. Examples are a pair that you own between two buildings,
+an old alarm circuit, or a dry pair that you rent from a phone company. **V.wb** is
+the mode of D-Modem for such a pair. It uses frequencies up to 36 kHz and gets
+about 149000 bit/s in each direction.
 
-It needs D-Modem at both ends, and hardware that samples the line at
-48 kHz or more: the pico-serial WB stick (see
-[Softmodem hardware](../hardware.md)), or any sound codec that fast. It
-is not ADSL and does not connect to a phone company's equipment.
+V.wb must have D-Modem at the two ends. It must also have hardware that samples the line at
+48 kHz or more: the pico-serial WB stick (refer to
+[Softmodem hardware](../hardware.md)), or any sound codec with that speed. V.wb
+is not ADSL, and it does not connect to the equipment of a phone company.
 
-For the signal, the start-up and the measurements, see
+For the signal, the start-up and the measurements, refer to
 [the technical details](vwb-details.md).
 
 ## Using it
 
-At 48 kHz and above, V.wb is the only mode, and the line behaves like a
+At 48 kHz and more, V.wb is the only mode. The line operates as a
 [leased line](../leased.md): no dial tone, no ringing.
 
     AT&L1S0=1        at the answering end
     AT&L1            at the calling end, then ATD
 
-If the connection drops, the modems reconnect by themselves. Error
-correction and compression run on top, as on any other call.
+If the connection drops, the modems connect again automatically. Error
+correction and compression operate on top, as on all other calls.
 
 ## How it works
 
-The signal is split into many narrow tones, 187.5 Hz apart (the same
-idea as ADSL and Wi-Fi). At the start the modems measure how clean each
-tone is, then put more bits on clean tones and fewer on noisy ones. One
-direction uses the lower part of the band and the other the upper part.
+The signal is divided into many narrow tones, 187.5 Hz apart (this is the same
+principle as in ADSL and Wi-Fi). At the start, the modems measure the quality of each
+tone. Then they put more bits on clean tones and fewer bits on noisy tones. One
+direction uses the lower part of the band, and the other direction uses the upper part.
 
 ## Speeds in simulation
 
@@ -42,13 +42,13 @@ direction uses the lower part of the band and the other the upper part.
 | 3 km | about 100000 bit/s |
 | 5 km | about 70000 bit/s |
 
-These were measured on a simulated pair with noise, interference and a
-clock offset between the two ends, with no bit errors. A short cut of the
-line costs one retrain, and error correction resends what was lost. One
+We measured these speeds on a simulated pair, with noise, interference and a
+clock offset between the two ends. There were no bit errors. A short break of the
+line causes one retrain, and error correction sends the lost data again. One
 end uses about 1.5% of one processor core.
 
 ## Still to do
 
-- Moving bits between tones during a call as the noise changes.
+- Move bits between tones during a call, when the noise changes.
 - Trellis coding, for a little more speed.
 - A test on a real pair with real WB sticks.

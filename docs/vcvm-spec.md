@@ -5,17 +5,17 @@ that sends data through the speech path of a mobile phone call. The
 D-Modem Authors wrote it. ITU-T did not approve it, and "V.cvm" is only a
 working name.
 
-The proposal is in the form of an ITU-T Recommendation, so that it can go
+The proposal has the form of an ITU-T Recommendation, so that it can go
 to the ITU-T study group for the V series. Read it here:
 
 - [specs/v_cvm.pdf](specs/v_cvm.pdf): the proposal ("Draft new
   Recommendation ITU-T V.cvm", October 2026).
 - [cellular/v_cvm.tex](cellular/v_cvm.tex): its LaTeX source.
 
-This page tells you what the proposal says, in plain words. For a guide
-to each clause, annex and appendix, see
+This page tells you what the proposal says, in simple words. For a guide
+to each clause, annex and appendix, refer to
 [the technical details](vcvm-spec-details.md). For D-Modem's
-implementation of the proposal (`AT+MS=VCVM`), see
+implementation of the proposal (`AT+MS=VCVM`), refer to
 [V.cvm: data over mobile phone calls](dsp/vcvm.md).
 
 ## The problem
@@ -26,15 +26,15 @@ Mobile networks send speech through low bit rate speech codecs:
 - AMR-WB (ITU-T G.722.2), in wideband VoLTE.
 - EVS, in VoLTE and in 5G voice (VoNR).
 
-These codecs make a model of a voice. They do not keep the waveform. Thus
-the usual V-series modems do not work through them. Of V.21 to V.34, only
+These codecs make a model of a voice. They do not keep the waveform. Thus,
+the usual V-series modems do not operate through them. Of V.21 to V.34, only
 V.21 (300 bit/s) and V.22 (1200 bit/s) get through AMR. Mobile networks do
 not supply a circuit-switched data bearer now. If a phone call is the only
 path between two DCEs, the data must go through the codec.
 
 ## The solution
 
-The proposal uses the V series where the codec lets it work. It replaces
+The proposal uses the V series where the codec lets it operate. It replaces
 only the parts that the codec breaks:
 
 1. **Start-up.** The call starts as a V.8 session. The DCEs show their

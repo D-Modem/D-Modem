@@ -1,104 +1,103 @@
 # The Apple USB Modem: technical details
 
-This is the technical companion to [The Apple USB Modem](apple-usb-modem.md),
-the plain-English overview. Start there; this page keeps the full
-detail: the device's interfaces, its requests and notifications, and
-where each was found.
+This page gives the technical details for [The Apple USB Modem](apple-usb-modem.md),
+the plain-English overview. Read the overview first. This page keeps the full
+details: the interfaces of the device, its requests and notifications, and
+where we found each item.
 
-The Apple USB Modem (A1101, MA034Z/A) is USB `05ac:1401`. Apple's driver
-also takes `05ac:8220`, so dmodemd does too. Inside is Motorola's SM56
-USB soft modem: a USB controller with a Silicon Labs Si3056 DAA (data
-access arrangement, the part on the line) behind it. dmodemd drives it
+The Apple USB Modem (A1101, MA034Z/A) is USB `05ac:1401`. The driver of Apple
+also accepts `05ac:8220`. Thus, dmodemd also accepts it. Inside the device is the SM56
+USB soft modem of Motorola: a USB controller with a Silicon Labs Si3056 DAA (data
+access arrangement, the part on the line) behind it. dmodemd operates it
 in `frontend/dmodemd/usb_apple.cpp`, as the `UsbLine` kind `Apple`
 (`usb_line.h`).
 
 ## Sources
 
-Everything here was read from Apple's Mac OS X 10.4.11 drivers (the
-PowerPC combo update), whose symbols name their functions:
+We read all of this information from the Mac OS X 10.4.11 drivers of Apple (the
+PowerPC combo update). The symbols of these drivers give the names of their functions:
 
 - **AppleSM56KUSBModemFamily** 1.0.0b20: the line. `setHookState`,
   `write_DAA_Register`, `OR_DAA_Register`, `AND_DAA_Register`,
-  `XOR_DAA_Register`, `get_DAA_Register`, the interrupt pipe's
-  notifications.
+  `XOR_DAA_Register`, `get_DAA_Register`, the notifications of the interrupt pipe.
 - **AppleSM56KUSBAudio** 1.9.9 (with **SM56KUSBAudioFamily**): the
   samples. `AppleSM56KUSBAudioEngine::SetSampleRate`, the streaming
-  interfaces it takes.
-- **MotorolaSM56KUSB** 1.5.9 (in IOSerialFamily's plug-ins): the modem
-  itself, Motorola's. `si3056_HW_UpdateHookCtl`, `si3056_HW_ReadRegister`,
+  interfaces that it takes.
+- **MotorolaSM56KUSB** 1.5.9 (in the plug-ins of IOSerialFamily): the modem
+  itself, from Motorola. `si3056_HW_UpdateHookCtl`, `si3056_HW_ReadRegister`,
   `si3056_HW_WriteRegister`, its country table.
 
-The code is D-Modem's own; only the protocol comes from them.
+The code is the code of D-Modem. Only the protocol comes from these drivers.
 
 ## Interfaces
 
 | # | Class | What it is |
 |---|---|---|
 | 0 | CDC (2), Direct Line Control (3) | the hook; an interrupt IN endpoint of notifications |
-| 1 | vendor (0xff), subclass 2 | the DAA's commands |
+| 1 | vendor (0xff), subclass 2 | the commands of the DAA |
 | 2 | audio (1), control (1) | audio control |
 | 3 | audio, streaming (2) | samples IN (endpoint 0x82, 24 octets), in alternate setting 1 |
 | 4 | audio, streaming | samples OUT (endpoint 0x03, 24 octets), in alternate setting 1 |
 | 5 | application (0xfe), DFU (1) | firmware update; not used |
 
-dmodemd finds each by its class (falling back on these numbers), and
-claims all but 5. On Linux, `snd-usb-audio` binds interfaces 2 to 4;
-libusb's auto-detach takes them while dmodemd runs.
+dmodemd finds each interface by its class (if this fails, it uses these numbers). It
+claims all interfaces except 5. On Linux, `snd-usb-audio` binds interfaces 2 to 4.
+While dmodemd runs, the auto-detach of libusb takes them.
 
 ## Samples
 
-Standard USB audio (class 1). Each streaming interface's alternate
-setting 1 has an isochronous endpoint and a format type I descriptor
-listing its rates. dmodemd takes an alternate setting of 16-bit mono
-samples (2 octets each) that has the `-r` rate, and refuses otherwise,
-saying what the device has. The rate is set on each endpoint with the
-audio class's `SET_CUR` (`bmRequestType` 0x22, `bRequest` 1, `wValue`
+The samples use standard USB audio (class 1). Alternate setting 1 of each streaming interface
+has an isochronous endpoint and a format type I descriptor that gives
+its rates. dmodemd uses an alternate setting of 16-bit mono
+samples (2 octets each) that has the `-r` rate. If there is no such setting, dmodemd refuses,
+and tells what the device has. dmodemd sets the rate on each endpoint with the
+`SET_CUR` of the audio class (`bmRequestType` 0x22, `bRequest` 1, `wValue`
 0x0100 `SAMPLING_FREQ_CONTROL`, `wIndex` the endpoint, 3 octets).
 
-The streams run both ways from the start, as the pico-serial Line
-stick's: an OUT transfer goes when an IN one is done, with its packets'
-lengths. The device's own buffering is not known; dmodemd allows 2 ms
-each way.
+The streams run in the two directions from the start, as on the pico-serial Line
+stick. An OUT transfer goes when an IN transfer is complete, with the lengths of its packets.
+We do not know the buffering of the device. dmodemd permits 2 ms
+in each direction.
 
 ## The line (interface 0)
 
 - **Hook:** `SET_HOOK_STATE` (`bmRequestType` 0x21, `bRequest` 0x11,
   `wValue` 1 off hook, 0 on hook), as `si3056_HW_UpdateHookCtl` sends it.
   Pulse dialling and the hook flash break and make it. If the device
-  stalls it, dmodemd hooks with the Si3056's own bit instead, register
-  5's OH (0x01), from then on: Apple's `testInterface` hooks both ways,
+  stalls it, dmodemd uses the bit of the Si3056 itself for the hook from that time:
+  the OH (0x01) of register 5. The `testInterface` of Apple uses the two methods:
   `setHookState` and then `write_DAA_Register(5, 1)` and `(5, 0)`.
-- **Notifications** on the interrupt endpoint, CDC's 8-octet header
+- **Notifications** on the interrupt endpoint, with the 8-octet header of CDC
   (`wValue` little-endian at octets 2 and 3):
-  - 0x02, `wValue` bit 0: a DAA command's response is ready.
-  - 0x09: the ring. A real one sends it every 40 ms while the line
-    rings (2 s on, 4 s off on a US line), with `wValue` 0, and once at
-    start-up. Apple's `intReadComplete` passes it to its client as
-    message 9. dmodemd takes it as ringing at the second within 150 ms
-    (so not the lone one at start-up), and as ended when none has come
-    for 150 ms. It turns a ring into the core's ring pulses: one at each
-    change and one every 50 ms while it rings (the core counts 4 pulses
-    in 150 ms as a ring). A ring that has not ended after 4 s is
-    dropped.
-  - 0x03 `RING_DETECT`: the ring detector's level. A real one sends it
-    every millisecond on hook, `wValue` bit 15 set and a small level in
-    the low octet (`0x8007` to `0x800b`, now and then up to `0x801e`),
-    ringing or not. Apple's `intReadComplete` keeps its low octet apart
-    by bit 15. dmodemd traces one report in 1000 and doesn't use it.
-  - 0x29: the phone cord, `wValue` 4 unplugged, 5 plugged in. dmodemd
+  - 0x02, `wValue` bit 0: the response of a DAA command is ready.
+  - 0x09: the ring. A real device sends it each 40 ms while the line
+    rings (2 s on, 4 s off on a US line), with `wValue` 0. It also sends it one time at
+    start-up. The `intReadComplete` of Apple sends it to its client as
+    message 9. dmodemd accepts it as a ring at the second notification in 150 ms
+    (thus, not the single notification at start-up). It accepts the ring as stopped when no notification
+    came for 150 ms. It changes a ring into the ring pulses of the core: one at each
+    change and one each 50 ms while it rings (the core counts 4 pulses
+    in 150 ms as a ring). If a ring does not stop after 4 s, dmodemd
+    ignores it.
+  - 0x03 `RING_DETECT`: the level of the ring detector. A real device sends it
+    each millisecond on hook, with `wValue` bit 15 set and a small level in
+    the low octet (`0x8007` to `0x800b`, sometimes up to `0x801e`).
+    It sends it also when the line does not ring. The `intReadComplete` of Apple
+    keeps its low octet separate by bit 15. dmodemd traces one report in 1000 and does not use it.
+  - 0x29: the phone cord, `wValue` 4 disconnected, 5 connected. dmodemd
     logs it.
-  - 0x08, 0x09, 0x28: call and line states, and a vendor one. Traced at
-    `-d3`, not used.
+  - 0x08, 0x09, 0x28: call and line states, and a vendor state. dmodemd traces them at
+    `-d3`, and does not use them.
 
-Apple's driver also has `SEND_PULSE` (0x13), `SET_PULSE_TIME` (0x14) and
+The driver of Apple also has `SEND_PULSE` (0x13), `SET_PULSE_TIME` (0x14) and
 the country as `SET_COMM_FEATURE` (`wValue` 2, `wIndex` 1, 2 octets).
-dmodemd does not use them: it dials pulses with the hook, and writes the
-country's registers itself.
+dmodemd does not use them. It dials pulses with the hook, and writes the
+registers of the country itself.
 
 ## The DAA (interface 1)
 
-The Si3056's registers are reached with CDC's
-`SEND_ENCAPSULATED_COMMAND` (`bmRequestType` 0x21, `bRequest` 0, `wIndex`
+dmodemd gets access to the registers of the Si3056 with the
+`SEND_ENCAPSULATED_COMMAND` of CDC (`bmRequestType` 0x21, `bRequest` 0, `wIndex`
 1) of 3 octets: command, register, value.
 
 | Command | What it does |
@@ -111,73 +110,73 @@ The Si3056's registers are reached with CDC's
 | 0x40 | reset the DAA |
 | 0xd0 | firmware version |
 
-The device's own controller runs the Si3056's serial link (its PLL and
-rate). dmodemd only does the line side's part, as Motorola's driver
+The controller of the device operates the serial link of the Si3056 (its PLL and
+rate). dmodemd does only the part of the line side, as the driver of Motorola
 does:
 
-1. Register 11 (revision): the line side's ID in its top bits, 1 a
-   Si3018, 3 a Si3019 (whose AC termination is register 30).
-2. Register 6 to 0: the line side powered up.
-3. Register 12 polled for FDT (0x40): the isolation link is up. If it
-   never comes, dmodemd says so and goes on.
-4. On hook, and the on-hook line monitor on (register 5's ONHM, 0x08),
-   so caller ID comes in the samples. Off hook it is turned off.
-5. The country's registers (16, 26, 30 on a Si3019, 31, 59) read, then
-   written with the country's values (`si3056.cpp`, the datasheet's
-   Table 15), at start and on `AT+GCI`.
+1. Register 11 (revision): the ID of the line side in its top bits. 1 is a
+   Si3018, 3 is a Si3019 (whose AC termination is register 30).
+2. Register 6 to 0: the line side gets power.
+3. dmodemd polls register 12 for FDT (0x40): the isolation link is up. If it
+   does not come, dmodemd tells this and continues.
+4. On hook, and the on-hook line monitor enabled (the ONHM of register 5, 0x08).
+   Thus, caller ID comes in the samples. Off hook, the monitor is disabled.
+5. dmodemd reads the registers of the country (16, 26, 30 on a Si3019, 31, 59), then
+   writes them with the values of the country (`si3056.cpp`, Table 15 of the
+   datasheet), at the start and on `AT+GCI`.
 
-On close: on hook, the monitor off, alternate settings 0, the
+On close: on hook, the monitor disabled, alternate settings 0, the
 interfaces released.
 
 ## A real one
 
-The first real device tried (November 2026, on Android) listed 16-bit
-mono at 7200, 8000, 8229, 8400, 9000, 9600 and 10286 Hz on both
+We tried the first real device in November 2026, on Android. It gave 16-bit
+mono at 7200, 8000, 8229, 8400, 9000, 9600 and 10286 Hz on the two
 streams, and a Si3056 revision 4 with a Si3018 line side. Its first
-register read worked; the second's notification overflowed a 16-octet
-read, and SET_HOOK_STATE then stalled. dmodemd now reads the
-interrupt endpoint a whole packet at a time, as Apple's driver does
-(`intReadComplete` takes the pipe's maximum packet size), and fetches a
-read's response even when its notification was lost, since a response
-left unread may hold up the device's other requests.
+register read operated. The notification of the second register read caused an overflow of a 16-octet
+read, and then SET_HOOK_STATE stalled. Now, dmodemd reads the
+interrupt endpoint one full packet at a time, as the driver of Apple does
+(`intReadComplete` uses the maximum packet size of the pipe). It also gets the response of a
+read when the notification was lost, because a response
+that is not read can stop the other requests of the device.
 
-With that, the register reads all worked (its interrupt endpoint's
-packets are 11 octets), and SET_HOOK_STATE (on hook, at start) still
-stalled. So dmodemd hooks with register 5's OH when it does
-(`FAKE_APPLE_HOOK_STALL` has the fake stall it too). Whether the
-device takes the request off hook, or never, is not known yet.
+With that change, all the register reads operated (the packets of its interrupt endpoint
+are 11 octets), but SET_HOOK_STATE (on hook, at the start) still
+stalled. Thus, when it stalls, dmodemd uses the OH of register 5 for the hook
+(`FAKE_APPLE_HOOK_STALL` makes the fake device stall it too). We do not know yet if the
+device accepts the request off hook, or never.
 
-The next try started, but the modem gave phantom calls: dmodemd had
-read `RING_DETECT`'s bit 15 as "ringing", and it is set all the time.
-A log of a real incoming call then showed the ring itself: notification
-0x09 every 40 ms during each 2 s ring, nothing between rings, and
-`RING_DETECT` unchanged throughout. That call, answered with `ATA`,
-connected at V.34 33600 bit/s both ways. Off hook, register 5's OH
-works.
+The next try started, but the modem gave phantom calls. dmodemd had
+read bit 15 of `RING_DETECT` as "ringing", but this bit is always set.
+Then a log of a real incoming call showed the ring itself:
+notification 0x09 each 40 ms during each 2 s ring, nothing between rings, and
+no change in `RING_DETECT`. We answered that call with `ATA`. It
+connected at V.34 33600 bit/s in the two directions. Off hook, the OH of register 5
+operates.
 
 ## Not yet known
 
-- Whether caller ID comes through (the first call's log had no
-  number; it may need the line monitor's timing after the first ring).
-- The LEDs' bits.
+- If caller ID comes through (the log of the first call had no
+  number; possibly it must have the timing of the line monitor after the first ring).
+- The bits of the LEDs.
 
 ## Testing without hardware
 
-`frontend/dmodemd/test/apple_test.py` (ctest's `dmodemd_apple`, label
+`frontend/dmodemd/test/apple_test.py` (the `dmodemd_apple` test of ctest, label
 `alsa`) runs two dmodemd on fake Apple USB Modems on the simulated
-exchange. `frontend/dmodemd/test/fake_apple.cpp` is one (05ac:1401): its six
-interfaces and their descriptors, the DAA's commands on registers (ONHM
-the exchange's monitor switch), `SET_HOOK_STATE` the exchange's hook,
-`SET_CUR` the rate, the ring's and the ring detector's notifications and the phone
-cord's. The test checks:
+exchange. `frontend/dmodemd/test/fake_apple.cpp` is one fake device (05ac:1401). It has
+these items: its six interfaces and their descriptors, the commands of the DAA on registers (ONHM
+is the monitor switch of the exchange), `SET_HOOK_STATE` as the hook of the exchange,
+`SET_CUR` as the rate, and the notifications of the ring, the ring detector and the phone
+cord. The test checks these items:
 
-- a line side that does not answer (said, and dmodemd goes on), the
-  interfaces found, the phone cord plugged in;
-- a rate the modem has not (refused, its rates said);
-- the country's registers written: `-c UK` and `AT+GCI=09`;
-- no ring while nobody calls (the ring detector's steady reports, the
-  lone ring notification at the start);
+- a line side that does not answer (dmodemd tells this, and continues), the
+  interfaces found, the phone cord connected;
+- a rate that the modem does not have (refused, with the rates that it has);
+- the registers of the country written: `-c UK` and `AT+GCI=09`;
+- no ring while nobody calls (the steady reports of the ring detector, the
+  single ring notification at the start);
 - a data call (rings, caller ID, the answer at the second ring, CONNECT
-  at both ends, text each way), a busy line, a call dialled in pulses
+  at the two ends, text in each direction), a busy line, a call dialled in pulses
   and a voice call;
-- that both exit once the exchange has gone.
+- that the two dmodemd stop after the exchange has stopped.
