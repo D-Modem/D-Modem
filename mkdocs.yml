@@ -51,6 +51,7 @@ nav:
     - Modem relay (V.150.1): v150.md
     - The V.cvm proposal: vcvm-spec.md
     - Leased lines and dry pairs: leased.md
+    - ZyXEL security and call back: zyxel-security.md
   - Phone systems:
     - Modules: modules.md
     - "Asterisk: app_dmodem": asterisk.md

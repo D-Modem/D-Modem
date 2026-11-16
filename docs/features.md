@@ -24,6 +24,7 @@ The modem has these functions:
   - T.44 mixed raster content pages.
   - T.434 binary files.
 - Call progress, caller ID and voice. The voice formats include ZyXEL's ADPCM of 2, 3 and 4 bits at 9600 samples a second (`AT+VSM=134` to `136`, [docs/dsp/zyxel-adpcm.md](dsp/zyxel-adpcm.md)).
+- ZyXEL's type 2 security: a password from the caller before the data passes, and a call back (`AT*G3` to `AT*G5`, [docs/zyxel-security.md](zyxel-security.md)).
 
 ## PCM modes
 

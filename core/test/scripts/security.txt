@@ -1,0 +1,81 @@
+# ZyXEL's type 2 security (AT*G3 to AT*G5, zyxel_sec.h): B answers and
+# asks A's side for a password; the call back
+B ATE0X3+MS=132*G3*H0="abc"*H1="Secret"&Z1="5551234"\r
+B AT*V\r
+B AT*G1\r
+B AT*H0=123456789\r
+A ATE0X3+MS=132\r
+# *G3: a wrong password, then the right one; then the data passes
+B ATA\r
+A ATD\r
+until A PassWord: 30000
+A xyz\r
+until A PassWord: 3000
+A Secret\r
+until A Correct\r\n 3000
+send A 300
+send B 300
+run 3000
+A +++
+run 1200
+A ATH\r
+until B NO CARRIER 10000
+until A OK 5000
+run 500
+# three wrong passwords: B hangs up
+B ATA\r
+A ATD\r
+until A PassWord: 30000
+A one\r
+until A PassWord: 3000
+A two\r
+until A PassWord: 3000
+A three\r
+until A NO CARRIER 10000
+until B NO CARRIER 5000
+B ATI6\r
+run 500
+# *G4: the call back to slot 1's stored number
+B AT*G4\r
+B ATA\r
+A ATD\r
+until A PassWord: 30000
+A Secret\r
+until A NO CARRIER 10000
+until B NO CARRIER 5000
+A ATA\r
+until B CONNECT 30000
+until A CONNECT 1000
+state
+B +++
+run 1200
+B ATH\r
+until A NO CARRIER 10000
+run 500
+# *G5: A's side gives the number (S5 erases a character)
+B AT*G5\r
+B ATA\r
+A ATD\r
+until A PassWord: 30000
+A abc\r
+until A number: 3000
+A 5559\x0888\r
+until A NO CARRIER 10000
+until B NO CARRIER 5000
+A ATA\r
+until B CONNECT 30000
+until A CONNECT 1000
+state
+B +++
+run 1200
+B ATH\r
+until A NO CARRIER 10000
+run 500
+# a supervisory password guards the table
+B AT*HS=boss\r
+B AT*V\r
+B AT*V=boss\r
+B AT*H2=pw\r
+B AT*H2=boss,pw\r
+B AT*H1\r
+B ATDS9\r
