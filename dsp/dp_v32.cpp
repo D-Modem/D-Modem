@@ -15,11 +15,11 @@
  *    ZyXEL's ZyX modes (DP_ZYX, docs/dsp/zyxel.md) are V.32bis after AA,
  *    AC and CC at 2400 x 8/7 = 2742.857 baud: ZyX 19200 7 bits a symbol
  *    through the trellis code, ZyX 16800 to 7200 an 8 symbol frame with
- *    a ring table (zyx.h).  ZyXEL's own detection of the peer, its
- *    carrier and its scrambler at the new rate are not known (they are in
- *    the mask ROM of its DSPs): D-Modem's ZyX takes the peer as a ZyX
- *    modem, keeps the 1800 Hz carrier and V.32bis's scramblers.  Thus it
- *    connects D-Modem to D-Modem, and not yet to a ZyXEL.
+ *    a ring table (zyx.h), on a 12800/7 = 1828.571 Hz carrier (traced in
+ *    the Elite 2864I's ZyX DSP program).  ZyXEL's own detection of the
+ *    peer and its scrambler at the new rate are not known yet: D-Modem's
+ *    ZyX takes the peer as a ZyX modem and keeps V.32bis's scramblers.
+ *    Thus it connects D-Modem to D-Modem, and not yet to a ZyXEL.
  *
  *    Start up sequence (as sent by the original library):
  *
@@ -71,6 +71,10 @@ namespace dsp {
    0x4924 / 0x4000), its roll off a guess that keeps the band in the
    telephone channel's */
 #define ZYX_BAUD        (2400.0f * 8 / 7)
+/* its carrier, 2/3 of its symbol rate (240 degrees a symbol, the high
+   carrier of V.34 at 2743 baud): the Elite 2864I's ZyX DSP program
+   (docs/dsp/zyxel-details.md) */
+#define ZYX_CARRIER     (12800.0f / 7)
 #define ZYX_ALPHA       0.20f
 #define ZYX_SPAN        8
 #define V32_ALPHA       0.25f
@@ -335,6 +339,11 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	s16 nrates() const { return zyx ? ZYX_NRATES : V32_NRATES; }
 	const struct v32_rate *rate_of_word(u16 w) const;
 	void set_baud(float b);
+	/* the carrier at the symbol rate now: 1800 Hz, ZyX's at
+	   ZYX_BAUD */
+	float line_carrier() const {
+		return baud == V32_BAUD ? 1800.0f : ZYX_CARRIER;
+	}
 	void zyx_frame(u32 *scr, s16 tap, const struct v32_rate *r, bool ones,
 		       s16 *q);
 
@@ -421,11 +430,11 @@ void V32Pump::set_baud(float b)
 	baud = b;
 	bool z = b != V32_BAUD;
 	float t = tx.t;
-	tx.init(srate, 1800, b, z ? ZYX_ALPHA : V32_ALPHA,
+	tx.init(srate, line_carrier(), b, z ? ZYX_ALPHA : V32_ALPHA,
 		z ? ZYX_SPAN : V32_SPAN, sqrtf(V32_POWER), V32_TX_AMPLITUDE);
 	tx.t = t;
 	rx.release();
-	rx.init(srate, 1800, b, z ? ZYX_ALPHA : V32_ALPHA,
+	rx.init(srate, line_carrier(), b, z ? ZYX_ALPHA : V32_ALPHA,
 		z ? ZYX_SPAN : V32_SPAN, V32_EQ_LEN, V32_POWER);
 	DSP_DBG("v32: %.3f baud\n", b);
 }
@@ -1045,8 +1054,10 @@ static const float v32_min_snr[] = { 29.5f, 26.5f, 25, 22, 19, 16, 0 };
    rate clean from about 1.5 dB under these estimates (16800 from about
    0.5 dB under: its errors come in frames), the framed rates
    (the ring table's shaping) about 3 dB better than V.32bis's of the
-   same bits a symbol */
-static const float zyx_min_snr[] = { 27.5f, 27, 23, 19.5f, 18, 0 };
+   same bits a symbol.  On the 1828.571 Hz carrier the estimate is
+   about 1 dB lower than on 1800 Hz (19200 and 16800 down by 1 dB:
+   from 27 to 32 dB of line SNR the rate chosen has no errors) */
+static const float zyx_min_snr[] = { 26.5f, 26, 23, 19.5f, 18, 0 };
 
 /* the data mse (of V32_POWER) past which a receiver at rate r has
    lost its equalization (rate_lost_limit()) */
@@ -1464,7 +1475,7 @@ s16 V32Pump::handshake()
 		else if (count % ms2samples(100, srate) == 0 &&
 			 rx.power > 0.5f * data_power) {
 			stat_snr(-10 * log10f(rx_mse + 1e-6f));
-			stat_line(baud, 1800, baud, 1800);
+			stat_line(baud, line_carrier(), baud, line_carrier());
 			stat_freq_offset(rx.dtheta, baud);
 			stat_timing_offset(rx.t_adj, rx.sps);
 		}

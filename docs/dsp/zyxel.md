@@ -1,7 +1,7 @@
 # ZyXEL 16800 and 19200
 
 **Status: D-Modem to D-Modem only.** D-Modem has the ZyX modes
-(`AT+MS=ZYX`). Three parts of the signal are not known yet (refer to
+(`AT+MS=ZYX`). Two parts of the signal are not known yet (refer to
 [What is not known yet](#what-is-not-known-yet)). Thus, D-Modem uses
 best guesses for them. Two D-Modems connect with ZyX. A real ZyXEL modem
 probably does not connect yet. This page and
@@ -70,13 +70,15 @@ the gain of the ring table (shell mapping).
 
 ## What is not known yet
 
-- The carrier frequency at 2742.857 baud. D-Modem uses 1800 Hz.
 - The signal that each modem uses to find a ZyXEL peer. D-Modem sends
   no signal for this.
 - The scrambler. D-Modem uses the scrambler of V.32bis.
 
-The code of these parts is in the mask ROM of the DSPs of the ZyXEL
-modems. It is not in the EPROMs of the U-1496S or of the Elite 2864I. A
+The carrier at 2742.857 baud is now known: 1828.571 Hz, from the ZyX DSP
+program in the Elite 2864I V.90 images. The same images have the
+detector of a ZyXEL peer and give a probable signal for it. They show
+that the scrambler is in the serial hardware, thus probably the V.32
+scrambler that D-Modem uses. These two are not proven yet. A
 recording of a call between two ZyXEL modems can give these parts. For
 the evidence and the full list, refer to
 [the technical details](zyxel-details.md).
