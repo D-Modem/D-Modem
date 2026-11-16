@@ -22,7 +22,7 @@ D-Modem makes sure that this station is the modem that answered the call.
 
 | | Answerer (initiating) | Caller (responding) |
 |---|---|---|
-| 1 | 400 ms of silence (10.2.2), then MRe at 12 dB below the level of the messages (7.1.4) | Call progress hears MRe (or CRe, MRd, CRd) and gives the call to `DP_V8BIS` |
+| 1 | 400 ms of silence (10.2.2), then MRe at -22 dBm0 (7.1.4: 12 to 15 dB below the nominal permitted level of -9 to -10 dBm0) | Call progress hears MRe (or CRe, MRd, CRd) and gives the call to `DP_V8BIS` |
 | 2 | | After 100 ms, CRd (the responding pair, at the level of the messages) |
 | 3 | On CRd: CL (its I field: the V.8 start-up; S field: data, with V.42, V.42 bis, V.34, V.32 bis, V.32, V.22 bis, V.22 and V.21) | |
 | 4 | | On CL: MS with the data mode, the best modulation that the two stations have, V.42 and V.42 bis where the two stations have them, the V.8 start-up if the CL has it, and "transmit ACK(1)" |
@@ -66,6 +66,42 @@ selects it when the two stations have what V.70 must have. The details are in
 V.61. An MS with V.61 starts the start-up of V.61 at the two ends, instead of
 V.8 ([v61-details.md](v61-details.md#v8-bis)).
 
+## Levels
+
+| Signal | Level | Constant |
+|---|---|---|
+| MRe, CRe | -22 dBm0 (the two tones of segment 1 have half of the power each) | `AMP_E` in `dsp/v8bis.h` |
+| MRd, CRd, ESi, ESr, the messages | Approximately -14.5 dBm0 (the level of V.8) | `AMP_MSG` in `dsp/v8bis.h` |
+
+Clause 7.1.4 sets the level of MRe and CRe 12 to 15 dB below the
+nominal permitted level, not below the level of the modem. The nominal
+permitted level is -9 to -10 dBm0 (V.2). Thus, the correct range is
+-21 to -25 dBm0. Before, MRe was 12 dB below the level of the messages,
+at -26.5 dBm0. That is below the range, and a line with loss can make
+it too weak for a caller. The K56flex server (`dsp/v34_k56.h`) sends
+its MRe at the level of the SM56 tests (approximately -17.5 dBm0), and
+this change does not touch it.
+
+## Against other modems
+
+| Modem | Answer to our MRe |
+|---|---|
+| D-Modem | CRd, then transaction 10 |
+| SM56 (Motorola), as a K56flex client | CRd, then transaction 10 ([k56flex-details.md](k56flex-details.md)) |
+| Conexant HSF (hsfmodem 7.80), V.90 or V.92 | No answer |
+
+**Conexant modems.** The HSF modem of Conexant does not answer MRe,
+MRd, CRe or CRd. It is silent until our ANSam. Then it connects with
+V.90. Its `+A8E?` gives `1,1,C1,1`: V.8 bis is enabled. But it has no
+K56flex (`+MS=?` has no `K56`) and no V.70. Its configuration has V.8
+bis together with K56flex and V.70. Thus, it possibly answers V.8 bis
+only when it can offer one of these modes. The tests
+`hsf_v8bis_mre_unanswered` and `hsf_k56flex_mre_unanswered` (label
+`hsf`) show this behaviour. Other Conexant modems of the V.92 period (HSF,
+HDA and HCF) possibly operate in the same way. With these modems,
+V.8 bis and K56flex do not occur. The call continues with V.8, 3.5 s
+later than without V.8 bis.
+
 ## `+A8E`
 
 `+A8E=<v8o>,<v8a>,<v8cf>,<v8b>` (V.251 5.1). The modem keeps it with the other
@@ -89,7 +125,7 @@ caller without V.8 bis wait about 3.5 s more. These values give `ERROR`:
 
 | Test | What it covers |
 |---|---|
-| `V8bis.*` (`dsp/test/v8bis_test.cpp`, label `quick`) | An MS compared with its octets written manually; ACK and NAK; a CL with an H.324 mode (SPar(2) and NPar(3)), parsed past and cut short at all positions; each signal through the detector from its station at the two levels, and not through the pair of the other station; ESi with a subsequent CL; CL then MS on each channel; a changed bit that the FCS finds |
+| `V8bis.*` (`dsp/test/v8bis_test.cpp`, label `quick`) | The level of MRe (-21 to -25 dBm0); an MS compared with its octets written manually; ACK and NAK; a CL with an H.324 mode (SPar(2) and NPar(3)), parsed past and cut short at all positions; each signal through the detector from its station at the two levels and at the level of MRe less 12 dB, and not through the pair of the other station; ESi with a subsequent CL; CL then MS on each channel; a changed bit that the FCS finds |
 | `Core.A8e`, `Core.V8bis*` (`core/test/core_test.cpp`, label `quick`) | The values and ranges of `+A8E`. Two modems back to back with V.8 bis at the two ends (MRe, CRd, CL, MS, ACK(1), then V.8 and the fastest modulation), at the answerer only (no answer to MRe, then V.8), and at the caller only (no V.8 bis) |
 
 ## Not done

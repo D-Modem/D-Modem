@@ -843,7 +843,11 @@ Other HSF tests:
 - our echo canceller against the echo of our signal from the hybrid of
   its line, in V.90 and V.92 (`hsf_v90_echo`, `hsf_v92_echo`);
 - our fast parameter exchange, which it does not have (no RM to our Rf).
-  Thus, we renegotiate (`hsf_v92_fpe`).
+  Thus, we renegotiate (`hsf_v92_fpe`);
+- our answer with V.8bis (`+A8E`) and with K56flex (`+MS=56`). It does
+  not answer our MRe, and it connects with V.90 after our ANSam
+  (`hsf_v8bis_mre_unanswered`, `hsf_k56flex_mre_unanswered`; refer to
+  [v8bis-details.md](dsp/v8bis-details.md#against-other-modems)).
 
 **V.90's CJ.** V.90 with it as the analogue modem connects at
 52000/33600 over µ-law and A-law. At first, it failed: we waited for its
