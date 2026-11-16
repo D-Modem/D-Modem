@@ -6,8 +6,9 @@
  *                   (DP_V8BIS), before V.8 (9.9.1/V.8 bis)
  *
  *    The answering modem is the initiating station (9.3, 10.2.2): after
- *    400 ms of silence it sends MRe (at 12 dB under the messages' level,
- *    7.1.4) and listens for 3 s for the calling modem's answer:
+ *    400 ms of silence it sends MRe (at -22 dBm0, 12 to 15 dB under the
+ *    nominal permitted power, 7.1.4) and listens for 3 s for the calling
+ *    modem's answer:
  *
  *        ESr MS          transaction 1: ACK(1) back when MS asks for it
  *                        (NAK(3) for a mode we have not got)
@@ -73,9 +74,8 @@ public:
 	/* its name in the log */
 	const char *tag() const { return "v8bis"; }
 
-	/* the messages' level (V.8's), MRe's and CRe's 12 dB under it */
-	static constexpr float AMP = 4225.0f;
-	static constexpr float AMP_E = AMP / 4;
+	/* the messages' level (V.8's); MRe's and CRe's is AMP_E (v8bis.h) */
+	static constexpr float AMP = AMP_MSG;
 
 	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
 		  s32 max_frag);

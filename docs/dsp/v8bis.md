@@ -57,5 +57,9 @@ two seconds more to start. This is the time of the exchange.
   selection first). Such a caller gets the normal start-up without V.8bis.
 - D-Modem does not have the commands of V.251 that let a terminal do V.8bis itself (`+A8M`,
   the `+A8x` reports).
-- We tested it between two D-Modems. We did not test it yet against a V.8bis modem
-  from a different manufacturer.
+- We tested it between two D-Modems, and against the SM56 modem of Motorola as a
+  K56flex client.
+- Conexant modems of the V.92 period (HSF, HDA, HCF) possibly do not answer
+  V.8bis. They have V.8bis only for K56flex and V.70, which they do not have.
+  With these modems, the call continues with the normal answer tone. Refer to
+  [the technical details](v8bis-details.md#against-other-modems).
