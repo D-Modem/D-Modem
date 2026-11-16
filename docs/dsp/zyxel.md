@@ -1,9 +1,12 @@
 # ZyXEL 16800 and 19200
 
-**Status: write-up only.** D-Modem does not have this protocol yet. This
-page and [the technical details](zyxel-details.md) record what we found
-in the firmware of a ZyXEL U-1496S. We will use them to make the
-protocol.
+**Status: D-Modem to D-Modem only.** D-Modem has the ZyX modes
+(`AT+MS=ZYX`). Three parts of the signal are not known yet (refer to
+[What is not known yet](#what-is-not-known-yet)). Thus, D-Modem uses
+best guesses for them. Two D-Modems connect with ZyX. A real ZyXEL modem
+probably does not connect yet. This page and
+[the technical details](zyxel-details.md) record what we found in the
+firmware of a ZyXEL U-1496S.
 
 ## What it is
 
@@ -33,11 +36,47 @@ ZyXEL did not publish the protocol. The firmware of the U-1496S (version
   standardized the same method.
 - The trellis code is the 8 state code of V.32bis, without changes.
 
+## How to use it
+
+    AT+MS=ZYX        (or AT+MS=234)
+
+Use this command on the two ends. The two modems do the start-up of
+V.32bis at 2400 baud until the round trip delay is measured. Then they
+change to 2742.857 baud and continue with the training and the rate
+signals. The two ends agree on the fastest speed that the two can use.
+The result code and the call statistics show the speed (ZyX 7200 to
+ZyX 19200).
+
+D-Modem does not detect a ZyXEL peer. With `AT+MS=ZYX`, it always uses
+the ZyX modes. This is the same as `AT&N34` to `AT&N39` on a ZyXEL, which
+also connect only to a ZyXEL.
+
+## Speeds in simulation
+
+Two D-Modems back to back on a simulated telephone line (`pump_test`):
+
+| Line's signal to noise | Speed |
+|---|---|
+| about 31 dB and more | ZyX 19200 |
+| about 28 to 30 dB | ZyX 16800 |
+| about 24 to 27 dB | ZyX 14400 |
+| about 20 to 23 dB | ZyX 12000 |
+| about 17 to 19 dB | ZyX 9600 |
+| less | ZyX 7200 |
+
+ZyX 16800 to ZyX 7200 need about 3 dB less signal to noise than the
+speeds of V.32bis with the same number of bits in each symbol. This is
+the gain of the ring table (shell mapping).
+
 ## What is not known yet
 
-- The carrier frequency at 2742.857 baud.
-- The signal that each modem uses to find a ZyXEL peer.
-- The scrambler (we think that it is the scrambler of V.32bis).
+- The carrier frequency at 2742.857 baud. D-Modem uses 1800 Hz.
+- The signal that each modem uses to find a ZyXEL peer. D-Modem sends
+  no signal for this.
+- The scrambler. D-Modem uses the scrambler of V.32bis.
 
-For the evidence and the full list, refer to
+The code of these parts is in the mask ROM of the DSPs of the ZyXEL
+modems. It is not in the EPROMs of the U-1496S or of the Elite 2864I. A
+recording of a call between two ZyXEL modems can give these parts. For
+the evidence and the full list, refer to
 [the technical details](zyxel-details.md).

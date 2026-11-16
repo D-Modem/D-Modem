@@ -1835,7 +1835,7 @@ bool Modem::link_req(s32 what)
 	    stats_.dp == DP_V91 ||
 	    (id != DP_V8 && id != DP_V34 && id != DP_V90 && id != DP_V92 &&
 	     id != DP_K56 && id != DP_X2 && id != DP_V32 &&
-	     id != DP_V32BIS && id != DP_V32TERBO)) {
+	     id != DP_V32BIS && id != DP_V32TERBO && id != DP_ZYX)) {
 		logf("%s asked: not with this modulation\n", n);
 		return false;
 	}
