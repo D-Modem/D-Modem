@@ -143,7 +143,7 @@ const struct {
 } taken_cmds[] = {
 	{ "B", "0-3,15,16" }, { "C", "1" }, { "F", "1" }, { "W", "0-2" },
 	{ "&B", "0-2" }, { "&G", "0-2" }, { "&I", "0-5" }, { "&J", "0-1" },
-	{ "&K", "4-6" }, { "&M", "0,4,5" }, { "&N", "0-14" }, { "&W", "0-1" },
+	{ "&K", "4-6" }, { "&M", "0,4,5" }, { "&N", "0-14,32" }, { "&W", "0-1" },
 	{ "&Y", "0-1" }, { "\\G", "0-1" }, { "\\J", "0-1" }, { "\\K", "0-5" },
 	{ "\\Q", "0-3" }, { "\\R", "0-1" }, { "\\T", "0-255" },
 	{ "-C", "0-1" },
@@ -1680,6 +1680,8 @@ std::string Modem::fclass() const
 {
 	if (mode_ == MODEM_MODE_FAX && fax_class_ == 10)
 		return "1.0";
+	if (mode_ == MODEM_MODE_FAX && fax_class_ == 6)
+		return "6";
 	if (mode_ == MODEM_MODE_FAX && fax2_class())
 		return fax_class_ == 2 ? "2" : "2.0";
 	return dec(static_cast<s16>(mode_));
@@ -1687,13 +1689,14 @@ std::string Modem::fclass() const
 
 /* +FCLASS=?, +FCLASS?, +FCLASS=<d>: data (0), class 1 fax (1), class
    1.0 (1.0: T.31's with V.34 half-duplex, +F34), class 2 and 2.0 fax (2,
-   2.0: T.32, with the T.30 library), voice (8) */
+   2.0: T.32, with the T.30 library), ZyXEL's own fax mode (6, with the
+   T.30 library), voice (8) */
 s16 Modem::at_FCLASS(char *p, s16 *len)
 {
 	const char *q = p + 7;
 
 	if (q[0] == '=' && q[1] == '?') {
-		puts(has_fax2() ? "0,1,1.0,2,2.0,8" : "0,1,1.0,8");
+		puts(has_fax2() ? "0,1,1.0,2,2.0,6,8" : "0,1,1.0,8");
 		crlf();
 		*len = 9;
 		return 0;
@@ -1710,6 +1713,14 @@ s16 Modem::at_FCLASS(char *p, s16 *len)
 		if (set_mode(MODEM_MODE_FAX))
 			return -1;
 		fax_class_ = c20 ? 20 : 2;
+		return 0;
+	}
+	if (q[0] == '=' && q[1] == '6' && !is_digit(q[2]) && has_fax2()) {
+		*len = 9;
+		if (set_mode(MODEM_MODE_FAX))
+			return -1;
+		fax_class_ = 6;
+		hash_voice_ = false;
 		return 0;
 	}
 	if (q[0] == '=' && q[1] == '1' && q[2] == '.' && q[3] == '0') {
@@ -2487,6 +2498,10 @@ void Modem::hash_init()
    #VRN, #VIT, #VIP) */
 s16 Modem::at_hash(char *p, s16 *len)
 {
+	char c = static_cast<char>(upper(p[1]));
+	if ((c == 'F' && !isalpha(static_cast<unsigned char>(p[2]))) ||
+	    c == 'P' || (c && strchr("BVTRLC", c) && is_digit(p[2])))
+		return at_zfax(p, len);
 	if (starts_nocase(p, "#CLS"))
 		return at_CLS(p, len);
 	if (starts_nocase(p, "#VLS"))
@@ -2557,6 +2572,48 @@ s16 Modem::at_hash(char *p, s16 *len)
 	}
 	if (upper(p[1]) == 'V')
 		return at_voice(p, len, true);
+	return -1;
+}
+
+/* ZyXEL's fax commands (class 6, docs/zyxel-fax.md): #F (as &N32: a fax
+   call, which class 6's calls are), #B0 and #B1 (receiving: the pages
+   at once, or for the DTE's DC2), #V0 and #V1 (the resolution), #T,
+   #R, #L, #C (kept: the DTE's data is MH, 1728 pels, any length, no
+   fill), #P<number> (the local identity, up to 25 characters, 20 of
+   them in the TSI or CSI).  #B2 (polling) and #B3 (the ring cadence):
+   ERROR */
+s16 Modem::at_zfax(char *p, s16 *len)
+{
+	static const struct {
+		char name;
+		u8 hi;
+		u8 ZFax::*v;
+	} cmds[] = {
+		{ 'B', 1, &ZFax::b }, { 'V', 1, &ZFax::v }, { 'T', 1, &ZFax::t },
+		{ 'R', 2, &ZFax::r }, { 'L', 2, &ZFax::l }, { 'C', 7, &ZFax::c },
+	};
+	char c = static_cast<char>(upper(p[1]));
+
+	if (c == 'F') {
+		*len = 2;
+		return 0;
+	}
+	if (c == 'P') {
+		std::string id = text_arg(p, p + 1, len);
+		if (id.size() > 25)
+			return -1;
+		zfax_.p = id;
+		return 0;
+	}
+	for (const auto &k : cmds) {
+		if (k.name != c)
+			continue;
+		if (!is_digit(p[2]) || is_digit(p[3]) || p[2] - '0' > k.hi)
+			return -1;
+		zfax_.*k.v = static_cast<u8>(p[2] - '0');
+		*len = 3;
+		return 0;
+	}
 	return -1;
 }
 

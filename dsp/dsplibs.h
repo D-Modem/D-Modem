@@ -144,7 +144,10 @@ void FAX_t38_rx(void *obj, const void *ifp);
    keeps of +FLI, +FIS and +FBO for
    the engine */
 struct fax2_settings {
-	unsigned cls;           /* 2, or 20 for 2.0 */
+	unsigned cls;           /* 2, or 20 for 2.0; 6: ZyXEL's own fax mode
+				   (+FCLASS=6, docs/zyxel-fax.md): no +F
+				   commands, CONNECT FAX/... and the pages
+				   as they are, DISCONNECTn at the end */
 	char ident[21];         /* +FLI */
 	unsigned vr, br, ec;    /* +FIS: fine resolution, the fastest rate
 				   (0 2400 to 5 14400 bit/s; 6 16800 to 13
@@ -156,6 +159,9 @@ struct fax2_settings {
 				   the DIS says so, a DTC has it sent) */
 	char pi[21];            /* +FPI: our CIG when we poll */
 	unsigned sp;            /* +FSP: calling, we poll (V.8 says so) */
+	unsigned zb;            /* class 6, ZyXEL's #B: 1, receiving, the
+				   DTE's DC2 for the parameters and each
+				   page */
 };
 /* the class 2 commands for FAX2_command() */
 enum FAX2_CMD { FAX2_CMD_FDT, FAX2_CMD_FDR, FAX2_CMD_FET, FAX2_CMD_FKS };

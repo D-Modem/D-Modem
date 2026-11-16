@@ -393,7 +393,8 @@ public:
 	const char *dial_string() const { return dial_string_; }
 	/* data, fax or voice */
 	enum MODEM_MODE mode() const { return mode_; }
-	/* in fax mode, the class: 1, 10 for 1.0, 2, or 20 for 2.0 */
+	/* in fax mode, the class: 1, 10 for 1.0, 2, 20 for 2.0, or 6 for
+	   ZyXEL's own */
 	u8 fax_class() const { return fax_class_; }
 	/* the call's state */
 	LinkState link_state() const;
@@ -664,6 +665,7 @@ private:
 	s16 at_text(char *p, s16 *len);
 	s16 at_PMH(char *p, s16 *len);
 	s16 at_FCLASS(char *p, s16 *len);
+	s16 at_zfax(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);
 	s16 at_voice(char *p, s16 *len, bool hash = false);
 	s16 at_hash(char *p, s16 *len);
@@ -990,12 +992,24 @@ private:
 	dsp::CngDetect *cng_ = nullptr;
 	u16 cng_cut_ = 0;
 	u64 answer_tone_at_ = 0;
-	/* +FCLASS's fax class: 1, 10 for 1.0, 2, or 20 for 2.0 (mode_ is
-	   MODEM_MODE_FAX for each); the engine in fax_ class 2's (FAX2_*) */
+	/* +FCLASS's fax class: 1, 10 for 1.0, 2, 20 for 2.0, or 6 for
+	   ZyXEL's own (mode_ is MODEM_MODE_FAX for each); the engine in
+	   fax_ class 2's (FAX2_*) */
 	u8 fax_class_ = 1;
 	bool fax2_ = false;
-	/* class 2 or 2.0 (else class 1 or 1.0) */
-	bool fax2_class() const { return fax_class_ == 2 || fax_class_ == 20; }
+	/* class 2, 2.0 or 6, the engine class 2's (else class 1 or 1.0) */
+	bool fax2_class() const {
+		return fax_class_ == 2 || fax_class_ == 20 || fax_class_ == 6;
+	}
+	/* ZyXEL's fax mode (class 6, docs/zyxel-fax.md): #B (0, 1: the
+	   DTE's DC2 for each page), #V, #T, #R, #L, #C and #P (the local
+	   identity) */
+	struct ZFax {
+		u8 b = 0, v = 1, t = 0, r = 0, l = 2, c = 0;
+		std::string p;
+	} zfax_;
+	/* class 6 answered a data call: class 6 again after it */
+	bool z6_data_ = false;
 	/* +F34 (T.31 class 1.0): the primary channel's highest and lowest
 	   rate (in 2400 bit/s, 0: no V.34), the control channel's (0 any,
 	   1 1200, 2 2400 bit/s), and two more kept */

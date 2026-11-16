@@ -36,6 +36,17 @@
  *    when receiving.  The line may be T.38 from any point
  *    (FAX2_t38_start()).
  *
+ *    Class 6 is ZyXEL's own fax mode (+FCLASS=6, docs/zyxel-fax.md):
+ *    no +F commands.  Sending (ATD): the DCS goes at once, and once the
+ *    CFR came, CONNECT FAX/S<rate>V<n>T0R0L2C7P<the CSI>; the DTE's
+ *    data is MH as it is (no <DLE> codes), the first bit of an octet
+ *    its lowest, an RTC after each page; the DTE silent for 2 s ends
+ *    the document (ZyXEL: RTS off).  Receiving (ATA): CONNECT FAX/...
+ *    with the TSI, then each page as it is with its RTC (#B1: CONNECT
+ *    FAX and ZyXEL, then the parameters and each page once the DTE
+ *    sent a DC2).  At the end DISCONNECT0 (the document confirmed) or
+ *    DISCONNECT1, and P<the remote's identity>.
+ *
  */
 
 #include <cinttypes>
@@ -63,6 +74,13 @@ const char DLE = 0x10, ETX = 0x03, SUB = 0x1a, DC2 = 0x12, XON = 0x11;
 const u32 TRIGGER_MS = 1000;
 /* the call over and no command for so long: the engine ends it */
 const u32 IDLE_END_MS = 10000;
+/* class 6, sending: the DTE silent for so long ends the document (the
+   page under way too), and before the first page, the call */
+const u32 Z_END_MS = 2000;
+const u32 Z_START_MS = 30000;
+/* class 6 receiving with #B1: the call over, the DTE's DC2 waited for
+   so long at most for the pages still held */
+const u32 Z_DC2_MS = 60000;
 
 /* what the DTE waits for the result of */
 enum Cmd {
@@ -74,6 +92,8 @@ enum Cmd {
 	CMD_FDR,
 	CMD_FDR_TRIGGER,        /* CONNECT out: DC2 */
 	CMD_FKS,
+	CMD_Z_SEND,             /* class 6: the DTE's pages, to the end */
+	CMD_Z_RECV,             /* class 6: the pages to the DTE */
 };
 
 /* text or a result for the DTE, in its turn */
@@ -127,6 +147,22 @@ struct Fax2 {
 	/* receiving */
 	std::deque<RxItem> rx;
 
+	/* class 6: the remote's identity (20 characters), the session's
+	   parameters for CONNECT FAX; sending, the page the DTE's data
+	   builds, the pages whole, the time of its last data, pages T.30
+	   took and sent; receiving, a DC2 come, the parameters not yet
+	   sent (#B1) */
+	std::string zid;
+	std::string zparams;
+	T4Rx zrx;
+	T4Page zpage;
+	bool zfine = false;
+	std::deque<T4Page> zpages;
+	u32 zlast = 0;
+	unsigned zgiven = 0, zdone = 0;
+	bool zdc2 = false;
+	bool zparams_due = false;
+
 	/* the name 2.0 has (c20), or class 2 (c2) */
 	const char *name(const char *c20, const char *c2) const {
 		return set.cls == 2 ? c2 : c20;
@@ -158,7 +194,42 @@ struct Fax2 {
 	void deliver(RxItem &it);
 	void step(const struct t30_status &st);
 	void snapshot(unsigned *v, const struct t30_status &st) const;
+	void zstep(const struct t30_status &st);
+	void zcall(const struct t30_status &st);
+	void zsend(const struct t30_status &st);
+	void zrecv(const struct t30_status &st);
+	void zsession(const char *id, s32 bps, bool fine);
+	void zread();
+	void zpage_end();
+	void zend(const struct t30_status &st);
 };
+
+/* the page as octets for the DTE: MH with an RTC, the first bit of an
+   octet its top one if msb, a <DLE> doubled if dle */
+std::string page_octets(const T4Page &page, bool msb, bool dle)
+{
+	T4Bits b;
+	std::string d;
+
+	page.encode_mh(&b, 0, 0, 1);
+	d.reserve((b.n + 7) / 8 + 16);
+	for (size_t k = 0; k < (b.n + 7) / 8; k++) {
+		u8 c = b.buf[k];
+		if (!msb) {
+			/* the first bit lowest */
+			u8 r = 0;
+			for (int j = 0; j < 8; j++)
+				if (c & (1 << j))
+					r |= static_cast<u8>(0x80 >> j);
+			c = r;
+		}
+		if (dle && c == static_cast<u8>(DLE))
+			d += DLE;
+		d += static_cast<char>(c);
+	}
+	b.release();
+	return d;
+}
 
 /* the T.32 parameter codes of a rate: 0 2400 to 5 14400, then V.34's
    6 16800 to 13 33600 */
@@ -324,26 +395,9 @@ void Fax2::dte_page()
    shielded; +FPS, +FET, OK */
 void Fax2::deliver(RxItem &it)
 {
-	T4Bits b;
-	std::string d;
+	std::string d = page_octets(it.page, set.bo & 1, true);
 	char line[64];
 
-	it.page.encode_mh(&b, 0, 0, 1);
-	d.reserve((b.n + 7) / 8 + 16);
-	for (size_t k = 0; k < (b.n + 7) / 8; k++) {
-		u8 c = b.buf[k];
-		if (!(set.bo & 1)) {
-			/* the first bit lowest */
-			u8 r = 0;
-			for (int j = 0; j < 8; j++)
-				if (c & (1 << j))
-					r |= static_cast<u8>(0x80 >> j);
-			c = r;
-		}
-		if (c == static_cast<u8>(DLE))
-			d += DLE;
-		d += static_cast<char>(c);
-	}
 	d += DLE;
 	d += ETX;
 	raw(d);
@@ -360,6 +414,10 @@ void Fax2::deliver(RxItem &it)
 /* the command under way, as far as the call lets it go */
 void Fax2::step(const struct t30_status &st)
 {
+	if (set.cls == 6) {
+		zstep(st);
+		return;
+	}
 	switch (cmd) {
 	case CMD_CALL:
 		if (st.done) {
@@ -482,7 +540,204 @@ void Fax2::step(const struct t30_status &st)
 		if (st.done)
 			end_command(st);
 		break;
+	case CMD_Z_SEND:
+	case CMD_Z_RECV:
 	case CMD_NONE:
+		break;
+	}
+}
+
+/* class 6: the remote's identity and the session's parameters for
+   CONNECT FAX: the first 4 digits of the rate; V, the resolution; the
+   DTE's data in MH (T0), 1728 pels (R0), any length (L2), no fill (C7) */
+void Fax2::zsession(const char *id, s32 bps, bool fine)
+{
+	char b[48];
+	zid = id ? id : "";
+	zid.resize(20, ' ');
+	snprintf(b, sizeof(b), "%" PRId32, bps);
+	zparams = std::string("/S") + std::string(b).substr(0, 4) + "V" +
+		(fine ? "1" : "0") + "T0R0L2C7P" + zid;
+}
+
+/* class 6: the end of the call, DISCONNECT0 (the document went
+   through) or DISCONNECT1, with the remote's identity */
+void Fax2::zend(const struct t30_status &st)
+{
+	bool ok = st.complete || st.result == T30_OK;
+	hangup = hangup_code(st);
+	if (zid.empty())
+		zid.assign(20, ' ');
+	text(std::string("DISCONNECT") + (ok ? "0" : "1") + "P" + zid);
+	start(CMD_NONE);
+	ending = true;
+}
+
+/* class 6, ATD or ATA: the DCS at once; CONNECT FAX/... once the CFR
+   came (sending) or went out (receiving; #B1: CONNECT FAX and ZyXEL);
+   NO CARRIER if the call ends before */
+void Fax2::zcall(const struct t30_status &st)
+{
+	if (st.done) {
+		hangup = hangup_code(st);
+		result(FAX_STATUS_NOCARRIER);
+		start(CMD_NONE);
+		ending = true;
+	} else if (st.sending && st.waiting == T30_WAIT_DCS) {
+		if (!caller) {
+			/* a poller: there is nothing to send */
+			t30_abort(t30);
+			return;
+		}
+		t30_session(t30, set.vr != 0, 14400, 0);
+		t30_resume(t30);
+	} else if (caller && trained) {
+		zsession(st.remote_ident, st.bps, st.fine != 0);
+		text("CONNECT FAX" + zparams);
+		result(FAX_STATUS_CONNECT);
+		zfine = st.fine != 0;
+		zpage = T4Page();
+		zpage.init(T4_WIDTH, zfine);
+		zrx.init(&zpage, 0);
+		zlast = 0;
+		start(CMD_Z_SEND);
+	} else if (!caller && !rx.empty() && rx.front().session) {
+		RxItem &it = rx.front();
+		zsession(it.ident, br_bps(it.params[1]), it.params[0] != 0);
+		rx.pop_front();
+		if (set.zb) {
+			text("CONNECT FAX");
+			text("ZyXEL");
+			zparams_due = true;
+		} else {
+			text("CONNECT FAX" + zparams);
+		}
+		result(FAX_STATUS_CONNECT);
+		zdc2 = false;
+		start(CMD_Z_RECV);
+	}
+}
+
+/* class 6: the page the DTE's data built is whole (its RTC, or the
+   data ended): to the pages to send, if it has rows; a new page */
+void Fax2::zpage_end()
+{
+	zrx.release();
+	if (zpage.rows > 0)
+		zpages.push_back(std::move(zpage));
+	zpage = T4Page();
+	zpage.init(T4_WIDTH, zfine);
+	zrx.init(&zpage, 0);
+}
+
+/* class 6: the DTE's data, bit by bit (the first bit of an octet its
+   lowest) into the page it builds */
+void Fax2::zread()
+{
+	char b[256];
+	int n;
+
+	while ((n = modem_recv_from_tty(modem, b, sizeof(b))) > 0) {
+		zlast = cmd_samples;
+		for (int i = 0; i < n; i++)
+			for (int k = 0; k < 8; k++)
+				if (zrx.bit((static_cast<u8>(b[i]) >> k) & 1))
+					zpage_end();
+	}
+}
+
+/* class 6 sending: the DTE's pages to T.30 one at a time; after each,
+   MPS if the DTE's data goes on, EOP once it was silent for Z_END_MS;
+   DISCONNECTn at the end */
+void Fax2::zsend(const struct t30_status &st)
+{
+	bool quiet;
+
+	if (st.done) {
+		zend(st);
+		return;
+	}
+	zread();
+	quiet = cmd_samples - zlast >= Z_END_MS * srate / 1000;
+	/* the data stopped in a page (no RTC): the page ends there */
+	if (quiet && zrx.started) {
+		zrx.end();
+		zpage_end();
+	}
+	if (!have_ready && !zpages.empty()) {
+		ready = std::move(zpages.front());
+		zpages.pop_front();
+		have_ready = true;
+	}
+	if (page_sent) {
+		page_sent = false;
+		zdone++;
+	}
+	/* the command after the page T.30 has (not yet confirmed) */
+	if (fet < 0 && zgiven > zdone) {
+		if (have_ready || !zpages.empty() || zrx.started)
+			fet = 0;
+		else if (quiet)
+			fet = 2;
+	}
+	if (fet >= 0 && st.waiting == T30_WAIT_POST)
+		t30_resume(t30);
+	/* nothing from the DTE at all */
+	if (!zgiven && !have_ready && !zrx.started &&
+	    cmd_samples - zlast >= Z_START_MS * srate / 1000) {
+		aborted = true;
+		t30_abort(t30);
+	}
+}
+
+/* class 6 receiving: each page to the DTE as it is, once T.30 has the
+   command after it (#B1: once the DTE sent a DC2, the parameters
+   first); DISCONNECTn once they all went */
+void Fax2::zrecv(const struct t30_status &st)
+{
+	char b[64];
+	int n;
+
+	while ((n = modem_recv_from_tty(modem, b, sizeof(b))) > 0)
+		for (int i = 0; i < n; i++)
+			if (b[i] == DC2)
+				zdc2 = true;
+	/* (a session again, after an EOM) */
+	while (!rx.empty() && rx.front().session)
+		rx.pop_front();
+	if (set.zb && zparams_due && zdc2) {
+		/* (ZyXEL's buffer has 35 characters of it) */
+		raw("\r\n" + zparams.substr(0, 35) + "\r\n");
+		zparams_due = false;
+	}
+	while (!rx.empty() && (rx.front().post >= 0 || st.done) &&
+	       (!set.zb || (zdc2 && !zparams_due))) {
+		raw(page_octets(rx.front().page, false, false));
+		rx.pop_front();
+		zdc2 = false;
+		cmd_samples = 0;
+	}
+	if (!rx.empty() && st.done &&
+	    cmd_samples >= Z_DC2_MS * srate / 1000)
+		rx.clear();
+	if (rx.empty() && st.done)
+		zend(st);
+}
+
+/* class 6: the call as far as it goes */
+void Fax2::zstep(const struct t30_status &st)
+{
+	switch (cmd) {
+	case CMD_CALL:
+		zcall(st);
+		break;
+	case CMD_Z_SEND:
+		zsend(st);
+		break;
+	case CMD_Z_RECV:
+		zrecv(st);
+		break;
+	default:
 		break;
 	}
 }
@@ -496,6 +751,7 @@ s16 next_page(void *ctx, T4Page *page)
 	*page = std::move(f->ready);
 	f->ready = T4Page();
 	f->have_ready = false;
+	f->zgiven++;
 	return 1;
 }
 
@@ -615,7 +871,8 @@ void *FAX2_create(struct modem *m, unsigned caller, unsigned srate,
 		delete f;
 		return nullptr;
 	}
-	DSP_DBG("fax2: create, class %s, %s\n", s->cls == 2 ? "2" : "2.0",
+	DSP_DBG("fax2: create, class %s, %s\n",
+		s->cls == 2 ? "2" : s->cls == 6 ? "6" : "2.0",
 		caller ? "caller" : "answerer");
 	return f;
 }
@@ -628,6 +885,10 @@ void FAX2_delete(void *obj)
 		return;
 	t30_free(f->t30);
 	f->ready.release();
+	f->zrx.release();
+	f->zpage.release();
+	for (T4Page &p : f->zpages)
+		p.release();
 	delete f;
 }
 
@@ -695,7 +956,8 @@ int FAX2_command(void *obj, unsigned cmd, unsigned param,
 	Fax2 *f = static_cast<Fax2 *>(obj);
 	struct t30_status st;
 
-	if (!f || f->cmd != CMD_NONE)
+	/* (class 6 has none) */
+	if (!f || f->cmd != CMD_NONE || f->set.cls == 6)
 		return -1;
 	t30_get_status(f->t30, &st);
 	f->set.vr = s->vr;

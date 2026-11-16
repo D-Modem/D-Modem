@@ -357,6 +357,7 @@ std::vector<Setting> Config::model(const Modem &m)
 		if (m.has_fax2()) {
 			c.push_back({ "2", "fax2", "Fax class 2" });
 			c.push_back({ "2.0", "fax2.0", "Fax class 2.0" });
+			c.push_back({ "6", "zfax", "ZyXEL fax (class 6)" });
 		}
 		c.push_back({ "8", "voice", "Voice" });
 		v.push_back(pick("mode", "Fax and voice", "Mode",
