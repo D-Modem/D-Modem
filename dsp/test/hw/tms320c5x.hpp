@@ -283,7 +283,19 @@ public:
 			w16 end = (w16)(nxt + 2);
 			while (pc < end) {
 				w16 p2 = pc, o2 = pr(p2);
+				u32 sacc2 = acc;
+				int sc2 = c, sov2 = ov, stc2 = tc;
 				int j2 = exe(o2, p2);
+				/* the status an XC at the target sees: as
+				   after a slot of its own (the TC110's
+				   "BANZD; SFR; EXAR" then "XC1 NC" tests the
+				   carry of the SFR) */
+				if (size(o2) > 1 || j2 >= 0) {
+					xacc_ = acc; xc_ = c; xov_ = ov; xtc_ = tc;
+				} else {
+					xacc_ = sacc2; xc_ = sc2; xov_ = sov2;
+					xtc_ = stc2;
+				}
 				/* an XC in a delay slot (TC110's "CALLD; XC1
 				   NTC; XOR") skips its words when false */
 				pc = j2 >= 0 && !(j2 & DELAYED) ? (w16)j2 :

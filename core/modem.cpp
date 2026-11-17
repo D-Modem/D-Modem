@@ -1469,23 +1469,18 @@ void Modem::update_status(Status s)
 			link_->start_v76(!caller_);
 			break;
 		}
-		/* calling, the detection phase on a modulation older than
-		   V.8 (V.32bis, V.22bis, ...), whose answerers may wait for
-		   the ODPs (the USRobotics Courier; an answerer without the
-		   phase sends flags, which end it); not after V.8 (V.34,
-		   V.90, V.92's quick connect may have agreed LAPM:
-		   qc_lapm), nor on a leased line, a clear channel or PEP
-		   (whose turns put the ends' round trip past T400), whose
-		   two ends connect too far apart for T400 */
+		/* calling, the detection phase, after V.8 as well: the
+		   answerer may wait for the ODPs (the USRobotics Courier on
+		   V.32bis, the 3Com TC110 after V.8 on V.34; an answerer
+		   without the phase sends flags, which end it); not on a
+		   leased line, a clear channel or PEP (whose turns put the
+		   ends' round trip past T400), whose two ends connect too
+		   far apart for T400 */
 		{
 			const unsigned id = dp_ ? dp_->id : 0;
-			const bool v8 = id == DP_V34 || id == DP_K56 ||
-				id == DP_X2 ||
-				id == DP_V90 || id == DP_V91 ||
-				id == DP_V92;
 			link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
 				     !(caller_ && dsp_info_.qc_lapm &&
-				       (v8 || leased() || clear_channel() ||
+				       (leased() || clear_channel() ||
 					id == DP_PEP)) &&
 				     id != DP_VCVM);
 		}

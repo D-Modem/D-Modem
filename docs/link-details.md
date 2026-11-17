@@ -814,7 +814,13 @@ dBm0 and in noise; not 1300 Hz, 1800 Hz, noise or a short tone),
 `Core.EtcSettings` (`&F5`, `&F6`, S116, `+EF`), `Core.EtcCall` (a call
 from `&F5` to `&F6`: the calling tone found, V.32bis with V.42, `/ETC` on
 the two sides, `40=82` and `41=40` in `#UD`, data in the two directions)
-and `Core.EtcLandPlainCaller` (no calling tone, no `/ETC`).
+and `Core.EtcLandPlainCaller` (no calling tone, no `/ETC`). With the
+emulated 3Com TC110 and its firmware: `3com.3com_etc_cell_3com_calls`
+(the TC110 with a cellular cable calls D-Modem in `&F6`) and
+`3com.3com_etc_cell_open_calls` (D-Modem in `&F5` calls the TC110 on a
+landline, and the TC110 finds the calling tone). The two calls connect
+in V.32bis at 14400 bit/s with V.42 (N401 64), and the TC110 shows
+`/ETC`.
 
 ## V.80
 

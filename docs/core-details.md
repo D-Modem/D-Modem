@@ -349,12 +349,13 @@ sufficient:
   `S=<n>` (a stored number; there are none) gives ERROR.
 - **`+FAA=1`** answers adaptively: FAX or DATA, then the call continues
   as a fax or a data call. The old core accepted only `+FAA=0`.
-- **The detection phase of V.42.** When the core calls on a modulation
-  older than V.8 (V.32bis, V.22bis, ...), it sends its ODPs and waits for
-  the ADP of the answerer before LAPM. Thus, a Courier that answers uses
-  V.42. The old core went to LAPM immediately. Those calls now connect
-  about 120 ms later. After V.8, on a leased line and on a clear channel,
-  it still goes immediately to LAPM.
+- **The detection phase of V.42.** When the core calls, it sends its
+  ODPs and waits for the ADP of the answerer before LAPM, also after
+  V.8. Thus, a Courier that answers on V.32bis and a 3Com TC110 that
+  answers on V.34 use V.42 (the TC110 sends marks and disconnects when
+  it gets no ODPs). The old core went to LAPM immediately. Those calls
+  now connect about 120 ms later. On a leased line, on a clear channel
+  and on PEP, it still goes immediately to LAPM.
 
 ## Tests
 
