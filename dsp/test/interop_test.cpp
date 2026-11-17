@@ -1675,7 +1675,10 @@ std::vector<Call> calls()
 	   Hz): the open modem calls it in V.34.  With its own profile (S33
 	   32: no 3429 baud in its INFO0) its fastest is 31200: only to
 	   CONNECT.  With S33=0 (3429 baud on), 33600, its fastest: 1 s of
-	   data both ways, both checked.  At 4800 the same.
+	   data both ways, both checked.  At 4800, 8 s of data both ways:
+	   past 6 s, when the 3Com asked for a faster rate again (a
+	   renegotiation) while the rate mask of our MP had rates above
+	   +MS's highest.
 	   TC110_PRE_FLAT=1: a flat pre-emphasis filter (the
 	   TC110's own tables are not known yet).  The 3Com as the caller
 	   stops after V.8 */
@@ -1693,7 +1696,7 @@ std::vector<Call> calls()
 	      "EXPECT_B=CONNECT 33600/V34" });
 	add("3com", "3com_34_4800_open_calls", "open8", "3com",
 	    "ATX3;AT+MS=34,1,2400,4800;AT+ES=1,0,1",
-	    { "STREAM=1", "TC110_PRE_FLAT=1",
+	    { "STREAM=8", "TC110_PRE_FLAT=1",
 	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
 	      "EXPECT_A=v34: connect 4800/",
 	      "EXPECT_B=CONNECT 4800/V34" });
