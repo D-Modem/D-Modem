@@ -87,10 +87,27 @@ public:
 	/* a word popped (0 if empty) */
 	w16 pop() { return sp_ ? stack_[--sp_] : 0; }
 
+	/* the TC110 boards' map (half_3com) in place of the Courier's: flat
+	   set, program 0 to 0x7fff the RAM PR, program 0x8000 to 0xffff the
+	   flash's page that win points to, data all D, the I/O ports to
+	   io_rd and io_wr with their whole addresses (data 0x50 to 0x5f
+	   plain memory) */
+	bool flat = false;
+	std::vector<w16> PR;
+	const w16 *win = nullptr;
+	/* flat: after a write to data 0x20 to 0x2f (the serial port and
+	   the timer), with the word's old value: the harness's peripherals */
+	std::function<void(u32 a, w16 old)> mmr_wr;
+
 	/* program memory */
 	w16 pr(u32 a) const
 	{
 		a &= 0xffff;
+		if (flat) {
+			if (cnf && a >= 0xfe00)
+				return D[a - 0xfe00 + 0x100];
+			return a < 0x8000 ? PR[a] : win ? win[a & 0x7fff] : 0;
+		}
 		if (cnf && a >= 0xfe00)
 			return D[a - 0xfe00 + 0x100];
 		if (a < 0x800)
@@ -105,6 +122,13 @@ public:
 	void pw(u32 a, u32 v)
 	{
 		a &= 0xffff;
+		if (flat) {
+			if (cnf && a >= 0xfe00)
+				D[a - 0xfe00 + 0x100] = (w16)v;
+			else if (a < 0x8000)
+				PR[a] = (w16)v;
+			return;
+		}
 		if (a < 0x800)
 			return;
 		if (a >= 0x2000 && a < 0x2400)
@@ -131,7 +155,7 @@ public:
 	w16 rdm(u32 a)
 	{
 		a &= 0xffff;
-		if (io_rd) {
+		if (io_rd && !flat) {
 			int k = io_key(a);
 			if (k >= 0)
 				return io_rd(k);
@@ -148,12 +172,22 @@ public:
 	void wr(u32 a, u32 v)
 	{
 		a &= 0xffff;
-		if (io_wr) {
+		if (io_wr && !flat) {
 			int k = io_key(a);
 			if (k >= 0) {
 				io_wr(k, (w16)v);
 				return;
 			}
+		}
+		if (flat && a == 0x06) {        /* IFR: a 1 clears its flag */
+			D[6] &= (w16)~v;
+			return;
+		}
+		if (flat && a >= 0x20 && a < 0x30 && mmr_wr) {
+			w16 old = D[a];
+			D[a] = (w16)v;
+			mmr_wr(a, old);
+			return;
 		}
 		D[a] = (w16)v;
 		if ((long)a == watch && watch_fn)
@@ -192,7 +226,11 @@ public:
 		}
 		w16 op = pr(at);
 		w16 nxt = (w16)(at + size(op));
+		u32 sacc = acc;
+		int sc = c, sov = ov, stc = tc;
+		int sp0 = sp_;
 		int j = exe(op, at);
+		xacc_ = sacc; xc_ = sc; xov_ = sov; xtc_ = stc;
 		if (j >= 0 && (j & DELAYED)) {
 			pc = nxt;
 			w16 end = (w16)(nxt + 2);
@@ -211,6 +249,18 @@ public:
 			if (D[0x09] > 0) {
 				D[0x09]--;
 				pc = rptb_start_;
+			} else {
+				rptb_on_ = false;
+			}
+		} else if (flat && rptb_on_ && j >= 0 && !(j & DELAYED) &&
+			   at <= rptb_end_ && rptb_end_ < nxt &&
+			   sp_ == sp0 + 1 && top() == nxt) {
+			/* a CALL as the block's last instruction (TC110's
+			   I2C loops): the repeat has taken the return
+			   address to the block's start already */
+			if (D[0x09] > 0) {
+				D[0x09]--;
+				stack_[sp_ - 1] = rptb_start_;
 			} else {
 				rptb_on_ = false;
 			}
@@ -350,6 +400,12 @@ private:
 		}
 		return a;
 	}
+	/* SST's address: direct, page 0 whatever DP is; indirect, the
+	   auxiliary register's whole address */
+	u32 sst_addr(w16 op, u32 a) const
+	{
+		return (op & 0x80) ? a : (u32)(op & 0x7f);
+	}
 	/* an indirect operand's side effect on the ARs (none for direct) */
 	void mod(w16 op)
 	{
@@ -409,6 +465,21 @@ private:
 	}
 
 	/* a conditional instruction's conditions (its low byte) all true */
+	/* flat: XC's condition, as the pipeline has it: the status before
+	   the instruction just before XC (TC110's "SUB *, ADD *, XC EQ"
+	   tests the SUB) */
+	bool xcond(w16 op)
+	{
+		u32 a = acc;
+		int c0 = c, t0 = tc, o0 = ov;
+		acc = xacc_; c = xc_; tc = xtc_; ov = xov_;
+		bool ok = cond(op);
+		bool cleared = (op & 2) != 0;
+		acc = a; c = c0; tc = t0; ov = cleared ? 0 : o0;
+		return ok;
+	}
+	u32 xacc_ = 0;
+	int xc_ = 0, xov_ = 0, xtc_ = 0;
 	bool cond(w16 op)
 	{
 		int m = op & 15, v = (op >> 4) & 15;
@@ -517,7 +588,9 @@ private:
 		case 0x0b: rptc_ = rdm(ea(op)); return -1;
 		case 0x0c:      /* OUT */
 			a = ea(op);
-			if (io_wr && imm >= 0x50 && imm < 0x70)
+			if (io_wr && flat)
+				io_wr(imm, rdm(a));
+			else if (io_wr && imm >= 0x50 && imm < 0x70)
 				io_wr(imm & 0x2f, rdm(a));
 			return -1;
 		case 0x0d: dp = rdm(ea(op)) & 0x1ff; return -1;
@@ -605,8 +678,8 @@ private:
 		case 0x8b: if (op != 0x8b00) ea(op); return -1;
 		case 0x8c: wr(ea(op), pshift()); return -1;
 		case 0x8d: wr(ea(op), pshift() >> 16); return -1;
-		case 0x8e: a = ea(op); wr((op & 0x80) ? (a & 0x7f) : (op & 0x7f), st0()); return -1;
-		case 0x8f: a = ea(op); wr((op & 0x80) ? (a & 0x7f) : (op & 0x7f), st1()); return -1;
+		case 0x8e: a = ea(op); wr(sst_addr(op, a), st0()); return -1;
+		case 0x8f: a = ea(op); wr(sst_addr(op, a), st1()); return -1;
 		}
 		if (b >= 0x90 && b <= 0x97) { wr(ea(op), acc << (b & 7)); return -1; }
 		if (b >= 0x98 && b <= 0x9f) { wr(ea(op), (acc << (b & 7)) >> 16); return -1; }
@@ -643,7 +716,8 @@ private:
 		case 0xae: wr(ea(op), imm); return -1;
 		case 0xaf:      /* IN */
 			a = ea(op);
-			wr(a, io_rd && imm >= 0x50 && imm < 0x70 ? io_rd(imm & 0x2f) : 0);
+			wr(a, io_rd && flat ? io_rd(imm) :
+			   io_rd && imm >= 0x50 && imm < 0x70 ? io_rd(imm & 0x2f) : 0);
 			return -1;
 		}
 		if (b >= 0xb0 && b <= 0xb7) { setar(b & 7, lo); return -1; }
@@ -699,7 +773,7 @@ private:
 			return cond(op) ? imm : (w16)(at + 2);
 		if ((b >= 0xe4 && b <= 0xe7) || (b >= 0xf4 && b <= 0xf7)) {
 			int n = 1 + ((op >> 12) & 1);
-			if (!cond(op))
+			if (!(flat ? xcond(op) : cond(op)))
 				return (w16)(at + 1 + n);
 			return -1;
 		}
@@ -804,7 +878,10 @@ private:
 				shadow_restore();
 			intm = 0;
 			return pop();
-		case 0x38: return pop();        /* RETI */
+		case 0x38:      /* RETI: the shadow registers too, INTM kept */
+			if (nshadow_)
+				shadow_restore();
+			return pop();
 		case 0x22: case 0x23: idle = true; return -1;  /* IDLE, IDLE2 */
 		case 0x40: intm = 0; return -1;
 		case 0x41: intm = 1; return -1;
