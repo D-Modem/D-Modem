@@ -34,6 +34,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -187,8 +188,8 @@ int Tc110Peer::start()
 			if ((long)ms() < from || n <= 0)
 				return;
 			n--;
-			log("<%07.3f> dxr %04x at %04x (%04x) n %ld\n",
-			    ms() / 1000.0, v, m.dsp.pc, m.dsp.top(), line_n);
+			log("<%07.3f> dxr %04x at %04x (%04x) n %llu\n",
+			    ms() / 1000.0, v, m.dsp.pc, m.dsp.top(), (unsigned long long)line_n);
 		};
 	}
 	if (env("PWRITE")) {
@@ -278,6 +279,21 @@ short Tc110Peer::line_sample(short in)
 				log("before:%s\n", h.c_str());
 			}
 			core();
+		}
+		/* TC110_DREADS=<from ms>: data reads below shared_lo, once
+		   per address and PC */
+		if (env("DREADS") && !m.dsp.d_read && ms() >= (unsigned long long)atol(env("DREADS"))) {
+			unsigned long f = 0, lo = 0, hi = 0;
+			if (sscanf(env("DREADS"), "%lu,%lx,%lx", &f, &lo, &hi) == 3) {
+				m.dsp.dr_lo = (C5x::u32)lo;
+				m.dsp.dr_hi = (C5x::u32)hi;
+			}
+			m.dsp.d_read = [this](C5x::u32 a) {
+				static std::set<unsigned long> seen;
+				unsigned long k = (unsigned long)a << 16 | m.dsp.pc;
+				if (seen.insert(k).second)
+					log("<%07.3f> data read %04x at %04x\n", ms() / 1000.0, (unsigned)a, (unsigned)m.dsp.pc);
+			};
 		}
 		/* TC110_FREEZE_AT=<ms>: the equalizer kept from then */
 		if (env("FREEZE_AT") && ms() >= (unsigned long long)atol(env("FREEZE_AT")))

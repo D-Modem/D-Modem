@@ -111,6 +111,9 @@ public:
 	std::function<void(u32 a)> rom_unknown;
 	/* flat: each read of a ROM word (a test's) */
 	std::function<void(u32 a)> rom_read;
+	/* debugging: each data read from 0x0800 to shared_lo */
+	std::function<void(u32 a)> d_read;
+	u32 dr_lo = 0x800, dr_hi = 0;
 	/* flat: after a write to data 0x20 to 0x2f (the serial port and
 	   the timer), with the word's old value: the harness's peripherals */
 	std::function<void(u32 a, w16 old)> mmr_wr;
@@ -184,6 +187,8 @@ public:
 	w16 rdm(u32 a)
 	{
 		a &= 0xffff;
+		if (d_read && a >= dr_lo && a < (dr_hi ? dr_hi : shared_lo))
+			d_read(a);
 		if (io_rd && !flat) {
 			int k = io_key(a);
 			if (k >= 0)

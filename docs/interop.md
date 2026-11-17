@@ -28,6 +28,7 @@ emulation of the hardware that the driver expects.
 | ESS | its Windows driver, on the same small Windows kernel | V.92 at 49333 down, 41333 up |
 | spandsp | the open-source library used by Asterisk and FreeSWITCH | its speeds, up to V.22bis (2400 bit/s) |
 | USRobotics Courier V.Everything | the whole modem emulated, running its own firmware (a 1998 flash image) | HST at 9600 bit/s with HST's own link, the channels turning around; V.32bis at 14400 bit/s with V.42 |
+| 3Com Megahertz TC110 PC Card | its signal processor emulated, running the 3Com flash firmware | V.34 training to CONNECT at 31200 bit/s and at 4800 bit/s |
 
 In the V.90 and V.92 calls, D-Modem is the "digital" end. This is the role that the
 equipment of an internet provider had. Each modem also connects at the
@@ -43,6 +44,11 @@ other at HST 16800 and V.32terbo 21600. D-Modem calls a Courier, and a Courier
 calls D-Modem, in HST, V.32bis and V.22bis. D-Modem also calls a Courier in
 V.FC. The start-up completes and the two modems send CONNECT 26400. But the
 Courier cannot read the data of D-Modem yet. V.34 does not operate yet.
+
+The 3Com TC110 is a PC Card modem with a TMS320C5x signal processor. The
+tests emulate this processor and run the 3Com flash firmware on it. D-Modem
+calls the TC110 in V.34, and the two modems complete the training and send
+CONNECT. The data mode does not operate yet. Thus, the tests stop at CONNECT.
 
 The test suite also runs D-Modem on an emulated HD-audio modem
 chip (the type in laptops from about 2005 to 2010). This tests the code
@@ -69,7 +75,7 @@ Each modem has its own test label:
     ctest --test-dir build -L agere -j16
 
 The other labels are `smartlink`, `sm56`, `pctel`, `hsf`, `intel`,
-`broadcom`, `ess`, `courier`, `spanpeer`, `hda` and `open` (D-Modem
+`broadcom`, `ess`, `courier`, `3com`, `spanpeer`, `hda` and `open` (D-Modem
 against itself). There are also `ring` (the tones of the exchange) and `adaptive` (fax or
 data?). These tests must have a 32-bit build environment, because the old drivers
 are 32-bit programs. Refer to [Building and testing](testing.md).

@@ -231,6 +231,7 @@ public:
 	/* if hist_on: the last 256 page:PCs, the newest at hist_n - 1 */
 	bool hist_on = false;
 	unsigned hist[256] = {}, hist_n = 0;
+	/* the pump blocks that 0x0cb0 must still wait */
 	int wait_left() const { return wait_; }
 	int dbg = 0;                    /* 1: the ROM calls not yet known */
 
@@ -365,6 +366,7 @@ private:
 			for (unsigned a = lo; a <= hi; a++)
 				dsp.D[b + a] = 0;
 	}
+	/* one step: the timer, the UART and the codec, then one DSP instruction */
 	void tick()
 	{
 		if (!(dsp.D[0x26] & 0x10) && psc_-- <= 0) {
