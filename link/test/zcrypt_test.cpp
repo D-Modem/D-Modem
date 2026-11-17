@@ -19,6 +19,7 @@ using namespace dlink;
 
 namespace {
 
+/* n bytes as lower-case hex */
 std::string hex(const u8 *b, size_t n)
 {
 	static const char d[] = "0123456789abcdef";
@@ -117,6 +118,8 @@ TEST(Zcrypt, KeyCheck)
 	EXPECT_EQ(w[7], 0);
 }
 
+/* the IV: A's first word less B's, A's second plus B's (modulo
+   2^32) */
 TEST(Zcrypt, Iv)
 {
 	const u8 k[16] = { 0, 0, 0, 1, 0xff, 0xff, 0xff, 0xff,

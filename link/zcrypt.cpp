@@ -56,6 +56,7 @@ void zdes_atck(const char *text, size_t n, u8 key[ZDES_KEY])
 	}
 }
 
+/* A and B as at power-on */
 void zdes_default_key(u8 key[ZDES_KEY])
 {
 	memcpy(key, BOOT_KEY, 8);
@@ -78,6 +79,7 @@ struct U128 {
 const U128 P = { 0xa07d403989fe7a69ull, 0x1e99f8221ad64bd5ull };
 const U128 G = { 0x9e348b1a11df8d3full, 0x9d426536df4f535bull };
 
+/* 16 big-endian bytes as a number */
 U128 load(const u8 b[16])
 {
 	U128 v;
@@ -88,6 +90,7 @@ U128 load(const u8 b[16])
 	return v;
 }
 
+/* v as 16 big-endian bytes */
 void store(const U128 &v, u8 b[16])
 {
 	for (int i = 0; i < 8; i++) {
@@ -96,11 +99,13 @@ void store(const U128 &v, u8 b[16])
 	}
 }
 
+/* a >= b */
 bool geq(const U128 &a, const U128 &b)
 {
 	return a.hi != b.hi ? a.hi > b.hi : a.lo >= b.lo;
 }
 
+/* a - b, for a >= b */
 U128 sub(const U128 &a, const U128 &b)
 {
 	U128 r;
@@ -135,6 +140,8 @@ U128 mul_mod(const U128 &a, const U128 &b)
 	return r;
 }
 
+/* base^e mod P: square and multiply from e's lowest bit (as DSP
+   0x176B) */
 U128 pow_mod(U128 base, const U128 &e)
 {
 	U128 r;
@@ -150,6 +157,7 @@ U128 pow_mod(U128 base, const U128 &e)
 	return r;
 }
 
+/* the secret x as an exponent: below P, not 0 */
 U128 exponent(const u8 x[ZDES_PKDS])
 {
 	U128 e = load(x);
@@ -162,11 +170,13 @@ U128 exponent(const u8 x[ZDES_PKDS])
 
 } // namespace
 
+/* y = g^x mod p */
 void zdes_public(const u8 x[ZDES_PKDS], u8 y[ZDES_PKDS])
 {
 	store(pow_mod(G, exponent(x)), y);
 }
 
+/* K = y_remote^x mod p */
 void zdes_shared(const u8 y_remote[ZDES_PKDS], const u8 x[ZDES_PKDS],
 		 u8 k[ZDES_PKDS])
 {
@@ -254,6 +264,7 @@ static void lfsr(u16 w[8])
 		w[0] = static_cast<u16>(w[0] - 0xa07d);
 }
 
+/* the check until no key is weak, then byte 7 of each key 0 */
 void zdes_key_check(u8 key[ZDES_KEY], bool two)
 {
 	/* one key: the DSP's words after it are 0, 0, 0, 1 (DSP 0x1730),
@@ -279,6 +290,7 @@ void zdes_key_check(u8 key[ZDES_KEY], bool two)
 	}
 }
 
+/* IV = (A - B, A + B) in 32-bit words */
 void zdes_iv(const u8 key[ZDES_KEY], u8 iv[8])
 {
 	auto be32 = [](const u8 *p) {
@@ -373,6 +385,7 @@ u64 permute(u64 v, int in, const u8 *t, int out)
 	return r;
 }
 
+/* 8 big-endian bytes as a number */
 u64 load64(const u8 b[8])
 {
 	u64 v = 0;
@@ -404,6 +417,7 @@ void Des::set_key(const u8 key[8])
 	}
 }
 
+/* one block: the 16 rounds, the subkeys in reverse to decrypt */
 void Des::crypt(const u8 in[8], u8 out[8], bool dec) const
 {
 	u64 v = permute(load64(in), 64, IP, 64);
@@ -427,11 +441,13 @@ void Des::crypt(const u8 in[8], u8 out[8], bool dec) const
 		out[i] = static_cast<u8>(v >> (56 - 8 * i));
 }
 
+/* one block encrypted */
 void Des::encrypt(const u8 in[8], u8 out[8]) const
 {
 	crypt(in, out, false);
 }
 
+/* one block decrypted */
 void Des::decrypt(const u8 in[8], u8 out[8]) const
 {
 	crypt(in, out, true);
@@ -443,6 +459,7 @@ void Des::decrypt(const u8 in[8], u8 out[8]) const
  *
  */
 
+/* the keys (A, and B for triple DES) and the register at the IV */
 void ZCfb::init(const u8 key[ZDES_KEY], bool triple, const u8 iv[8])
 {
 	k1_.set_key(key);
@@ -451,6 +468,7 @@ void ZCfb::init(const u8 key[ZDES_KEY], bool triple, const u8 iv[8])
 	memcpy(reg_, iv, 8);
 }
 
+/* the keystream block: E(A), or E(A) D(B) E(A) */
 void ZCfb::block(const u8 in[8], u8 out[8]) const
 {
 	k1_.encrypt(in, out);
@@ -461,6 +479,8 @@ void ZCfb::block(const u8 in[8], u8 out[8]) const
 	k1_.encrypt(t, out);
 }
 
+/* n octets at p through the cipher, 8 at a time; the register takes
+   the cipher octets */
 void ZCfb::run(u8 *p, size_t n, bool dec)
 {
 	while (n) {
@@ -481,11 +501,13 @@ void ZCfb::run(u8 *p, size_t n, bool dec)
 	}
 }
 
+/* n octets at p encrypted in place */
 void ZCfb::encrypt(u8 *p, size_t n)
 {
 	run(p, n, false);
 }
 
+/* n octets at p decrypted in place */
 void ZCfb::decrypt(u8 *p, size_t n)
 {
 	run(p, n, true);
