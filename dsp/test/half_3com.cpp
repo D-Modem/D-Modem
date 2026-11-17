@@ -127,6 +127,16 @@ int Tc110Peer::start()
 				snprintf(w, sizeof(w), " %04x", m.dsp.D[(a + i) & 0xffff]);
 				t += w;
 			}
+			if (env("WATCH_B")) {
+				/* TC110_WATCH_B=<addr>,<n>: n more words */
+				unsigned b = 0, k = 0;
+				sscanf(env("WATCH_B"), "%x,%u", &b, &k);
+				t += " |";
+				for (unsigned i = 0; i < k; i++) {
+					snprintf(w, sizeof(w), " %04x", m.dsp.D[(b + i) & 0xffff]);
+					t += w;
+				}
+			}
 			log("<%07.3f> watch (%04x) dp %d pm %d acc %08x%s\n",
 			    ms() / 1000.0, m.dsp.top(), m.dsp.dp, m.dsp.pm,
 			    (unsigned)m.dsp.acc, t.c_str());
