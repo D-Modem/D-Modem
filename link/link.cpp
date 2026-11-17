@@ -45,7 +45,7 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 	timer_what_ = Timer::None;
 	push_pending = false;
 	dec_head_ = dec_count_ = 0;
-	usr_.init(this, cfg.usr_feature);
+	usr_.init(this, cfg.usr_feature, cfg.usr_enable, cfg.usr_disable);
 	if ((cfg.ec || cfg.mnp) && cfg.comp) {
 		if (enc_.init(cfg.dict_size, cfg.max_string) ||
 		    dec_.init(cfg.dict_size, cfg.max_string)) {

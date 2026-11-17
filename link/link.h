@@ -148,8 +148,12 @@ struct Config {
 	/* on a clear channel: X.75 or PPP rather than all of the above */
 	B2 b2 = B2::Modem;
 	/* the USRobotics remote feature upgrade (usr_feature.h, +X2UP):
-	   once LAPM is up, read a Courier's records, and set x2 */
+	   once LAPM is up, read a Courier's records, and enable and
+	   disable its features (record 2's values: Terbo 4, V.FC 8,
+	   x2 16) */
 	UsrMode usr_feature = UsrMode::Off;
+	u8 usr_enable = 1 << (USR_BIT_X2 - 1);
+	u8 usr_disable = 0;
 };
 
 /* the error correction a call has */

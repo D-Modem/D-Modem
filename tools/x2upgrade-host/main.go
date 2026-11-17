@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -31,9 +32,10 @@ const banner = "\r\n" +
 	"D-Modem x2 upgrade host\r\n" +
 	"=======================\r\n" +
 	"\r\n" +
-	"This host enables x2 in an upgradable USRobotics product that has the\r\n" +
-	"x2 code. It reads the serial number and the feature record of your modem\r\n" +
-	"through the error-corrected link. Then it sets the x2 feature bit.\r\n" +
+	"This host changes the features of an upgradable USRobotics product that\r\n" +
+	"has the x2 code. It reads the serial number and the feature record of\r\n" +
+	"your modem through the error-corrected link. Then it enables or disables\r\n" +
+	"features (Terbo, V.FC, x2) in that record.\r\n" +
 	"\r\n" +
 	"Please wait. Do not type.\r\n" +
 	"\r\n"
@@ -42,12 +44,17 @@ const after = "To use x2, do these steps:\r\n" +
 	"  1. Hang up.\r\n" +
 	"  2. Type AT&F1S0=0&W and push Enter.\r\n" +
 	"  3. Set the power switch of the modem to OFF, then to ON.\r\n" +
-	"  4. Type ATI7. Make sure that \"x2\" is in the Options line.\r\n"
+	"  4. Type ATI7. Make sure that the Options line shows the change.\r\n"
 
 var messages = map[string]string{
-	"ENABLED": "Result: x2 is now enabled in your modem.\r\n\r\n" + after,
-	"ALREADY": "Result: x2 was already enabled in your modem. No change was " +
-		"necessary.\r\n\r\n" + after,
+	"ENABLED": "Result: the host enabled the features in your modem.\r\n\r\n" +
+		after,
+	"DISABLED": "Result: the host disabled the features in your modem." +
+		"\r\n\r\n" + after,
+	"CHANGED": "Result: the host enabled and disabled features in your " +
+		"modem.\r\n\r\n" + after,
+	"ALREADY": "Result: your modem already had the features that this host " +
+		"sets.\r\nNo change was necessary.\r\n\r\n" + after,
 	"REFUSED": "Result: your modem did not keep the change.\r\n\r\n" +
 		"Your modem must permit feature upgrades. Type ATS30=1 and " +
 		"push Enter.\r\nThen call this host again.\r\n",
@@ -56,6 +63,31 @@ var messages = map[string]string{
 		"This host operates only with a USRobotics Courier that " +
 		"has x2 code,\r\nand only with error control (V.42 LAPM). " +
 		"Type AT&F1 and push Enter.\r\nThen call this host again.\r\n",
+}
+
+// features are record 2's feature bits, as ATC8 has them.
+var features = []struct {
+	bit  int
+	name string
+}{{1, "HST"}, {2, "Fax"}, {4, "Terbo"}, {8, "V.FC/V.34"}, {16, "x2"}}
+
+// featureNames returns the names of the features in a record 2 value,
+// for example "HST, x2".
+func featureNames(value string) string {
+	v, err := strconv.Atoi(value)
+	if err != nil {
+		return "?"
+	}
+	var names []string
+	for _, f := range features {
+		if v&f.bit != 0 {
+			names = append(names, f.name)
+		}
+	}
+	if len(names) == 0 {
+		return "none"
+	}
+	return strings.Join(names, ", ")
 }
 
 var reportRE = regexp.MustCompile(`^\+X2UP: ([A-Z ]+?)(?:,"([^"]*)")?(?:,(\d+),(\d+))?\s*$`)
@@ -138,6 +170,7 @@ func screen(w io.Writer, rep report, found bool) {
 		}
 		if rep.before != "" {
 			fmt.Fprintf(w, "Feature record: %s before, %s after\r\n", rep.before, rep.after)
+			fmt.Fprintf(w, "Features now: %s\r\n", featureNames(rep.after))
 		}
 		msg, ok := messages[rep.result]
 		if !ok {

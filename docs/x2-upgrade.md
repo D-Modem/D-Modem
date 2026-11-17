@@ -61,6 +61,10 @@ Make a profile for the host in `dmodem.conf`:
     [x2upgrade]
     mode = exec
     init = AT+X2UP=2
+
+To make a host that does a different change, use a different profile
+and number. For example, `init = AT+X2UP=2,0,16` makes a host that
+disables x2.
     command = exec /usr/bin/python3 /opt/d-modem/tools/x2upgrade-host.py --log /var/log/x2upgrade.log
 
 To use the Go version, build it:
@@ -83,26 +87,56 @@ not need x2 or a digital line. But the tests used x2 calls only.
 
 ## AT+X2UP
 
-`AT+X2UP=<mode>` sets what the modem does after LAPM connects.
+`AT+X2UP=<mode>,<enable>,<disable>` sets what the modem does after
+LAPM connects.
 
 | Mode | Function |
 | --- | --- |
 | 0 | Do nothing (the default). |
 | 1 | Read the serial number and the feature records. Make no change. |
-| 2 | Read them. If x2 is disabled, enable it. Then read the records again. |
+| 2 | Read them. Enable the features in `<enable>` and disable the features in `<disable>`. Then read the records again. |
+
+`<enable>` and `<disable>` are sums of these feature values:
+
+| Value | Feature |
+| --- | --- |
+| 4 | Terbo (V.32terbo) |
+| 8 | V.FC and V.34 |
+| 16 | x2 (and V.90 in the supervisor builds that have it) |
+
+The default of `<enable>` is 16, and the default of `<disable>` is 0.
+Thus `AT+X2UP=2` enables x2. A feature cannot be in the two values: the
+modem then gives `ERROR`. The host does not change HST (1) or fax (2).
+A value that you do not give keeps its last setting. Give the two values
+when you change one of them.
+
+Examples:
+
+| Command | Function |
+| --- | --- |
+| `AT+X2UP=2` | Enable x2. |
+| `AT+X2UP=2,28,0` | Enable Terbo, V.FC and x2. |
+| `AT+X2UP=2,0,16` | Disable x2. |
+| `AT+X2UP=2,4,24` | Enable Terbo. Disable V.FC and x2. |
+
+The effect of each feature on the Courier is in courier-emu's
+`docs/feature-bits-audit.md`. On the Courier, V.FC also shows Terbo in
+`ATI7`. `V34+` shows only when Terbo and V.FC are both enabled.
 
 When the exchange is complete, the modem sends one line to the DTE:
 
     +X2UP: <result>,"<serial number>",<features before>,<features after>
 
 The features are the value that the Courier shows in the fifth field of
-`ATY14`, in decimal. The value 16 is the x2 bit. For example, 015
-becomes 031.
+`ATY14`, in decimal. For example, when x2 (16) is enabled, 015 becomes
+031.
 
 | Result | Meaning |
 | --- | --- |
-| `ENABLED` | x2 was disabled. Now it is enabled. |
-| `ALREADY` | x2 was enabled before the call. The host made no change. |
+| `ENABLED` | The host enabled one or more features. |
+| `DISABLED` | The host disabled one or more features. |
+| `CHANGED` | The host enabled some features and disabled others. |
+| `ALREADY` | The features were already as asked. The host made no change. |
 | `REFUSED` | The host sent the change, but the records did not change. Set `ATS30=1` on the Courier and call again. |
 | `QUERIED` | Mode 1. The host read the records and made no change. |
 | `NO REPLY` | The remote modem did not reply. It is not a Courier, or it has no LAPM. |
@@ -114,15 +148,15 @@ becomes 031.
 3. Dial the host. Wait for the result. The host then hangs up.
 4. Type `AT&F1S0=0&W`.
 5. Set the power switch of the modem to OFF, then to ON.
-6. Type `ATI7`. Make sure that `x2` is in the Options line.
+6. Type `ATI7`. Make sure that the Options line shows the change.
 
 The change has no effect until step 5. The Courier reads its feature
 records only when it starts.
 
 ## Limits
 
-- The host changes only one bit: x2 (value 16) in record 2. It does not
-  change the country or other features.
+- The host changes only three bits of record 2: Terbo (4), V.FC (8) and
+  x2 (16). It does not change the country, HST or fax.
 - In supervisor builds that have V.90, the same bit enables V.90.
 - In supervisor 7.4.16 and later, the x2 bit has no effect. The firmware
   enables x2 and V.90 at each start.

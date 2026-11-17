@@ -156,11 +156,16 @@ modem that has `AT+X2UP=1` or `AT+X2UP=2`:
 3. Send message 1. Wait 3 s for message 0. Send again, up to 3 times.
    If no answer comes, the result is `NO REPLY`.
 4. With mode 1, the result is `QUERIED`.
-5. If record 2 has the value 16, the result is `ALREADY`.
-6. Send message 2 with selector `25`. Wait 1.5 s.
-7. Send message 1 again, as in step 3. If record 2 now has the value
-   16, the result is `ENABLED`. If not, or if no answer comes, the
-   result is `REFUSED`.
+5. Find the bits of `<enable>` that record 2 does not have, and the
+   bits of `<disable>` that it has. If there are none, the result is
+   `ALREADY`.
+6. For each bit to enable, send message 2. For each bit to disable,
+   send message 5. The selectors are `23` (Terbo), `24` (V.FC) and `25`
+   (x2). Wait 1.5 s.
+7. Send message 1 again, as in step 3. If the bits of `<enable>` and
+   `<disable>` in record 2 are now as asked, the result is `ENABLED`
+   (only enables), `DISABLED` (only disables) or `CHANGED` (both). If
+   not, or if no answer comes, the result is `REFUSED`.
 
 The timers count the bits that D-Modem sends. The exchange occurs one
 time in a call. The result goes to the DTE as one `+X2UP:` line
@@ -175,6 +180,11 @@ connects, a model of the Courier code answers the host. The test
 examines five calls: `ENABLED` (015 to 031, and the frame
 `01 03 0a 02 25`), `ALREADY`, `REFUSED` (the model does not keep the
 change), `NO REPLY` (six asks, then the end), and `QUERIED`.
+
+`Link.UsrFeatureSwitches` examines the switches: `DISABLED` (031 to 019,
+with the frames `01 03 0a 05 23` and `01 03 0a 05 24`), `CHANGED` (019
+to 007), `ALREADY` for a feature that is already disabled, no frame for
+HST and fax, and `REFUSED`.
 
 ### 6.2 Calls to emulated Couriers
 
@@ -203,6 +213,13 @@ With record 2 set to 31, the Courier connected with
 `CONNECT 49333/ARQ/x2/LAPM/V42BIS`, and `ATI7` showed `x2,V90`. With
 record 2 set to 15, the Courier sent no x2 marker, `ATI7` did not show
 x2, and the Courier gave `ERROR` for the x2 speed `&N39`.
+
+A call to 7.3.14 with record 2 set to 19 (HST, fax, x2) and
+`AT+MS=X2+X2UP=2,12,16` gave `+X2UP: CHANGED,"0009540034268322",019,015`.
+D-Modem sent the selectors `23` and `24` in message 2, and `25` in
+message 5. After a new start from the changed EEPROM, `ATI7` showed
+`HST,V32bis,Terbo,VFC,V34+`, and `ATY14` showed
+`000,000,030,007,015,000`.
 
 After the `ENABLED` call, the EEPROM image held `68 17 02` (31) in
 place of `28 0f 12` (15). A new start of the emulated Courier from that

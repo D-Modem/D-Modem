@@ -1053,6 +1053,8 @@ s16 Modem::link_init()
 	c.hst = hst_offer();
 	/* +X2UP: the remote feature upgrade, with LAPM */
 	c.usr_feature = static_cast<dlink::UsrMode>(kept("+X2UP")[0]);
+	c.usr_enable = static_cast<u8>(kept("+X2UP")[1]);
+	c.usr_disable = static_cast<u8>(kept("+X2UP")[2]);
 	/* MNP 10 (S113: bit 0 the offer, bit 1 parameter 0xC0, bit 2 the
 	   long LR; -K, -Q, )M, @M, :T19): with MNP, not synchronous;
 	   the D-Modem extension's top rate +MS's */

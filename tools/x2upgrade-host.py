@@ -25,9 +25,10 @@ BANNER = """\
 D-Modem x2 upgrade host\r
 =======================\r
 \r
-This host enables x2 in an upgradable USRobotics product that has the\r
-x2 code. It reads the serial number and the feature record of your modem\r
-through the error-corrected link. Then it sets the x2 feature bit.\r
+This host changes the features of an upgradable USRobotics product that\r
+has the x2 code. It reads the serial number and the feature record of\r
+your modem through the error-corrected link. Then it enables or disables\r
+features (Terbo, V.FC, x2) in that record.\r
 \r
 Please wait. Do not type.\r
 \r
@@ -38,13 +39,18 @@ To use x2, do these steps:\r
   1. Hang up.\r
   2. Type AT&F1S0=0&W and push Enter.\r
   3. Set the power switch of the modem to OFF, then to ON.\r
-  4. Type ATI7. Make sure that "x2" is in the Options line.\r
+  4. Type ATI7. Make sure that the Options line shows the change.\r
 """
 
 MESSAGES = {
-    'ENABLED': "Result: x2 is now enabled in your modem.\r\n\r\n" + AFTER,
-    'ALREADY': "Result: x2 was already enabled in your modem. No change was "
-               "necessary.\r\n\r\n" + AFTER,
+    'ENABLED': "Result: the host enabled the features in your modem.\r\n\r\n"
+               + AFTER,
+    'DISABLED': "Result: the host disabled the features in your modem."
+                "\r\n\r\n" + AFTER,
+    'CHANGED': "Result: the host enabled and disabled features in your "
+               "modem.\r\n\r\n" + AFTER,
+    'ALREADY': "Result: your modem already had the features that this host "
+               "sets.\r\nNo change was necessary.\r\n\r\n" + AFTER,
     'REFUSED': "Result: your modem did not keep the change.\r\n\r\n"
                "Your modem must permit feature upgrades. Type ATS30=1 and "
                "push Enter.\r\nThen call this host again.\r\n",
@@ -54,6 +60,16 @@ MESSAGES = {
                 "has x2 code,\r\nand only with error control (V.42 LAPM). "
                 "Type AT&F1 and push Enter.\r\nThen call this host again.\r\n",
 }
+
+# record 2's feature bits, as ATC8 has them
+FEATURES = ((1, 'HST'), (2, 'Fax'), (4, 'Terbo'), (8, 'V.FC/V.34'), (16, 'x2'))
+
+
+def feature_names(value):
+    """The names of the features in a record 2 value, for example 'HST, x2'."""
+    names = [name for bit, name in FEATURES if int(value) & bit]
+    return ', '.join(names) if names else 'none'
+
 
 REPORT = re.compile(r'\+X2UP: ([A-Z ]+?)(?:,"([^"]*)")?(?:,(\d+),(\d+))?\s*$')
 
@@ -105,6 +121,7 @@ def main():
             write('Serial number: %s\r\n' % serial)
         if before:
             write('Feature record: %s before, %s after\r\n' % (before, after))
+            write('Features now: %s\r\n' % feature_names(after))
         write('\r\n' + MESSAGES.get(result, 'Result: %s\r\n' % result))
     write('\r\nGoodbye.\r\n')
     if args.log:

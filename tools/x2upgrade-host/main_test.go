@@ -70,7 +70,8 @@ func TestScreen(t *testing.T) {
 	for _, s := range []string{
 		"Serial number: 0009540034268322\r\n",
 		"Feature record: 015 before, 031 after\r\n",
-		"x2 is now enabled",
+		"Features now: HST, Fax, Terbo, V.FC/V.34, x2\r\n",
+		"the host enabled the features",
 		"AT&F1S0=0&W",
 		"Goodbye.",
 	} {
@@ -87,6 +88,16 @@ func TestScreen(t *testing.T) {
 	screen(&b, report{result: "ODD"}, true)
 	if !strings.Contains(b.String(), "Result: ODD\r\n") {
 		t.Errorf("unknown result screen: %q", b.String())
+	}
+}
+
+// TestFeatureNames decodes record 2 values.
+func TestFeatureNames(t *testing.T) {
+	for v, want := range map[string]string{"031": "HST, Fax, Terbo, V.FC/V.34, x2",
+		"019": "HST, Fax, x2", "000": "none", "x": "?"} {
+		if got := featureNames(v); got != want {
+			t.Errorf("featureNames(%q) = %q, want %q", v, got, want)
+		}
 	}
 }
 
