@@ -212,6 +212,15 @@ short Tc110Peer::line_sample(short in)
 			stop_shown_ = true;
 			log("<%07.3f> the DSP stopped at %d:%04x\n",
 			    ms() / 1000.0, m.page, m.dsp.pc);
+			if (m.hist_on) {
+				std::string h;
+				char w[16];
+				for (unsigned i = m.hist_n - 64; i != m.hist_n; i++) {
+					snprintf(w, sizeof(w), " %x", m.hist[i & 255] & 0xffff);
+					h += w;
+				}
+				log("before:%s\n", h.c_str());
+			}
 			core();
 		}
 		if (env("CORE_AT") && !core_done_ &&

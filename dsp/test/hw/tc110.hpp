@@ -207,6 +207,7 @@ public:
 	double codec_rate = 7200;
 	bool line_ok = true;            /* port 0x8059 bit 0 */
 	std::function<void(w16)> on_dxr; /* (a test's: each DAC word) */
+	bool negmu = getenv("TC110_NEGMU") != nullptr; /* (a test) */
 	int carrier_sign = 1;            /* (a test: -1 the other way) */
 	int rom_miss = -1;              /* a ROM address not known, reached */
 	/* if set: the count of each page:PC the DSP runs */
@@ -244,7 +245,7 @@ public:
 		dsp.win = &flash[0];
 		dsp.ROM.assign(0x1000, 0xffff);
 		dsp.rom_lo = 0x30;
-		dsp.shared_lo = 0x7c00;
+		dsp.shared_lo = getenv("TC110_NOSHARE") ? 0x8000 : 0x7c00;
 		rom_init();
 		dsp.io_rd = [this](unsigned p) { return io_rd(p); };
 		dsp.io_wr = [this](unsigned p, w16 v) { io_wr(p, v); };
@@ -363,6 +364,10 @@ private:
 			hist[hist_n++ & 255] = (unsigned)page << 16 | dsp.pc;
 		if (dsp.pc == watch_pc && on_watch)
 			on_watch();
+		if (negmu && (dsp.pc == 0x0cd0 || dsp.pc == 0x0ce4)) {
+			dsp.D[0x3fd] = 0;
+			dsp.D[0x3fe] = 0;
+		}
 		if (!(dsp.D[0x07] & 8) && dsp.pc >= dsp.rom_lo && dsp.pc < 0x1000 &&
 		    dsp.ROM[dsp.pc] == 0xffff && !rom_call())
 			return;
@@ -387,11 +392,14 @@ private:
 		}
 		case 0x0ca7:
 			/* a block's end: the wait 0x0cb0 set counted down,
-			   else on to the pump's continuation (MMR 0x6d) */
+			   else on to the pump's continuation (MMR 0x6d; 0:
+			   none, a return) */
 			if (wait_ > 0) {
 				wait_--;
 				break;
 			}
+			if (!dsp.D[0x6d])
+				break;
 			dsp.pc = dsp.D[0x6d];
 			return false;
 		case 0x0cb0:
