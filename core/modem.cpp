@@ -2526,6 +2526,18 @@ void Modem::dsvd_close_voice()
 }
 
 /* see dcore.h */
+bool Modem::usr_feature_now(int mode, int enable, int disable)
+{
+	const int sw = dlink::USR_SWITCHED;
+	if (!link_ || mode < 1 || mode > 2 || enable < 0 || disable < 0 ||
+	    (enable & ~sw) || (disable & ~sw) || (enable & disable))
+		return false;
+	return link_->usr_start(static_cast<dlink::UsrMode>(mode),
+				static_cast<u8>(enable),
+				static_cast<u8>(disable));
+}
+
+/* see dcore.h */
 bool Modem::has_voice()
 {
 	return host_.dsvd_voice(*this) || dsvd_path_;

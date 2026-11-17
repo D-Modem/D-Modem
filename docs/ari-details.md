@@ -155,7 +155,9 @@ For each call that comes into the app, `dmodem-ari` does these steps:
    (`frontend/pbx/dmodem_bridge.c`). The details of the call go in the
    environment of the program or the header of the server:
    `DMODEM_CHANNEL`, `DMODEM_PROFILE`, `DMODEM_RATE`, `DMODEM_CALLERID`,
-   `DMODEM_DIALED` and `DMODEM_CONNECTED`.
+   `DMODEM_DIALED` and `DMODEM_CONNECTED`. A program also gets
+   `DMODEM_CONTROL`, its control channel to the modem, as in
+   [app_dmodem](asterisk-details.md).
 6. **Clean up.** At the end, it deletes the external media channel and
    the bridge, sets the variables, and continues the call in the
    dialplan.

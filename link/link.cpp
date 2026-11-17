@@ -120,6 +120,17 @@ void Link::status(Status s)
 		usr_.start();
 }
 
+/* (see link.h) */
+bool Link::usr_start(UsrMode mode, u8 enable, u8 disable)
+{
+	if (mode == UsrMode::Off || mode_ != Mode::Lapm ||
+	    proto_ == Protocol::V76 || !lapm_.up() || usr_.running())
+		return false;
+	usr_.init(this, mode, enable, disable);
+	usr_.start();
+	return usr_.running();
+}
+
 /* the data pump has connected (on: error correction is possible): V.80
    Synchronous Access Mode when asked for, else the
    originator's MNP at once when it is first or alone (no LAPM), the

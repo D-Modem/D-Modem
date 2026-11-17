@@ -1129,9 +1129,11 @@ struct CourierFeatures {
 };
 
 /* a call to the Courier cf with the host's side in mode once LAPM is
-   up: its one report */
+   up: its one report.  With then, the program's ask after that report
+   (Link::usr_start(), as dmodem_x2up()): the second report */
 static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode,
-			   uint8_t enable = 16, uint8_t disable = 0)
+			   uint8_t enable = 16, uint8_t disable = 0,
+			   UsrMode then = UsrMode::Off)
 {
 	rnd_state = 12345;
 	/* (the 16-bit FCS: the Courier's frames below have it) */
@@ -1157,8 +1159,9 @@ static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode,
 	tx.set_framer(&src, true);
 	rx.set_framer(&dst, false);
 	uint8_t bits[96];
-	size_t seen = 0;
-	for (int k = 0; k < 9600 * 30 / 96 && p.da.usr.empty(); k++) {
+	size_t seen = 0, want = then == UsrMode::Off ? 1 : 2;
+	bool asked = false;
+	for (int k = 0; k < 9600 * 60 / 96 && p.da.usr.size() < want; k++) {
 		tx.get_bits(1, bits, sizeof(bits));
 		p.la.put_bits(1, bits, sizeof(bits));
 		p.la.get_bits(1, bits, sizeof(bits));
@@ -1166,9 +1169,15 @@ static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode,
 		for (; seen < dst.rx.size(); seen++)
 			for (auto &a : cf.rx(dst.rx[seen]))
 				src.tx.push_back(a);
+		if (want == 2 && k == 0)
+			CHECK(!p.la.usr_start(then, enable, disable),
+			      "a second exchange while one goes on");
+		if (want == 2 && p.da.usr.size() == 1 && !asked)
+			asked = p.la.usr_start(then, enable, disable);
 	}
-	CHECK(p.da.usr.size() == 1, "one report (%zu)", p.da.usr.size());
-	return p.da.usr.empty() ? UsrReport() : p.da.usr[0];
+	CHECK(p.da.usr.size() == want && asked == (want == 2),
+	      "%zu reports (%zu)", want, p.da.usr.size());
+	return p.da.usr.size() < want ? UsrReport() : p.da.usr[want - 1];
 }
 
 /* the host's side (+X2UP=2) against a Courier that lets the set
@@ -1258,6 +1267,27 @@ TEST(Link, UsrFeatureSwitches)
 	CHECK(r.result == UsrResult::Refused && r.after[1] == 31,
 	      "refused (%s, %u)", usr_result_name(r.result), r.after[1]);
 	printf("  x2up: disabled, changed, already, HST and fax, refused\n");
+}
+
+/* the program's ask in the call (dmodem_x2up(), the caller's choice on
+   the host's screen): the call reads the features at the start
+   (+X2UP=1), then the change comes on Link::usr_start(); none with the
+   mode off */
+TEST(Link, UsrFeatureLater)
+{
+	CourierFeatures cf;
+	cf.recs[1] = 15;
+	UsrReport r = x2up_call(cf, UsrMode::Query, 16, 8, UsrMode::Change);
+	CHECK(r.result == UsrResult::Changed, "changed (%s)",
+	      usr_result_name(r.result));
+	CHECK(r.before[1] == 15 && r.after[1] == 23 && cf.recs[1] == 23,
+	      "features %u -> %u (%u)", r.before[1], r.after[1], cf.recs[1]);
+
+	Link idle;
+	NullOwner o;
+	idle.init(&o, true, lapm_config(0));
+	CHECK(!idle.usr_start(UsrMode::Change, 16, 0), "no LAPM up");
+	printf("  x2up: read at the start, changed later\n");
 }
 
 /* USRobotics HST in XID as a Courier sends it: the XID command and

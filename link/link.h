@@ -463,6 +463,11 @@ public:
 	void usr_rx(const u8 *info, s16 n) { usr_.rx(info, n); }
 	/* (see usr_send()) the exchange's end, to the owner */
 	void usr_report(const UsrReport &r) { owner_->usr_feature(r); }
+	/* the remote feature upgrade now, in a call that is on with LAPM
+	   (the program's ask, not Config's): mode, the features to enable
+	   and to disable as usr_feature.h has them; false (nothing done)
+	   with no LAPM up, or with an exchange going on */
+	bool usr_start(UsrMode mode, u8 enable, u8 disable);
 
 private:
 	void end_detect();

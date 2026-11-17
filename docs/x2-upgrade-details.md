@@ -167,9 +167,28 @@ modem that has `AT+X2UP=1` or `AT+X2UP=2`:
    (only enables), `DISABLED` (only disables) or `CHANGED` (both). If
    not, or if no answer comes, the result is `REFUSED`.
 
-The timers count the bits that D-Modem sends. The exchange occurs one
-time in a call. The result goes to the DTE as one `+X2UP:` line
-(`core/modem.cpp`, `LinkOwner::usr_feature()`).
+The timers count the bits that D-Modem sends. The result goes to the DTE
+as one `+X2UP:` line (`core/modem.cpp`, `LinkOwner::usr_feature()`).
+
+`AT+X2UP` starts the exchange one time, when LAPM connects. A program can
+start it again later in the same call, with new values:
+
+- `Link::usr_start()` starts the steps above at step 1. It refuses when
+  LAPM is not up, when the link is V.76 (DSVD), or when an exchange is
+  in progress.
+- `Modem::usr_feature_now()` makes sure that the values are correct, as
+  `AT+X2UP` does. Then it calls `Link::usr_start()`.
+- `dmodem_x2up()` in libdmodem calls `Modem::usr_feature_now()`.
+- The PBX bridge (`frontend/pbx/dmodem_bridge.c`) gives an exec program
+  a control channel: one end of a socket pair, on the file descriptor 3
+  of the program (`DMODEM_CONTROL=3`). The bridge reads command lines on
+  it. `X2UP=<mode>,<enable>,<disable>` calls `dmodem_x2up()` when the
+  call is online. The bridge sends `OK` or `ERROR` back.
+
+The caller screens (`tools/x2upgrade-host.py` and
+`tools/x2upgrade-host/`) use this. The profile reads the Courier at the
+start (`AT+X2UP=1`). The caller selects the features. Then the screen
+sends `X2UP=2,<enable>,<disable>` on the control channel.
 
 ## 6. Tests
 
@@ -185,6 +204,21 @@ change), `NO REPLY` (six asks, then the end), and `QUERIED`.
 with the frames `01 03 0a 05 23` and `01 03 0a 05 24`), `CHANGED` (019
 to 007), `ALREADY` for a feature that is already disabled, no frame for
 HST and fax, and `REFUSED`.
+
+`Link.UsrFeatureLater` reads the records when LAPM connects (mode 1).
+Then it calls `Link::usr_start()` with mode 2 (enable x2, disable
+V.FC): `CHANGED`, 015 to 023. A second exchange during the first one is
+refused, and a link with no LAPM refuses the start.
+
+`dmodem_bridge_test`'s `Bridge.ExecControlChannel` makes a V.22 call
+with V.42 to an exec profile. The program sends three lines on its
+descriptor 3: `X2UP=1` gets `OK`, and `X2UP=2,4,4` (a feature in the two
+values) and a line that is not a command get `ERROR`.
+
+`tools/test_x2upgrade_host.py` and the Go tests of
+`tools/x2upgrade-host/` examine the caller screens: the menu, the
+control line for each choice, `Q`, no key, an `ERROR` from the control
+channel, `REFUSED`, and a host with no control channel.
 
 ### 6.2 Calls to emulated Couriers
 

@@ -46,8 +46,9 @@ On the host:
 
 - D-Modem on a line that can answer the call, for example
   [app_dmodem](asterisk.md) or [dmodem-ari](ari.md).
-- A program that shows the caller the result. There are two versions
-  of this program. They do the same work. Use one of them:
+- A program that shows the caller a menu of the features and the
+  result. There are two versions of this program. They do the same
+  work. Use one of them:
     - `tools/x2upgrade-host.py`. It needs Python 3 and no other
       packages.
     - `tools/x2upgrade-host/`, in Go. It needs Go 1.22 or later to
@@ -60,11 +61,7 @@ Make a profile for the host in `dmodem.conf`:
 
     [x2upgrade]
     mode = exec
-    init = AT+X2UP=2
-
-To make a host that does a different change, use a different profile
-and number. For example, `init = AT+X2UP=2,0,16` makes a host that
-disables x2.
+    init = AT+X2UP=1
     command = exec /usr/bin/python3 /opt/d-modem/tools/x2upgrade-host.py --log /var/log/x2upgrade.log
 
 To use the Go version, build it:
@@ -82,13 +79,60 @@ Then send a number to the profile in `extensions.conf`:
     exten => 5553000,1,DModem(x2upgrade)
      same => n,Hangup()
 
+The options of the program:
+
+| Option | Function |
+| --- | --- |
+| `--timeout S` | The time in seconds to wait for each `+X2UP:` line. The default is 60. |
+| `--idle S` | The time in seconds to wait for a key in the menu. The default is 300. After this time, the program stops and makes no change. |
+| `--log FILE` | Add one line for each call to `FILE`. |
+
+### How the program operates
+
+1. When LAPM connects, the modem reads the Courier (`AT+X2UP=1`). It
+   sends `+X2UP: QUERIED,...` to the program.
+2. The program shows the serial number and the features of the
+   Courier. Then it shows a menu:
+
+        Features of your modem:
+          1. Terbo      ON
+          2. V.FC/V.34  ON
+          3. x2         ON   (changed)
+
+        Type 1, 2 or 3 to switch a feature on or off.
+        Type A to apply the changes. Type Q to stop with no change.
+        >
+
+3. The caller pushes 1, 2 or 3 to switch a feature on or off. Then the
+   caller pushes A.
+4. The program sends `X2UP=2,<enable>,<disable>` on its control channel
+   (`DMODEM_CONTROL`, file descriptor 3). The modem does the change, and
+   sends the result line to the program.
+5. The program shows the result and the steps that follow. Then it
+   stops, and the call ends.
+
+The control channel is available only in `mode = exec` profiles of
+app_dmodem, dmodem-ari and mod_dmodem. See
+[the technical details of app_dmodem](asterisk-details.md).
+
+### A host with no menu
+
+Without the control channel, the program shows only the result. Then
+the profile must do the change at the start of the call. Use
+`init = AT+X2UP=2` (enable x2), or give the features. For example,
+`init = AT+X2UP=2,0,16` makes a host that disables x2.
+
+A program that uses libdmodem directly can start the change with
+`dmodem_x2up()` (`frontend/dmodemd/dmodem.h`).
+
 The exchange uses only the error-corrected link (LAPM). Thus it does
 not need x2 or a digital line. But the tests used x2 calls only.
 
 ## AT+X2UP
 
 `AT+X2UP=<mode>,<enable>,<disable>` sets what the modem does after
-LAPM connects.
+LAPM connects. During a call, the control channel command `X2UP=` and
+`dmodem_x2up()` start the same exchange with the same values.
 
 | Mode | Function |
 | --- | --- |
@@ -145,12 +189,14 @@ The features are the value that the Courier shows in the fifth field of
 
 1. Set the modem to its factory settings: `AT&F1`.
 2. If the supervisor is later than 7.1.4, type `ATS30=1`.
-3. Dial the host. Wait for the result. The host then hangs up.
-4. Type `AT&F1S0=0&W`.
-5. Set the power switch of the modem to OFF, then to ON.
-6. Type `ATI7`. Make sure that the Options line shows the change.
+3. Dial the host. Wait for the menu.
+4. Push 1, 2 or 3 to switch Terbo, V.FC or x2 on or off. Then push A.
+   Wait for the result. The host then hangs up.
+5. Type `AT&F1S0=0&W`.
+6. Set the power switch of the modem to OFF, then to ON.
+7. Type `ATI7`. Make sure that the Options line shows the change.
 
-The change has no effect until step 5. The Courier reads its feature
+The change has no effect until step 6. The Courier reads its feature
 records only when it starts.
 
 ## Limits

@@ -352,6 +352,12 @@ public:
 	   voice path has gone), the data going on; nothing on another
 	   call */
 	void dsvd_close_voice();
+	/* the USRobotics remote feature upgrade now, in a call with LAPM
+	   (link/usr_feature.h): mode 1 reads the Courier's records, 2 also
+	   enables and disables features (sums of Terbo 4, V.FC 8, x2 16);
+	   its +X2UP: line goes to the DTE at the end.  false when it
+	   cannot start (no LAPM up, one going on, a value out of range) */
+	bool usr_feature_now(int mode, int enable, int disable);
 	/* the device reports an error */
 	void error();
 
