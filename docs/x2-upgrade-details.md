@@ -140,6 +140,11 @@ A change in the RAM copy and the EEPROM has no effect on the call. At
 power on, the Courier reads record 2 (7.1.4: `0908`). Bit 5 then sets
 the x2 capability (`0933`).
 
+Supervisor 7.4.16 and 7.6.7 set the x2 capability at `0519` with no
+condition, after they read the records. Thus, in these builds, bit 5 has
+no effect. Supervisor 7.1.4 and 7.3.14 do not have this step. The audit
+is in courier-emu's `docs/feature-bits-audit.md`.
+
 ## 5. The host sequence
 
 `dlink::UsrFeature` (`link/usr_feature.h`) does these steps on the
@@ -186,6 +191,18 @@ answers with `AT+MS=X2+X2UP=2`.
 
 All calls connected with x2 and LAPM. The serial number in all calls
 was `0009540034268322`.
+
+The image in these calls (`courier-board-21210-capture-403`) is ID_SDL
+4.03d, a third-party build of 7.4.16. Like the stock 7.4.16, it enables
+x2 at each start, whatever the value of the record. Thus these calls show
+that the host changes the record. They do not show the effect of the
+change on the modem.
+
+Supervisor 7.3.14 (`courier-board-21210-capture-01`) shows the effect.
+With record 2 set to 31, the Courier connected with
+`CONNECT 49333/ARQ/x2/LAPM/V42BIS`, and `ATI7` showed `x2,V90`. With
+record 2 set to 15, the Courier sent no x2 marker, `ATI7` did not show
+x2, and the Courier gave `ERROR` for the x2 speed `&N39`.
 
 After the `ENABLED` call, the EEPROM image held `68 17 02` (31) in
 place of `28 0f 12` (15). A new start of the emulated Courier from that

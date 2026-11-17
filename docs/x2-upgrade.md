@@ -31,6 +31,17 @@ On the Courier:
   "Enable feature upgrades". Without it, the modem does not keep the
   change. Supervisor 7.1.4 does not examine this bit.
 
+Which Couriers need the host:
+
+| Supervisor | Date | Result of the host call |
+| --- | --- | --- |
+| 6.x | 1994 to 1996 | No effect. The firmware has no upgrade code. Load 7.x first. |
+| 7.1.4 to 7.3.x | 1997 to 03/98 | x2 (and V.90 in 7.3.x) operates after the next power on. |
+| 7.4.16 and later | 04/98 and later | No effect on the modem. These builds always enable x2 and V.90. The host changes only the record. |
+
+The audit of the firmware is in courier-emu's
+`docs/feature-bits-audit.md`.
+
 On the host:
 
 - D-Modem on a line that can answer the call, for example
@@ -113,5 +124,7 @@ records only when it starts.
 - The host changes only one bit: x2 (value 16) in record 2. It does not
   change the country or other features.
 - In supervisor builds that have V.90, the same bit enables V.90.
+- In supervisor 7.4.16 and later, the x2 bit has no effect. The firmware
+  enables x2 and V.90 at each start.
 - The tests used emulated Couriers (courier-emu), not a physical
   modem. See [the technical details](x2-upgrade-details.md#6-tests).
