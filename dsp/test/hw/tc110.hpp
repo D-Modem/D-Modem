@@ -208,6 +208,16 @@ public:
 	bool line_ok = true;            /* port 0x8059 bit 0 */
 	std::function<void(w16)> on_dxr; /* (a test's: each DAC word) */
 	bool negmu = getenv("TC110_NEGMU") != nullptr; /* (a test) */
+	/* the adaptive filters' step (0x0cd0 to 0x0d42) shifted right by
+	   this: the 3453C's routines have twice the TC110's step (the
+	   echo cancellers and the equalizer diverge with it); TC110_LMS_SHIFT
+	   changes it (a test) */
+	bool freeze_eq = getenv("TC110_FREEZE_EQ") != nullptr;
+	int lms_shift = getenv("TC110_LMS_SHIFT") ? atoi(getenv("TC110_LMS_SHIFT")) : 1;
+	int fftshift = getenv("TC110_FFTSHIFT") ? atoi(getenv("TC110_FFTSHIFT")) : 0;
+	int eqmu = getenv("TC110_EQMU") ? atoi(getenv("TC110_EQMU")) : 0;
+	bool negmu_far = negmu && getenv("TC110_NEGMU")[0] == 'f';
+	bool negmu_near_only = negmu && getenv("TC110_NEGMU")[0] == 'n';
 	int carrier_sign = 1;            /* (a test: -1 the other way) */
 	int rom_miss = -1;              /* a ROM address not known, reached */
 	/* if set: the count of each page:PC the DSP runs */
@@ -328,6 +338,25 @@ private:
 	}
 
 	/* one DSP instruction's time: the timer, the UART, interrupts */
+	/* at an adaptive filter routine's start: its steps (DP's 0x7d and
+	   0x7e, and 0x7c and 0x7f for the 4 word ones) times 2^-lms_shift */
+	void lms_step()
+	{
+		unsigned b = dsp.dp << 7, lo, hi;
+		switch (dsp.pc) {
+		case 0x0cd0: case 0x0ce4: case 0x0d19: case 0x0d42:
+			lo = 0x7d; hi = 0x7e; break;
+		case 0x0cfc: case 0x0d29:
+			lo = 0x7c; hi = 0x7f; break;
+		default:
+			return;
+		}
+		for (unsigned a = lo; a <= hi; a++)
+			dsp.D[b + a] = (w16)((short)dsp.D[b + a] >> lms_shift);
+		if (freeze_eq && dsp.pc == 0x0cfc)
+			for (unsigned a = lo; a <= hi; a++)
+				dsp.D[b + a] = 0;
+	}
 	void tick()
 	{
 		if (!(dsp.D[0x26] & 0x10) && psc_-- <= 0) {
@@ -364,7 +393,18 @@ private:
 			hist[hist_n++ & 255] = (unsigned)page << 16 | dsp.pc;
 		if (dsp.pc == watch_pc && on_watch)
 			on_watch();
-		if (negmu && (dsp.pc == 0x0cd0 || dsp.pc == 0x0ce4)) {
+		if (lms_shift && dsp.pc >= 0x0cd0 && dsp.pc <= 0x0d42)
+			lms_step();
+		if (fftshift && dsp.pc == 0x6da0 && page == 1)
+			for (unsigned a = 0x280; a < 0x300; a++)
+				dsp.D[a] = (w16)((short)dsp.D[a] >> fftshift);
+		if (eqmu && dsp.pc == 0x6e25 && page == 1) {
+			dsp.D[0x37d] = (w16)((short)dsp.D[0x37d] >> eqmu);
+			dsp.D[0x37e] = (w16)((short)dsp.D[0x37e] >> eqmu);
+		}
+		if (negmu && (dsp.pc == 0x0cd0 || dsp.pc == 0x0ce4) &&
+		    (negmu_far ? dsp.D[0x11] >= 0x7e00 : dsp.D[0x11] < 0x7e00 ||
+		     !negmu_near_only)) {
 			dsp.D[0x3fd] = 0;
 			dsp.D[0x3fe] = 0;
 		}
@@ -516,13 +556,18 @@ private:
 			0x0758, 0xeedc, 0x4dff, 0xeedc, 0x0758,
 			0x0961, 0xea52, 0x516c, 0xea52, 0x0961,
 		};
-		/* (a test) 3453C 0x09a0 to 0x09c7, here 0x0a10 */
+		/* the symbol timing's first estimate (0x27c7, once a symbol
+		   in S): 4 of the interpolator's 6 tap sets (as 0x2929 makes
+		   them, Q14), 2 for each call of 0x296e. At 0x0a1c the
+		   delays 0 and 1/2 of a sample (with AR0 2), at 0x0a10 3/4 and
+		   1/4 (with AR0 1): the 4 points are a quarter of a symbol
+		   apart. These are made from the code, not read from a
+		   TC110 */
 		static const w16 t0a10[] = {
-			0x3aa9, 0xe668, 0xfd9b, 0xc00b, 0xc397, 0xeadd, 0xd641, 0x3083,
-			0x1de8, 0x3895, 0x3f99, 0xf8d6, 0x1090, 0xc22e, 0xcc81, 0xd9ff,
-			0xc9cf, 0x220d, 0x0be6, 0x3ee2, 0x3ee2, 0x0be6, 0x220d, 0xc9cf,
-			0xd9ff, 0xcc81, 0xc22e, 0x1090, 0xf8d6, 0x3f99, 0x3895, 0x1de8,
-			0x3083, 0xd641, 0xeadd, 0xc397, 0xc00b, 0xfd9b, 0xe668, 0x3aa9,
+			154, (w16)-1386, 13860, 4619, (w16)-990, 125,
+			126, (w16)-990, 4619, 13859, (w16)-1387, 154,
+			0, 0, 0, 16384, 0, 0,
+			192, (w16)-1601, 9600, 9599, (w16)-1600, 191,
 		};
 		/* L1 and L2's period (10.1.2.4/V.34), 64 samples at 9600 Hz
 		   (3453C 0x0080, the same place) */
@@ -693,6 +738,11 @@ private:
 		memcpy(&dsp.ROM[0x0080], probe, sizeof(probe));
 		memcpy(&dsp.ROM[0x0728], pp, sizeof(pp));
 		memcpy(&dsp.ROM[0x0a10], t0a10, sizeof(t0a10));
+		if (getenv("TC110_T0E0"))
+			for (int k = 0; k < 16; k++) {
+				char c[2] = { getenv("TC110_T0E0")[k], 0 };
+				dsp.ROM[0x00e0 + k] = (w16)strtol(c, nullptr, 16);
+			}
 		memcpy(&dsp.ROM[0x0a38], pre, sizeof(pre));
 		if (getenv("TC110_PRE_FLAT"))
 			for (int k = 0; k < 11; k++)

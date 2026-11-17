@@ -28,6 +28,7 @@
  */
 
 #include <stdio.h>
+#include <math.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -62,6 +63,7 @@ private:
 	FILE *dump_ = nullptr;          /* TC110_DUMP's */
 	bool stop_shown_ = false;
 	bool core_done_ = false;
+	double rx_gain_ = 1.0;          /* TC110_RXGAIN's */
 	long prof_left_ = 0;            /* codec samples still profiled */        /* TC110_CORE_AT's done */
 	std::string shown_[2];          /* the DTE's lines being logged */
 
@@ -78,6 +80,8 @@ static Tc110Peer tc110;
 int Tc110Peer::start()
 {
 	const char *flash = env("FLASH") ? env("FLASH") : TC110_FLASH;
+	if (env("RXGAIN"))
+		rx_gain_ = pow(10.0, atof(env("RXGAIN")) / 20);
 	if (env("CARRIER"))
 		m.carrier_sign = atoi(env("CARRIER"));
 	if (env("DSP_MIPS"))
@@ -207,6 +211,12 @@ short Tc110Peer::line_sample(short in)
 {
 	short out = codec_line_sample(in, (double)line_rate / m.codec_rate,
 				      [this](short adc) {
+		if (rx_gain_ != 1.0) {
+			/* TC110_RXGAIN=<dB>: the receive level changed (a
+			   test) */
+			double v = adc * rx_gain_;
+			adc = (short)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+		}
 		short dac = m.sample(adc);
 		if ((m.dsp.stopped || m.rom_miss >= 0) && !stop_shown_) {
 			stop_shown_ = true;
