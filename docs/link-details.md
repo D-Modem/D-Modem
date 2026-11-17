@@ -729,6 +729,93 @@ probes, data in the two directions), `Link.Mnp10Fallback`,
 (`-K1`) and, with the real pumps, `Core.Mnp10Climbs` (V.22 up to V.34 at
 33600 bit/s, through V.22bis, V.32bis and V.32terbo).
 
+### ETC (Enhanced Throughput Cellular)
+
+**What it is.** ETC is the cellular mode of AT&T Paradyne (ETC1, ETC2,
+ETC2-QC). Paradyne did not publish it. The 3Com Megahertz x2/V.90 PC
+Cards (XJ5560, CC5560, 3CXM556, 3CCM556) have it. The TC110 firmware of
+these cards is USRobotics code for one TMS320C5x DSP. A static trace of
+this firmware gives the data for D-Modem. The trace is in the project
+files (`etc-cellular/firmware-trace.md`).
+
+**What the firmware does.** One flag word (data 0xAE4E) controls ETC.
+`&F5` (`ETC_CELL`) and the attachment of the cellular cable set it to
+0xEE. `&F6` (`ETC_LAND`) sets it to 0xB0. In ETC mode, the firmware does
+these steps:
+
+- It uses V.32bis or lower (S32 = 60: no V.FC, V.34 or x2).
+- On the cellular side, error control is necessary (`&M5`). On the
+  landline side, it is optional (`&M4`).
+- When bit 5 is set, a 6-tap FIR filter changes each transmitted sample.
+  `AT+EF=n` selects one of 11 sets of coefficients. Set 5 is the default.
+- It adds `/ETC` to CONNECT when one of bits 0 to 2 is set.
+- When the cable is attached, it sets S10 to 40 (4 s) and S7 to 90.
+- The cellular side sends a calling tone of 1500 Hz: 0.7 s on, 1.5 s
+  off. (A normal call sends the CNG of T.30 at 1100 Hz, 0.5 s on, 3 s
+  off.)
+- The landline side has a 1500 Hz detector in its bank of tone
+  detectors. When the 1500 Hz energy is sufficiently high and is more
+  than half of the received energy, it sets bits 0, 2 and 5. Then ETC
+  is on.
+- The transmit attenuation is 13 dB from the full scale of the codec for
+  `ETC_CELL` (the default) and 20 dB for `ETC_LAND`.
+- In ETC mode, the XID of V.42 gives N401 = 64 octets, not 128, and
+  T401 is 3.0 s.
+
+The trace found no special ETC modulation. On this card, ETC is V.32bis
+with V.42 or MNP, the calling tone and the settings above. The V.32bis
+pump of the card operates at 7200 Hz.
+
+**What D-Modem does.** S116 holds the flags, with the bits of the
+firmware. `AT&F5` sets S116 to 238 (0xEE), `+MS=V32B`, `\N2`, S10 = 40
+and S7 = 90. `AT&F6` sets S116 to 176 (0xB0) and `\N3`. Other `&F`
+commands do nothing, as before.
+
+- When bit 1 of S116 is set, the caller sends the 1500 Hz calling tone
+  (`dsp/dp_callprog.cpp`).
+- When bit 4 of S116 is set and bits 0 to 2 are not set, the answerer
+  listens for the 1500 Hz tone in the first 10 s of the call
+  (`EtcToneDetector` in `core/etc.h`). It measures blocks of 50 ms. Two
+  blocks in sequence with more than half of the energy at 1500 Hz, above
+  -43 dBm0, turn ETC on for the call. S116 does not change. The answerer
+  also transmits 6.6 dB lower than the default (the ratio of the two
+  gains of the firmware).
+- When S116 is not 0, the link offers N401 = 64 octets, and T401 is 3 s
+  plus the time of three frames (not 2 s). The firmware uses 3.0 s in
+  ETC mode, and 1.5 s to 5 s from the rate in other modes.
+- When bit 5 of S116 is set at the start of a call, `core/etc.h` filters
+  the samples of the data pump before they go to the line. The filter is
+  off during the call progress pump (dial tones and the calling tone), as
+  bit 9 of the firmware does. The filter
+  uses the coefficients of `+EF` (0 to 10, default 5) at the sample rate
+  of the pump. The firmware multiplies the output by a gain that we did
+  not read. D-Modem sets the gain of each set to 0 dB at 1800 Hz (the
+  carrier of V.32bis). Set 5 then gives +3.5 dB at 300 Hz and -7.6 dB at
+  3600 Hz at 8000 Hz.
+- When one of bits 0 to 2 is set, CONNECT shows `/ETC` after the error
+  correction (`\V1`), and `#UD` gives `40=82` (ETC, Table 7 of the
+  Unimodem diagnostics) when V.42 or MNP is active.
+
+**Limits.**
+
+- The cellular side of the firmware uses a 1500 Hz notch in its receive
+  path, so that it does not hear its own calling tone. D-Modem does not
+  need it.
+- The sample rate of the D-Modem pumps is 8000 Hz or 9600 Hz, not
+  7200 Hz. The filter thus has a slightly different response.
+- On a flat line, the filter decreases the margin of V.32bis. Between two
+  D-Modems with ETC on both sides, the call connects at 12000 bit/s, not
+  at 14400 bit/s. On a cellular voice channel, the filter compensates for
+  the pre-emphasis of the channel.
+
+**Tests:** `Core.EtcFilter` (the response of the coefficients, the levels
+through the filter), `Core.EtcToneDetector` (1500 Hz found at -10 and -40
+dBm0 and in noise; not 1300 Hz, 1800 Hz, noise or a short tone),
+`Core.EtcSettings` (`&F5`, `&F6`, S116, `+EF`), `Core.EtcCall` (a call
+from `&F5` to `&F6`: the calling tone found, V.32bis with V.42, `/ETC` on
+the two sides, `40=82` and `41=40` in `#UD`, data in the two directions)
+and `Core.EtcLandPlainCaller` (no calling tone, no `/ETC`).
+
 ## V.80
 
 The Synchronous Access Mode of V.80 (8.8/V.80) is for DTEs that do their

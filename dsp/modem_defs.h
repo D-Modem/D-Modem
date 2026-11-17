@@ -122,6 +122,13 @@ enum S_REGISTER {
 						    (the responder always
 						    takes it, with %C2 or
 						    %C3) */
+	SREG_ETC                          = 116, /* ETC's flags, as 3Com's
+						    TC110 firmware keeps
+						    them (AT&F5: 0xEE
+						    cellular, AT&F6: 0xB0
+						    landline; bit 5 the
+						    transmit filter, bits
+						    0-2 /ETC) */
 	SREG_ZYX_PEER                     = 115, /* 1: the V.32bis and ZyX
 						    pumps send ZyXEL's peer
 						    marker, and go to ZyX on

@@ -259,6 +259,9 @@ const struct Kept {
 	{ "+FAA", 1, { 0 }, "(0,1)" },
 	{ "+FPR", 1, { 0 }, "(0,1,2,4,8,10,18)" },
 	{ "-SEC", 1, { 0 }, "(0,1),(0-30)" },
+	/* ETC's transmit filter (3Com's AT+EF, core/etc.h): its set of
+	   taps; modem.cpp reads it */
+	{ "+EF", 1, { 5 }, "(0-10)" },
 	/* V.cvm (Table 12-1/V.cvm): the modes, the signal interface's rate,
 	   +CVMR */
 	{ "+CVM", 3, { 63, 8000, 0 }, "(0-63),(8000,16000),(0,1)" },
@@ -668,8 +671,15 @@ s16 Modem::at_command(char *cmd)
 				case 'C':
 					ret = setting(SREG_CD, 2, 0, 1);
 					break;
-				case 'D':
 				case 'F':
+					/* &F5, &F6: ETC's settings (3Com's
+					   ETC_CELL, ETC_LAND); the others
+					   change nothing */
+					len = 2 + is_digit(p[2]);
+					if (p[2] == '5' || p[2] == '6')
+						etc_profile(p[2] - '0');
+					break;
+				case 'D':
 				case 'R':
 				case 'S':
 					len = 2 + is_digit(p[2]);
@@ -2849,6 +2859,30 @@ const u32 *Modem::kept(const char *name) const
 {
 	s16 i = kept_index(name);
 	return i < 0 ? nullptr : kept_[i];
+}
+
+/* &F5 (n 5): 3Com's ETC_CELL, the cellular side: its flags, V.32bis
+   and below (its S32 60: no V.FC, V.34 or x2), error control a must
+   (its &M5: \N2), and as its cable's attachment sets them a 4 s wait
+   for a lost carrier and 90 s for the carrier.  &F6: ETC_LAND, the
+   landline side: its flags and error control if the remote has it
+   (&M4: \N3), the modulations as they are; its 1500 Hz detector and
+   lower level are modem.cpp's (docs/link-details.md) */
+void Modem::etc_profile(int n)
+{
+	if (n == 5) {
+		sregs_[SREG_ETC] = 0xEE;
+		if (ms_choosable(DP_V32BIS)) {
+			sregs_[SREG_DP] = DP_V32BIS;
+			sregs_[SREG_AUTOMODE] = 1;
+		}
+		set_ec_mode(2);
+		sregs_[SREG_CARRIER_LOSS_DISCONNECT_TIME] = 40;
+		sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] = 90;
+	} else {
+		sregs_[SREG_ETC] = 0xB0;
+		set_ec_mode(3);
+	}
 }
 
 /* \N<n>: S103, and +ES as V.250 has the same error control */

@@ -3231,6 +3231,168 @@ TEST(Core, ConfigAuto)
 	delete m;
 }
 
+/*
+ *    ETC (S116, AT&F5, AT&F6, AT+EF; core/etc.h)
+ */
+
+/* the default set's response as the firmware's taps give it at 8000 Hz:
+   a tilt down from +5.1 dB at 300 Hz to -6.0 dB at 3600 Hz; the filter
+   at a gain of 1 at 1800 Hz, the tilt the same */
+TEST(Core, EtcFilter)
+{
+	auto db = [](double g) { return 20 * log10(g); };
+	EXPECT_NEAR(db(dcore::etc_gain(5, 300, 8000)), 5.1, 0.1);
+	EXPECT_NEAR(db(dcore::etc_gain(5, 1800, 8000)), 1.6, 0.1);
+	EXPECT_NEAR(db(dcore::etc_gain(5, 3600, 8000)), -6.0, 0.1);
+	EXPECT_NEAR(db(dcore::etc_gain(0, 1000, 8000)), 0, 0.01);
+	for (int set = 1; set <= 6; set++)
+		EXPECT_GT(dcore::etc_gain(set, 300, 8000),
+			  dcore::etc_gain(set, 3300, 8000)) << set;
+	/* a sine's level through the filter */
+	auto level = [](int set, double f) {
+		dcore::EtcFilter e;
+		e.start(set, 8000);
+		std::vector<int16_t> s(8000);
+		for (size_t i = 0; i < s.size(); i++)
+			s[i] = static_cast<int16_t>(
+				lround(8000 * sin(2 * M_PI * f * i / 8000)));
+		e.process(s.data(), static_cast<int>(s.size()));
+		double sq = 0;
+		for (size_t i = 100; i < s.size(); i++)
+			sq += static_cast<double>(s[i]) * s[i];
+		return 10 * log10(sq / (s.size() - 100) / (8000.0 * 8000 / 2));
+	};
+	EXPECT_NEAR(level(5, 1800), 0, 0.1);
+	EXPECT_NEAR(level(5, 300), 5.1 - 1.6, 0.2);
+	EXPECT_NEAR(level(5, 3300), -5.1 - 1.6, 0.2);
+	EXPECT_NEAR(level(0, 700), 0, 0.1);
+	/* a set out of range is the default */
+	EXPECT_NEAR(level(99, 300), level(5, 300), 0.01);
+}
+
+/* &F5 and &F6 set ETC's flags and the settings of 3Com's profiles; +EF
+   takes 0 to 10 */
+TEST(Core, EtcSettings)
+{
+	Line l;
+	Modem *m = make(l, "A");
+	EXPECT_EQ(cmd(m, l, "ATE0\r"), "ATE0\r\r\nOK\r\n");
+	EXPECT_EQ(m->sreg(SREG_ETC), 0);
+	EXPECT_EQ(cmd(m, l, "AT&F5\r"), "OK\r\n");
+	EXPECT_EQ(m->sreg(SREG_ETC), 0xEE);
+	EXPECT_EQ(m->sreg(SREG_DP), DP_V32BIS);
+	EXPECT_EQ(m->sreg(SREG_EC), 2);
+	EXPECT_EQ(m->sreg(SREG_CARRIER_LOSS_DISCONNECT_TIME), 40);
+	EXPECT_EQ(m->sreg(SREG_WAIT_CARRIER_AFTER_DIAL), 90);
+	EXPECT_EQ(cmd(m, l, "AT+ES?\r"), "+ES: 3,2,4\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT&F6\r"), "OK\r\n");
+	EXPECT_EQ(m->sreg(SREG_ETC), 0xB0);
+	EXPECT_EQ(m->sreg(SREG_EC), 3);
+	EXPECT_EQ(cmd(m, l, "ATS116=0\r"), "OK\r\n");
+	EXPECT_EQ(m->sreg(SREG_ETC), 0);
+	EXPECT_EQ(cmd(m, l, "AT+EF?\r"), "+EF: 5\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+EF=?\r"), "+EF: (0-10)\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+EF=2\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+EF?\r"), "+EF: 2\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+EF=11\r"), "ERROR\r\n");
+	delete m;
+}
+
+/* a cellular side (&F5) calls a landline side (&F6): the caller's 1500
+   Hz calling tone, which the landline side finds; V.32bis with V.42,
+   the filter on both transmitters, /ETC in both CONNECTs, 0x82 and
+   frames of 64 octets in the caller's #UD; the data both ways */
+TEST(Core, EtcCall)
+{
+	Pair p("\\V1");
+	cmd(p.a, p.la, "AT&F5\r");
+	cmd(p.b, p.lb, "AT&F6\r");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	EXPECT_LE(p.a->tx_rate(), 14400u);
+	EXPECT_GE(p.a->tx_rate(), 4800u);
+	EXPECT_TRUE(std::regex_search(p.got_a,
+		std::regex("CONNECT [0-9]+/LAPM/ETC"))) << p.got_a;
+	EXPECT_TRUE(std::regex_search(p.got_b,
+		std::regex("CONNECT [0-9]+/LAPM/ETC"))) << p.got_b;
+	std::string da = data('a', 8000), db = data('b', 6000);
+	size_t sa = 0, sb = 0;
+	p.got_a.clear();
+	p.got_b.clear();
+	for (int t = 0; t < 60000; t += 20) {
+		int n = std::min<int>(p.a->dte_space(), da.size() - sa);
+		sa += p.a->dte_input(da.data() + sa, n);
+		n = std::min<int>(p.b->dte_space(), db.size() - sb);
+		sb += p.b->dte_input(db.data() + sb, n);
+		p.step();
+		if (p.got_b.size() >= da.size() && p.got_a.size() >= db.size())
+			break;
+	}
+	EXPECT_TRUE(p.got_b == da) << "B got " << p.got_b.size();
+	EXPECT_TRUE(p.got_a == db) << "A got " << p.got_a.size();
+	p.run_until([](Pair &) { return false; }, 1100);
+	p.got_a.clear();
+	p.a->dte_input("+++", 3);
+	p.run_until([](Pair &q) {
+		return q.got_a.find("OK") != std::string::npos; }, 2000);
+	std::string ud = cmd(p.a, p.la, "AT#UD\r");
+	EXPECT_NE(ud.find(" 40=82"), std::string::npos) << ud;
+	/* V.42's N401: 64 octets, as ETC presets it */
+	EXPECT_NE(ud.find(" 41=40"), std::string::npos) << ud;
+}
+
+/* the landline side's detector: 1500 Hz found (at -10 and -40 dBm0, and
+   under noise 10 dB down), not 1300 or 1800 Hz, nor silence or noise,
+   nor 1500 Hz for 30 ms (one block) */
+TEST(Core, EtcToneDetector)
+{
+	auto found = [](double f, double dbm0, int ms, double noise_db) {
+		dcore::EtcToneDetector d;
+		d.start(8000);
+		const double a = sqrt(2 * 2.49e8 * pow(10, dbm0 / 10));
+		const double na = noise_db > -100 ?
+			sqrt(2.49e8 * pow(10, noise_db / 10)) : 0;
+		std::vector<int16_t> s(8000);
+		unsigned x = 1;
+		for (size_t i = 0; i < s.size(); i++) {
+			x = x * 1103515245 + 12345;
+			const double nz = na * (((x >> 16) & 0x7fff) / 16384.0 -
+						1) * sqrt(3);
+			const double t = static_cast<int>(i) < ms * 8 ?
+				a * sin(2 * M_PI * f * i / 8000) : 0;
+			s[i] = static_cast<int16_t>(lround(t + nz));
+		}
+		return d.process(s.data(), static_cast<int>(s.size()));
+	};
+	EXPECT_TRUE(found(1500, -10, 700, -200));
+	EXPECT_TRUE(found(1500, -40, 700, -200));
+	EXPECT_TRUE(found(1500, -20, 700, -30));
+	EXPECT_FALSE(found(1300, -10, 700, -200));
+	EXPECT_FALSE(found(1800, -10, 700, -200));
+	EXPECT_FALSE(found(1500, -60, 700, -200));
+	EXPECT_FALSE(found(1500, -10, 0, -20));
+	EXPECT_FALSE(found(1500, -10, 30, -200));
+}
+
+/* a caller without ETC: the landline side (&F6) finds no 1500 Hz, so no
+   /ETC */
+TEST(Core, EtcLandPlainCaller)
+{
+	Pair p("\\V1+MS=V32B");
+	cmd(p.b, p.lb, "AT&F6\r");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	EXPECT_TRUE(p.got_b.find("CONNECT") != std::string::npos &&
+		    p.got_b.find("/ETC") == std::string::npos) << p.got_b;
+	EXPECT_TRUE(p.got_a.find("/ETC") == std::string::npos) << p.got_a;
+}
+
 /* ZyXEL's type 2 security by itself (zyxel_sec.h): the firmware's
    limits, 8 characters a password and 26 a number, 3 tries */
 TEST(Core, ZyxelSecurity)

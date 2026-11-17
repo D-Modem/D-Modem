@@ -454,7 +454,7 @@ void Modem::sregs_init()
 		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
 		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 },
-		{ SREG_ZYX_PEER, 0 },
+		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -758,6 +758,22 @@ s16 Modem::start_call(bool keep_line)
 	shift_cap_ = 0;
 	tx_gain_ = 1;
 	rx_pow_ = 0;
+	/* ETC's transmit filter (S116 bit 5): +EF's set at our rate */
+	etc_tx_ = (sregs_[SREG_ETC] & 0x20) && !wideband();
+	if (etc_tx_)
+		etc_filter_.start(static_cast<int>(kept("+EF")[0]), srate_);
+	/* the landline side (S116 bit 4, ETC not on yet): its listening
+	   for an ETC caller's 1500 Hz in the call's first 10 s, and its
+	   transmit level 6.6 dB under ours (the firmware's gains for
+	   ETC_LAND's attenuation of 20, 0x0CCD, and its default 13,
+	   0x1B35) */
+	etc_peer_ = false;
+	etc_listen_ = !caller_ && (sregs_[SREG_ETC] & 0x10) &&
+		!(sregs_[SREG_ETC] & 7) && !wideband() ? 10 * srate_ : 0;
+	if (etc_listen_)
+		etc_det_.start(srate_);
+	if ((sregs_[SREG_ETC] & 0x10) && !wideband())
+		tx_gain_ = 3277.0f / 6965;
 	if (!(keep_line && started_) && do_start())
 		return fail("the line does not start");
 	return 0;
@@ -941,6 +957,10 @@ void Modem::setup_config()
 	c.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
 	c.tx_win = c.rx_win = dlink::LAPM_MAX_WIN;
 	c.tx_info = c.rx_info = dlink::LAPM_MAX_INFO;
+	/* ETC (S116): V.42's N401 64 octets, as the firmware presets it
+	   in its XID (512 bits, not 1024) */
+	if (sregs_[SREG_ETC])
+		c.tx_info = c.rx_info = 64;
 	/* V.42bis with LAPM (XID) or with MNP (its LR: docs/mnp/mnp5.md) */
 	c.comp = (c.ec || c.mnp) && (comp & 2) ? 3 : 0;
 	c.mnp5 = c.mnp && (comp & 1);
@@ -999,6 +1019,10 @@ s16 Modem::link_init()
 	c.tx_win = cfg_.tx_win;
 	c.rx_win = cfg_.rx_win;
 	c.tx_info = cfg_.tx_info;
+	/* ETC (S116): T401 3 s, as 3Com's firmware sets it (data 0xBCE3:
+	   30 ticks of 100 ms, in place of 1.5 to 5 s by the rate) */
+	if (sregs_[SREG_ETC])
+		c.t401_s = 3;
 	c.rx_info = cfg_.rx_info;
 	/* +DS (V.42bis) and +DS44 (V.44): their <direction> from the
 	   DTE's side (bit 0 what it sends: our encoder, Config::comp's bit
@@ -2110,7 +2134,18 @@ void Modem::run(s16 *in, s16 *out, s32 n)
 				rx_pow_ += a * (static_cast<float>(sq / n) -
 						rx_pow_);
 		}
+		if (etc_listen_ > 0) {
+			etc_listen_ -= n;
+			if (etc_det_.process(in, n)) {
+				etc_listen_ = 0;
+				etc_peer_ = true;
+				logf("ETC: the caller's 1500 Hz tone, ETC on\n");
+			}
+		}
 		dp_process(in, out, n);
+		/* (not on the call progress's tones: the firmware's bit 9) */
+		if (etc_tx_ && !(dp_ && dp_->id == DP_CALLPROG))
+			etc_filter_.process(out, n);
 		if (tx_gain_ != 1)
 			for (s32 i = 0; i < n; i++)
 				out[i] = static_cast<s16>(lroundf(out[i] *
@@ -2983,6 +3018,10 @@ void Modem::report(Result r)
 		} else if (sregs_[SREG_CONNECT_PROTOCOL]) {
 			const std::string_view comp = compression_name();
 			line = "CONNECT " + rate + "/" + protocol_name();
+			/* ETC, as 3Com's cards show it after the error
+			   correction */
+			if (etc_on())
+				line += "/ETC";
 			if (comp != "NONE")
 				line += "/" + std::string(comp);
 		} else {
@@ -3483,7 +3522,9 @@ void Modem::unimodem_diag()
 		num(0x33, d.retrains_local + d.retrains_remote, 2);
 		num(0x34, stats_.ended ? stats_.tx1 : tx_rate_, 4);
 		num(0x35, stats_.ended ? stats_.rx1 : rx_rate_, 4);
-		num(0x40, cfg_.ec ? 1 : cfg_.mnp_on ? 2 : 0);
+		/* (0x82: ETC with either, Table 7) */
+		num(0x40, etc_on() && (cfg_.ec || cfg_.mnp_on) ? 0x82 :
+		    cfg_.ec ? 1 : cfg_.mnp_on ? 2 : 0);
 		/* the error correction's frame size: the information
 		   field we send */
 		if (cfg_.ec)

@@ -103,6 +103,9 @@ struct Config {
 	s32 mnp10_top = 33600;
 	s16 tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
 	s16 tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
+	/* LAPM's T401: its seconds before the time of the frames (2; ETC's
+	   3, as 3Com's firmware) */
+	s16 t401_s = 2;
 	/* LAPM's 32-bit FCS (10 c/V.42) offered by the originator, agreed
 	   to by the answerer; in the remote's XID, what it asked for or
 	   agreed to */

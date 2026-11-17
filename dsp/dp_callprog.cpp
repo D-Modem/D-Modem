@@ -120,6 +120,9 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 				   CNG (DSP_FAX_CNG=0); 0 data */
 	s16 fastpos;            /* a V.29 FastPOS call (+MS=V29FP): its
 				   980 Hz calling tone, all the time */
+	s16 etc;                /* an ETC cellular caller (S116 bit 1): the
+				   3Com firmware's 1500 Hz calling tone,
+				   0.7 s in every 2.2 s */
 	Osc ct;
 
 	/* V.8 bis (MDMPRM_V8BIS): an initiating signal hands the call to
@@ -143,7 +146,8 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 /* sets up the detectors on BLOCK_MS blocks, the dial string and its
    timings (S11 DTMF ms, S8 comma pause), dial tone wait (X2/X4), the
    answer timeout (S7 s) and the calling tone (V.25 1300 Hz, the 1100
-   Hz CNG in fax mode, or V.29 FastPOS's steady 980 Hz); forgets any answer tone in the runtime; 0 */
+   Hz CNG in fax mode, V.29 FastPOS's steady 980 Hz, or an ETC cellular
+   caller's 1500 Hz); forgets any answer tone in the runtime; 0 */
 s16 CallProgPump::start(struct modem *m, enum DP_ID id, s16 caller,
 			 s32 srate_, s32 max_frag)
 {
@@ -261,7 +265,9 @@ s16 CallProgPump::start(struct modem *m, enum DP_ID id, s16 caller,
 	if (fax && env_off("DSP_FAX_CNG"))
 		fax = -1;
 	fastpos = !fax && modem_get_sreg(m, SREG_DP) == DP_V29FP;
-	ct.set_freq(fax ? 1100 : fastpos ? 980 : 1300, srate_);
+	etc = !fax && !fastpos && caller &&
+		(modem_get_sreg(m, SREG_ETC) & 2);
+	ct.set_freq(fax ? 1100 : fastpos ? 980 : etc ? 1500 : 1300, srate_);
 
 	/* like the original, X2/X4 insist on a dial tone even when there
 	   is nothing to dial (D-Modem users run ATX3 for SIP lines); the
@@ -678,6 +684,11 @@ s16 CallProgPump::process(void *in, void *out, s32 cnt)
 					y = 0.5f * DSP_TX_AMPLITUDE * ct.next();
 			} else if (fastpos)
 				y = 0.5f * DSP_TX_AMPLITUDE * ct.next();
+			else if (etc) {
+				if (count % ms2samples(2200, srate) <
+				    ms2samples(700, srate))
+					y = 0.5f * DSP_TX_AMPLITUDE * ct.next();
+			}
 			else if (!fax && calling_tone &&
 				   count >= ms2samples(500, srate) &&
 				   (count % ms2samples(2500, srate)) <

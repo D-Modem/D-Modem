@@ -28,6 +28,7 @@
 #include <modem_defs.h>
 #include <modem_dp.h>
 
+#include "etc.h"
 #include "modem_homolog.h"
 #include "v13.h"
 #include "v54.h"
@@ -480,6 +481,15 @@ public:
 	void mnp10_line(s16 &dbm, s16 &eqm) const;
 	bool mnp10_shift(const dlink::Shift &s);
 	void mnp10_tx_level(s16 db);
+	/* ETC (S116, core/etc.h): AT&F5's cellular settings or AT&F6's
+	   landline ones */
+	void etc_profile(int n);
+	/* ETC is on (/ETC in CONNECT, 0x82 in #UD's error control):
+	   S116's bits 0 to 2, or the landline side found an ETC caller */
+	bool etc_on() const
+	{
+		return (sregs_[SREG_ETC] & 7) != 0 || etc_peer_;
+	}
 	/* the DTE's in-band command in V.80's Synchronous Access Mode */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx);
 	/* a debug line with the modem's name */
@@ -489,7 +499,7 @@ public:
 	static const char *const author, *const product, *const version;
 	/* the extended parameters of other modems' setup strings it keeps
 	   (at most), their values (at most) */
-	enum { KEPT_PARAMS = 28, KEPT_VALUES = 9 };
+	enum { KEPT_PARAMS = 30, KEPT_VALUES = 9 };
 
 private:
 	enum State {
@@ -868,6 +878,14 @@ private:
 	/* the cellular transmit level (a gain on the pump's samples), the
 	   received signal's power (mean square, smoothed) */
 	float tx_gain_ = 1;
+	/* ETC's transmit filter (S116 bit 5, +EF) on this call */
+	EtcFilter etc_filter_;
+	bool etc_tx_ = false;
+	/* the landline side's detector of an ETC caller: samples it still
+	   listens, the caller found */
+	EtcToneDetector etc_det_;
+	s32 etc_listen_ = 0;
+	bool etc_peer_ = false;
 	float rx_pow_ = 0;
 	void shift_tick();
 	void shift_end(bool ok);

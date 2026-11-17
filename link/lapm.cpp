@@ -379,7 +379,8 @@ void Lapm::configure()
 	timer_start();
 }
 
-/* T401 (9.2.1), in bits: 2 s at the data pump's rate and the time of
+/* T401 (9.2.1), in bits: 2 s (Config::t401_s) at the data pump's rate
+   and the time of
    three frames (ours going out, the remote's ahead of its answer, its
    answer, and the pump's delay): of the longest N401 either way in the
    data phase with I frames outstanding, of 64 octets for XID, SABME,
@@ -395,7 +396,7 @@ s32 Lapm::t401_bits() const
 	s32 info = 64;
 	if (state_ == DATA && !config_ && vs_ != va_)
 		info = std::max<s32>(std::max(tx_info_, rx_info_), 128);
-	return 2 * rate + 3 * (info + 8) * 8;
+	return link_->config().t401_s * rate + 3 * (info + 8) * 8;
 }
 
 /* T401 starts again, the retransmission count from 0 */

@@ -791,6 +791,7 @@ the terms that are less frequent.
 \cmdl[plusPCW]{+PCW, +PIG} & \std{V.92} options (kept). & \cmdl[plusPMH]{+PMH, +PMHT} & Modem-on-hold. \\ \hline
 \cmdl[plusPMHR]{+PMHR} & Ask for modem-on-hold. & \cmdl[plusCVM]{+CVM} & \std{V.cvm}. \\ \hline
 \cmdl[minusSEC]{-SEC} & \std{MNP~10EC} (kept). & \cmdl[plusFCLASS]{+FCLASS} & Data, fax or voice. \\ \hline
+\cmdl[plusEF]{+EF} & \std{ETC} transmit filter. & \cmdl[etc]{\&F5, \&F6} & \std{ETC} settings (S116). \\ \hline
 \cmdl[plusX2UP]{+X2UP} & x2 upgrade host. & & \\ \hline
 \cmdl[plusFAA]{+FAA} & Adaptive answer. & \cmdl[plusFMI]{+FMI, +FMM, +FMR} & Fax identification. \\ \hline
 \cmdl[plusFTS]{+FTS, +FRS} & Fax silence. & \cmdl[plusFTM]{+FTM, +FRM} & Fax data. \\ \hline
@@ -1069,6 +1070,9 @@ changes nothing.  The modem does not read the remainder of the line.
 The modem accepts this command, with or without a digit, and does
 nothing.  Refer to \cmdl[ampD]{\&D}.  \cmdl[Z]{ATZ} sets the
 \emph{defaults} again.
+Two exceptions load the \std{ETC} settings of the 3Com cards
+(\hyperref[sec:etc]{Section~\ref*{sec:etc}}): \cmdl[ampF]{\&F5} and
+\cmdl[ampF]{\&F6}.
 \end{command}
 
 \begin{command}{ampV}{\&V\p{n}}{View Active Configuration}
@@ -2664,6 +2668,51 @@ does not have the modulations of \std{MNP~10EC}.  A modem with
 \end{results}
 \end{command}
 
+\subsection{ETC (Enhanced Throughput Cellular)}\label{sec:etc}
+
+\std{ETC} is the cellular mode of AT\&T Paradyne.  The 3Com Megahertz PC
+Cards (3CXM556 and others) have it.  The firmware of these cards uses
+\std{V.32bis} or lower, error control, a transmit filter, and other
+timers.  D-Modem uses the parts of this firmware that are known: S116,
+\cmdl[ampF]{\&F5}, \cmdl[ampF]{\&F6} and \cmdl[plusEF]{+EF}.
+
+\begin{command}{etc}{\&F5, \&F6, S116}{ETC Settings}
+S116 holds the \std{ETC} flags, with the bits of the 3Com firmware
+(\emph{default} 0, off).  D-Modem uses these bits:
+\begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{S116 Bits}
+  {\thd{Bit} & \thd{Function}}
+0 to 2 & If one of them is set, \std{ETC} is on: \rc{/ETC} follows the error correction in \rc{CONNECT} (with \cmdl[bsV]{\bs V1}), and \cmd{\#UD} gives 82 for error control (key 40). \\ \hline
+1 & The cellular side: the caller sends a calling tone of 1500~Hz (0.7~s on, 1.5~s off). \\ \hline
+4 & The landline side: if bits 0 to 2 are not set, the answerer listens for the 1500~Hz tone in the first 10~s.  If it finds the tone, \std{ETC} is on for the call.  The transmit level is 6.6~dB lower. \\ \hline
+5 & The transmit filter of \cmdl[plusEF]{+EF} is on. \\ \hline
+any & If S116 is not 0, \std{V.42} offers frames of 64 octets (N401), and T401 is 3~s plus the time of three frames. \\ \hline
+\end{vtable}
+\begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{ETC Profiles}
+  {\thd{Command} & \thd{Function}}
+\cmdl[ampF]{\&F5} & The cellular side (\texttt{ETC\_CELL}): S116 = 238 (0xEE), \cmdl[plusMS]{+MS=V32B} (\std{V.32bis} and lower), \cmdl[bsN]{\bs N2} (error control is necessary), S10 = 40 (4~s), S7 = 90. \\ \hline
+\cmdl[ampF]{\&F6} & The landline side (\texttt{ETC\_LAND}): S116 = 176 (0xB0), \cmdl[bsN]{\bs N3} (error control if possible).  The modulations do not change. \\ \hline
+\end{vtable}
+With \cmdl[ampF]{\&F6}, \std{ETC} is on only for a call from an
+\std{ETC} caller.
+\begin{results}
+\res{\rc{OK}}{Always.}
+\end{results}
+\end{command}
+
+\begin{command}{plusEF}{+EF=\p{n}}{ETC Transmit Filter}
+The set of coefficients of the 6-tap transmit filter (0 to 10,
+\emph{default} 5), as the 3Com firmware has them.  The filter operates when
+bit 5 of S116 is set.  Set 0 has a flat response.  Sets 1 to 6 decrease
+the high frequencies, to compensate for the pre-emphasis of a cellular
+voice channel.  Set 5 changes the gain from +3.5~dB at 300~Hz to
+$-$7.6~dB at 3600~Hz.  D-Modem sets the gain of each set to 0~dB at
+1800~Hz.  \cmd{+EF?} gives the set, and \cmd{+EF=?} gives \cmd{(0-10)}.
+\begin{results}
+\res{\rc{OK}}{If \p{n} is 0 to 10.}
+\res{\rc{ERROR}}{Otherwise.}
+\end{results}
+\end{command}
+
 \subsection{V.80 Synchronous Access}\label{sec:v80}
 
 With \cmdl[plusES]{+ES=6} (calling) or \cmdl[plusES]{+ES=,,8}
@@ -3257,9 +3306,13 @@ value, but it has no other effect.
 \hyperlink{sreg:105}{S105} & \std{MNP} block size (\cmdl[bsA]{\bs A}). & 0--3 & -- & 3 \\ \hline
 \hyperlink{sreg:106}{S106} & Protocol in \rc{CONNECT} (\cmdl[bsV]{\bs V}). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:114}{S114} & \std{V.42bis} offered in an \std{MNP} call. & 0, 1 & -- & 0 \\ \hline
+\hyperlink{sreg:116}{S116} & \std{ETC} flags (\cmdl[etc]{\&F5, \&F6}). & 0--255 & -- & 0 \\ \hline
 \hyperlink{sreg:161}{S161} & \cmdl[Y]{Y} (kept). & 0--3 & -- & 0 \\ \hline
 \end{vtable}
 
+% (a new page: the first definition sits on the page's foot by a few
+% points, and its measured height then moves it from run to run)
+\clearpage
 \subsection{S-Register Definitions}
 
 The range is the range of the function of the register.  \cmdl[S]{ATS}
@@ -3482,6 +3535,11 @@ two modems change to ZyX.  If not, the call continues as \std{V.32bis}.
 value on the two modems.  The answerer marker is not the ZyXEL signal,
 thus the marker finds only a D-Modem.
 \facts{0, 1}{0}{none}
+\sregdef{116}{ETC Flags}
+The \std{ETC} flags, with the bits of the 3Com firmware: 238 (0xEE) for
+the cellular side, 176 (0xB0) for the landline side, 0 for off.  Refer to
+\cmdl[etc]{\&F5, \&F6}.
+\facts{0--255}{0}{none}
 
 \sregdef{161}{Long Space Disconnect}
 The setting of \cmdl[Y]{Y}, kept.  \cmdl[Z]{ATZ} does not change it.
