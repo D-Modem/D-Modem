@@ -37,6 +37,9 @@ software:
 The error correction of the modem (V.42) can also operate on the clear
 channel.
 
+On X.75 and V.120, `ATS102` sets the encryption of the ZyXEL Elite 2864I
+(DES or triple DES). Refer to [zyxel-des.md](zyxel-des.md).
+
 ## How an ISDN data call reaches D-Modem
 
 - **Over SIP.** Internet telephony can carry an ISDN data call with a
