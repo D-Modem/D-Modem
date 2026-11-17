@@ -454,7 +454,7 @@ void Modem::sregs_init()
 		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
 		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 },
-		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 },
+		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 }, { SREG_ZYX_DES, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -1073,6 +1073,9 @@ s16 Modem::link_init()
 		const u32 b2 = kept("+B2")[0];
 		c.b2 = b2 == 0 ? dlink::B2::X75 : b2 == 5 ? dlink::B2::Ppp :
 			b2 == 9 ? dlink::B2::V120 : dlink::B2::Modem;
+		/* S102 and ATCK: ZyXEL's encryption on X.75 and V.120 */
+		c.zdes = static_cast<u8>(sregs_[SREG_ZYX_DES]);
+		memcpy(c.zkey, zkey_, sizeof(c.zkey));
 	}
 	if (c.sync) {
 		/* +ESA: <trans_idle>, <framed_idle>, <framed_un_ov>,

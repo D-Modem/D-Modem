@@ -147,6 +147,10 @@ struct Config {
 	SyncConfig sync_cfg;
 	/* on a clear channel: X.75 or PPP rather than all of the above */
 	B2 b2 = B2::Modem;
+	/* ZyXEL's encryption on X.75 and V.120 (zcrypt.h): S102's bits
+	   (ZDES_*), and ATCK's key (registers A and B) */
+	u8 zdes = 0;
+	u8 zkey[16] = {};
 	/* the USRobotics remote feature upgrade (usr_feature.h, +X2UP):
 	   once LAPM is up, read a Courier's records, and set x2 */
 	UsrMode usr_feature = UsrMode::Off;

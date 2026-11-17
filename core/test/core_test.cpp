@@ -3628,6 +3628,24 @@ TEST(Core, ZfaxCommands)
 	EXPECT_EQ(cmd("AT#CID=1\r"), "OK\r\n");
 }
 
+/* ZyXEL's encryption: ATCK needs '<' (the key to '>' or the line's end,
+   the commands after '>' going on); S102 takes its bits */
+TEST(Core, ZyxelAtck)
+{
+	Pair p("");
+	auto cmd = [&p](const std::string &s) {
+		p.got_a.clear();
+		p.a->dte_input(s.data(), s.size());
+		p.step();
+		return p.got_a;
+	};
+	EXPECT_EQ(cmd("ATCKsecret\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd("ATCK<secret>S102=7\r"), "OK\r\n");
+	EXPECT_EQ(cmd("ATS102?\r"), "7\r\nOK\r\n");
+	EXPECT_EQ(cmd("ATCK<to the end\r"), "OK\r\n");
+	EXPECT_EQ(cmd("ATC1\r"), "OK\r\n");
+}
+
 /* #B3, the ring cadence meter: its two lines; a burst of ring pulses
    (every 60 ms for 2 s), 4 s with none, another burst: a line at each
    change, the time of what ended in 10 ms steps; no RING; a key stops

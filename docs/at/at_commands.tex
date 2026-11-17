@@ -779,6 +779,7 @@ the terms that are less frequent.
 \cmdl[pctC]{\%C\p{n}} & Data compression. & \cmdl[pctE]{\%E\p{n}} & Line quality monitor (kept). \\ \hline
 \cmdl[hashCID]{\#CID} & Caller ID. & \cmdl[hashUD]{\#UD} & Unimodem diagnostics. \\ \hline
 \cmdl[starG]{*G, *H\p{n}=, *HS=, *V} & ZyXEL security. & \cmdl[starG]{\&Z\p{n}=} & Stored numbers. \\ \hline
+\cmdl[CK]{CK<\p{key}>} & ZyXEL encryption key. & \cmdl[CK]{S102} & ZyXEL encryption. \\ \hline
 \cmdl[hashCLS]{\#CLS} & Data, fax or voice (Rockwell, US Robotics). & \cmdl[hashV]{\#V\ldots} & Voice, Rockwell's and US Robotics' commands. \\ \hline
 \cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10}. & \cmdl[mnp10]{)M, @M, *H, :T19} & \std{MNP~10}. \\ \hline
 \cmdl[plusMS]{+MS} & Modulation. & \cmdl[plusGMI]{+GMI, +GMM, +GMR} & Identification. \\ \hline
@@ -1833,6 +1834,23 @@ The modem does not store these settings.  Put them in the init string.
 \begin{results}
 \res{\rc{OK}}{When the value is valid (and the supervisory password is correct).}
 \res{\rc{ERROR}}{Otherwise.}
+\end{results}
+\end{command}
+
+\begin{command}{CK}{CK<\p{key}>}{ZyXEL Encryption Key}
+This command sets the key of the ZyXEL encryption (\sreg{102}, the Elite
+2864I).  The encryption operates only on \std{X.75} and \std{V.120} calls
+on an \std{ISDN} B channel (\cmdl[plusMS]{+MS=CLEAR}).  The key is all the
+characters after \cmd{<}, up to \cmd{>} or the end of the line.  The
+characters are case-sensitive.  The modem removes the spaces from the
+command line, thus a key cannot have spaces.  The modem makes two 8-byte
+registers from the key, as the Elite does.  The two modems must have the
+same key when \sreg{102} bit 2 is 1, or when one of the two modems has
+bit 2.  Without \cmd{<}, the command gives \rc{ERROR}.  \cmdl[Z]{ATZ} keeps
+the key.  The modem does not store it.
+\begin{results}
+\res{\rc{OK}}{With \cmd{<}.}
+\res{\rc{ERROR}}{Without \cmd{<}.}
 \end{results}
 \end{command}
 
@@ -3526,6 +3544,18 @@ The setting of \cmdl[bsV]{\bs V}.
 always accepts \std{V.42bis} from the other modem.  Some modems do not
 complete a call with this \std{LR}: thus the default is 0.
 \facts{0, 1}{0}{none}
+
+\sregdef{102}{ZyXEL Encryption}
+The encryption of the Elite 2864I on \std{X.75} and \std{V.120}
+(\cmdl[CK]{ATCK}).  Bit 0: the modem offers the encryption.  Bit 1:
+triple \std{DES} (the two modems must set it).  Bit 2: no key exchange,
+use the \cmdl[CK]{ATCK} key.  Bit 3: if the remote does not agree, the
+modem disconnects.  After the link is up, each modem sends an \std{XID}
+frame with the ZyXEL parameters.  The data waits until the remote's
+parameters come.  If the remote sends no \std{XID} reply, the modem
+continues without encryption after 4 tries.  Refer to
+\texttt{docs/zyxel-des.md}.
+\facts{0--15}{0}{none}
 
 \sregdef{115}{ZyXEL Peer Marker}
 1: in a \std{V.32bis} or ZyX call (\cmdl[MS]{+MS}), the modem sends a

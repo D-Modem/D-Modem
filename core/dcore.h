@@ -676,6 +676,7 @@ private:
 	s16 at_PMH(char *p, s16 *len);
 	s16 at_FCLASS(char *p, s16 *len);
 	s16 at_zfax(char *p, s16 *len);
+	s16 at_CK(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);
 	s16 at_voice(char *p, s16 *len, bool hash = false);
 	s16 at_hash(char *p, s16 *len);
@@ -1035,6 +1036,10 @@ private:
 	void cadence_line(const char *label, u64 ms);
 	void cadence_poll();
 	s32 cadence_next_ms() const;
+	/* ATCK's key (ZyXEL's encryption, S102): registers A and B, from
+	   the power-on value (zdes_default_key) */
+	u8 zkey_[16] = { 0xab, 0xcd, 0x01, 0x23, 0xef, 0x45, 0x67, 0x89,
+			 0xab, 0xcd, 0x01, 0x23, 0xef, 0x45, 0x67, 0x89 };
 	/* class 6 answered a data call: class 6 again after it */
 	bool z6_data_ = false;
 	/* +F34 (T.31 class 1.0): the primary channel's highest and lowest

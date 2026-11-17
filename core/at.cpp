@@ -32,6 +32,7 @@
 #include "str.h"
 #include "reinit.h"
 #include "voice_codec.h"
+#include <zcrypt.h>
 
 namespace dcore {
 
@@ -567,6 +568,8 @@ s16 Modem::at_command(char *cmd)
 			ret = at_kept(p, &len);
 		} else if (zyxel_star(p)) {
 			ret = at_star(p, &len);
+		} else if (starts_nocase(p, "CK")) {
+			ret = at_CK(p, &len);
 		} else if (mnp10_command(p, &len, &ret)) {
 		} else if (taken(p, &len)) {
 			ret = 0;
@@ -2598,6 +2601,20 @@ s16 Modem::at_hash(char *p, s16 *len)
 	if (upper(p[1]) == 'V')
 		return at_voice(p, len, true);
 	return -1;
+}
+
+/* ATCK<key>: ZyXEL's encryption key (S102) from the characters up to
+   '>' or the end of the line; without '<', ERROR */
+s16 Modem::at_CK(char *p, s16 *len)
+{
+	if (p[2] != '<')
+		return -1;
+	const char *k = p + 3, *e = k;
+	while (*e && *e != '>')
+		e++;
+	dlink::zdes_atck(k, static_cast<size_t>(e - k), zkey_);
+	*len = static_cast<s16>(e - p + (*e == '>' ? 1 : 0));
+	return 0;
 }
 
 /* ZyXEL's fax commands (class 6, docs/zyxel-fax.md): #F (as &N32: a fax
