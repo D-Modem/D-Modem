@@ -21,9 +21,11 @@
  *    through io_rd and io_wr (data 0x50-0x5f and 0xff50-0xff6f, I/O
  *    ports 0x50-0x6f), or by hooks on program addresses (hook()).
  *
- *    TRM = 0 (PMST bit 0): an instruction's load of TREG0 sets TREG1
+ *    TRM = 0 (PMST bit 1): an instruction's load of TREG0 sets TREG1
  *    and TREG2 too, a store to it as memory (SAMM) does not; the
- *    firmware's AGC (resident 0x8847) depends on that.
+ *    Courier firmware's AGC (resident 0x8847) depends on that.
+ *    NDX = 0 (PMST bit 2): a write to AR0 writes INDX and ARCR too.
+ *    (PMST bit 0 is BRAF.)
  *
  */
 
@@ -228,7 +230,8 @@ public:
 		D[a] = (w16)v;
 		if ((long)a == watch && watch_fn)
 			watch_fn(*this, (w16)v);
-		if (a == 0x10)          /* NDX = 0: AR0 is INDX and ARCR too */
+		if (a == 0x10 && !(D[0x07] & 4))   /* NDX = 0: AR0 is INDX and
+						      ARCR too */
 			D[0x18] = D[0x19] = (w16)v;
 	}
 	/* auxiliary register n */
@@ -265,8 +268,12 @@ public:
 		u32 sacc = acc;
 		int sc = c, sov = ov, stc = tc;
 		int sp0 = sp_;
+		fall_ = false;
 		int j = exe(op, at);
-		if (size(op) > 1) {
+		/* a two-word instruction, or a jump (a RETE back into the
+		   interrupted code too): the pipeline starts again, and an
+		   XC next sees the status as it is */
+		if (size(op) > 1 || j >= 0) {
 			xacc_ = acc; xc_ = c; xov_ = ov; xtc_ = tc;
 		} else {
 			xacc_ = sacc; xc_ = sc; xov_ = sov; xtc_ = stc;
@@ -276,8 +283,11 @@ public:
 			w16 end = (w16)(nxt + 2);
 			while (pc < end) {
 				w16 p2 = pc, o2 = pr(p2);
-				exe(o2, p2);
-				pc = (w16)(p2 + size(o2));
+				int j2 = exe(o2, p2);
+				/* an XC in a delay slot (TC110's "CALLD; XC1
+				   NTC; XOR") skips its words when false */
+				pc = j2 >= 0 && !(j2 & DELAYED) ? (w16)j2 :
+					(w16)(p2 + size(o2));
 			}
 			pc = (w16)j;
 		} else if (j >= 0) {
@@ -285,24 +295,25 @@ public:
 		} else {
 			pc = nxt;
 		}
-		if (rptb_on_ && j < 0 && at <= rptb_end_ && rptb_end_ < pc) {
+		if (rptb_on() && (j < 0 || fall_) && at <= rptb_end() &&
+		    rptb_end() < pc) {
 			if (D[0x09] > 0) {
 				D[0x09]--;
-				pc = rptb_start_;
+				pc = rptb_start();
 			} else {
-				rptb_on_ = false;
+				rptb_off();
 			}
-		} else if (flat && rptb_on_ && j >= 0 && !(j & DELAYED) &&
-			   at <= rptb_end_ && rptb_end_ < nxt &&
+		} else if (flat && rptb_on() && j >= 0 && !(j & DELAYED) &&
+			   at <= rptb_end() && rptb_end() < nxt &&
 			   sp_ == sp0 + 1 && top() == nxt) {
 			/* a CALL as the block's last instruction (TC110's
 			   I2C loops): the repeat has taken the return
 			   address to the block's start already */
 			if (D[0x09] > 0) {
 				D[0x09]--;
-				stack_[sp_ - 1] = rptb_start_;
+				stack_[sp_ - 1] = rptb_start();
 			} else {
-				rptb_on_ = false;
+				rptb_off();
 			}
 		}
 		steps++;
@@ -342,8 +353,16 @@ private:
 	w16 stack_[8] = {};
 	int sp_ = 0;
 	int rptc_ = -1;
-	bool rptb_on_ = false;
-	w16 rptb_end_ = 0, rptb_start_ = 0;
+	/* the block repeat's state is the chip's own: PMST's BRAF (bit 0),
+	   PASR and PAER, so that an interrupt routine that saves and
+	   restores them (TC110's codec interrupt) may use RPTB too */
+	bool rptb_on() const { return D[0x07] & 1; }
+	/* PASR: the block's first word */
+	w16 rptb_start() const { return D[0x0a]; }
+	/* PAER: the block's last word */
+	w16 rptb_end() const { return D[0x0b]; }
+	/* BRAF cleared: the block done */
+	void rptb_off() { D[0x07] &= (w16)~1; }
 
 	struct Shadow {
 		u32 acc, accb, p;
@@ -361,7 +380,7 @@ private:
 	void setT(u32 v)
 	{
 		D[0x0c] = (w16)v;
-		if (!(D[0x07] & 1)) {
+		if (!(D[0x07] & 2)) {
 			D[0x0d] = v & 0x1f;
 			D[0x0e] = v & 0xf;
 		}
@@ -520,6 +539,10 @@ private:
 	}
 	u32 xacc_ = 0;
 	int xc_ = 0, xov_ = 0, xtc_ = 0;
+	/* the instruction went on in sequence (an XC's condition false, a
+	   conditional branch or call not taken): a block repeat ending
+	   there or in the words skipped still repeats */
+	bool fall_ = false;
 	/* a conditional instruction's conditions (its low byte) all true */
 	bool cond(w16 op)
 	{
@@ -810,16 +833,23 @@ private:
 			p = (u32)(s16(T()) * k);
 			return -1;
 		}
-		if (b >= 0xe0 && b <= 0xe3)
-			return cond(op) ? imm : (w16)(at + 2);
+		if (b >= 0xe0 && b <= 0xe3) {
+			if (cond(op))
+				return imm;
+			fall_ = true;
+			return (w16)(at + 2);
+		}
 		if ((b >= 0xe4 && b <= 0xe7) || (b >= 0xf4 && b <= 0xf7)) {
 			int n = 1 + ((op >> 12) & 1);
-			if (!(flat ? xcond(op) : cond(op)))
+			if (!(flat ? xcond(op) : cond(op))) {
+				fall_ = true;
 				return (w16)(at + 1 + n);
+			}
 			return -1;
 		}
 		if (b >= 0xe8 && b <= 0xeb) {
 			if (cond(op)) { push(at + 2u); return imm; }
+			fall_ = true;
 			return (w16)(at + 2);
 		}
 		if (b >= 0xec && b <= 0xef) {
@@ -954,7 +984,11 @@ private:
 		case 0x83: acc ^= (u32)imm << 16; return -1;
 		case 0xc4: rptc_ = imm; return -1;
 		case 0xc5: rptc_ = imm; acc = 0; p = 0; return -1;
-		case 0xc6: rptb_start_ = (w16)(at + 2); rptb_end_ = imm; rptb_on_ = true; return -1;
+		case 0xc6:
+			D[0x0a] = (w16)(at + 2);
+			D[0x0b] = imm;
+			D[0x07] |= 1;
+			return -1;
 		}
 		if (lo >= 0x60 && lo <= 0x7f) {        /* INTR k */
 			intm = 1;

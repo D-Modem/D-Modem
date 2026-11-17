@@ -1672,23 +1672,33 @@ std::vector<Call> calls()
 
 	/* --- 3Com's TC110 PC Card (XJ5560 / CC5560), its TMS320C5x
 	   emulated with the TC110 flash's code (half_3com, its line at 8000
-	   Hz): the open modem calls it in V.34, at its fastest and at 4800.
-	   Only to CONNECT: the 3Com does not yet decode the open modem's
-	   data (its Viterbi decoder), and the open modem sees bursts of
-	   errors in the 3Com's.  TC110_PRE_FLAT=1: a flat pre-emphasis
-	   filter (the TC110's own tables are not known yet).  The 3Com as
-	   the caller stops after V.8 */
-	for (auto [n, ms, rate] : std::vector<std::tuple<const char *,
-		     const char *, const char *>>{
-		     { "34", "ATX3;AT+MS=34;AT+ES=1,0,1", "[0-9]+" },
-		     { "34_4800", "ATX3;AT+MS=34,1,2400,4800;AT+ES=1,0,1",
-		       "4800" } })
-		add("3com", std::string("3com_") + n + "_open_calls", "open8",
-		    "3com", ms,
-		    { "CONNECT_ONLY=1", "STREAM=5", "TC110_PRE_FLAT=1",
-		      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
-		      std::string("EXPECT_A=v34: connect ") + rate + "/",
-		      std::string("EXPECT_B=CONNECT ") + rate + "/V34" });
+	   Hz): the open modem calls it in V.34.  With its own profile (S33
+	   32: no 3429 baud in its INFO0) its fastest is 31200: only to
+	   CONNECT.  With S33=0 (3429 baud on), 33600, its fastest: 1 s of
+	   data both ways, the 3Com's data (the open modem's sent) checked
+	   (STREAM_ONLY=B).  At 4800 the same.  The open modem still sees
+	   bursts of errors in the 3Com's data, more of them at the faster
+	   rates.  TC110_PRE_FLAT=1: a flat pre-emphasis filter (the
+	   TC110's own tables are not known yet).  The 3Com as the caller
+	   stops after V.8 */
+	add("3com", "3com_34_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34;AT+ES=1,0,1",
+	    { "CONNECT_ONLY=1", "STREAM=5", "TC110_PRE_FLAT=1",
+	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
+	      "EXPECT_A=v34: connect 31200/",
+	      "EXPECT_B=CONNECT 31200/V34" });
+	add("3com", "3com_34_33600_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34;AT+ES=1,0,1",
+	    { "STREAM=1", "STREAM_ONLY=B", "TC110_PRE_FLAT=1",
+	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0S33=0",
+	      "EXPECT_A=v34: connect 33600/",
+	      "EXPECT_B=CONNECT 33600/V34" });
+	add("3com", "3com_34_4800_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34,1,2400,4800;AT+ES=1,0,1",
+	    { "STREAM=1", "STREAM_ONLY=B", "TC110_PRE_FLAT=1",
+	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
+	      "EXPECT_A=v34: connect 4800/",
+	      "EXPECT_B=CONNECT 4800/V34" });
 
 	/* --- Intel's 537EP soft modem, its line at 9600 Hz (its codec's
 	   rates are 7200 to 16000 Hz, 9600 by default, 72000 / 7 for V.34,

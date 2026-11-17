@@ -28,7 +28,7 @@ emulation of the hardware that the driver expects.
 | ESS | its Windows driver, on the same small Windows kernel | V.92 at 49333 down, 41333 up |
 | spandsp | the open-source library used by Asterisk and FreeSWITCH | its speeds, up to V.22bis (2400 bit/s) |
 | USRobotics Courier V.Everything | the whole modem emulated, running its own firmware (a 1998 flash image) | HST at 9600 bit/s with HST's own link, the channels turning around; V.32bis at 14400 bit/s with V.42 |
-| 3Com Megahertz TC110 PC Card | its signal processor emulated, running the 3Com flash firmware | V.34 training to CONNECT at 31200 bit/s and at 4800 bit/s |
+| 3Com Megahertz TC110 PC Card | its signal processor emulated, running the 3Com flash firmware | V.34 at 33600 bit/s (with `S33=0`), 31200 bit/s and 4800 bit/s: the 3Com receives the data of D-Modem correctly |
 
 In the V.90 and V.92 calls, D-Modem is the "digital" end. This is the role that the
 equipment of an internet provider had. Each modem also connects at the
@@ -48,7 +48,13 @@ Courier cannot read the data of D-Modem yet. V.34 does not operate yet.
 The 3Com TC110 is a PC Card modem with a TMS320C5x signal processor. The
 tests emulate this processor and run the 3Com flash firmware on it. D-Modem
 calls the TC110 in V.34, and the two modems complete the training and send
-CONNECT. The data mode does not operate yet. Thus, the tests stop at CONNECT.
+CONNECT. The factory setting of the TC110 is `S33=32`. This setting stops
+the 3429 baud symbol rate, thus the maximum rate is 31200 bit/s. With
+`ATS33=0`, the two modems connect at 33600 bit/s, the maximum rate of the
+TC110. At 33600 bit/s and at 4800 bit/s, the tests send data in the two
+directions. The 3Com receives the data of D-Modem correctly. D-Modem
+receives the data of the 3Com with bursts of errors. Thus, the tests do
+not examine the data that D-Modem receives.
 
 The test suite also runs D-Modem on an emulated HD-audio modem
 chip (the type in laptops from about 2005 to 2010). This tests the code
