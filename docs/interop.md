@@ -47,8 +47,8 @@ Courier cannot read the data of D-Modem yet. V.34 does not operate yet.
 
 The 3Com TC110 is a PC Card modem with a TMS320C5x signal processor. The
 tests emulate this processor and run the 3Com flash firmware on it. D-Modem
-calls the TC110 in V.34, and the two modems complete the training and send
-CONNECT. The factory setting of the TC110 is `S33=32`. This setting stops
+calls the TC110 in V.34, and the TC110 calls D-Modem. The two modems
+complete the training and send CONNECT. The factory setting of the TC110 is `S33=32`. This setting stops
 the 3429 baud symbol rate, thus the maximum rate is 31200 bit/s. With
 `ATS33=0`, the two modems connect at 33600 bit/s, the maximum rate of the
 TC110. At 33600 bit/s and at 4800 bit/s, the tests send data in the two

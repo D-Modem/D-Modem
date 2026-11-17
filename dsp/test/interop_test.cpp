@@ -1678,7 +1678,8 @@ std::vector<Call> calls()
 	   data both ways, both checked.  At 4800, 8 s of data both ways:
 	   past 6 s, when the 3Com asked for a faster rate again (a
 	   renegotiation) while the rate mask of our MP had rates above
-	   +MS's highest.
+	   +MS's highest.  The 3Com calls the open modem: the same, at
+	   33600 and 4800.
 	   TC110_PRE_FLAT=1: a flat pre-emphasis filter (the
 	   TC110's own tables are not known yet).  The 3Com as the caller
 	   stops after V.8 */
@@ -1700,6 +1701,19 @@ std::vector<Call> calls()
 	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
 	      "EXPECT_A=v34: connect 4800/",
 	      "EXPECT_B=CONNECT 4800/V34" });
+
+	add("3com", "3com_34_33600_3com_calls", "3com", "open8",
+	    "ATX3&M0S33=0",
+	    { "STREAM=1", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3;AT+MS=34;AT+ES=1,0,1",
+	      "EXPECT_A=CONNECT 33600/V34",
+	      "EXPECT_B=v34: connect 33600/" });
+	add("3com", "3com_34_4800_3com_calls", "3com", "open8",
+	    "ATX3&M0",
+	    { "STREAM=8", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3;AT+MS=34,1,2400,4800;AT+ES=1,0,1",
+	      "EXPECT_A=CONNECT 4800/V34",
+	      "EXPECT_B=v34: connect 4800/" });
 
 	/* --- Intel's 537EP soft modem, its line at 9600 Hz (its codec's
 	   rates are 7200 to 16000 Hz, 9600 by default, 72000 / 7 for V.34,
