@@ -65,6 +65,16 @@ also after V.8. With `S32=60` (no V.34), the two modems connect in
 V.32bis at 14400 bit/s in the two directions. The 4800 to 12000 bit/s
 rates of V.32bis also operate.
 
+Without error correction, the D-Modem receiver now gives ones to the DTE
+for the B1 signal at the start of the data (V.34 and V.32bis). Before,
+the first frames from the TC110 gave two or three incorrect octets. The
+TC110 itself gives about seven incorrect octets to its DTE at the start
+of V.32bis data. This also occurs between two TC110s, thus it is the
+operation of its firmware. To disable error correction on D-Modem, use
+`\N0`. `&M0` does not change it. With `&M0`, D-Modem sends the
+detection patterns of V.42 (0x11 and 0x91) for T400, and a remote modem
+with no error correction gives them to its DTE.
+
 The tests can also attach an emulated cellular cable to the TC110
 (`TC110_CABLE=200000`, the ID of a Motorola cable in the EEPROM of the
 cable). Then the TC110 shows "Motorola Cable" and goes into the

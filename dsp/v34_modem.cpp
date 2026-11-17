@@ -1476,6 +1476,7 @@ float V34Rx::precoder(s16 h[6]) const
 void V34Rx::start_data(const V34Params *p, CoreBits link, V34Aux aux)
 {
 	drx.init(p);
+	drx.b1_left = p->P;
 	drx.link = link;
 	drx.aux = aux;
 	mse = 0;

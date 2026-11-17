@@ -1681,7 +1681,9 @@ std::vector<Call> calls()
 	   +MS's highest.  The 3Com calls the open modem: the same, at
 	   33600 and 4800.  With V.42 both ways: LAPM and V.42bis (the
 	   3Com answering waits for the caller's ODPs after V.8).  V.32bis
-	   (the 3Com's S32=60: no V.34) at 14400 both ways.  ETC: the 3Com
+	   (the 3Com's S32=60: no V.34) at 14400 both ways, the open modem
+	   in \N0 (our &M0 leaves V.42 on: its ODPs, 0x11 and 0x91 for
+	   T400, went to the 3Com's DTE).  ETC: the 3Com
 	   with a cellular cable (TC110_CABLE, Motorola's) calls the open
 	   modem in AT&F6 (ETC's land side), and the open modem in AT&F5
 	   (the cellular side: its 1500 Hz calling tone) calls the 3Com
@@ -1732,7 +1734,7 @@ std::vector<Call> calls()
 	      "EXPECT_A=CONNECT [0-9]+/ARQ/V34/LAPM/V42BIS",
 	      "EXPECT_B=ec: connected" });
 	add("3com", "3com_32b_open_calls", "open8", "3com",
-	    "ATX3&M0;AT+MS=V32B",
+	    "ATX3\\N0;AT+MS=V32B",
 	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
 	      "PROTO_B=ATX3S32=60&M0",
 	      "EXPECT_A=v32: connect 14400/14400",
@@ -1740,7 +1742,7 @@ std::vector<Call> calls()
 	add("3com", "3com_32b_3com_calls", "3com", "open8",
 	    "ATX3S32=60&M0",
 	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
-	      "PROTO_B=ATX3&M0",
+	      "PROTO_B=ATX3\\N0",
 	      "EXPECT_A=CONNECT 14400/V32",
 	      "EXPECT_B=v32: connect 14400/14400" });
 	add("3com", "3com_etc_cell_3com_calls", "3com", "open8", "ATX3",

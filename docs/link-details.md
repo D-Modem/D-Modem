@@ -17,6 +17,12 @@ It is C++, in `namespace dlink`.
   the phase and sends HDLC flags immediately.
   - T400 (750 ms) runs at the two ends. When it expires, the remote has
     no V.42, and the call continues as asynchronous characters.
+  - After V.8 (V.34, V.90, V.92), the originator also does the phase,
+    because some answerers wait for the ODPs (the 3Com TC110). Its
+    T400 is three times longer (2.25 s) there. The two directions of
+    V.34 can start some hundreds of ms apart, and the ADPs must also
+    come back through the round trip. After V.8, the originator keeps
+    zstd in its XID when the first XID gets no answer.
   - Two HDLC flags in sequence show that the remote has V.42. The link
     ignores one flag alone, because it can be noise from a receiver
     that is not yet stable.

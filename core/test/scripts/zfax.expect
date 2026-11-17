@@ -10,13 +10,13 @@
       0 A: OK\r\n
       0 B< ATA\r
       0 A< ATD\r
-   6300 B: CONNECT 62666\r\n
-   6300 until B 'CONNECT': yes
-   6320 A: CONNECT 62666\r\n
-   6320 until A 'CONNECT': yes
-   6340 A: NO CARRIER\r\n
-   6360 B: NO CARRIER\r\n
-   6360 until B 'NO CARRIER': yes
-   6860 B< AT+FCLASS?\r
-   6860 B: 6\r\n
-   6860 B: OK\r\n
+   6340 B: CONNECT 62666\r\n
+   6340 until B 'CONNECT': yes
+   6360 A: CONNECT 62666\r\n
+   6360 until A 'CONNECT': yes
+   6380 A: NO CARRIER\r\n
+   6400 B: NO CARRIER\r\n
+   6400 until B 'NO CARRIER': yes
+   6900 B< AT+FCLASS?\r
+   6900 B: 6\r\n
+   6900 B: OK\r\n
