@@ -142,6 +142,27 @@ int Tc110Peer::start()
 			    (unsigned)m.dsp.acc, t.c_str());
 		};
 	}
+	if (env("WATCH2")) {
+		/* TC110_WATCH2=<pc>,<addr>,<n>[,<from ms>]: as TC110_WATCH,
+		   at a second PC */
+		unsigned pc = 0, a = 0, n = 1;
+		long from = 0;
+		sscanf(env("WATCH2"), "%x,%x,%u,%ld", &pc, &a, &n, &from);
+		m.watch_pc2 = pc;
+		m.on_watch2 = [this, a, n, from]() {
+			if ((long)ms() < from)
+				return;
+			std::string t;
+			char w[8];
+			for (unsigned i = 0; i < n; i++) {
+				snprintf(w, sizeof(w), " %04x", m.dsp.D[(a + i) & 0xffff]);
+				t += w;
+			}
+			log("<%07.3f> watch2 (%04x) dp %d acc %08x%s\n",
+			    ms() / 1000.0, m.dsp.top(), m.dsp.dp,
+			    (unsigned)m.dsp.acc, t.c_str());
+		};
+	}
 	if (env("DWRITE")) {
 		/* TC110_DWRITE=<lo>,<hi>,<from ms>,<n>: n data writes in lo
 		   to hi, with the PC */
@@ -180,6 +201,21 @@ int Tc110Peer::start()
 			if (a < lo || a > hi || pw_seen[m.dsp.pc]++)
 				return;
 			log("<%07.3f> program %04x written at %d:%04x\n",
+			    ms() / 1000.0, a, m.page, m.dsp.pc);
+		};
+	}
+	if (env("ROM_READS")) {
+		/* TC110_ROM_READS=<from ms>: the ROM's data words read from
+		   then on, once for each 16 words and PC */
+		static std::map<unsigned, int> seen;
+		long from = atol(env("ROM_READS"));
+		m.dsp.rom_read = [this, from](unsigned a) {
+			if ((long)ms() < from || a == m.dsp.pc)
+				return;
+			unsigned k = (a >> 4) << 16 | m.dsp.pc;
+			if (seen[k]++)
+				return;
+			log("<%07.3f> ROM %04x read at %d:%04x\n",
 			    ms() / 1000.0, a, m.page, m.dsp.pc);
 		};
 	}
@@ -243,6 +279,9 @@ short Tc110Peer::line_sample(short in)
 			}
 			core();
 		}
+		/* TC110_FREEZE_AT=<ms>: the equalizer kept from then */
+		if (env("FREEZE_AT") && ms() >= (unsigned long long)atol(env("FREEZE_AT")))
+			m.freeze_eq = true;
 		if (env("CORE_AT") && !core_done_ &&
 		    ms() >= (unsigned long long)atol(env("CORE_AT"))) {
 			/* TC110_CORE_AT=<ms>: the memory then, and where the
@@ -257,7 +296,9 @@ short Tc110Peer::line_sample(short in)
 			for (auto &e : *m.prof)
 				v.push_back({ -e.second, e.first });
 			std::sort(v.begin(), v.end());
-			for (size_t i = 0; i < v.size() && i < 40; i++)
+			/* TC110_PROF_ALL: each PC, not only the top 40 */
+			size_t top = env("PROF_ALL") ? v.size() : 40;
+			for (size_t i = 0; i < v.size() && i < top; i++)
 				log("  %d:%04x %ld\n", v[i].second >> 16,
 				    v[i].second & 0xffff, -v[i].first);
 			delete m.prof;

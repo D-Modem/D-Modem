@@ -109,6 +109,8 @@ public:
 	std::function<void(u32 a)> pr_wr;
 	/* flat: a read of a ROM word not known (0xffff) */
 	std::function<void(u32 a)> rom_unknown;
+	/* flat: each read of a ROM word (a test's) */
+	std::function<void(u32 a)> rom_read;
 	/* flat: after a write to data 0x20 to 0x2f (the serial port and
 	   the timer), with the word's old value: the harness's peripherals */
 	std::function<void(u32 a, w16 old)> mmr_wr;
@@ -123,6 +125,8 @@ public:
 			if (a >= rom_lo && a < ROM.size() && !(D[0x07] & 8)) {
 				if (ROM[a] == 0xffff && rom_unknown)
 					rom_unknown(a);
+				if (rom_read)
+					rom_read(a);
 				return ROM[a];
 			}
 			if (a >= shared_lo && a < 0x8000)

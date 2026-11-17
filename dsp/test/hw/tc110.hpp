@@ -225,6 +225,9 @@ public:
 	/* on_watch called each time the DSP is at watch_pc */
 	unsigned watch_pc = 0x10000;
 	std::function<void()> on_watch;
+	/* a second one (a test's) */
+	unsigned watch_pc2 = 0x10000;
+	std::function<void()> on_watch2;
 	/* if hist_on: the last 256 page:PCs, the newest at hist_n - 1 */
 	bool hist_on = false;
 	unsigned hist[256] = {}, hist_n = 0;
@@ -255,7 +258,7 @@ public:
 		dsp.win = &flash[0];
 		dsp.ROM.assign(0x1000, 0xffff);
 		dsp.rom_lo = 0x30;
-		dsp.shared_lo = getenv("TC110_NOSHARE") ? 0x8000 : 0x7c00;
+		dsp.shared_lo = getenv("TC110_NOSHARE") ? 0x8000 : getenv("TC110_SHARE_LO") ? (unsigned)strtol(getenv("TC110_SHARE_LO"), nullptr, 16) : 0x7000;
 		rom_init();
 		dsp.io_rd = [this](unsigned p) { return io_rd(p); };
 		dsp.io_wr = [this](unsigned p, w16 v) { io_wr(p, v); };
@@ -312,6 +315,11 @@ private:
 	std::deque<u8> rx_;             /* the UART's receiver */
 	w16 ur_[32] = {};               /* the UART's registers (16, 17:
 					   the divisor latch) */
+	/* the divisor latch as the host's driver sets it (115200 /
+	   bit/s).  The firmware reads it to find the DTE's speed, and it
+	   does not connect faster than that speed (0x16de, 0x420d) */
+	w16 dte_div_ = (w16)(getenv("TC110_DTE_BPS") ?
+			     115200 / atoi(getenv("TC110_DTE_BPS")) : 1);
 	w16 msr_ = 0;                   /* port 0x8056 */
 	w16 ev_ = 0;                    /* port 0x805b's events, other than
 					   the UART's own */
@@ -393,6 +401,8 @@ private:
 			hist[hist_n++ & 255] = (unsigned)page << 16 | dsp.pc;
 		if (dsp.pc == watch_pc && on_watch)
 			on_watch();
+		if (dsp.pc == watch_pc2 && on_watch2)
+			on_watch2();
 		if (lms_shift && dsp.pc >= 0x0cd0 && dsp.pc <= 0x0d42)
 			lms_step();
 		if (fftshift && dsp.pc == 0x6da0 && page == 1)
@@ -1074,6 +1084,50 @@ private:
 		}
 
 		memcpy(&dsp.ROM[0x0400], quad, sizeof(quad));
+		/* 0x05b0 to 0x05cf: the shell mapper's ring count M for K
+		   = 0 to 31 (Table 10/V.34), the smallest one in the high
+		   octet and the one of the expanded constellation in the
+		   low (0x5e7c).  Made from V.34, not read from a TC110 (K
+		   = 3, 7, 10, 13, 15, 17, 19 and 21 come in no V.34 rate) */
+		static const unsigned char ring_m[32][2] = {
+			{ 1, 1 }, { 2, 2 }, { 2, 2 }, { 2, 2 }, { 2, 2 },
+			{ 2, 2 }, { 2, 2 }, { 2, 2 }, { 2, 3 }, { 3, 3 },
+			{ 3, 3 }, { 3, 3 }, { 3, 4 }, { 4, 4 }, { 4, 4 },
+			{ 4, 5 }, { 4, 5 }, { 5, 6 }, { 5, 6 }, { 6, 7 },
+			{ 6, 7 }, { 7, 8 }, { 7, 8 }, { 8, 9 }, { 8, 10 },
+			{ 9, 11 }, { 10, 12 }, { 11, 13 }, { 12, 14 },
+			{ 13, 15 }, { 14, 17 }, { 15, 18 },
+		};
+		for (unsigned k = 0; k < 32; k++)
+			dsp.ROM[0x05b0 + k] = (w16)(ring_m[k][0] << 8 |
+						    ring_m[k][1]);
+		/* 0x05a0 to 0x05af: the trellis encoder's inputs Y1 to Y4
+		   (bits 0 to 3, Table 13/V.34) from the 2D subset labels s0
+		   and s1 of a 4D symbol, nibble s1 of words 2 * s0 and 2 * s0
+		   + 1 (high nibble first; 0x6340) */
+		static const w16 conv[16] = {
+			0x0011, 0x8899, 0x3223, 0xbaab, 0x5544, 0xddcc,
+			0x6776, 0xeffe, 0x8899, 0x0011, 0xbaab, 0x3223,
+			0xddcc, 0x5544, 0xeffe, 0x6776,
+		};
+		memcpy(&dsp.ROM[0x05a0], conv, sizeof(conv));
+		/* 0x05d0 to 0x05ed: the trellis encoders of 16, 32 and 64
+		   states (Figures 10 to 12/V.34), 10 words each (0x64c5):
+		   the next state's bits (4 to 9) and two AND terms' inputs
+		   (bits 0 to 3: bit 6 gets 0 AND 2, bit 7 gets 1 AND 3) for
+		   each of state bits 5 to 0 and Y4 to Y1 (0x634e).  The
+		   state's bit 0 is Y0; the 64 state code's bits 2 to 5 are
+		   Figure 12's 4, 5, 2 and 3.  Made from V.34 for the code
+		   at 0x6340, not read from a TC110 */
+		static const w16 trellis[30] = {
+			0x0100, 0x0080, 0x0040, 0x0020, 0x0010, 0x00c0,
+			0x0000, 0x0000, 0x0060, 0x0010,
+			0x0100, 0x0080, 0x0040, 0x0020, 0x0010, 0x0100,
+			0x0020, 0x0000, 0x0090, 0x0040,
+			0x0319, 0x0040, 0x00c0, 0x02c2, 0x0010, 0x0020,
+			0x0080, 0x0040, 0x0014, 0x0202,
+		};
+		memcpy(&dsp.ROM[0x05d0], trellis, sizeof(trellis));
 		memcpy(&dsp.ROM[0x0aca], lib, sizeof(lib));
 		memcpy(&dsp.ROM[0x0bb1], fft, sizeof(fft));
 		memcpy(&dsp.ROM[0x0cd0], lms, sizeof(lms));
@@ -1090,14 +1144,14 @@ private:
 		switch (p) {
 		case 0x8050:
 			if (ur_[3] & 0x80) {
-				v = ur_[16];
+				v = dte_div_ & 0xff;
 			} else if (!rx_.empty()) {
 				v = rx_.front();
 				rx_.pop_front();
 			}
 			break;
 		case 0x8051:
-			v = (ur_[3] & 0x80) ? ur_[17] : ur_[1];
+			v = (ur_[3] & 0x80) ? dte_div_ >> 8 : ur_[1];
 			break;
 		case 0x8052:
 			v = (w16)(0xc0 | ((!rx_.empty() && (ur_[1] & 1)) ? 0x04 :
