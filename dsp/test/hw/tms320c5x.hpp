@@ -95,6 +95,25 @@ public:
 	bool flat = false;
 	std::vector<w16> PR;
 	const w16 *win = nullptr;
+	/* flat: the on-chip ROM, program rom_lo to ROM.size() - 1 while
+	   PMST's MP/MC (bit 3) is 0 (empty: none) */
+	std::vector<w16> ROM;
+	u32 rom_lo = 0;
+	/* flat: program shared_lo to 0x7fff is data shared_lo to 0x7fff
+	   (one RAM; none: 0x8000) */
+	u32 shared_lo = 0x8000;
+	/* a data word in d_wr_lo to d_wr_hi written (a test's) */
+	std::function<void(u32 a, w16 v)> d_wr;
+	u32 d_wr_lo = 0, d_wr_hi = 0;
+	/* flat: a program memory word written (a test's) */
+	std::function<void(u32 a)> pr_wr;
+	/* flat: a read of a ROM word not known (0xffff) */
+	std::function<void(u32 a)> rom_unknown;
+	/* flat: each read of a ROM word (a test's) */
+	std::function<void(u32 a)> rom_read;
+	/* debugging: each data read from 0x0800 to shared_lo */
+	std::function<void(u32 a)> d_read;
+	u32 dr_lo = 0x800, dr_hi = 0;
 	/* flat: after a write to data 0x20 to 0x2f (the serial port and
 	   the timer), with the word's old value: the harness's peripherals */
 	std::function<void(u32 a, w16 old)> mmr_wr;
@@ -106,6 +125,15 @@ public:
 		if (flat) {
 			if (cnf && a >= 0xfe00)
 				return D[a - 0xfe00 + 0x100];
+			if (a >= rom_lo && a < ROM.size() && !(D[0x07] & 8)) {
+				if (ROM[a] == 0xffff && rom_unknown)
+					rom_unknown(a);
+				if (rom_read)
+					rom_read(a);
+				return ROM[a];
+			}
+			if (a >= shared_lo && a < 0x8000)
+				return D[a];
 			return a < 0x8000 ? PR[a] : win ? win[a & 0x7fff] : 0;
 		}
 		if (cnf && a >= 0xfe00)
@@ -125,8 +153,12 @@ public:
 		if (flat) {
 			if (cnf && a >= 0xfe00)
 				D[a - 0xfe00 + 0x100] = (w16)v;
+			else if (a >= shared_lo && a < 0x8000)
+				D[a] = (w16)v;
 			else if (a < 0x8000)
 				PR[a] = (w16)v;
+			if (pr_wr)
+				pr_wr(a);
 			return;
 		}
 		if (a < 0x800)
@@ -155,6 +187,8 @@ public:
 	w16 rdm(u32 a)
 	{
 		a &= 0xffff;
+		if (d_read && a >= dr_lo && a < (dr_hi ? dr_hi : shared_lo))
+			d_read(a);
 		if (io_rd && !flat) {
 			int k = io_key(a);
 			if (k >= 0)
@@ -172,6 +206,8 @@ public:
 	void wr(u32 a, u32 v)
 	{
 		a &= 0xffff;
+		if (d_wr && a >= d_wr_lo && a <= d_wr_hi)
+			d_wr(a, (w16)v);
 		if (io_wr && !flat) {
 			int k = io_key(a);
 			if (k >= 0) {

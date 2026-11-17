@@ -1053,6 +1053,8 @@ s16 Modem::link_init()
 	c.hst = hst_offer();
 	/* +X2UP: the remote feature upgrade, with LAPM */
 	c.usr_feature = static_cast<dlink::UsrMode>(kept("+X2UP")[0]);
+	c.usr_enable = static_cast<u8>(kept("+X2UP")[1]);
+	c.usr_disable = static_cast<u8>(kept("+X2UP")[2]);
 	/* MNP 10 (S113: bit 0 the offer, bit 1 parameter 0xC0, bit 2 the
 	   long LR; -K, -Q, )M, @M, :T19): with MNP, not synchronous;
 	   the D-Modem extension's top rate +MS's */
@@ -2524,6 +2526,18 @@ void Modem::dsvd_close_voice()
 {
 	if (link_)
 		link_->close_voice();
+}
+
+/* see dcore.h */
+bool Modem::usr_feature_now(int mode, int enable, int disable)
+{
+	const int sw = dlink::USR_SWITCHED;
+	if (!link_ || mode < 1 || mode > 2 || enable < 0 || disable < 0 ||
+	    (enable & ~sw) || (disable & ~sw) || (enable & disable))
+		return false;
+	return link_->usr_start(static_cast<dlink::UsrMode>(mode),
+				static_cast<u8>(enable),
+				static_cast<u8>(disable));
 }
 
 /* see dcore.h */

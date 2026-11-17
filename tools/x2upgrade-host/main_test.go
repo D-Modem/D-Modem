@@ -70,7 +70,8 @@ func TestScreen(t *testing.T) {
 	for _, s := range []string{
 		"Serial number: 0009540034268322\r\n",
 		"Feature record: 015 before, 031 after\r\n",
-		"x2 is now enabled",
+		"Features now: HST, Fax, Terbo, V.FC/V.34, x2\r\n",
+		"the host enabled the features",
 		"AT&F1S0=0&W",
 		"Goodbye.",
 	} {
@@ -87,6 +88,16 @@ func TestScreen(t *testing.T) {
 	screen(&b, report{result: "ODD"}, true)
 	if !strings.Contains(b.String(), "Result: ODD\r\n") {
 		t.Errorf("unknown result screen: %q", b.String())
+	}
+}
+
+// TestFeatureNames decodes record 2 values.
+func TestFeatureNames(t *testing.T) {
+	for v, want := range map[string]string{"031": "HST, Fax, Terbo, V.FC/V.34, x2",
+		"019": "HST, Fax, x2", "000": "none", "x": "?"} {
+		if got := featureNames(v); got != want {
+			t.Errorf("featureNames(%q) = %q, want %q", v, got, want)
+		}
 	}
 }
 
@@ -128,5 +139,107 @@ func TestWaitReportLastLine(t *testing.T) {
 	rep, ok := waitReport(&slowReader{data: []byte("+X2UP: NO REPLY"), step: 4}, time.Second)
 	if !ok || rep.result != "NO REPLY" {
 		t.Fatalf("waitReport = %+v, %v", rep, ok)
+	}
+}
+
+// fakeControl keeps the requests, and when a request comes, sends the
+// modem's next report on the input.
+type fakeControl struct {
+	w      io.Writer
+	answer string
+	report string
+	lines  []string
+}
+
+func (c *fakeControl) request(line string) string {
+	c.lines = append(c.lines, line)
+	if c.report != "" {
+		go io.WriteString(c.w, c.report)
+	}
+	return c.answer
+}
+
+// runSession runs a session on data, with a control channel that gives
+// answer and then the report next (no control channel when answer is "").
+func runSession(t *testing.T, data, answer, next string, idle time.Duration) (report, bool, string, *fakeControl) {
+	t.Helper()
+	pr, pw := io.Pipe()
+	t.Cleanup(func() { pw.Close() })
+	go io.WriteString(pw, data)
+	var out bytes.Buffer
+	var ctl control
+	fc := &fakeControl{w: pw, answer: answer, report: next}
+	if answer != "" {
+		ctl = fc
+	}
+	rep, found := session(newInput(pr), &out, ctl, time.Second, idle)
+	return rep, found, out.String(), fc
+}
+
+// TestSessionSwitchAndApply: the caller switches x2 on and V.FC off.
+func TestSessionSwitchAndApply(t *testing.T) {
+	rep, found, out, fc := runSession(t,
+		"\r\n+X2UP: QUERIED,\"0009540034268322\",015,015\r\n3\r2\rA\r", "OK",
+		"\r\n+X2UP: CHANGED,\"0009540034268322\",015,023\r\n", time.Second)
+	if !found || rep != (report{"CHANGED", "0009540034268322", "015", "023"}) {
+		t.Fatalf("session = %+v, %v", rep, found)
+	}
+	if len(fc.lines) != 1 || fc.lines[0] != "X2UP=2,16,8" {
+		t.Errorf("control lines = %q", fc.lines)
+	}
+	for _, s := range []string{
+		"Features now: HST, Fax, Terbo, V.FC/V.34\r\n",
+		"  3. x2         ON   (changed)\r\n",
+		"  2. V.FC/V.34  OFF  (changed)\r\n",
+		"Features now: HST, Fax, Terbo, x2\r\n",
+		"enabled and disabled",
+	} {
+		if !strings.Contains(out, s) {
+			t.Errorf("output has no %q:\n%s", s, out)
+		}
+	}
+}
+
+// TestSessionNoChange: Q, A with no change, and no key, change nothing.
+func TestSessionNoChange(t *testing.T) {
+	for _, keys := range []string{"1q", "11a", ""} {
+		rep, _, out, fc := runSession(t, "+X2UP: QUERIED,\"1\",019,019\r\n"+keys,
+			"OK", "", 100*time.Millisecond)
+		if rep.result != "UNCHANGED" || len(fc.lines) != 0 {
+			t.Errorf("keys %q: session = %+v, control %q", keys, rep, fc.lines)
+		}
+		if !strings.Contains(out, "you made no change") {
+			t.Errorf("keys %q: output:\n%s", keys, out)
+		}
+	}
+}
+
+// TestSessionControlError: the modem cannot start the change.
+func TestSessionControlError(t *testing.T) {
+	rep, _, out, fc := runSession(t, "+X2UP: QUERIED,\"1\",003,003\r\n3a",
+		"ERROR", "", time.Second)
+	if rep.result != "FAILED" || len(fc.lines) != 1 || fc.lines[0] != "X2UP=2,16,0" {
+		t.Errorf("session = %+v, control %q", rep, fc.lines)
+	}
+	if !strings.Contains(out, "could not start the change") {
+		t.Errorf("output:\n%s", out)
+	}
+}
+
+// TestSessionNoControl: with no control channel, the result only.
+func TestSessionNoControl(t *testing.T) {
+	rep, _, out, _ := runSession(t, "+X2UP: ENABLED,\"7\",003,019\r\n", "", "", time.Second)
+	if rep.result != "ENABLED" || strings.Contains(out, "Type 1, 2 or 3") ||
+		!strings.Contains(out, "Features now: HST, Fax, x2") {
+		t.Errorf("session = %+v, output:\n%s", rep, out)
+	}
+}
+
+// TestChanges finds the bits to enable and to disable.
+func TestChanges(t *testing.T) {
+	for _, c := range [][4]int{{15, 23, 16, 8}, {19, 19, 0, 0}, {3, 0, 0, 0}} {
+		if e, d := changes(c[0], c[1]); e != c[2] || d != c[3] {
+			t.Errorf("changes(%d, %d) = %d, %d", c[0], c[1], e, d)
+		}
 	}
 }

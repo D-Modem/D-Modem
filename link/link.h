@@ -152,8 +152,12 @@ struct Config {
 	u8 zdes = 0;
 	u8 zkey[16] = {};
 	/* the USRobotics remote feature upgrade (usr_feature.h, +X2UP):
-	   once LAPM is up, read a Courier's records, and set x2 */
+	   once LAPM is up, read a Courier's records, and enable and
+	   disable its features (record 2's values: Terbo 4, V.FC 8,
+	   x2 16) */
 	UsrMode usr_feature = UsrMode::Off;
+	u8 usr_enable = 1 << (USR_BIT_X2 - 1);
+	u8 usr_disable = 0;
 };
 
 /* the error correction a call has */
@@ -463,6 +467,11 @@ public:
 	void usr_rx(const u8 *info, s16 n) { usr_.rx(info, n); }
 	/* (see usr_send()) the exchange's end, to the owner */
 	void usr_report(const UsrReport &r) { owner_->usr_feature(r); }
+	/* the remote feature upgrade now, in a call that is on with LAPM
+	   (the program's ask, not Config's): mode, the features to enable
+	   and to disable as usr_feature.h has them; false (nothing done)
+	   with no LAPM up, or with an exchange going on */
+	bool usr_start(UsrMode mode, u8 enable, u8 disable);
 
 private:
 	void end_detect();

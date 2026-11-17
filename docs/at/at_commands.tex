@@ -2967,20 +2967,24 @@ with \std{V.44} or \std{V.42bis}.  \cmd{0} offers only \std{V.44} and
 D-Modem's own: the host side of the USRobotics remote feature upgrade
 (\texttt{docs/x2-upgrade.md}).  After \std{LAPM} connects, \p{mode} 1 reads
 the serial number and the feature records of a Courier, and \p{mode} 2
-also sets its x2 bit (the value 16 in record 2) when it is not set.  The
-modem then sends one line to the \std{DTE}:
+also enables the features in \p{enable} and disables the features in
+\p{disable}.  These are sums of Terbo (4), V.FC (8) and x2 (16).  The
+defaults are 16 and 0, thus \cmd{AT+X2UP=2} enables x2.  The modem then
+sends one line to the \std{DTE}:
 \rc{+X2UP: }\p{result}\rc{,"}\p{serial}\rc{",}\p{before}\rc{,}\p{after}.
-\p{result} is \cmd{ENABLED}, \cmd{ALREADY}, \cmd{REFUSED},
-\cmd{QUERIED} or \cmd{NO REPLY}; \p{before} and \p{after} are record 2
-in decimal, as the Courier's \cmd{ATY14} shows it.  \cmd{0} does nothing.
+\p{result} is \cmd{ENABLED}, \cmd{DISABLED}, \cmd{CHANGED},
+\cmd{ALREADY}, \cmd{REFUSED}, \cmd{QUERIED} or \cmd{NO REPLY};
+\p{before} and \p{after} are record 2 in decimal, as the Courier's
+\cmd{ATY14} shows it.  \cmd{0} does nothing.
 \begin{syntax}
-\item +X2UP=[\p{mode}]
-\item +X2UP? (gives \rc{+X2UP: 0})
-\item +X2UP=? (gives \rc{+X2UP: (0-2)})
+\item +X2UP=[\p{mode}][,\p{enable}][,\p{disable}]
+\item +X2UP? (gives \rc{+X2UP: 0,16,0})
+\item +X2UP=? (gives \rc{+X2UP: (0-2),(0,4,8,12,16,20,24,28),(0,4,8,12,16,20,24,28)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{Always.}
-\res{\rc{ERROR}}{For a value outside its range.}
+\res{\rc{ERROR}}{For a value outside its range, or for a feature in
+\p{enable} and in \p{disable}.}
 \end{results}
 \end{command}
 

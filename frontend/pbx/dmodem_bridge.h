@@ -218,6 +218,12 @@ struct dmbridge_call {
 	int digital;
 	int dte[2];             /* the modem's DTE, and ours */
 	int fd;                 /* the server's socket or the program's pty */
+	/* the program's control channel (exec): our end of a socketpair,
+	   the program's on its descriptor 3 (DMODEM_CONTROL=3); its line
+	   read so far */
+	int ctl;
+	char ctl_line[64];
+	int ctl_len;
 	int connecting;         /* the TCP connect's result comes on it */
 	pid_t pid;              /* the program */
 	struct dmbridge_pipe to_line, to_fd;

@@ -43,6 +43,7 @@ What `cmake -B build -D<NAME>=<value>` takes, from the `option()`s and cache set
 | `DMODEM_BROADCOM_DIR` | `(depends on the system)` | path | BCMSM.sys and BCMSMwxp.inf of the Broadcom soft modem (interop tests) | `dsp/test/CMakeLists.txt` |
 | `DMODEM_ESS_DIR` | `(depends on the system)` | path | es56hpi.sys and mdmzn.inf of the ESS soft modem (interop tests) | `dsp/test/CMakeLists.txt` |
 | `DMODEM_USR_DIR` | `(depends on the system)` | path | IDSDL302.ROM, c51-mask.rom and courier-nvram.bin of the Courier (interop tests) | `dsp/test/CMakeLists.txt` |
+| `DMODEM_3COM_DIR` | `(depends on the system)` | path | tc110.bin, the 3Com TC110 flash (interop tests) | `dsp/test/CMakeLists.txt` |
 | `DMODEM_INTEL_DIR` | `(depends on the system)` | path | 537core.lib and wwh_dflt.c of the Intel 537EP soft modem (interop tests) | `dsp/test/CMakeLists.txt` |
 | `DMODEM_HOST_LINE_EXCHANGE` | `(depends on the system)` | filepath | a Linux build's line_exchange (Windows USB tests) | `frontend/dmodemd/CMakeLists.txt` |
 | `DMODEM_UMDF1_INCLUDE` | `(depends on the system)` | path | UMDF 1.9's headers (wudfddi.h's directory) | `platforms/windows/winmodem/CMakeLists.txt` |
