@@ -1927,8 +1927,7 @@ Two open modems run the same SYN hunt calls (`open_v80_syn1`,
 
 `STREAM_ONLY=A` (or `B`) makes a `STREAM` call pass when the data that
 modem receives is right, whatever the other modem receives. It is for a
-peer whose transmitter is not yet right: `3com_34_33600_open_calls` and
-`3com_34_4800_open_calls` examine only the data that the 3Com receives.
+peer whose transmitter is not yet right. No test uses it at this time.
 
 ## The call's statistics in the middle of a call
 

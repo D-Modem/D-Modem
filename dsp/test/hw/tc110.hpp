@@ -1069,7 +1069,13 @@ private:
 		   codec's rate: 1800 Hz at 2400 baud, 1600 Hz at 2400 and
 		   1829 Hz at 2743, 1920 Hz at 3200, 1829 Hz at 3200 (and the
 		   other rates' carriers, at their codec rates).  Not of the
-		   ROM: made from how the firmware reads them */
+		   ROM: made from how the firmware reads them.  Their amplitude
+		   is 16384, Q14 as the firmware's other coefficients (PM 1,
+		   SACH shift 1).  With 32767 the data's level was 6 dB above
+		   that of L2 (V.34 sends the two at the nominal power), and
+		   the peaks of the data overflowed the shift 2 store to 0x022f
+		   (at 0x603c): one sample wrong, a burst of errors at the
+		   receiver */
 		static const int car[4][2] = { { 1, 4 }, { 2, 9 }, { 1, 5 },
 					       { 4, 21 } };
 		unsigned at = 0x0a7c;
@@ -1080,8 +1086,8 @@ private:
 			for (int j = 0; j < per; j++) {
 				double th = -carrier_sign * 2 * M_PI * car[n][0] *
 					    j / per;
-				dsp.ROM[at++] = (w16)lrint(32767 * cos(th));
-				dsp.ROM[at++] = (w16)lrint(32767 * sin(th));
+				dsp.ROM[at++] = (w16)lrint(16384 * cos(th));
+				dsp.ROM[at++] = (w16)lrint(16384 * sin(th));
 			}
 		}
 

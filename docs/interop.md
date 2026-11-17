@@ -52,9 +52,7 @@ CONNECT. The factory setting of the TC110 is `S33=32`. This setting stops
 the 3429 baud symbol rate, thus the maximum rate is 31200 bit/s. With
 `ATS33=0`, the two modems connect at 33600 bit/s, the maximum rate of the
 TC110. At 33600 bit/s and at 4800 bit/s, the tests send data in the two
-directions. The 3Com receives the data of D-Modem correctly. D-Modem
-receives the data of the 3Com with bursts of errors. Thus, the tests do
-not examine the data that D-Modem receives.
+directions, and the two modems receive the data correctly.
 
 The test suite also runs D-Modem on an emulated HD-audio modem
 chip (the type in laptops from about 2005 to 2010). This tests the code
