@@ -82,6 +82,7 @@ static int host_thread(void *(*fn)(void *), void *arg)
    otherwise use at the exit */
 class JoinThreads : public ::testing::Environment {
 public:
+	/* each thread joined, those it started too */
 	void TearDown() override
 	{
 		for (;;) {
