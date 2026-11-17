@@ -593,6 +593,19 @@ if(EXISTS "${DMODEM_USR_DIR}/IDSDL302.ROM")
 	message(STATUS "tests: the USRobotics Courier: ${DMODEM_USR_DIR}")
 endif()
 
+# 3Com/Megahertz's XJ5560 / CC5560 PC Card as a peer (half_3com.cpp): its
+# TMS320C5x emulated running the TC110 flash update's code
+set(DMODEM_3COM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3com" CACHE
+	PATH "tc110.bin, the 3Com TC110 flash (interop tests)")
+if(EXISTS "${DMODEM_3COM_DIR}/tc110.bin")
+	add_executable(half_3com half_3com.cpp modem_half.cpp)
+	target_compile_definitions(half_3com PRIVATE
+		TC110_FLASH="${DMODEM_3COM_DIR}/tc110.bin")
+	target_compile_options(half_3com PRIVATE -O2)
+	target_link_libraries(half_3com PRIVATE ${DMODEM_LIBM})
+	message(STATUS "tests: the 3Com TC110 PC Card: ${DMODEM_3COM_DIR}")
+endif()
+
 # Intel's 537EP soft modem as a peer (half_intel.cpp): the core of Intel's
 # Intel537EP 2.37.50.1 driver for Fedora Core 1 (537core.lib) with its
 # country tables (wwh_dflt.c); its own exit, index and pow renamed, and
