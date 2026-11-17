@@ -186,17 +186,90 @@ Thus, we do not know the signal yet.
 
 ## Not known yet
 
-1. The carrier frequency at 2742.857 baud. (For V.32bis, the firmware
-   probably sends `0x3000` with command `0x9001`. This is 1800 Hz at 9600
-   samples a second.)
+1. (Known now: refer to [The carrier](#the-carrier).)
 2. The signal for the detection of a ZyXEL peer, and when it occurs.
+   (The detector is known now, and a candidate signal: refer to
+   [The peer detection and the scrambler](#the-peer-detection-and-the-scrambler-not-proven).)
 3. The start-up at the new symbol rate (S, TRN, the rate signals).
 4. The scrambler. The serial hardware gives the bits. We think that it is
    the scrambler of V.32bis.
 5. The order of the bits in time inside a group. We think that bit 0 is
    the first bit, as Q1 is in V.32bis.
 
-A recording of two real ZyXEL modems can settle items 1 to 5.
+A recording of two real ZyXEL modems can settle items 2 to 5.
+
+## The carrier
+
+The carrier at 2742.857 baud is 12800/7 = 1828.571 Hz. This is 2/3 of
+the symbol rate (240 degrees for each symbol). It is the same as the high
+carrier of V.34 at 2743 baud. The evidence is from the ZyX DSP program of
+the Elite 2864I V.90 images (the first DSPA program, which the 68000
+loads with a run-length code; the earlier trace read the coded data and
+thus did not find it):
+
+- When ZyX starts, the 68000 starts DSPB again with the timer words 3674
+  (10.08 MHz / 2743.6) and 27429 (10 × 2742.857). V.32bis uses 4200 and
+  24000.
+- The 68000 sets the line clock register `$E036` to `0x10`. The V.34
+  code uses this value only for 2743 and 3429 baud.
+- In an emulation of the DSPA program in ZyX mode (8 samples for each
+  symbol), an input at 1/12 of the sample rate comes out at 0 Hz. The
+  carrier rotation table of DSPB for ZyX does not rotate. The same test
+  in V.32bis mode gives 1800 Hz, thus the method is correct.
+
+These are the receive programs. The transmit side is not in the
+programs that we emulated, but it is almost certainly the same
+frequency.
+
+## The peer detection and the scrambler (not proven)
+
+The same images have the detector of a ZyXEL peer. It is a DSPB
+program part that the 68000 loads in the start-up states `0x70` to
+`0x7C`. The 68000 reads its status bits:
+
+- The detector demodulates the 1800 Hz channel and measures the energy
+  in some bands. It also measures single lines at 1200, 1500, 2100 and
+  2400 Hz.
+- Bit 4 is the ZyXEL peer. It is set when one band of the 1800 Hz
+  channel has more than 2 times the energy of another band for 11
+  frames, and the 2400 Hz line is stronger than the 1200 Hz line. The
+  68000 needs the bit for 3 reads. Then it sets the ZyX flag and the
+  8/7 change.
+- Bit 3 is probably V.32terbo.
+
+In an emulation, an 1800 Hz carrier with a phase reversal every 2
+symbols at 2400 baud (the V.32 points A A C C ...) sets bit 4. This
+signal has lines at 1200 and 2400 Hz. The result changes with the
+alignment and the phase, and single tones do not set it. Thus the ZyXEL
+signal is probably a V.32-type signal with 2-symbol reversals in place
+of AA or AC. A recording of a real ZyXEL call can prove it.
+
+The firmware thread found the window of the detector. Each modem
+listens after the reversal that measures the round trip delay, in the
+silence before S. The answerer stops at the delay plus 0x100 ticks. The
+caller starts at the delay minus 0x28 ticks and has no limit. The
+caller detector wants status bits 2 or 3 (a signal with lines at 1500
+and 2100 Hz). Each modem changes to ZyX on its own detection.
+
+D-Modem sends a marker only with `S115=1`, because a wrong signal in
+the V.32bis start-up can stop calls with other modems:
+
+| Modem | Marker that it sends (192 symbols) | It listens for |
+|---|---|---|
+| Caller, after CC | 1800 Hz, a reversal every 2 symbols (A A C C) | The answerer marker, until R1 comes |
+| Answerer, after its marker is detected | 1800 Hz, a reversal every 4 symbols (lines at 1500 and 2100 Hz). This is a guess. | The caller marker, in the silence before S |
+
+A modem finds a marker when its two lines are on, and the V.32 tones are
+off, for 24 symbols. With `S115=0`, the answerer listens only in the
+16 symbols of the V.32 silence (longer while the two lines are on),
+writes a detection in the debug log,
+and does not change to ZyX.
+
+The DSP programs and the 68000 code have no scrambler. For ZyX, the
+68000 writes the same serial hardware registers as for V.32bis. Thus
+the scrambler is in the serial hardware, and it is probably the V.32
+scrambler (GPC for the caller, GPA for the answerer), which D-Modem
+uses.
 
 We also traced the image of the Elite 2864I 1.11 (1995). Its 68000 code
 for ZyX is the same as the code of the U-1496S: the same ×8/7 change of
@@ -204,7 +277,9 @@ the delay, the same DSP commands and the same ring table. The image also
 holds programs that the 68000 loads into DSPs. These programs are
 filters for the ISDN side of the modem, not the modem DSPs. The modem
 DSPs of the Elite run from mask ROM, as on the U-1496. Thus, no EPROM
-image that we have gives items 1 to 3.
+image that we have gives items 1 to 3. (This was incorrect. The V.90
+images of the Elite 2864I have the ZyX DSP program in run-length code.
+Refer to [The carrier](#the-carrier).)
 
 ## The version in D-Modem
 
@@ -220,15 +295,15 @@ we know come from the firmware:
   which runs in an emulator.
 - The trellis code of V.32bis, which starts in state 0.
 - The change of the round trip delay by 8/7.
+- The carrier of 1828.571 Hz (from the Elite 2864I V.90 images).
 
 For the parts that we do not know, D-Modem uses these guesses:
 
 | Item | Guess in D-Modem |
 |---|---|
-| Peer detection | None. `AT+MS=ZYX` on the two ends selects ZyX. |
+| Peer detection | `AT+MS=ZYX` on the two ends selects ZyX. With `S115=1` on the two ends, the markers above select ZyX from V.32bis. |
 | Change to 2742.857 baud | After the round trip delay is measured: the answerer when it stops AC, the caller when it stops CC. |
-| Carrier | 1800 Hz, as V.32bis. |
-| Roll-off of the pulse | 0.2 (V.32bis uses 0.25). The band is 154 to 3446 Hz. |
+| Roll-off of the pulse | 0.2 (V.32bis uses 0.25). With the carrier of 1828.571 Hz, the band is 183 to 3474 Hz. |
 | Scrambler | The scramblers of V.32bis (the caller GPC, the answerer GPA). The bits of a frame go through it in their sequence. |
 | Order of the bits in time | Bit 0 of each group first. |
 | B1 | 128 symbols (16 frames) of scrambled ones, through the frame mapper. |

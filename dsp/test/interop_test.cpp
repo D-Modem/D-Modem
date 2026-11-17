@@ -1351,6 +1351,23 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
 		      "DSP_G711=" + law, "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
+	/* our answer with V.8bis (+A8E) and with K56flex (+MS=56): the HSF
+	   modem has V.8bis on (+A8E: 1,1,C1,1) but no K56flex and no
+	   V.70, and it does not answer MRe.  After 3 s our ANSam, and V.90
+	   (docs/dsp/v8bis-details.md, Conexant modems) */
+	add("hsf", "hsf_v8bis_mre_unanswered", "hsf", "open8",
+	    "ATX3;AT+MS=V90",
+	    { "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "PROTO_B=ATX3;AT+MS=90;AT+A8E=1,1,,1",
+	      "EXPECT_B=(?s)v8bis: MRe out.*v8bis: no answer to MRe"
+	      ".*V.90 connect 5[0-9]{4}/",
+	      "REJECT_B=v8bis: CRd in" });
+	add("hsf", "hsf_k56flex_mre_unanswered", "hsf", "open8",
+	    "ATX3;AT+MS=V90",
+	    { "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "PROTO_B=ATX3;AT+MS=56",
+	      "EXPECT_B=(?s)V.8bis MRe.*V.8bis: no CRd, V.8"
+	      ".*V.90 connect 5[0-9]{4}/" });
 	/* our INFO0d lost (DSP_V34_LOSE_INFO0): the HSF modem takes it all
 	   the same (its INFO0a acknowledges it) but repeats its INFO0a
 	   until ours acknowledges that (9.2.1.2/V.90) */

@@ -766,24 +766,24 @@ The trace found no special ETC modulation. On this card, ETC is V.32bis
 with V.42 or MNP, the calling tone and the settings above. The V.32bis
 pump of the card operates at 7200 Hz.
 
-**What D-Modem does.** S115 holds the flags, with the bits of the
-firmware. `AT&F5` sets S115 to 238 (0xEE), `+MS=V32B`, `\N2`, S10 = 40
-and S7 = 90. `AT&F6` sets S115 to 176 (0xB0) and `\N3`. Other `&F`
+**What D-Modem does.** S116 holds the flags, with the bits of the
+firmware. `AT&F5` sets S116 to 238 (0xEE), `+MS=V32B`, `\N2`, S10 = 40
+and S7 = 90. `AT&F6` sets S116 to 176 (0xB0) and `\N3`. Other `&F`
 commands do nothing, as before.
 
-- When bit 1 of S115 is set, the caller sends the 1500 Hz calling tone
+- When bit 1 of S116 is set, the caller sends the 1500 Hz calling tone
   (`dsp/dp_callprog.cpp`).
-- When bit 4 of S115 is set and bits 0 to 2 are not set, the answerer
+- When bit 4 of S116 is set and bits 0 to 2 are not set, the answerer
   listens for the 1500 Hz tone in the first 10 s of the call
   (`EtcToneDetector` in `core/etc.h`). It measures blocks of 50 ms. Two
   blocks in sequence with more than half of the energy at 1500 Hz, above
-  -43 dBm0, turn ETC on for the call. S115 does not change. The answerer
+  -43 dBm0, turn ETC on for the call. S116 does not change. The answerer
   also transmits 6.6 dB lower than the default (the ratio of the two
   gains of the firmware).
-- When S115 is not 0, the link offers N401 = 64 octets, and T401 is 3 s
+- When S116 is not 0, the link offers N401 = 64 octets, and T401 is 3 s
   plus the time of three frames (not 2 s). The firmware uses 3.0 s in
   ETC mode, and 1.5 s to 5 s from the rate in other modes.
-- When bit 5 of S115 is set at the start of a call, `core/etc.h` filters
+- When bit 5 of S116 is set at the start of a call, `core/etc.h` filters
   the samples of the data pump before they go to the line. The filter is
   off during the call progress pump (dial tones and the calling tone), as
   bit 9 of the firmware does. The filter
@@ -811,7 +811,7 @@ commands do nothing, as before.
 **Tests:** `Core.EtcFilter` (the response of the coefficients, the levels
 through the filter), `Core.EtcToneDetector` (1500 Hz found at -10 and -40
 dBm0 and in noise; not 1300 Hz, 1800 Hz, noise or a short tone),
-`Core.EtcSettings` (`&F5`, `&F6`, S115, `+EF`), `Core.EtcCall` (a call
+`Core.EtcSettings` (`&F5`, `&F6`, S116, `+EF`), `Core.EtcCall` (a call
 from `&F5` to `&F6`: the calling tone found, V.32bis with V.42, `/ETC` on
 the two sides, `40=82` and `41=40` in `#UD`, data in the two directions)
 and `Core.EtcLandPlainCaller` (no calling tone, no `/ETC`).

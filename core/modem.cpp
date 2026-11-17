@@ -126,6 +126,9 @@ static const u32 CID_PRE_MS = 5000;
    on and 1 off, Syria's 1 and 0.5), how long after a burst's first pulse
    the next pulse starts another */
 static const u32 RING_GAP_MS = 1500, RING_CHECK_MS = 2510;
+/* #B3: no pulse for this long, the burst is over (a ring signal's
+   cycle is 67 ms at most, 15 Hz) */
+static const u32 CADENCE_GAP_MS = 100;
 static const u32 RING_MIN_MS = 150;
 static const u16 RING_PULSES = 4;
 static const u32 RING_GONE_MS = 8010, RING_AGAIN_MS = 6000;
@@ -450,7 +453,8 @@ void Modem::sregs_init()
 		{ SREG_MNP10_UPGRADE, 0 }, { SREG_MNP10_LOWEST, 2 },
 		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
-		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 }, { SREG_ETC, 0 },
+		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 },
+		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -754,11 +758,11 @@ s16 Modem::start_call(bool keep_line)
 	shift_cap_ = 0;
 	tx_gain_ = 1;
 	rx_pow_ = 0;
-	/* ETC's transmit filter (S115 bit 5): +EF's set at our rate */
+	/* ETC's transmit filter (S116 bit 5): +EF's set at our rate */
 	etc_tx_ = (sregs_[SREG_ETC] & 0x20) && !wideband();
 	if (etc_tx_)
 		etc_filter_.start(static_cast<int>(kept("+EF")[0]), srate_);
-	/* the landline side (S115 bit 4, ETC not on yet): its listening
+	/* the landline side (S116 bit 4, ETC not on yet): its listening
 	   for an ETC caller's 1500 Hz in the call's first 10 s, and its
 	   transmit level 6.6 dB under ours (the firmware's gains for
 	   ETC_LAND's attenuation of 20, 0x0CCD, and its default 13,
@@ -808,9 +812,10 @@ s16 Modem::stop_call()
 	dial_rest_[0] = '\0';
 	/* an adaptive answer from fax mode that found out nothing: back in
 	   fax mode */
-	if (adapt_ == Adapt::Fax)
+	if (adapt_ == Adapt::Fax || z6_data_)
 		set_mode(MODEM_MODE_FAX);
 	adapt_ = Adapt::Off;
+	z6_data_ = false;
 	/* a leased line's call that the line ended (not ATH, DTR, ATZ):
 	   started again by itself in 2 s (poll()) */
 	if (leased_role_ != Leased::None && sregs_[SREG_LEASED] &&
@@ -952,7 +957,7 @@ void Modem::setup_config()
 	c.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
 	c.tx_win = c.rx_win = dlink::LAPM_MAX_WIN;
 	c.tx_info = c.rx_info = dlink::LAPM_MAX_INFO;
-	/* ETC (S115): V.42's N401 64 octets, as the firmware presets it
+	/* ETC (S116): V.42's N401 64 octets, as the firmware presets it
 	   in its XID (512 bits, not 1024) */
 	if (sregs_[SREG_ETC])
 		c.tx_info = c.rx_info = 64;
@@ -1014,7 +1019,7 @@ s16 Modem::link_init()
 	c.tx_win = cfg_.tx_win;
 	c.rx_win = cfg_.rx_win;
 	c.tx_info = cfg_.tx_info;
-	/* ETC (S115): T401 3 s, as 3Com's firmware sets it (data 0xBCE3:
+	/* ETC (S116): T401 3 s, as 3Com's firmware sets it (data 0xBCE3:
 	   30 ticks of 100 ms, in place of 1.5 to 5 s by the rate) */
 	if (sregs_[SREG_ETC])
 		c.t401_s = 3;
@@ -1414,8 +1419,11 @@ void Modem::update_status(Status s)
 	case ST_OK:
 		break;
 	case ST_DP_LINK:
-		/* adaptive answer: a data call (DATA, then its CONNECT) */
-		if (adaptive_answering())
+		/* adaptive answer: a data call (DATA, then its CONNECT;
+		   from class 6 only CONNECT, and class 6 again after it) */
+		if (adapt_ == Adapt::Fax && fax_class_ == 6)
+			z6_data_ = true;
+		else if (adaptive_answering())
 			report(Result::Data);
 		adapt_ = Adapt::Off;
 		if (loop3_ || (dp_ && (dp_->id == DP_V23 ||
@@ -2663,9 +2671,11 @@ s16 Modem::answer(bool adaptive)
 	cng_->init(srate_);
 	cng_cut_ = 0;
 	answer_tone_at_ = 0;
-	if (adaptive && kept("+FAA")[0] && (mode_ == MODEM_MODE_DATA ||
-					    (mode_ == MODEM_MODE_FAX &&
-					     !fax2_class()))) {
+	/* (class 6 answers so whatever +FAA says, as ZyXEL's do) */
+	bool z6 = mode_ == MODEM_MODE_FAX && fax_class_ == 6;
+	if (adaptive && (z6 || (kept("+FAA")[0] &&
+				(mode_ == MODEM_MODE_DATA ||
+				 (mode_ == MODEM_MODE_FAX && !fax2_class()))))) {
 		adapt_ = mode_ == MODEM_MODE_FAX ? Adapt::Fax : Adapt::Data;
 		set_mode(MODEM_MODE_DATA);
 		logf("adaptive answer (+FAA=1, from %s mode)\n",
@@ -2681,14 +2691,17 @@ s16 Modem::answer(bool adaptive)
    CNG, its V.8 CM, T.38).  With +FAA=1: FAX to the DTE, class 1
    (+FCLASS=1), the fax engine as the answerer after the answer tone
    sent already (its CED cut short), its CONNECT for +FTH=3 to follow.
-   For the program's fax receiver (Options::fax_detect): fax_caller(),
+   From class 6 (ZyXEL's): class 6's engine, no FAX.  For the program's fax receiver (Options::fax_detect): fax_caller(),
    and after a V.8 CM no more data answer (the line silent) */
 void Modem::fax_found(const char *why)
 {
 	if (fax_caller_ || adapt_ == Adapt::Off)
 		return;
+	/* (from class 6: class 6's engine, its CONNECT FAX later) */
+	bool z6 = adapt_ == Adapt::Fax && fax_class_ == 6;
 	fax_caller_ = true;
-	fax_class_ = 1;
+	if (!z6)
+		fax_class_ = 1;
 	logf("adaptive answer: a fax call (%s)\n", why);
 	if (adapt_ == Adapt::Detect) {
 		adapt_ = Adapt::Off;
@@ -2701,6 +2714,10 @@ void Modem::fax_found(const char *why)
 	adapt_ = Adapt::Off;
 	set_mode(MODEM_MODE_FAX);
 	stats_.fax = true;
+	if (z6) {
+		fax_start();
+		return;
+	}
 	report(Result::Fax);
 	if (fax_start() == 0 && DCORE_HAS(FAX_answer_tone))
 		FAX_answer_tone(fax_, static_cast<unsigned>(sent));
@@ -2727,6 +2744,7 @@ s16 Modem::adaptive_param() const
 void Modem::hangup()
 {
 	conf_close();
+	cadence_ = false;
 	leased_stop();
 	if (state_ != IDLE)
 		set_cause(Cause::DtrOff);
@@ -3610,6 +3628,7 @@ void Modem::poll()
 		test_end(true);
 	}
 	conf_poll();
+	cadence_poll();
 	if (!event_)
 		return;
 	ev = event_;
@@ -3749,6 +3768,11 @@ s32 Modem::next_timer_ms()
 		if (c >= 0 && (left < 0 || c < left))
 			left = c;
 	}
+	{
+		s32 c = cadence_next_ms();
+		if (c >= 0 && (left < 0 || c < left))
+			left = c;
+	}
 	if (test_end_ms_) {
 		s32 t = std::max<s32>(0, static_cast<s32>(test_end_ms_ -
 							  host_.now_ms()));
@@ -3824,6 +3848,17 @@ void Modem::ring()
 {
 	u32 now = static_cast<u32>(host_.now_ms());
 
+	if (cadence_) {
+		/* a burst starts: the time with no ring */
+		u64 t = host_.now_ms();
+		if (!cadence_on_) {
+			cadence_line("OFF ", t - cadence_edge_ms_);
+			cadence_edge_ms_ = t;
+			cadence_on_ = true;
+		}
+		cadence_pulse_ms_ = t;
+		return;
+	}
 	if (state_ != IDLE)
 		return;
 	if (!ring_count_) {
@@ -3841,6 +3876,50 @@ void Modem::ring()
 	}
 	ring_last_ = now;
 	ring_count_++;
+}
+
+/* #B3, ZyXEL's ring cadence meter (U-1496S 0x89622): its two lines,
+   then a line at each change of the ring signal (cadence_line()) until
+   a key (at_process()); no RING meanwhile */
+void Modem::cadence_start()
+{
+	puts("\r\nStart to measure ring cadence...\r\n"
+	     "Hit any key to stop!\r\n");
+	cadence_ = true;
+	cadence_on_ = false;
+	cadence_edge_ms_ = host_.now_ms();
+	logf("ring cadence: started\n");
+}
+
+/* a change: the label ("ON  ": a burst ended, "OFF ": one started) and
+   the time of what ended, as ZyXEL's: 8 characters of 10 ms steps,
+   then "0 ms" */
+void Modem::cadence_line(const char *label, u64 ms)
+{
+	char b[32];
+	snprintf(b, sizeof(b), "%s%8u0 ms\r\n", label,
+		 static_cast<unsigned>(std::min<u64>((ms + 5) / 10, 65535)));
+	puts(b);
+}
+
+/* #B3: a burst ends CADENCE_GAP_MS after its last pulse */
+void Modem::cadence_poll()
+{
+	if (!cadence_ || !cadence_on_ ||
+	    host_.now_ms() - cadence_pulse_ms_ < CADENCE_GAP_MS)
+		return;
+	cadence_line("ON  ", cadence_pulse_ms_ - cadence_edge_ms_);
+	cadence_edge_ms_ = cadence_pulse_ms_;
+	cadence_on_ = false;
+}
+
+/* the ms until cadence_poll() has a burst's end, -1 none */
+s32 Modem::cadence_next_ms() const
+{
+	if (!cadence_ || !cadence_on_)
+		return -1;
+	u64 at = cadence_pulse_ms_ + CADENCE_GAP_MS, now = host_.now_ms();
+	return at > now ? static_cast<s32>(at - now) : 0;
 }
 
 /* see dcore.h: a change only (the line may say it twice) */
@@ -3890,6 +3969,9 @@ void Modem::line_reversal()
    (idle, line stopped); on false the rings are over */
 void Modem::ring_signal(bool on)
 {
+	/* (#B3 measures a line's own ring signal alone) */
+	if (on && cadence_)
+		return;
 	if (!on) {
 		sregs_[SREG_RING_COUNTER] = 0;
 		ring_count_ = 0;
@@ -4451,6 +4533,24 @@ s16 Modem::fax_start()
 		s.bo = f2_bo_;
 		s.lp = f2_lp_;
 		f2_pi_.copy(s.pi, sizeof(s.pi) - 1);
+		if (fax_class_ == 6) {
+			/* ZyXEL's: V.17 at most, no ECM, the data's first
+			   bit lowest, the identity #P's */
+			std::memset(s.ident, 0, sizeof(s.ident));
+			zfax_.p.copy(s.ident, sizeof(s.ident) - 1);
+			s.vr = zfax_.v;
+			s.br = 5;
+			s.ec = 0;
+			s.sp = 0;
+			s.bo = 0;
+			s.lp = 0;
+			s.zb = zfax_.b;
+			/* #B2: this call polls, with #P as the CIG */
+			s.zpoll = caller_ && zfax_.poll;
+			zfax_.poll = false;
+			std::memset(s.pi, 0, sizeof(s.pi));
+			zfax_.p.copy(s.pi, sizeof(s.pi) - 1);
+		}
 		fax_ = DCORE_HAS(FAX2_create) ?
 			FAX2_create(handle(), caller_, srate_, &s) : nullptr;
 	} else {
@@ -4475,7 +4575,8 @@ s16 Modem::fax_start()
 		return -1;
 	}
 	logf("fax engine%s, %s%s\n", fax2_ ? fax_class_ == 2 ? ", class 2" :
-	     ", class 2.0" : "", caller_ ? "caller" : "answerer",
+	     fax_class_ == 6 ? ", class 6" : ", class 2.0" : "",
+	     caller_ ? "caller" : "answerer",
 	     t38_ ? ", T.38" : "");
 	return 0;
 }
@@ -4519,7 +4620,9 @@ void Modem::fax_process(s16 *in, s16 *out, s32 n)
 			stats_.up = static_cast<u32>(host_.now_ms());
 		}
 		set_state(ONLINE);
-		report(Result::Connect);
+		/* (class 6: the engine's CONNECT FAX/... went already) */
+		if (fax_class_ != 6)
+			report(Result::Connect);
 		command_ = false;
 		break;
 	case FAX_STATUS_NOCARRIER:

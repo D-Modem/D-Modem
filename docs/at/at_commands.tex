@@ -791,7 +791,7 @@ the terms that are less frequent.
 \cmdl[plusPCW]{+PCW, +PIG} & \std{V.92} options (kept). & \cmdl[plusPMH]{+PMH, +PMHT} & Modem-on-hold. \\ \hline
 \cmdl[plusPMHR]{+PMHR} & Ask for modem-on-hold. & \cmdl[plusCVM]{+CVM} & \std{V.cvm}. \\ \hline
 \cmdl[minusSEC]{-SEC} & \std{MNP~10EC} (kept). & \cmdl[plusFCLASS]{+FCLASS} & Data, fax or voice. \\ \hline
-\cmdl[plusEF]{+EF} & \std{ETC} transmit filter. & \cmdl[etc]{\&F5, \&F6} & \std{ETC} settings (S115). \\ \hline
+\cmdl[plusEF]{+EF} & \std{ETC} transmit filter. & \cmdl[etc]{\&F5, \&F6} & \std{ETC} settings (S116). \\ \hline
 \cmdl[plusX2UP]{+X2UP} & x2 upgrade host. & & \\ \hline
 \cmdl[plusFAA]{+FAA} & Adaptive answer. & \cmdl[plusFMI]{+FMI, +FMM, +FMR} & Fax identification. \\ \hline
 \cmdl[plusFTS]{+FTS, +FRS} & Fax silence. & \cmdl[plusFTM]{+FTM, +FRM} & Fax data. \\ \hline
@@ -799,6 +799,7 @@ the terms that are less frequent.
 \cmdl[vcmds]{+V\ldots} & Voice (\hyperref[sec:voice]{Section~\ref*{sec:voice}}). & \cmdl[plusFLI]{+FLI, +FPI} & Fax \std{Class 2} identity. \\ \hline
 \cmdl[plusFLP]{+FLP, +FSP} & Fax \std{Class 2} polling. & \cmdl[plusFCC]{+FCC, +FIS, +FCS} & Fax \std{Class 2} capabilities. \\ \hline
 \cmdl[plusFBO]{+FBO, +FHS, \ldots} & Fax \std{Class 2} settings. & \cmdl[plusFDT]{+FDT, +FDR, +FET, +FKS} & Fax \std{Class 2} pages. \\ \hline
+\cmdl[hashF]{\#F, \#B\p{n}, \#V\p{n}, \#P, \ldots} & ZyXEL fax mode (\cmdl[plusFCLASS]{+FCLASS=6}). & \cmdl[hashF]{\&N32} & ZyXEL fax call (accepted). \\ \hline
 \cmdl[plusMV18S]{+MV18S, +MV18R} & \std{V.18} text telephone. & \cmdl[plusMV18AM]{+MV18AM, +MV18P} & \std{V.18} answer message. \\ \hline
 \cmdl[plusMBAUDOT]{+MBAUDOT} & 5-bit (\std{TTY}, telex) settings. & \cmdl[plusA8E]{+A8E} & \std{V.8} and \std{V.8 bis}. \\ \hline
 \cmdl[plusDSVD]{+DSVD} & \std{V.70} voice and data (\std{DSVD}). & \cmdl[plusASVD]{+ASVD} & \std{V.61} voice and data (\std{ASVD}). \\ \hline
@@ -2672,24 +2673,24 @@ does not have the modulations of \std{MNP~10EC}.  A modem with
 \std{ETC} is the cellular mode of AT\&T Paradyne.  The 3Com Megahertz PC
 Cards (3CXM556 and others) have it.  The firmware of these cards uses
 \std{V.32bis} or lower, error control, a transmit filter, and other
-timers.  D-Modem uses the parts of this firmware that are known: S115,
+timers.  D-Modem uses the parts of this firmware that are known: S116,
 \cmdl[ampF]{\&F5}, \cmdl[ampF]{\&F6} and \cmdl[plusEF]{+EF}.
 
-\begin{command}{etc}{\&F5, \&F6, S115}{ETC Settings}
-S115 holds the \std{ETC} flags, with the bits of the 3Com firmware
+\begin{command}{etc}{\&F5, \&F6, S116}{ETC Settings}
+S116 holds the \std{ETC} flags, with the bits of the 3Com firmware
 (\emph{default} 0, off).  D-Modem uses these bits:
-\begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{S115 Bits}
+\begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{S116 Bits}
   {\thd{Bit} & \thd{Function}}
 0 to 2 & If one of them is set, \std{ETC} is on: \rc{/ETC} follows the error correction in \rc{CONNECT} (with \cmdl[bsV]{\bs V1}), and \cmd{\#UD} gives 82 for error control (key 40). \\ \hline
 1 & The cellular side: the caller sends a calling tone of 1500~Hz (0.7~s on, 1.5~s off). \\ \hline
 4 & The landline side: if bits 0 to 2 are not set, the answerer listens for the 1500~Hz tone in the first 10~s.  If it finds the tone, \std{ETC} is on for the call.  The transmit level is 6.6~dB lower. \\ \hline
 5 & The transmit filter of \cmdl[plusEF]{+EF} is on. \\ \hline
-any & If S115 is not 0, \std{V.42} offers frames of 64 octets (N401), and T401 is 3~s plus the time of three frames. \\ \hline
+any & If S116 is not 0, \std{V.42} offers frames of 64 octets (N401), and T401 is 3~s plus the time of three frames. \\ \hline
 \end{vtable}
 \begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{ETC Profiles}
   {\thd{Command} & \thd{Function}}
-\cmdl[ampF]{\&F5} & The cellular side (\texttt{ETC\_CELL}): S115 = 238 (0xEE), \cmdl[plusMS]{+MS=V32B} (\std{V.32bis} and lower), \cmdl[bsN]{\bs N2} (error control is necessary), S10 = 40 (4~s), S7 = 90. \\ \hline
-\cmdl[ampF]{\&F6} & The landline side (\texttt{ETC\_LAND}): S115 = 176 (0xB0), \cmdl[bsN]{\bs N3} (error control if possible).  The modulations do not change. \\ \hline
+\cmdl[ampF]{\&F5} & The cellular side (\texttt{ETC\_CELL}): S116 = 238 (0xEE), \cmdl[plusMS]{+MS=V32B} (\std{V.32bis} and lower), \cmdl[bsN]{\bs N2} (error control is necessary), S10 = 40 (4~s), S7 = 90. \\ \hline
+\cmdl[ampF]{\&F6} & The landline side (\texttt{ETC\_LAND}): S116 = 176 (0xB0), \cmdl[bsN]{\bs N3} (error control if possible).  The modulations do not change. \\ \hline
 \end{vtable}
 With \cmdl[ampF]{\&F6}, \std{ETC} is on only for a call from an
 \std{ETC} caller.
@@ -2701,7 +2702,7 @@ With \cmdl[ampF]{\&F6}, \std{ETC} is on only for a call from an
 \begin{command}{plusEF}{+EF=\p{n}}{ETC Transmit Filter}
 The set of coefficients of the 6-tap transmit filter (0 to 10,
 \emph{default} 5), as the 3Com firmware has them.  The filter operates when
-bit 5 of S115 is set.  Set 0 has a flat response.  Sets 1 to 6 decrease
+bit 5 of S116 is set.  Set 0 has a flat response.  Sets 1 to 6 decrease
 the high frequencies, to compensate for the pre-emphasis of a cellular
 voice channel.  Set 5 changes the gain from +3.5~dB at 300~Hz to
 $-$7.6~dB at 3600~Hz.  D-Modem sets the gain of each set to 0~dB at
@@ -3305,7 +3306,7 @@ value, but it has no other effect.
 \hyperlink{sreg:105}{S105} & \std{MNP} block size (\cmdl[bsA]{\bs A}). & 0--3 & -- & 3 \\ \hline
 \hyperlink{sreg:106}{S106} & Protocol in \rc{CONNECT} (\cmdl[bsV]{\bs V}). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:114}{S114} & \std{V.42bis} offered in an \std{MNP} call. & 0, 1 & -- & 0 \\ \hline
-\hyperlink{sreg:115}{S115} & \std{ETC} flags (\cmdl[etc]{\&F5, \&F6}). & 0--255 & -- & 0 \\ \hline
+\hyperlink{sreg:116}{S116} & \std{ETC} flags (\cmdl[etc]{\&F5, \&F6}). & 0--255 & -- & 0 \\ \hline
 \hyperlink{sreg:161}{S161} & \cmdl[Y]{Y} (kept). & 0--3 & -- & 0 \\ \hline
 \end{vtable}
 
@@ -3526,7 +3527,15 @@ always accepts \std{V.42bis} from the other modem.  Some modems do not
 complete a call with this \std{LR}: thus the default is 0.
 \facts{0, 1}{0}{none}
 
-\sregdef{115}{ETC Flags}
+\sregdef{115}{ZyXEL Peer Marker}
+1: in a \std{V.32bis} or ZyX call (\cmdl[MS]{+MS}), the modem sends a
+marker in the start-up.  If the other modem also sends its marker, the
+two modems change to ZyX.  If not, the call continues as \std{V.32bis}.
+0: the modem sends no marker and does not change to ZyX.  Use the same
+value on the two modems.  The answerer marker is not the ZyXEL signal,
+thus the marker finds only a D-Modem.
+\facts{0, 1}{0}{none}
+\sregdef{116}{ETC Flags}
 The \std{ETC} flags, with the bits of the 3Com firmware: 238 (0xEE) for
 the cellular side, 176 (0xB0) for the landline side, 0 for off.  Refer to
 \cmdl[etc]{\&F5, \&F6}.
@@ -3547,14 +3556,15 @@ dials, until the flags of the answering modem come in its first
 
 \begin{command}{plusFCLASS}{+FCLASS}{Service Class}
 This command sets the modem as a data modem, a \std{Class 1}, 1.0,
-\std{Class 2} or 2.0 fax modem, or a voice modem.  \cmdl[Z]{ATZ} sets 0.
+\std{Class 2} or 2.0 fax modem, a ZyXEL fax modem, or a voice modem.
+\cmdl[Z]{ATZ} sets 0.
 \begin{syntax}
 \item +FCLASS=\p{n}
 \item +FCLASS? (gives the class)
-\item +FCLASS=? (gives \rc{0,1,1.0,2,2.0,8})
+\item +FCLASS=? (gives \rc{0,1,1.0,2,2.0,6,8})
 \end{syntax}
 \begin{results}
-\res{\rc{OK}}{If \p{n} = 0, 1, 1.0, 2, 2.0 or 8.}
+\res{\rc{OK}}{If \p{n} = 0, 1, 1.0, 2, 2.0, 6 or 8.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
 \begin{vtable}{2}{|C{0.08\textwidth}|L{0.78\textwidth}|}{+FCLASS Values}
@@ -3565,6 +3575,7 @@ This command sets the modem as a data modem, a \std{Class 1}, 1.0,
   (\std{T.31} Annex B, \cmdl[plusF34]{+F34}). \\ \hline
 2 & Fax \std{Class 2} (\hyperref[sec:class2]{Section~\ref*{sec:class2}}). \\ \hline
 2.0 & Fax \std{Class 2.0} (\std{T.32}, \hyperref[sec:class2]{Section~\ref*{sec:class2}}). \\ \hline
+6 & ZyXEL fax mode (\hyperref[sec:zfax]{Section~\ref*{sec:zfax}}). \\ \hline
 8 & Voice (\std{V.253}, \hyperref[sec:voice]{Section~\ref*{sec:voice}}). \\ \hline
 \end{vtable}
 \end{command}
@@ -3919,6 +3930,121 @@ with a \std{DCN} (\rc{+FHS:02}), as in the example above.
 1 & \std{EOM}: another document follows. \\ \hline
 2 & \std{EOP}: the last page. \\ \hline
 \end{vtable}
+\end{command}
+
+\subsection{ZyXEL Fax Mode (Class 6)}\label{sec:zfax}
+
+With \cmdl[plusFCLASS]{AT+FCLASS=6}, the modem operates as the ZyXEL
+U-1496 and Elite modems do with their \emph{extended fax AT commands}.
+Old ZyXEL fax programs (ZFAX, the \texttt{rcvfax} of a BBS) use this
+mode.  The modem does \std{T.30} itself.  There are no \cmdr{+F}
+commands to control the call:
+\begin{itemize}
+\item \cmdl[D]{ATD} makes a fax call.  The modem sends the \std{DCS} for
+  \std{V.17} at 14400~bit/s at most, with no error correction mode.
+  When the \std{CFR} comes, the modem gives
+  \rc{CONNECT FAX/S\p{rate}V\p{n}T0R0L2C7P\p{id}}.  Then the \std{DTE}
+  sends the pages.
+\item \cmdl[A]{ATA} (or \sreg{0}) answers.  The modem answers as a data
+  modem first, as the ZyXEL modems do.  If the caller is a data modem,
+  the call is a data call (\rc{CONNECT \p{rate}}).  If the caller is a
+  fax machine (\cmdl[plusFAA]{+FAA} tells how the modem finds it), the
+  modem gives \rc{CONNECT FAX/\ldots} when the \std{CFR} goes out.
+  Then the modem sends the pages to the \std{DTE}.
+\item At the end of the fax call, the modem gives
+  \rc{DISCONNECT0P\p{id}} if the remote fax machine confirmed the last
+  page.  Otherwise it gives \rc{DISCONNECT1P\p{id}}.  The modem is then
+  in command mode.  If the call ends before \rc{CONNECT FAX}, the modem
+  gives \rc{NO CARRIER}.
+\item \cmdl[V]{ATV0} and \cmdl[Q]{ATQ1} have no effect on \rc{CONNECT
+  FAX} and \rc{DISCONNECT}.
+\end{itemize}
+The fields of \rc{CONNECT FAX}:
+\begin{vtable}{2}{|C{0.12\textwidth}|L{0.74\textwidth}|}{CONNECT FAX Fields}
+  {\thd{Field} & \thd{Meaning}}
+S\p{rate} & The first four digits of the rate: 1440, 1200, 9600, 7200,
+  4800 or 2400. \\ \hline
+V\p{n} & 0 normal resolution, 1 fine resolution. \\ \hline
+T0 & The data is one-dimensional (MH). \\ \hline
+R0 & 1728 pels for each row. \\ \hline
+L2 & Any page length. \\ \hline
+C7 & No minimum row time: the data has no fill. \\ \hline
+P\p{id} & The identity of the remote fax machine (its \std{CSI} or
+  \std{TSI}), 20 characters, with spaces at the end. \\ \hline
+\end{vtable}
+The page data:
+\begin{itemize}
+\item The data is \std{T.4} MH with \std{EOL}s.  The first bit of each
+  octet is the lowest bit.  There are no \cmd{<DLE>} codes.
+\item An \std{RTC} (six \std{EOL}s) ends each page.  When the modem
+  sends, it finds the \std{RTC} in the data of the \std{DTE}.  If more
+  data follows, the modem sends \std{MPS} and the next page.
+\item The ZyXEL modems end the document when the \std{DTE} sets RTS
+  off.  D-Modem has no RTS signal.  Thus the document ends when the
+  \std{DTE} sends no data for 2~s.  If the \std{DTE} sends no data for
+  30~s after \rc{CONNECT FAX}, the modem stops the call.
+\item When the modem receives, it sends each page to the \std{DTE} when
+  the page is complete.
+\end{itemize}
+
+\example{Example session: send two pages}
+\begin{verbatim}
+AT+FCLASS=6#P5551111     OK
+ATD<number>              CONNECT FAX/S1440V1T0R0L2C7P5552222
+<page><RTC><page><RTC>   (then no data for 2 s)
+                         DISCONNECT0P5552222
+\end{verbatim}
+
+\begin{command}{hashF}{\#F, \#B\p{n}, \#V\p{n}, \#T\p{n}, \#R\p{n}, \#L\p{n}, \#C\p{n}, \#P\p{id}, \&N32}{ZyXEL Fax Settings}
+These are the ZyXEL fax settings.
+\begin{itemize}
+\item \cmdl[hashF]{\#F} and \cmdl[hashF]{\&N32} set a \std{V.17} fax
+  call on the ZyXEL modems.  In \std{Class 6} all calls are fax calls,
+  thus the modem accepts them with no effect.
+\item \cmdl[hashF]{\#B0} (\emph{default}): the modem sends the pages to
+  the \std{DTE} after \rc{CONNECT FAX/\ldots}.
+\item \cmdl[hashF]{\#B1} is for a BBS.  The modem gives \rc{CONNECT FAX}
+  and \rc{ZyXEL} on two lines.  Then it waits for a \cmd{<DC2>} (hex 12)
+  from the \std{DTE}.  After the \cmd{<DC2>}, it sends
+  \cmd{<CR><LF>/S\p{rate}V\p{n}T0R0L2C7P\p{id}<CR><LF>} (with 18
+  characters of the identity, as the ZyXEL modems do) and the first
+  page.  Each subsequent page needs one more \cmd{<DC2>}.
+\item \cmdl[hashF]{\#B2} sets polling for the next call.  After
+  \cmdl[D]{D}, the modem sends its identity (\std{CIG}) and a \std{DTC}
+  in place of the \std{DCS}.  Then it receives the document of the
+  remote, as with \cmdl[hashF]{\#B0} or \cmdl[hashF]{\#B1}.  If the
+  remote has no document to be polled, the modem gives
+  \rc{NO CARRIER}.  The setting is for one call only.
+\item \cmdl[hashF]{\#B3} measures the ring cadence.  The modem must
+  be idle.  It gives \rc{Start to measure ring cadence...} and
+  \rc{Hit any key to stop!}.  Then, at each start and end of a ring
+  burst, it gives one line: \rc{OFF} when a burst starts, \rc{ON} when
+  a burst ends, and the time that ended, in steps of 10~ms (for example
+  \rc{ON~~~~~~~1980~ms}).  The modem gives no \rc{RING} during the
+  measurement.  A character from the \std{DTE} stops it, and the modem
+  gives \rc{OK}.  Only a line with its own ring signal (a sound card or
+  a USB modem) has ring bursts; a \std{SIP} call does not.
+\item \cmdl[hashF]{\#V0} sets normal resolution, \cmdl[hashF]{\#V1}
+  (\emph{default}) fine resolution, if the remote fax machine has it.
+\item The modem keeps \cmdl[hashF]{\#T}, \cmdl[hashF]{\#R},
+  \cmdl[hashF]{\#L} and \cmdl[hashF]{\#C}, but they have no effect: the
+  data is always MH, 1728 pels, any length, with no fill.
+\item \cmdl[hashF]{\#P\p{id}} sets the identity of the modem (its
+  \std{CSI} and \std{TSI}).  It is the remainder of the command line,
+  or a string in quotes.  The \std{CSI} and the \std{TSI} have the first
+  20 characters.
+\end{itemize}
+\begin{syntax}
+\item \#F, \&N32
+\item \#B\p{n}, \#V\p{n}, \#T\p{n}, \#R\p{n}, \#L\p{n}, \#C\p{n}
+\item \#P\p{id}
+\end{syntax}
+\begin{results}
+\res{\rc{OK}}{If \p{n} is in its range (\#B 0--3, \#V and \#T 0--1, \#R
+  and \#L 0--2, \#C 0--7) and \p{id} has 25 characters or fewer.  For
+  \#B3, after a character from the \std{DTE}.}
+\res{\rc{ERROR}}{Otherwise, or \#B3 when the modem is not idle.}
+\end{results}
 \end{command}
 
 \section{Text Telephone Commands}\label{sec:text}

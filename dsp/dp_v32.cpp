@@ -15,11 +15,11 @@
  *    ZyXEL's ZyX modes (DP_ZYX, docs/dsp/zyxel.md) are V.32bis after AA,
  *    AC and CC at 2400 x 8/7 = 2742.857 baud: ZyX 19200 7 bits a symbol
  *    through the trellis code, ZyX 16800 to 7200 an 8 symbol frame with
- *    a ring table (zyx.h).  ZyXEL's own detection of the peer, its
- *    carrier and its scrambler at the new rate are not known (they are in
- *    the mask ROM of its DSPs): D-Modem's ZyX takes the peer as a ZyX
- *    modem, keeps the 1800 Hz carrier and V.32bis's scramblers.  Thus it
- *    connects D-Modem to D-Modem, and not yet to a ZyXEL.
+ *    a ring table (zyx.h), on a 12800/7 = 1828.571 Hz carrier (traced in
+ *    the Elite 2864I's ZyX DSP program).  ZyXEL's own detection of the
+ *    peer and its scrambler at the new rate are not known yet: D-Modem's
+ *    ZyX takes the peer as a ZyX modem and keeps V.32bis's scramblers.
+ *    Thus it connects D-Modem to D-Modem, and not yet to a ZyXEL.
  *
  *    Start up sequence (as sent by the original library):
  *
@@ -71,6 +71,10 @@ namespace dsp {
    0x4924 / 0x4000), its roll off a guess that keeps the band in the
    telephone channel's */
 #define ZYX_BAUD        (2400.0f * 8 / 7)
+/* its carrier, 2/3 of its symbol rate (240 degrees a symbol, the high
+   carrier of V.34 at 2743 baud): the Elite 2864I's ZyX DSP program
+   (docs/dsp/zyxel-details.md) */
+#define ZYX_CARRIER     (12800.0f / 7)
 #define ZYX_ALPHA       0.20f
 #define ZYX_SPAN        8
 #define V32_ALPHA       0.25f
@@ -193,6 +197,11 @@ enum v32_txm {
 	TXM_R,
 	TXM_E,
 	TXM_DATA,
+	/* ZyXEL's peer markers (S115, docs/dsp/zyxel-details.md): A and C
+	   in turn every 2 symbols (the caller's: lines at 1200 and 2400 Hz)
+	   or every 4 (the answerer's: 1500 and 2100 Hz) */
+	TXM_ZMARK_C,
+	TXM_ZMARK_A,
 };
 
 enum v32_state {
@@ -204,6 +213,7 @@ enum v32_state {
 	A_CA,
 	A_AC2,
 	A_QUIET,
+	A_ZMARK,                /* our ZyXEL marker, then ZyX */
 	A_TRAIN1,               /* S S-bar TRN */
 	A_R1,
 	A_WAIT_R2,
@@ -214,6 +224,7 @@ enum v32_state {
 	C_AA,
 	C_AA_DELAY,
 	C_CC,
+	C_ZMARK,                /* our ZyXEL marker, listening */
 	C_WAIT_R1,
 	C_TRAIN,
 	C_R2,
@@ -268,6 +279,13 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	EchoCanceller ec;
 	float ec_mu;
 	ToneTrk aa, ac, usb1, ans2100;
+	/* ZyXEL's peer markers: their lines; we send ours (S115 1: the
+	   V.32bis and ZyX pumps); listening for the remote's, the symbols
+	   it has been heard */
+	ToneTrk z1200, z2400, z1500, z2100;
+	bool zpeer = false;
+	bool zlisten = false;
+	s32 zseen = 0;
 	ToneTrk v21m, v23m;     /* FSK answerers' marks */
 	enum v32_rxp rxp;
 	s32 run_s;
@@ -335,6 +353,13 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	s16 nrates() const { return zyx ? ZYX_NRATES : V32_NRATES; }
 	const struct v32_rate *rate_of_word(u16 w) const;
 	void set_baud(float b);
+	void zyx_switch(const char *why);
+	bool zmark_heard(bool from_caller);
+	/* the carrier at the symbol rate now: 1800 Hz, ZyX's at
+	   ZYX_BAUD */
+	float line_carrier() const {
+		return baud == V32_BAUD ? 1800.0f : ZYX_CARRIER;
+	}
 	void zyx_frame(u32 *scr, s16 tap, const struct v32_rate *r, bool ones,
 		       s16 *q);
 
@@ -421,13 +446,36 @@ void V32Pump::set_baud(float b)
 	baud = b;
 	bool z = b != V32_BAUD;
 	float t = tx.t;
-	tx.init(srate, 1800, b, z ? ZYX_ALPHA : V32_ALPHA,
+	tx.init(srate, line_carrier(), b, z ? ZYX_ALPHA : V32_ALPHA,
 		z ? ZYX_SPAN : V32_SPAN, sqrtf(V32_POWER), V32_TX_AMPLITUDE);
 	tx.t = t;
 	rx.release();
-	rx.init(srate, 1800, b, z ? ZYX_ALPHA : V32_ALPHA,
+	rx.init(srate, line_carrier(), b, z ? ZYX_ALPHA : V32_ALPHA,
 		z ? ZYX_SPAN : V32_SPAN, V32_EQ_LEN, V32_POWER);
 	DSP_DBG("v32: %.3f baud\n", b);
+}
+
+/* the remote is a ZyXEL (why): ZyX's rates from now on, reported as
+   DP_ZYX; the symbol rate changes where the start-up has it */
+void V32Pump::zyx_switch(const char *why)
+{
+	zyx = true;
+	zyx_scale_tables();
+	caps = offered_caps();
+	stat_dp(DP_ZYX);
+	DSP_DBG("v32: a ZyXEL %s: ZyX\n", why);
+}
+
+/* the remote's ZyXEL marker (the caller's, from_caller, or the
+   answerer's) heard for 24 symbols: both its lines, no AA or AC */
+bool V32Pump::zmark_heard(bool from_caller)
+{
+	bool on = from_caller ? z1200.on && z2400.on : z1500.on && z2100.on;
+	if (on && !aa.on && !ac.on)
+		zseen++;
+	else
+		zseen = 0;
+	return zseen >= 24;
 }
 
 /* the next ZyX frame of rate r into q[] (each symbol's bits for the
@@ -553,6 +601,12 @@ cplx V32Pump::tx_symbol()
 		else
 			tx_ac_phase ^= 1;
 		z = abcd_point(tx_ac_phase ? 2 : 0);
+		break;
+	case TXM_ZMARK_C:
+		z = abcd_point((tx_syms >> 1) & 1 ? 2 : 0);
+		break;
+	case TXM_ZMARK_A:
+		z = abcd_point((tx_syms >> 2) & 1 ? 2 : 0);
 		break;
 	case TXM_S:
 		z = abcd_point(tx_syms & 1);
@@ -900,6 +954,9 @@ void V32Pump::rx_sample(float x)
 		ev_rev = 1;
 	usb1.run(x, rx.power, srate);
 	ans2100.run(x, rx.power, srate);
+	if (zlisten)
+		for (ToneTrk *t : { &z1200, &z2400, &z1500, &z2100 })
+			t->run(x, rx.power, srate);
 	if (caller && automode) {
 		v21m.run(x, rx.power, srate);
 		v23m.run(x, rx.power, srate);
@@ -1045,8 +1102,10 @@ static const float v32_min_snr[] = { 29.5f, 26.5f, 25, 22, 19, 16, 0 };
    rate clean from about 1.5 dB under these estimates (16800 from about
    0.5 dB under: its errors come in frames), the framed rates
    (the ring table's shaping) about 3 dB better than V.32bis's of the
-   same bits a symbol */
-static const float zyx_min_snr[] = { 27.5f, 27, 23, 19.5f, 18, 0 };
+   same bits a symbol.  On the 1828.571 Hz carrier the estimate is
+   about 1 dB lower than on 1800 Hz (19200 and 16800 down by 1 dB:
+   from 27 to 32 dB of line SNR the rate chosen has no errors) */
+static const float zyx_min_snr[] = { 26.5f, 26, 23, 19.5f, 18, 0 };
 
 /* the data mse (of V32_POWER) past which a receiver at rate r has
    lost its equalization (rate_lost_limit()) */
@@ -1167,16 +1226,51 @@ s16 V32Pump::handshake()
 		if ((sym >= 64 && !aa.on) || sym >= 1024) {
 			set_state(A_QUIET);
 			set_tx(TXM_SILENCE);
-			/* ZyX: the training and data at ZYX_BAUD */
-			if (zyx)
+			/* ZyX: the training and data at ZYX_BAUD; else (V.32bis,
+			   ZyX by markers) a ZyXEL caller's marker heard in the
+			   quiet */
+			if (zyx && !zpeer) {
 				set_baud(ZYX_BAUD);
+			} else if (v32_id == DP_V32BIS || v32_id == DP_ZYX) {
+				zlisten = true;
+				zseen = 0;
+			}
 		}
 		break;
 	case A_QUIET:
+		if (zlisten) {
+			if (zmark_heard(true)) {
+				zlisten = false;
+				DSP_DBG("v32: a ZyXEL caller's marker%s\n",
+					zpeer ? "" : " (S115 0: V.32bis)");
+				if (zpeer) {
+					zyx_switch("caller");
+					set_state(A_ZMARK);
+					set_tx(TXM_ZMARK_A);
+					break;
+				}
+			} else if (sym < (zpeer ? 96 : 16) ||
+				   ((z1200.on || z2400.on) && sym < 256)) {
+				/* (its lines may be coming: with S115 0 the
+				   quiet is V.32's own, unless they are on) */
+				break;
+			}
+			zlisten = false;
+		}
 		if (sym >= 16) {
+			if (zpeer && !zyx)
+				stat_dp(DP_V32BIS);
 			set_state(A_TRAIN1);
 			set_tx(TXM_S);
 			ev_s = 0;
+		}
+		break;
+	case A_ZMARK:
+		/* our marker, then the quiet before S at ZyX's rate */
+		if (sym >= 192) {
+			set_state(A_QUIET);
+			set_tx(TXM_SILENCE);
+			set_baud(ZYX_BAUD);
 		}
 		break;
 	case A_TRAIN1:
@@ -1378,8 +1472,14 @@ s16 V32Pump::handshake()
 			set_state(C_WAIT_R1);
 			set_tx(TXM_SILENCE);
 			/* ZyX: the training and data at ZYX_BAUD, NT in its
-			   symbols (the firmware's 0x4924 / 0x4000) */
-			if (zyx) {
+			   symbols (the firmware's 0x4924 / 0x4000); by the
+			   markers (S115 1): ours, and the answerer's decides */
+			if (zpeer) {
+				set_state(C_ZMARK);
+				set_tx(TXM_ZMARK_C);
+				zlisten = true;
+				zseen = 0;
+			} else if (zyx) {
 				nt_syms = nt_syms * 8 / 7;
 				set_baud(ZYX_BAUD);
 			}
@@ -1387,7 +1487,26 @@ s16 V32Pump::handshake()
 		} else if (count >= ms2samples(2000, srate))
 			return DPSTAT_ERROR;
 		break;
+	case C_ZMARK:
 	case C_WAIT_R1:
+		/* (S115 1) the answerer's marker: ZyX; its R1 first: V.32bis */
+		if (zlisten && zmark_heard(false)) {
+			zlisten = false;
+			zyx_switch("answerer");
+			nt_syms = nt_syms * 8 / 7;
+			set_baud(ZYX_BAUD);
+			ev_r = 0;
+		}
+		if (state == C_ZMARK && sym >= 192) {
+			set_state(C_WAIT_R1);
+			set_tx(TXM_SILENCE);
+		}
+		if (state == C_ZMARK)
+			break;
+		if (ev_r && zlisten) {
+			zlisten = false;
+			stat_dp(DP_V32BIS);
+		}
 		if (ev_r) {
 			ev_r = 0;
 			r2_caps = quality_caps();
@@ -1464,7 +1583,7 @@ s16 V32Pump::handshake()
 		else if (count % ms2samples(100, srate) == 0 &&
 			 rx.power > 0.5f * data_power) {
 			stat_snr(-10 * log10f(rx_mse + 1e-6f));
-			stat_line(baud, 1800, baud, 1800);
+			stat_line(baud, line_carrier(), baud, line_carrier());
 			stat_freq_offset(rx.dtheta, baud);
 			stat_timing_offset(rx.t_adj, rx.sps);
 		}
@@ -1517,7 +1636,12 @@ s16 V32Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 
 	/* rates we offer */
 	v32_id = id;
-	zyx = id == DP_ZYX;
+	/* ZyXEL's markers (S115 1): ZyX only once they say so */
+	zpeer = (id == DP_V32BIS || id == DP_ZYX) &&
+		modem_get_sreg(m, SREG_ZYX_PEER) == 1;
+	zlisten = false;
+	zseen = 0;
+	zyx = id == DP_ZYX && !zpeer;
 	if (zyx)
 		zyx_scale_tables();
 	caps = offered_caps();
@@ -1538,6 +1662,10 @@ s16 V32Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	ac.init(600, srate_);
 	usb1.init(2250, srate_);
 	ans2100.init(2100, srate_);
+	z1200.init(1200, srate_);
+	z2400.init(2400, srate_);
+	z1500.init(1500, srate_);
+	z2100.init(2100, srate_);
 	v21m.init(1650, srate_);
 	v23m.init(1300, srate_);
 

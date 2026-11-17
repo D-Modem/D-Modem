@@ -896,6 +896,41 @@ TEST(ZyX, Rates)
 	}
 }
 
+/* ZyX's peer marker (S115=1, SREG_ZYX_PEER): two D-Modems that both
+   send it go to ZyX from V.32bis (or from ZyX's own start), 19200 bit/s
+   on a clean line, no errors; with the marker at one side only, the
+   other side does not send its reply, and the call stays V.32bis at
+   14400 bit/s */
+TEST(ZyX, PeerMarker)
+{
+	struct Case {
+		int dp;
+		int on[2];      /* S115 of the caller, the answerer */
+		int rate;
+	};
+	for (const Case &t : { Case{ 132, { 1, 1 }, 19200 },
+			       Case{ 234, { 1, 1 }, 19200 },
+			       Case{ 132, { 1, 0 }, 14400 },
+			       Case{ 132, { 0, 1 }, 14400 } }) {
+		LoopbackConfig c = line(t.dp, 40, 15);
+		for (int k = 0; k < 2; k++)
+			c.side_sregs[k] = { { SREG_ZYX_PEER, t.on[k] } };
+		LoopbackResult r = loopback_run(c);
+		for (int k = 0; k < 2; k++) {
+			const char *who = k ? "answerer" : "caller";
+			std::string id = std::to_string(t.dp) + " S115=" +
+				std::to_string(t.on[0]) + "," +
+				std::to_string(t.on[1]);
+			EXPECT_TRUE(r.side[k].ok()) << id << ": "
+						     << r.side[k].text(who);
+			EXPECT_EQ(r.side[k].tx_rate, t.rate) << id << " " << who;
+			EXPECT_EQ(r.side[k].rx_rate, t.rate) << id << " " << who;
+			EXPECT_EQ(r.side[k].errors, 0) << id << ": "
+						      << r.side[k].text(who);
+		}
+	}
+}
+
 /* ZyX's frame mapper against the U-1496S firmware: its frame split
    (0x92D9E, run in an emulator) on 7 random groups gives the ring
    table's row and each symbol's M bits (Q1 Q2 first, then the uncoded

@@ -25,6 +25,7 @@ The modem has these functions:
   - T.434 binary files.
 - Call progress, caller ID and voice. The voice formats include ZyXEL's ADPCM of 2, 3 and 4 bits at 9600 samples a second (`AT+VSM=134` to `136`, [docs/dsp/zyxel-adpcm.md](dsp/zyxel-adpcm.md)).
 - ZyXEL's type 2 security: a password from the caller before the data passes, and a call back (`AT*G3` to `AT*G5`, [docs/zyxel-security.md](zyxel-security.md)).
+- ZyXEL's own fax mode for old ZyXEL fax programs (`AT+FCLASS=6`, `#B0` to `#B3` with polling and the ring cadence meter, `CONNECT FAX/...`, `DISCONNECTn`, [docs/zyxel-fax.md](zyxel-fax.md)).
 
 ## PCM modes
 
@@ -52,7 +53,7 @@ For more data, refer to [docs/dsp/](dsp/README.md). For the tests, refer to [doc
 - V.42 error correction (LAPM, with its detection phase).
 - MNP 2 to 4 (the alternative procedure of V.42) for modems without LAPM.
 - V.44, V.42bis and MNP 5 compression (and zstd between two D-Modems).
-- The ETC cellular mode of the 3Com Megahertz PC Cards (`AT&F5`, `AT&F6`, S115 and the transmit filter of `AT+EF`; [docs/link-details.md](link-details.md)).
+- The ETC cellular mode of the 3Com Megahertz PC Cards (`AT&F5`, `AT&F6`, S116 and the transmit filter of `AT+EF`; [docs/link-details.md](link-details.md)).
 - Plain asynchronous characters. Or, as an alternative, the synchronous access mode of V.80 for DTEs that make their own frames of data, for example H.324 terminals.
 
 `core/` is the modem core in C++ ([docs/core.md](core.md)). It contains the AT commands, the S-registers, the result codes, the state machine of the call and its timers. It has the same behaviour as the slmodemd core of Smart Link. slmodemd, libdmodem and modem_test use it.

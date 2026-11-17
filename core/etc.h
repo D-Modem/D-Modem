@@ -4,7 +4,7 @@
  *    ETC (Enhanced Throughput Cellular, AT&T Paradyne's) on the 3Com
  *    3CXM556 and its family (the TC110 firmware, a TMS320C5x) is V.32bis
  *    and below with error control, and a 6-tap FIR on every transmitted
- *    sample while bit 5 of its ETC flags (our S115) is set.  The taps are
+ *    sample while bit 5 of its ETC flags (our S116) is set.  The taps are
  *    Q14 (0x4000 a gain of 1), from the table AT+EF=n loads (the
  *    firmware's handler at 4:8ee5; set 5 its default, 4:878a).  Sets 1 to
  *    6 are symmetric low-passes about the third sample: they take back

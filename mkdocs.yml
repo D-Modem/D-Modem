@@ -53,6 +53,7 @@ nav:
     - The V.cvm proposal: vcvm-spec.md
     - Leased lines and dry pairs: leased.md
     - ZyXEL security and call back: zyxel-security.md
+    - ZyXEL fax mode (class 6): zyxel-fax.md
   - Phone systems:
     - Modules: modules.md
     - "Asterisk: app_dmodem": asterisk.md

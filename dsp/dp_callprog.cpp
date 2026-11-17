@@ -120,7 +120,7 @@ struct CallProgPump : PumpBase<CallProgPump, cp_state> {
 				   CNG (DSP_FAX_CNG=0); 0 data */
 	s16 fastpos;            /* a V.29 FastPOS call (+MS=V29FP): its
 				   980 Hz calling tone, all the time */
-	s16 etc;                /* an ETC cellular caller (S115 bit 1): the
+	s16 etc;                /* an ETC cellular caller (S116 bit 1): the
 				   3Com firmware's 1500 Hz calling tone,
 				   0.7 s in every 2.2 s */
 	Osc ct;

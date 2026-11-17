@@ -140,8 +140,8 @@ const struct {
 	  "S18: how long an AT&T test runs, 0 until AT&T0", 255 },
 	{ 48, "simulated-carrier", "Simulated carrier (V.13)",
 	  "S48: 1 sends V.13's simulated carrier", 1 },
-	{ 115, "etc", "ETC flags",
-	  "S115: ETC as 3Com's cards: 238 (AT&F5) cellular, 176 (AT&F6) "
+	{ 116, "etc", "ETC flags",
+	  "S116: ETC as 3Com's cards: 238 (AT&F5) cellular, 176 (AT&F6) "
 	  "landline, 0 off", 255 },
 	{ 49, "fast-connect", "Fast connect (bits)",
 	  "S49: 1 the short V.22 handshake, 2 with HDLC flags", 3 },
@@ -362,6 +362,7 @@ std::vector<Setting> Config::model(const Modem &m)
 		if (m.has_fax2()) {
 			c.push_back({ "2", "fax2", "Fax class 2" });
 			c.push_back({ "2.0", "fax2.0", "Fax class 2.0" });
+			c.push_back({ "6", "zfax", "ZyXEL fax (class 6)" });
 		}
 		c.push_back({ "8", "voice", "Voice" });
 		v.push_back(pick("mode", "Fax and voice", "Mode",
