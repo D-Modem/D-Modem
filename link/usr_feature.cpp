@@ -6,8 +6,8 @@
  *                      side (usr_feature.h, docs/x2-upgrade.md)
  *
  *    The steps: a second after LAPM is up, ask for the serial number,
- *    then for the records; with x2 to be set and not set, send the set,
- *    wait, and ask for the records again.  Each ask goes up to three
+ *    then for the records; with features to change, send a set or a
+ *    clear for each, wait, and ask for the records again.  Each ask goes up to three
  *    times, three seconds apart.  A remote that never answers the ask
  *    for the records is not a Courier (or has no remote upgrade).
  *
@@ -35,27 +35,37 @@ const char *usr_result_name(UsrResult r)
 		return "ALREADY";
 	case UsrResult::Enabled:
 		return "ENABLED";
+	case UsrResult::Disabled:
+		return "DISABLED";
+	case UsrResult::Changed:
+		return "CHANGED";
 	case UsrResult::Refused:
 		return "REFUSED";
 	}
 	return "?";
 }
 
-/* the records' bit for x2 is set in recs */
-static bool has_x2(const u8 *recs)
+/* the bits of the value v (1 to 8, as a selector has them) in turn:
+   the next after bit, 0 when none is left */
+static s16 next_bit(u8 v, s16 bit)
 {
-	return recs[USR_REC_FEATURES - 1] & 1 << (USR_BIT_X2 - 1);
+	while (++bit <= 8)
+		if (v & 1 << (bit - 1))
+			return bit;
+	return 0;
 }
 
 /* (see usr_feature.h) */
-void UsrFeature::init(Link *link, UsrMode mode)
+void UsrFeature::init(Link *link, UsrMode mode, u8 enable, u8 disable)
 {
 	link_ = link;
 	mode_ = mode;
+	enable_ = enable & USR_SWITCHED;
+	disable_ = disable & USR_SWITCHED & ~enable_;
+	want_ = 0;
 	step_ = Step::Idle;
 	timer_ = 0;
 	tries_ = 0;
-	set_sent_ = false;
 	done_ = false;
 	rep_ = UsrReport();
 }
@@ -66,7 +76,6 @@ void UsrFeature::start()
 	if (mode_ == UsrMode::Off || step_ != Step::Idle || done_)
 		return;
 	rep_ = UsrReport();
-	set_sent_ = false;
 	step_ = Step::Wait;
 	timer_ = ms_bits(START_MS);
 	link_->logf("x2up: LAPM is up, the host begins.");
@@ -194,19 +203,32 @@ void UsrFeature::rx(const u8 *info, s16 n)
 	if (step_ == Step::Records) {
 		memcpy(rep_.before, recs, sizeof(recs));
 		rep_.has_records = true;
+		const u8 have = recs[USR_REC_FEATURES - 1];
+		const u8 on = enable_ & ~have, off = disable_ & have;
+		want_ = static_cast<u8>((have | enable_) & ~disable_);
 		if (mode_ == UsrMode::Query) {
 			finish(UsrResult::Queried);
-		} else if (has_x2(recs)) {
+		} else if (!on && !off) {
 			finish(UsrResult::Already);
 		} else {
+			for (s16 b = next_bit(on, 0); b; b = next_bit(on, b))
+				send(UsrMsg::SetBit,
+				     usr_selector(USR_REC_FEATURES, b));
+			for (s16 b = next_bit(off, 0); b; b = next_bit(off, b))
+				send(UsrMsg::ClearBit,
+				     usr_selector(USR_REC_FEATURES, b));
 			step_ = Step::Set;
-			set_sent_ = true;
-			send(UsrMsg::SetBit,
-			     usr_selector(USR_REC_FEATURES, USR_BIT_X2));
 			timer_ = ms_bits(SET_MS);
 		}
 	} else if (step_ == Step::Check) {
-		finish(has_x2(recs) ? UsrResult::Enabled : UsrResult::Refused);
+		const u8 sw = enable_ | disable_;
+		const u8 have = rep_.before[USR_REC_FEATURES - 1];
+		const bool on = enable_ & ~have, off = disable_ & have;
+		if ((recs[USR_REC_FEATURES - 1] & sw) != (want_ & sw))
+			finish(UsrResult::Refused);
+		else
+			finish(on && off ? UsrResult::Changed :
+			       on ? UsrResult::Enabled : UsrResult::Disabled);
 	}
 }
 

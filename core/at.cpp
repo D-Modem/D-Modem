@@ -32,6 +32,7 @@
 #include "str.h"
 #include "reinit.h"
 #include "voice_codec.h"
+#include <zcrypt.h>
 
 namespace dcore {
 
@@ -240,9 +241,11 @@ const struct Kept {
 	/* D-Modem's own: the USRobotics remote feature upgrade, the host's
 	   side (link/usr_feature.h, docs/x2-upgrade.md): once LAPM is up,
 	   1 reads a Courier's serial number and feature records, 2 also
-	   sets its x2 bit; the result goes to the DTE as +X2UP:.
-	   modem.cpp's link_init() reads it */
-	{ "+X2UP", 1, { 0 }, "(0-2)" },
+	   enables the features <enable> and disables <disable> (sums of
+	   Terbo 4, V.FC 8, x2 16; not one in both); the result goes to the
+	   DTE as +X2UP:.  modem.cpp's link_init() reads it */
+	{ "+X2UP", 3, { 0, 16, 0 },
+	  "(0-2),(0,4,8,12,16,20,24,28),(0,4,8,12,16,20,24,28)" },
 	/* the bearer service (27.007 6.7): <speed> a V.110 rate on a clear
 	   channel (0: none, the answerer takes the caller's), <name> 0
 	   asynchronous (the DTE's characters), 1 synchronous (+B2's link);
@@ -567,6 +570,8 @@ s16 Modem::at_command(char *cmd)
 			ret = at_kept(p, &len);
 		} else if (zyxel_star(p)) {
 			ret = at_star(p, &len);
+		} else if (starts_nocase(p, "CK")) {
+			ret = at_CK(p, &len);
 		} else if (mnp10_command(p, &len, &ret)) {
 		} else if (taken(p, &len)) {
 			ret = 0;
@@ -2600,6 +2605,20 @@ s16 Modem::at_hash(char *p, s16 *len)
 	return -1;
 }
 
+/* ATCK<key>: ZyXEL's encryption key (S102) from the characters up to
+   '>' or the end of the line; without '<', ERROR */
+s16 Modem::at_CK(char *p, s16 *len)
+{
+	if (p[2] != '<')
+		return -1;
+	const char *k = p + 3, *e = k;
+	while (*e && *e != '>')
+		e++;
+	dlink::zdes_atck(k, static_cast<size_t>(e - k), zkey_);
+	*len = static_cast<s16>(e - p + (*e == '>' ? 1 : 0));
+	return 0;
+}
+
 /* ZyXEL's fax commands (class 6, docs/zyxel-fax.md): #F (as &N32: a fax
    call, which class 6's calls are), #B0 and #B1 (receiving: the pages
    at once, or for the DTE's DC2), #V0 and #V1 (the resolution), #T,
@@ -2835,6 +2854,9 @@ s16 Modem::at_kept(const char *p, s16 *len)
 	}
 	/* +ITF: <off> above <on> (8.4/V.80), else ERROR */
 	if (name == "+ITF" && v[0] <= v[1])
+		return -1;
+	/* +X2UP: a feature both to enable and to disable, ERROR */
+	if (name == "+X2UP" && (v[1] & v[2]))
 		return -1;
 	dsp::copy_array(kept_[i], v);
 	kept_n_[i] = n;

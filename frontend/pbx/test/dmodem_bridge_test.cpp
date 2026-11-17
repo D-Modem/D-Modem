@@ -860,3 +860,72 @@ TEST_F(Bridge, DsvdVoiceToExtension)
 	srv.end();
 	unlink(path.c_str());
 }
+
+/* exec: the program's control channel on its descriptor 3
+   (DMODEM_CONTROL=3).  A feature read (X2UP=1) in a call that is on
+   with V.42 is OK; enable and disable of one bit, and a line that is no
+   command, are ERROR.  The program tells the caller what it got */
+TEST_F(Bridge, ExecControlChannel)
+{
+	struct dmbridge_profile p;
+	struct dmbridge_call c;
+	struct dmodem_config cfg = {};
+	struct dmodem *a;
+	int sa[2], n;
+	short ab[FRAME] = { 0 }, ba[FRAME] = { 0 }, oa[FRAME], ob[FRAME];
+	char init[64], buf[512];
+	const char *env[] = { "DMODEM_CALLERID", "7", nullptr };
+	const char *want = "ctl 3 OK ERROR ERROR";
+	enum dmbridge_event ev = DMBRIDGE_RUN;
+	std::string got;
+
+	dmbridge_profile_init(&p);
+	ASSERT_TRUE(dmbridge_profile_option(&host, &p, "test", "mode", "exec"));
+	ASSERT_TRUE(dmbridge_profile_option(&host, &p, "test", "command",
+		"printf 'X2UP=1\\nX2UP=2,4,4\\r\\nPING\\n' >&3; "
+		"read a <&3; read b <&3; read c <&3; "
+		"echo \"ctl $DMODEM_CONTROL $a $b $c\"; sleep 5"));
+	ASSERT_TRUE(dmbridge_profile_option(&host, &p, "test", "init", line_ms));
+	p.timeout = 20;
+	ASSERT_EQ(dmbridge_profile_check(&host, &p, "test"), 0);
+
+	socketpair(AF_UNIX, SOCK_STREAM, 0, sa);
+	nonblock(sa[0]);
+	nonblock(sa[1]);
+	snprintf(init, sizeof(init), "ATE0Q1X3%s\r", line_ms);
+	cfg.init = init;
+	cfg.law = DMODEM_LAW_ULAW;
+	cfg.name = "caller";
+	cfg.dte_fd = sa[0];
+	a = dmodem_create(&cfg);
+	dmbridge_call_init(&c);
+	ASSERT_EQ(dmbridge_call_start(&c, &host, (void *)"exec", &p, "exec",
+				      DMODEM_LAW_ULAW, 0), 0);
+	dmodem_dial(a, "");
+
+	auto until = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+	while (ev != DMBRIDGE_END && std::chrono::steady_clock::now() < until &&
+	       got.find(want) == std::string::npos) {
+		dmodem_process(a, ba, oa, FRAME);
+		dmodem_process(c.d, ab, ob, FRAME);
+		memcpy(ab, oa, sizeof(ab));
+		memcpy(ba, ob, sizeof(ba));
+		dmodem_poll_dte(a);
+		ev = dmbridge_call_step(&c, FRAME);
+		if (ev == DMBRIDGE_CONNECTED)
+			ev = dmbridge_call_serve(&c, env);
+		while ((n = read(sa[1], buf, sizeof(buf))) > 0)
+			got.append(buf, n);
+		if (c.pid > 0)
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+	}
+	EXPECT_NE(got.find(want), std::string::npos) << "got [" << got << "]";
+	EXPECT_TRUE(logged("control: X2UP=1: OK"));
+	EXPECT_TRUE(logged("control: X2UP=2,4,4: ERROR"));
+	if (ev != DMBRIDGE_END)
+		dmbridge_call_hangup(&c);
+	dmbridge_call_end(&c);
+	dmodem_destroy(a);
+	close(sa[0]);
+	close(sa[1]);
+}

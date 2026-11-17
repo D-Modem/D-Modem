@@ -45,7 +45,7 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 	timer_what_ = Timer::None;
 	push_pending = false;
 	dec_head_ = dec_count_ = 0;
-	usr_.init(this, cfg.usr_feature);
+	usr_.init(this, cfg.usr_feature, cfg.usr_enable, cfg.usr_disable);
 	if ((cfg.ec || cfg.mnp) && cfg.comp) {
 		if (enc_.init(cfg.dict_size, cfg.max_string) ||
 		    dec_.init(cfg.dict_size, cfg.max_string)) {
@@ -118,6 +118,17 @@ void Link::status(Status s)
 	/* LAPM up: the remote feature upgrade, if asked for */
 	if (s == Status::Up && mode_ == Mode::Lapm && proto_ != Protocol::V76)
 		usr_.start();
+}
+
+/* (see link.h) */
+bool Link::usr_start(UsrMode mode, u8 enable, u8 disable)
+{
+	if (mode == UsrMode::Off || mode_ != Mode::Lapm ||
+	    proto_ == Protocol::V76 || !lapm_.up() || usr_.running())
+		return false;
+	usr_.init(this, mode, enable, disable);
+	usr_.start();
+	return usr_.running();
 }
 
 /* the data pump has connected (on: error correction is possible): V.80

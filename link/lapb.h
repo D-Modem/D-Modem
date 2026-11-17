@@ -12,8 +12,8 @@
  *    recovery, T1 of 1 s counted in transmitted bits and N2 of 4 tries,
  *    as isdn4linux's X.75 had them.  The calling end commands with
  *    address B (0x01) and the called end with A (0x03), each answering
- *    at the other's; the calling end sends the SABM.  No XID: nothing is
- *    negotiated.
+ *    at the other's; the calling end sends the SABM.  XID only for
+ *    ZyXEL's encryption (S102, below): nothing else is negotiated.
  *
  *    V.120: the same procedures in extended mode (modulo 128, SABME),
  *    with Q.921's two octet address: logical link 256 (V.120's
@@ -22,7 +22,15 @@
  *    terminal adaption header, one octet here: asynchronous mode, each
  *    frame a whole (B and F 1), 0x83; the far end's header and its
  *    extension octets are taken off.  Logical link 256 only, no UI
- *    frames, no XID.
+ *    frames.
+ *
+ *    ZyXEL's encryption (the Elite 2864I's S102, zcrypt.h): with S102
+ *    bit 0, once the link is up each end sends an XID command with
+ *    ZyXEL's group (0xFF) and answers the other's with an XID response.
+ *    The I frames wait until the remote's options have come.  Both
+ *    offering it, every I frame's information (after V.120's header)
+ *    goes in 64-bit CFB, the register going on from frame to frame;
+ *    frames sent again keep their cipher text.
  *
  */
 
@@ -33,6 +41,7 @@
 #include "backlog.h"
 #include "dm_types.h"
 #include "hdlc.h"
+#include "zcrypt.h"
 
 namespace dlink {
 
@@ -102,6 +111,11 @@ private:
 	void rx_info(Frame *f, bool pf);
 	void rx_super(Frame *f, bool cmd);
 	void rx_unnum(Frame *f, bool cmd);
+	/* ZyXEL's encryption (S102): its XID frames and the agreement */
+	void zdes_start();
+	void zdes_xid(bool cmd);
+	void zdes_rx_xid(const Frame *f, bool cmd);
+	void zdes_agree();
 
 	Link *link_ = nullptr;
 	Variant variant_ = Variant::X75;
@@ -128,6 +142,23 @@ private:
 	u8 ctrl_buf_[CTRL_FRAMES][4];
 	/* received characters the DTE has not taken */
 	DteBacklog<LAPB_RX_INFO> backlog_;
+
+	/* ZyXEL's encryption: S102 (0: none), our XID frames (command,
+	   response), our secret and public PKDS values, the remote's
+	   options (-1: none yet) and public value, the XID exchange not
+	   ended (I frames held), the cipher of each direction */
+	enum { XID_MAX = 64 };
+	u8 zdes_ = 0;
+	Frame xid_frame_[2];
+	u8 xid_buf_[2][XID_MAX];
+	bool xid_pending_[2] = {};
+	u8 zx_[ZDES_PKDS] = {}, zy_[ZDES_PKDS] = {};
+	s16 zremote_ = -1;
+	bool zremote_y_ = false;
+	u8 zry_[ZDES_PKDS] = {};
+	bool zwait_ = false;
+	bool zon_ = false;
+	ZCfb ztx_, zrx_;
 };
 
 } // namespace dlink

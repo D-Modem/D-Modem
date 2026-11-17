@@ -454,7 +454,7 @@ void Modem::sregs_init()
 		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
 		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 },
-		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 },
+		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 }, { SREG_ZYX_DES, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -1053,6 +1053,8 @@ s16 Modem::link_init()
 	c.hst = hst_offer();
 	/* +X2UP: the remote feature upgrade, with LAPM */
 	c.usr_feature = static_cast<dlink::UsrMode>(kept("+X2UP")[0]);
+	c.usr_enable = static_cast<u8>(kept("+X2UP")[1]);
+	c.usr_disable = static_cast<u8>(kept("+X2UP")[2]);
 	/* MNP 10 (S113: bit 0 the offer, bit 1 parameter 0xC0, bit 2 the
 	   long LR; -K, -Q, )M, @M, :T19): with MNP, not synchronous;
 	   the D-Modem extension's top rate +MS's */
@@ -1073,6 +1075,9 @@ s16 Modem::link_init()
 		const u32 b2 = kept("+B2")[0];
 		c.b2 = b2 == 0 ? dlink::B2::X75 : b2 == 5 ? dlink::B2::Ppp :
 			b2 == 9 ? dlink::B2::V120 : dlink::B2::Modem;
+		/* S102 and ATCK: ZyXEL's encryption on X.75 and V.120 */
+		c.zdes = static_cast<u8>(sregs_[SREG_ZYX_DES]);
+		memcpy(c.zkey, zkey_, sizeof(c.zkey));
 	}
 	if (c.sync) {
 		/* +ESA: <trans_idle>, <framed_idle>, <framed_un_ov>,
@@ -2516,6 +2521,18 @@ void Modem::dsvd_close_voice()
 {
 	if (link_)
 		link_->close_voice();
+}
+
+/* see dcore.h */
+bool Modem::usr_feature_now(int mode, int enable, int disable)
+{
+	const int sw = dlink::USR_SWITCHED;
+	if (!link_ || mode < 1 || mode > 2 || enable < 0 || disable < 0 ||
+	    (enable & ~sw) || (disable & ~sw) || (enable & disable))
+		return false;
+	return link_->usr_start(static_cast<dlink::UsrMode>(mode),
+				static_cast<u8>(enable),
+				static_cast<u8>(disable));
 }
 
 /* see dcore.h */

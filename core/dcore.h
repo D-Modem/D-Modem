@@ -352,6 +352,12 @@ public:
 	   voice path has gone), the data going on; nothing on another
 	   call */
 	void dsvd_close_voice();
+	/* the USRobotics remote feature upgrade now, in a call with LAPM
+	   (link/usr_feature.h): mode 1 reads the Courier's records, 2 also
+	   enables and disables features (sums of Terbo 4, V.FC 8, x2 16);
+	   its +X2UP: line goes to the DTE at the end.  false when it
+	   cannot start (no LAPM up, one going on, a value out of range) */
+	bool usr_feature_now(int mode, int enable, int disable);
 	/* the device reports an error */
 	void error();
 
@@ -676,6 +682,7 @@ private:
 	s16 at_PMH(char *p, s16 *len);
 	s16 at_FCLASS(char *p, s16 *len);
 	s16 at_zfax(char *p, s16 *len);
+	s16 at_CK(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);
 	s16 at_voice(char *p, s16 *len, bool hash = false);
 	s16 at_hash(char *p, s16 *len);
@@ -1035,6 +1042,10 @@ private:
 	void cadence_line(const char *label, u64 ms);
 	void cadence_poll();
 	s32 cadence_next_ms() const;
+	/* ATCK's key (ZyXEL's encryption, S102): registers A and B, from
+	   the power-on value (zdes_default_key) */
+	u8 zkey_[16] = { 0xab, 0xcd, 0x01, 0x23, 0xef, 0x45, 0x67, 0x89,
+			 0xab, 0xcd, 0x01, 0x23, 0xef, 0x45, 0x67, 0x89 };
 	/* class 6 answered a data call: class 6 again after it */
 	bool z6_data_ = false;
 	/* +F34 (T.31 class 1.0): the primary channel's highest and lowest

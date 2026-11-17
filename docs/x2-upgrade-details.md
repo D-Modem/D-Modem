@@ -140,6 +140,11 @@ A change in the RAM copy and the EEPROM has no effect on the call. At
 power on, the Courier reads record 2 (7.1.4: `0908`). Bit 5 then sets
 the x2 capability (`0933`).
 
+Supervisor 7.4.16 and 7.6.7 set the x2 capability at `0519` with no
+condition, after they read the records. Thus, in these builds, bit 5 has
+no effect. Supervisor 7.1.4 and 7.3.14 do not have this step. The audit
+is in courier-emu's `docs/feature-bits-audit.md`.
+
 ## 5. The host sequence
 
 `dlink::UsrFeature` (`link/usr_feature.h`) does these steps on the
@@ -151,15 +156,39 @@ modem that has `AT+X2UP=1` or `AT+X2UP=2`:
 3. Send message 1. Wait 3 s for message 0. Send again, up to 3 times.
    If no answer comes, the result is `NO REPLY`.
 4. With mode 1, the result is `QUERIED`.
-5. If record 2 has the value 16, the result is `ALREADY`.
-6. Send message 2 with selector `25`. Wait 1.5 s.
-7. Send message 1 again, as in step 3. If record 2 now has the value
-   16, the result is `ENABLED`. If not, or if no answer comes, the
-   result is `REFUSED`.
+5. Find the bits of `<enable>` that record 2 does not have, and the
+   bits of `<disable>` that it has. If there are none, the result is
+   `ALREADY`.
+6. For each bit to enable, send message 2. For each bit to disable,
+   send message 5. The selectors are `23` (Terbo), `24` (V.FC) and `25`
+   (x2). Wait 1.5 s.
+7. Send message 1 again, as in step 3. If the bits of `<enable>` and
+   `<disable>` in record 2 are now as asked, the result is `ENABLED`
+   (only enables), `DISABLED` (only disables) or `CHANGED` (both). If
+   not, or if no answer comes, the result is `REFUSED`.
 
-The timers count the bits that D-Modem sends. The exchange occurs one
-time in a call. The result goes to the DTE as one `+X2UP:` line
-(`core/modem.cpp`, `LinkOwner::usr_feature()`).
+The timers count the bits that D-Modem sends. The result goes to the DTE
+as one `+X2UP:` line (`core/modem.cpp`, `LinkOwner::usr_feature()`).
+
+`AT+X2UP` starts the exchange one time, when LAPM connects. A program can
+start it again later in the same call, with new values:
+
+- `Link::usr_start()` starts the steps above at step 1. It refuses when
+  LAPM is not up, when the link is V.76 (DSVD), or when an exchange is
+  in progress.
+- `Modem::usr_feature_now()` makes sure that the values are correct, as
+  `AT+X2UP` does. Then it calls `Link::usr_start()`.
+- `dmodem_x2up()` in libdmodem calls `Modem::usr_feature_now()`.
+- The PBX bridge (`frontend/pbx/dmodem_bridge.c`) gives an exec program
+  a control channel: one end of a socket pair, on the file descriptor 3
+  of the program (`DMODEM_CONTROL=3`). The bridge reads command lines on
+  it. `X2UP=<mode>,<enable>,<disable>` calls `dmodem_x2up()` when the
+  call is online. The bridge sends `OK` or `ERROR` back.
+
+The caller screens (`tools/x2upgrade-host.py` and
+`tools/x2upgrade-host/`) use this. The profile reads the Courier at the
+start (`AT+X2UP=1`). The caller selects the features. Then the screen
+sends `X2UP=2,<enable>,<disable>` on the control channel.
 
 ## 6. Tests
 
@@ -170,6 +199,26 @@ connects, a model of the Courier code answers the host. The test
 examines five calls: `ENABLED` (015 to 031, and the frame
 `01 03 0a 02 25`), `ALREADY`, `REFUSED` (the model does not keep the
 change), `NO REPLY` (six asks, then the end), and `QUERIED`.
+
+`Link.UsrFeatureSwitches` examines the switches: `DISABLED` (031 to 019,
+with the frames `01 03 0a 05 23` and `01 03 0a 05 24`), `CHANGED` (019
+to 007), `ALREADY` for a feature that is already disabled, no frame for
+HST and fax, and `REFUSED`.
+
+`Link.UsrFeatureLater` reads the records when LAPM connects (mode 1).
+Then it calls `Link::usr_start()` with mode 2 (enable x2, disable
+V.FC): `CHANGED`, 015 to 023. A second exchange during the first one is
+refused, and a link with no LAPM refuses the start.
+
+`dmodem_bridge_test`'s `Bridge.ExecControlChannel` makes a V.22 call
+with V.42 to an exec profile. The program sends three lines on its
+descriptor 3: `X2UP=1` gets `OK`, and `X2UP=2,4,4` (a feature in the two
+values) and a line that is not a command get `ERROR`.
+
+`tools/test_x2upgrade_host.py` and the Go tests of
+`tools/x2upgrade-host/` examine the caller screens: the menu, the
+control line for each choice, `Q`, no key, an `ERROR` from the control
+channel, `REFUSED`, and a host with no control channel.
 
 ### 6.2 Calls to emulated Couriers
 
@@ -186,6 +235,25 @@ answers with `AT+MS=X2+X2UP=2`.
 
 All calls connected with x2 and LAPM. The serial number in all calls
 was `0009540034268322`.
+
+The image in these calls (`courier-board-21210-capture-403`) is ID_SDL
+4.03d, a third-party build of 7.4.16. Like the stock 7.4.16, it enables
+x2 at each start, whatever the value of the record. Thus these calls show
+that the host changes the record. They do not show the effect of the
+change on the modem.
+
+Supervisor 7.3.14 (`courier-board-21210-capture-01`) shows the effect.
+With record 2 set to 31, the Courier connected with
+`CONNECT 49333/ARQ/x2/LAPM/V42BIS`, and `ATI7` showed `x2,V90`. With
+record 2 set to 15, the Courier sent no x2 marker, `ATI7` did not show
+x2, and the Courier gave `ERROR` for the x2 speed `&N39`.
+
+A call to 7.3.14 with record 2 set to 19 (HST, fax, x2) and
+`AT+MS=X2+X2UP=2,12,16` gave `+X2UP: CHANGED,"0009540034268322",019,015`.
+D-Modem sent the selectors `23` and `24` in message 2, and `25` in
+message 5. After a new start from the changed EEPROM, `ATI7` showed
+`HST,V32bis,Terbo,VFC,V34+`, and `ATY14` showed
+`000,000,030,007,015,000`.
 
 After the `ENABLED` call, the EEPROM image held `68 17 02` (31) in
 place of `28 0f 12` (15). A new start of the emulated Courier from that

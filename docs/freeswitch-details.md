@@ -329,6 +329,17 @@ controlling terminal, in raw mode. Its environment has:
 | `DMODEM_DIALED` | the number dialled (`destination_number`) |
 | `DMODEM_CONNECTED` | when the modems connected, in Unix time |
 | `DMODEM_PEER` | the address the call came from by SIP (`sip_network_ip`), or empty |
+| `DMODEM_CONTROL` | `3`: the control channel of the program, on its file descriptor 3 (see below) |
+
+The program can send commands to the modem on its file descriptor 3, the
+control channel. Send one command on each line. The module sends `OK` or
+`ERROR` on the same descriptor for each line. There is one command:
+
+| Command | Function |
+|---|---|
+| `X2UP=<mode>,<enable>,<disable>` | Start the USRobotics remote feature upgrade now, as `AT+X2UP` does at the start of a call ([the x2 upgrade host](x2-upgrade.md)). The modem sends its `+X2UP:` line to the program on the pty. `ERROR` if the call has no V.42 (LAPM) link, or if an exchange is in progress. |
+
+A server (`tcp` or `unix`) has no control channel.
 
 A server has no environment. Instead, with `header` `true` in a `tcp` or
 `unix` profile, the module sends the same variables first on the connection:

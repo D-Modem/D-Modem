@@ -129,6 +129,11 @@ enum S_REGISTER {
 						    landline; bit 5 the
 						    transmit filter, bits
 						    0-2 /ETC) */
+	SREG_ZYX_DES                      = 102, /* ZyXEL's encryption on
+						    X.75 and V.120 (bit 0
+						    on, 1 triple DES, 2 no
+						    PKDS: the ATCK key, 3
+						    disconnect without it) */
 	SREG_ZYX_PEER                     = 115, /* 1: the V.32bis and ZyX
 						    pumps send ZyXEL's peer
 						    marker, and go to ZyX on
