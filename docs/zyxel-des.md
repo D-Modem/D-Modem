@@ -15,6 +15,9 @@ Elite.
 | `ATS102=n` | Bit 0: offer the encryption. Bit 1: triple DES. Bit 2: no key exchange (use the ATCK key). Bit 3: disconnect if the remote does not agree. The default is 0. |
 | `ATCK<key>` | The key for bit 2. The key is the characters up to `>` or the end of the line. Without `<`, ERROR. `ATZ` keeps the key. |
 
+In the Elite, S102 also has bit 6 (the metering pulse) and bit 7 (the
+bundle of two B channels, `&J1`). D-Modem does not use these bits.
+
 Examples:
 
 - `ATS102=1` on the two modems: single DES with a key from the key
@@ -112,4 +115,3 @@ are not DES weak keys. D-Modem uses the table as the Elite has it.
 - The offset of the encrypted data in the Elite frames (D-Modem uses the
   start of the information field).
 - The third key of the Elite triple DES (D-Modem uses A).
-- Bit 7 of S102 in the Elite.
