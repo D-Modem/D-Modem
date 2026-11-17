@@ -603,19 +603,20 @@ static enum dmbridge_event step_handoff(struct dmbridge_call *c)
  *    the program
  */
 
-/* in the child: none of the PBX's descriptors (sockets, files) */
-static void close_fds_above_2(void)
+/* in the child: none of the PBX's descriptors (sockets, files) from
+   first on */
+static void close_fds_from(unsigned first)
 {
 	long fd, max;
 
 #ifdef SYS_close_range
-	if (!syscall(SYS_close_range, 3U, ~0U, 0))
+	if (!syscall(SYS_close_range, first, ~0U, 0))
 		return;
 #endif
 	max = sysconf(_SC_OPEN_MAX);
 	if (max < 0 || max > 65536)
 		max = 65536;
-	for (fd = 3; fd < max; fd++)
+	for (fd = first; fd < max; fd++)
 		close(fd);
 }
 
@@ -663,13 +664,14 @@ static int line_pty(const struct dmbridge_host *h, int fd[2])
 }
 
 /* the program on the slave of a new pty, the master returned; the child
-   is ours to reap (end_exec()) */
+   is ours to reap (end_exec()).  *ctl: our end of the program's control
+   channel (its descriptor 3, DMODEM_CONTROL=3), -1 if there is none */
 static int start_exec(const struct dmbridge_host *h,
 		      const struct dmbridge_profile *p, const char *const *env,
-		      pid_t *pid)
+		      pid_t *pid, int *ctl)
 {
 	char slave[64];
-	int master, i;
+	int master, i, sv[2] = { -1, -1 };
 
 	master = posix_openpt(O_RDWR | O_NOCTTY);
 	if (master < 0 || grantpt(master) || unlockpt(master) ||
@@ -680,6 +682,9 @@ static int start_exec(const struct dmbridge_host *h,
 			close(master);
 		return -1;
 	}
+	*ctl = -1;
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv))
+		sv[0] = sv[1] = -1;
 	*pid = h->fork ? h->fork() : fork();
 	if (*pid < 0) {
 		log_line(h, NULL, DMBRIDGE_WARNING, "fork: %s",
@@ -687,6 +692,10 @@ static int start_exec(const struct dmbridge_host *h,
 		if (h->fork_done)
 			h->fork_done();
 		close(master);
+		if (sv[0] >= 0) {
+			close(sv[0]);
+			close(sv[1]);
+		}
 		return -1;
 	}
 	if (*pid == 0) {
@@ -712,13 +721,22 @@ static int start_exec(const struct dmbridge_host *h,
 		dup2(fd, 0);
 		dup2(fd, 1);
 		dup2(fd, 2);
-		close_fds_above_2();
+		/* the control channel on 3 */
+		if (sv[1] >= 0 && (sv[1] == 3 || dup2(sv[1], 3) == 3))
+			setenv("DMODEM_CONTROL", "3", 1);
+		close_fds_from(sv[1] >= 0 ? 4U : 3U);
 		for (i = 0; env[i]; i += 2)
 			setenv(env[i], env[i + 1], 1);
 		execl("/bin/sh", "sh", "-c", p->command, (char *)NULL);
 		_exit(127);
 	}
 	nonblock(master);
+	if (sv[0] >= 0) {
+		close(sv[1]);
+		fcntl(sv[0], F_SETFD, FD_CLOEXEC);
+		nonblock(sv[0]);
+		*ctl = sv[0];
+	}
 	return master;
 }
 
@@ -849,6 +867,7 @@ void dmbridge_call_init(struct dmbridge_call *c)
 	c->status = "ERROR";
 	c->dte[0] = c->dte[1] = -1;
 	c->fd = -1;
+	c->ctl = -1;
 	c->connecting = -1;
 	c->closing = -1;
 }
@@ -965,6 +984,62 @@ static enum dmbridge_event end(struct dmbridge_call *c, const char *s)
 	return DMBRIDGE_END;
 }
 
+/* one command line of the program's control channel, done: X2UP=<mode>,
+   <enable>,<disable> (dmodem_x2up(), as AT+X2UP; the result comes
+   to the program as the modem's +X2UP: line); the answer OK or ERROR */
+static void control_command(struct dmbridge_call *c, const char *line)
+{
+	int mode, enable = 16, disable = 0, n = 0, ok = 0;
+	const char *answer;
+
+	if (!strncasecmp(line, "AT", 2))
+		line += 2;
+	if (*line == '+')
+		line++;
+	if (!strncasecmp(line, "X2UP=", 5) &&
+	    sscanf(line + 5, "%d%n,%d%n,%d%n", &mode, &n, &enable, &n,
+		   &disable, &n) >= 1 && !line[5 + n] &&
+	    c->online && c->st.link == DMODEM_ONLINE)
+		ok = !dmodem_x2up(c->d, mode, enable, disable);
+	log_line(c->h, c->call, DMBRIDGE_INFO, "control: %s: %s", line,
+		 ok ? "OK" : "ERROR");
+	answer = ok ? "OK\n" : "ERROR\n";
+	if (write(c->ctl, answer, strlen(answer)) < 0)
+		log_line(c->h, c->call, DMBRIDGE_DEBUG, "control: write: %s",
+			 strerror(errno));
+}
+
+/* the program's control channel: its command lines (\n or \r\n each),
+   done as they come; closed when the program closes it */
+static void control_poll(struct dmbridge_call *c)
+{
+	char buf[64];
+	ssize_t n;
+
+	if (c->ctl < 0)
+		return;
+	while ((n = read(c->ctl, buf, sizeof(buf))) > 0) {
+		for (ssize_t i = 0; i < n; i++) {
+			char ch = buf[i];
+			if (ch == '\r')
+				continue;
+			if (ch != '\n') {
+				/* a line too long: kept to its start */
+				if (c->ctl_len < (int)sizeof(c->ctl_line) - 1)
+					c->ctl_line[c->ctl_len++] = ch;
+				continue;
+			}
+			c->ctl_line[c->ctl_len] = '\0';
+			c->ctl_len = 0;
+			control_command(c, c->ctl_line);
+		}
+	}
+	if (n == 0 || (n < 0 && errno != EAGAIN && errno != EWOULDBLOCK)) {
+		close(c->ctl);
+		c->ctl = -1;
+	}
+}
+
 /* the descriptors of the call, for the log */
 static void log_fds(struct dmbridge_call *c)
 {
@@ -1056,6 +1131,7 @@ enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 	}
 	if (c->p->handoff)
 		return step_handoff(c);
+	control_poll(c);
 	relay(c->h, c->dte[1], c->fd, &c->to_fd);
 	if (st->link != DMODEM_ONLINE)
 		return end(c, "REMOTE");
@@ -1120,7 +1196,7 @@ enum dmbridge_event dmbridge_call_serve(struct dmbridge_call *c,
 			put_header(&c->to_fd, env);
 		return DMBRIDGE_RUN;
 	}
-	c->fd = start_exec(c->h, c->p, env, &c->pid);
+	c->fd = start_exec(c->h, c->p, env, &c->pid, &c->ctl);
 	if (c->fd < 0)
 		return end(c, "ERROR");
 	log_fds(c);
@@ -1142,6 +1218,9 @@ void dmbridge_call_end(struct dmbridge_call *c)
 	c->d = NULL;
 	if (c->fd >= 0)
 		close(c->fd);
+	if (c->ctl >= 0)
+		close(c->ctl);
+	c->ctl = -1;
 	if (c->connecting >= 0)
 		tcp_abandon(c->h, c->connecting);
 	if (c->pid > 0)

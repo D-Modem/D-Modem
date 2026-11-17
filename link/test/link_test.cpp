@@ -1129,14 +1129,19 @@ struct CourierFeatures {
 };
 
 /* a call to the Courier cf with the host's side in mode once LAPM is
-   up: its one report */
-static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode)
+   up: its one report.  With then, the program's ask after that report
+   (Link::usr_start(), as dmodem_x2up()): the second report */
+static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode,
+			   uint8_t enable = 16, uint8_t disable = 0,
+			   UsrMode then = UsrMode::Off)
 {
 	rnd_state = 12345;
 	/* (the 16-bit FCS: the Courier's frames below have it) */
 	Config cc = lapm_config(0), ca = lapm_config(0);
 	cc.fcs32 = ca.fcs32 = false;
 	ca.usr_feature = mode;
+	ca.usr_enable = enable;
+	ca.usr_disable = disable;
 	Pair p(cc, ca);
 	p.start(true, true);
 	/* until LAPM is up, less than a second before the first ask */
@@ -1154,8 +1159,9 @@ static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode)
 	tx.set_framer(&src, true);
 	rx.set_framer(&dst, false);
 	uint8_t bits[96];
-	size_t seen = 0;
-	for (int k = 0; k < 9600 * 30 / 96 && p.da.usr.empty(); k++) {
+	size_t seen = 0, want = then == UsrMode::Off ? 1 : 2;
+	bool asked = false;
+	for (int k = 0; k < 9600 * 60 / 96 && p.da.usr.size() < want; k++) {
 		tx.get_bits(1, bits, sizeof(bits));
 		p.la.put_bits(1, bits, sizeof(bits));
 		p.la.get_bits(1, bits, sizeof(bits));
@@ -1163,9 +1169,15 @@ static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode)
 		for (; seen < dst.rx.size(); seen++)
 			for (auto &a : cf.rx(dst.rx[seen]))
 				src.tx.push_back(a);
+		if (want == 2 && k == 0)
+			CHECK(!p.la.usr_start(then, enable, disable),
+			      "a second exchange while one goes on");
+		if (want == 2 && p.da.usr.size() == 1 && !asked)
+			asked = p.la.usr_start(then, enable, disable);
 	}
-	CHECK(p.da.usr.size() == 1, "one report (%zu)", p.da.usr.size());
-	return p.da.usr.empty() ? UsrReport() : p.da.usr[0];
+	CHECK(p.da.usr.size() == want && asked == (want == 2),
+	      "%zu reports (%zu)", want, p.da.usr.size());
+	return p.da.usr.size() < want ? UsrReport() : p.da.usr[want - 1];
 }
 
 /* the host's side (+X2UP=2) against a Courier that lets the set
@@ -1174,7 +1186,7 @@ static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode)
 TEST(Link, UsrFeature)
 {
 	CourierFeatures cf;
-	UsrReport r = x2up_call(cf, UsrMode::EnableX2);
+	UsrReport r = x2up_call(cf, UsrMode::Change);
 	CHECK(r.result == UsrResult::Enabled, "enabled (%s)",
 	      usr_result_name(r.result));
 	CHECK(!strcmp(r.serial, "7309550013402381"), "serial %s", r.serial);
@@ -1186,20 +1198,20 @@ TEST(Link, UsrFeature)
 	CHECK(std::find(cf.heard.begin(), cf.heard.end(), set) !=
 	      cf.heard.end(), "the set frame 01 03 0a 02 25");
 
-	r = x2up_call(cf, UsrMode::EnableX2);
+	r = x2up_call(cf, UsrMode::Change);
 	CHECK(r.result == UsrResult::Already, "already (%s)",
 	      usr_result_name(r.result));
 
 	CourierFeatures locked;
 	locked.allowed = false;
-	r = x2up_call(locked, UsrMode::EnableX2);
+	r = x2up_call(locked, UsrMode::Change);
 	CHECK(r.result == UsrResult::Refused, "refused (%s)",
 	      usr_result_name(r.result));
 	CHECK(r.after[1] == 15, "features after %u", r.after[1]);
 
 	CourierFeatures mute;
 	mute.answers = false;
-	r = x2up_call(mute, UsrMode::EnableX2);
+	r = x2up_call(mute, UsrMode::Change);
 	CHECK(r.result == UsrResult::NoReply && !r.has_records,
 	      "no reply (%s)", usr_result_name(r.result));
 	CHECK(mute.heard.size() == 6, "3 asks for each (%zu)",
@@ -1210,6 +1222,72 @@ TEST(Link, UsrFeature)
 	CHECK(r.result == UsrResult::Queried && ro.recs[1] == 15,
 	      "query only (%s, %u)", usr_result_name(r.result), ro.recs[1]);
 	printf("  x2up: enabled, already, refused, no reply, queried\n");
+}
+
+/* the switches (+X2UP=2,<enable>,<disable>): Terbo and V.FC off (two
+   clears, 0a 05 23 and 0a 05 24), then Terbo on and x2 off together,
+   a disable already done, and the HST and fax bits passed over */
+TEST(Link, UsrFeatureSwitches)
+{
+	CourierFeatures cf;
+	cf.recs[1] = 31;
+	UsrReport r = x2up_call(cf, UsrMode::Change, 0, 4 | 8);
+	CHECK(r.result == UsrResult::Disabled, "disabled (%s)",
+	      usr_result_name(r.result));
+	CHECK(r.before[1] == 31 && r.after[1] == 19 && cf.recs[1] == 19,
+	      "features %u -> %u (%u)", r.before[1], r.after[1], cf.recs[1]);
+	const std::vector<uint8_t> c3 = { 0x01, 0x03, 0x0a, 0x05, 0x23 },
+		c4 = { 0x01, 0x03, 0x0a, 0x05, 0x24 };
+	CHECK(std::find(cf.heard.begin(), cf.heard.end(), c3) !=
+	      cf.heard.end() && std::find(cf.heard.begin(), cf.heard.end(),
+	      c4) != cf.heard.end(), "the clears 0a 05 23 and 0a 05 24");
+
+	r = x2up_call(cf, UsrMode::Change, 4, 16);
+	CHECK(r.result == UsrResult::Changed, "changed (%s)",
+	      usr_result_name(r.result));
+	CHECK(r.before[1] == 19 && r.after[1] == 7 && cf.recs[1] == 7,
+	      "features %u -> %u", r.before[1], r.after[1]);
+
+	r = x2up_call(cf, UsrMode::Change, 0, 16);
+	CHECK(r.result == UsrResult::Already, "already off (%s)",
+	      usr_result_name(r.result));
+
+	/* HST (1) and fax (2) are not switched: no frame for them */
+	CourierFeatures hf;
+	hf.recs[1] = 3;
+	r = x2up_call(hf, UsrMode::Change, 0, 1 | 2);
+	CHECK(r.result == UsrResult::Already && hf.recs[1] == 3,
+	      "HST and fax left (%s, %u)", usr_result_name(r.result),
+	      hf.recs[1]);
+
+	CourierFeatures locked;
+	locked.allowed = false;
+	locked.recs[1] = 31;
+	r = x2up_call(locked, UsrMode::Change, 0, 16);
+	CHECK(r.result == UsrResult::Refused && r.after[1] == 31,
+	      "refused (%s, %u)", usr_result_name(r.result), r.after[1]);
+	printf("  x2up: disabled, changed, already, HST and fax, refused\n");
+}
+
+/* the program's ask in the call (dmodem_x2up(), the caller's choice on
+   the host's screen): the call reads the features at the start
+   (+X2UP=1), then the change comes on Link::usr_start(); none with the
+   mode off */
+TEST(Link, UsrFeatureLater)
+{
+	CourierFeatures cf;
+	cf.recs[1] = 15;
+	UsrReport r = x2up_call(cf, UsrMode::Query, 16, 8, UsrMode::Change);
+	CHECK(r.result == UsrResult::Changed, "changed (%s)",
+	      usr_result_name(r.result));
+	CHECK(r.before[1] == 15 && r.after[1] == 23 && cf.recs[1] == 23,
+	      "features %u -> %u (%u)", r.before[1], r.after[1], cf.recs[1]);
+
+	Link idle;
+	NullOwner o;
+	idle.init(&o, true, lapm_config(0));
+	CHECK(!idle.usr_start(UsrMode::Change, 16, 0), "no LAPM up");
+	printf("  x2up: read at the start, changed later\n");
 }
 
 /* USRobotics HST in XID as a Courier sends it: the XID command and

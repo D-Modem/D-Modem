@@ -235,6 +235,14 @@ void dmodem_voice_close(struct dmodem *d)
 }
 
 /* see dmodem.h */
+int dmodem_x2up(struct dmodem *d, int mode, int enable, int disable)
+{
+	const bool ok = d->m->usr_feature_now(mode, enable, disable);
+	d->m->poll();
+	return ok ? 0 : -1;
+}
+
+/* see dmodem.h */
 void dmodem_listen(struct dmodem *d)
 {
 	d->listen.init(d->rate);

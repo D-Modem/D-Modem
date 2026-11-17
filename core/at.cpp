@@ -240,9 +240,11 @@ const struct Kept {
 	/* D-Modem's own: the USRobotics remote feature upgrade, the host's
 	   side (link/usr_feature.h, docs/x2-upgrade.md): once LAPM is up,
 	   1 reads a Courier's serial number and feature records, 2 also
-	   sets its x2 bit; the result goes to the DTE as +X2UP:.
-	   modem.cpp's link_init() reads it */
-	{ "+X2UP", 1, { 0 }, "(0-2)" },
+	   enables the features <enable> and disables <disable> (sums of
+	   Terbo 4, V.FC 8, x2 16; not one in both); the result goes to the
+	   DTE as +X2UP:.  modem.cpp's link_init() reads it */
+	{ "+X2UP", 3, { 0, 16, 0 },
+	  "(0-2),(0,4,8,12,16,20,24,28),(0,4,8,12,16,20,24,28)" },
 	/* the bearer service (27.007 6.7): <speed> a V.110 rate on a clear
 	   channel (0: none, the answerer takes the caller's), <name> 0
 	   asynchronous (the DTE's characters), 1 synchronous (+B2's link);
@@ -2835,6 +2837,9 @@ s16 Modem::at_kept(const char *p, s16 *len)
 	}
 	/* +ITF: <off> above <on> (8.4/V.80), else ERROR */
 	if (name == "+ITF" && v[0] <= v[1])
+		return -1;
+	/* +X2UP: a feature both to enable and to disable, ERROR */
+	if (name == "+X2UP" && (v[1] & v[2]))
 		return -1;
 	dsp::copy_array(kept_[i], v);
 	kept_n_[i] = n;

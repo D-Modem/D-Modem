@@ -158,6 +158,14 @@ void dmodem_set_voice(struct dmodem *d, const struct dmodem_voice *v);
    follows), the data going on; nothing on another call (ASVD's voice
    has no closing of its own) */
 void dmodem_voice_close(struct dmodem *d);
+/* the USRobotics remote feature upgrade (docs/x2-upgrade.md) now, in a
+   call that is on with V.42 (LAPM): mode 1 reads the remote Courier's
+   serial number and feature records, 2 also enables the features in
+   enable and disables those in disable (sums of Terbo 4, V.FC 8,
+   x2 16; not one in both), as AT+X2UP does at the start of a call.
+   The result goes to the DTE as a +X2UP: line.  0 when it started, -1
+   when it cannot (no LAPM up, one going on, a value out of range) */
+int dmodem_x2up(struct dmodem *d, int mode, int enable, int disable);
 
 /* the log: 0 errors only, higher for more */
 void dmodem_set_debug(int level);

@@ -48,7 +48,13 @@ enum {
 				   information field */
 	USR_RECORDS = 6,        /* the feature records */
 	USR_REC_FEATURES = 2,   /* the protocols (ATC8) */
-	USR_BIT_X2 = 5,         /* its bit for x2 (the value 16) */
+	USR_BIT_TERBO = 3,      /* its bit for V.32terbo (the value 4) */
+	USR_BIT_VFC = 4,        /* for V.FC and V.34 (8) */
+	USR_BIT_X2 = 5,         /* for x2, and V.90 in the builds after
+				   x2 (16) */
+	/* the features the host may switch: Terbo, V.FC and x2 */
+	USR_SWITCHED = 1 << (USR_BIT_TERBO - 1) | 1 << (USR_BIT_VFC - 1) |
+		1 << (USR_BIT_X2 - 1),
 	USR_SERIAL_MAX = 24,    /* the longest serial number we keep */
 };
 
@@ -72,16 +78,20 @@ constexpr u8 usr_selector(s16 record, s16 bit)
 enum class UsrMode : s16 {
 	Off = 0,
 	Query = 1,      /* read the serial number and the records */
-	EnableX2 = 2,   /* and set x2 if it is not set */
+	Change = 2,     /* and enable and disable features (the
+			   UsrFeature's set and clear masks) */
 };
 
 /* how the exchange ended */
 enum class UsrResult {
 	NoReply,        /* the remote did not answer (not a Courier) */
 	Queried,        /* the records were read (UsrMode::Query) */
-	Already,        /* x2 was set already */
-	Enabled,        /* x2 was not set, and now it is */
-	Refused,        /* x2 was sent, the records did not change (S30) */
+	Already,        /* the features were as asked already */
+	Enabled,        /* features were enabled, as asked */
+	Disabled,       /* features were disabled, as asked */
+	Changed,        /* features were enabled and others disabled */
+	Refused,        /* the changes were sent, the records did not
+			   take them (S30) */
 };
 
 /* what the exchange found */
@@ -100,13 +110,16 @@ struct UsrReport {
 const char *usr_result_name(UsrResult r);
 
 /* the host's side, on the answerer once LAPM is up: ask for the serial
-   number and the records, set x2 if it is not set (UsrMode::EnableX2)
-   and read the records again, then report to the owner
+   number and the records, enable and disable features as asked
+   (UsrMode::Change) and read the records again, then report to the owner
    (Owner::usr_feature()).  Its timers count the bits we send. */
 class UsrFeature {
 public:
-	/* a call: mode as asked */
-	void init(Link *link, UsrMode mode);
+	/* a call: mode as asked; in UsrMode::Change, the features (record
+	   2's values) to enable and to disable, each within USR_SWITCHED
+	   (others are passed over); a feature in both is enabled */
+	void init(Link *link, UsrMode mode, u8 enable = 1 << (USR_BIT_X2 - 1),
+		  u8 disable = 0);
 	/* LAPM is up: the exchange begins (nothing in UsrMode::Off, or
 	   when it has been already in this call) */
 	void start();
@@ -137,7 +150,9 @@ private:
 	Step step_ = Step::Idle;
 	s32 timer_ = 0;         /* bits to go (0: none) */
 	s16 tries_ = 0;
-	bool set_sent_ = false;
+	u8 enable_ = 0;         /* the features to enable */
+	u8 disable_ = 0;        /* and to disable */
+	u8 want_ = 0;           /* record 2 as it is to be, in USR_SWITCHED */
 	bool done_ = false;     /* once in a call */
 	UsrReport rep_;
 };
