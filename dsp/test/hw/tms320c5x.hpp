@@ -468,7 +468,6 @@ private:
 		acc = res;
 	}
 
-	/* a conditional instruction's conditions (its low byte) all true */
 	/* flat: XC's condition, as the pipeline has it: a one-word
 	   instruction just before XC has not yet set the status (TC110's
 	   "SUB *, ADD *, XC EQ" tests the SUB), a two-word one has (its
@@ -485,6 +484,7 @@ private:
 	}
 	u32 xacc_ = 0;
 	int xc_ = 0, xov_ = 0, xtc_ = 0;
+	/* a conditional instruction's conditions (its low byte) all true */
 	bool cond(w16 op)
 	{
 		int m = op & 15, v = (op >> 4) & 15;
