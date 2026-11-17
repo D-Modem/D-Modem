@@ -230,7 +230,11 @@ public:
 		int sc = c, sov = ov, stc = tc;
 		int sp0 = sp_;
 		int j = exe(op, at);
-		xacc_ = sacc; xc_ = sc; xov_ = sov; xtc_ = stc;
+		if (size(op) > 1) {
+			xacc_ = acc; xc_ = c; xov_ = ov; xtc_ = tc;
+		} else {
+			xacc_ = sacc; xc_ = sc; xov_ = sov; xtc_ = stc;
+		}
 		if (j >= 0 && (j & DELAYED)) {
 			pc = nxt;
 			w16 end = (w16)(nxt + 2);
@@ -465,9 +469,10 @@ private:
 	}
 
 	/* a conditional instruction's conditions (its low byte) all true */
-	/* flat: XC's condition, as the pipeline has it: the status before
-	   the instruction just before XC (TC110's "SUB *, ADD *, XC EQ"
-	   tests the SUB) */
+	/* flat: XC's condition, as the pipeline has it: a one-word
+	   instruction just before XC has not yet set the status (TC110's
+	   "SUB *, ADD *, XC EQ" tests the SUB), a two-word one has (its
+	   "CPL #aa63h, dma 2ch, XC TC" tests the CPL) */
 	bool xcond(w16 op)
 	{
 		u32 a = acc;
