@@ -134,8 +134,15 @@ The routine at offset 0x150CE builds the responder's LR:
 - Parameter 0x0B: Microcom security. The parser compares the 5-octet
   token with a list of 25 entries (offset 0x14D57). D-Modem does not
   send it.
-- Parameter 0x0A: an older form of parameter 0x0C (MNP 10). The parser
-  skips its first two octets.
+- Parameter 0x0A: the MNP 6 negotiation parameter (refer to
+  [MNP 6](mnp6.md#lr-parameter-0x0a)). The AX/9624c sends it with two
+  octets. The DeskPorte skips a parameter 0x0A that has fewer than 3
+  octets (offset 0x14D45). If it has 3 or more octets, the DeskPorte
+  skips the first two octets (the MNP 6 octets), and reads the rest
+  with the parameter 0x0C (MNP 10) code. The DeskPorte does not send
+  parameter 0x0A. Thus, a later modem can possibly send the MNP 6
+  octets and an MNP 10 field in one parameter 0x0A. We did not find a
+  modem that does this.
 - Parameter 0x11: an originator mark. When the local flag at 0x7C21 is
   set, the parser rejects an LR that has it (offset 0x14EA5). The MNP 10
   specification identifies this flag as "we are the originator".
