@@ -101,7 +101,17 @@ option(DMODEM_ARI "Build dmodem-ari (D-Modem as an Asterisk ARI application)"
 option(DMODEM_TESTS "Build the test programs (ctest)" ON)
 # (Windows and macOS: libusb is fetched and built for it,
 # cmake/libusb.cmake; elsewhere the system's, pkg-config's libusb-1.0)
-option(DMODEM_USB "dmodemd's --usb on Windows and macOS (libusb, fetched)" ON)
+# (not for Windows before Vista: libusb's Windows back end and WinUSB
+# are Vista's and XP's; DMODEM_WINNT, the toolchain file's)
+set(_dmodem_usb_default ON)
+if(WIN32 AND DMODEM_WINNT)
+	math(EXPR _winnt "${DMODEM_WINNT}")
+	if(_winnt LESS 1536)
+		set(_dmodem_usb_default OFF)
+	endif()
+endif()
+option(DMODEM_USB "dmodemd's --usb on Windows and macOS (libusb, fetched)"
+	${_dmodem_usb_default})
 option(DMODEM_WERROR "Treat compiler warnings as errors (CI)" OFF)
 
 # the compilers' flags: GCC's and Clang's, or MSVC's (cl.exe, clang-cl).

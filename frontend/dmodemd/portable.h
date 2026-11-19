@@ -33,8 +33,49 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#if _WIN32_WINNT < 0x0501
+/* (Windows 9x, NT 4 and 2000: getaddrinfo() is ws2_32's only on XP and
+   later; wspiapi.h's takes it there, or does IPv4 itself.  As function
+   macros, as libre's re_net.h has them: its struct dnsc_conf has a
+   getaddrinfo member) */
+extern "C++" {
+#include <wspiapi.h>
+}
+#undef getaddrinfo
+#undef getnameinfo
+#undef freeaddrinfo
+#define getaddrinfo(n, s, h, r) WspiapiGetAddrInfo(n, s, h, r)
+#define getnameinfo(a, l, h, hl, s, sl, f) \
+	WspiapiGetNameInfo(a, l, h, hl, s, sl, f)
+#define freeaddrinfo(ai) WspiapiFreeAddrInfo(ai)
+#endif
+#ifndef AI_NUMERICSERV
+#define AI_NUMERICSERV 0
+#endif
 
 namespace dmd {
+
+/* the overlapped I/O on h (ov's, or all of it with nullptr) cancelled:
+   CancelIoEx() where there is one (Vista and later; any thread's I/O),
+   else CancelIo() (NT 4 and 98 and later; this thread's I/O alone) */
+inline void cancel_io(HANDLE h, OVERLAPPED *ov)
+{
+#if _WIN32_WINNT >= 0x0600
+	CancelIoEx(h, ov);
+#else
+	typedef BOOL(WINAPI * ex_fn)(HANDLE, LPOVERLAPPED);
+	typedef BOOL(WINAPI * io_fn)(HANDLE);
+	static const HMODULE k = GetModuleHandleA("kernel32.dll");
+	static const ex_fn ex = reinterpret_cast<ex_fn>(
+		reinterpret_cast<void *>(GetProcAddress(k, "CancelIoEx")));
+	static const io_fn io = reinterpret_cast<io_fn>(
+		reinterpret_cast<void *>(GetProcAddress(k, "CancelIo")));
+	if (ex)
+		ex(h, ov);
+	else if (io)
+		io(h);
+#endif
+}
 
 /* Winsock started, once (the process's first use of a socket) */
 inline bool net_init()

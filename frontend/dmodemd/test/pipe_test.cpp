@@ -56,7 +56,8 @@ public:
 	   answers) */
 	explicit Daemon(const std::string &args)
 	{
-		std::string cmd = "\"" + dmodemd_path() + "\" -n " + args;
+		std::string cmd = "\"" + dmodemd_path() + "\" -n --no-tray " +
+			args;
 		STARTUPINFOA si = {};
 		si.cb = sizeof(si);
 		SetEnvironmentVariableA("SIP_LOGIN", "test:test@127.0.0.1:9");

@@ -143,7 +143,6 @@ TEST(Zcrypt, CfbFrames)
 		ZCfb tx, rx;
 		tx.init(key, triple, iv);
 		rx.init(key, triple, iv);
-		std::vector<std::vector<u8>> sent;
 		for (size_t n = 0; n < 40; n++) {
 			std::vector<u8> p(n);
 			for (size_t i = 0; i < n; i++)
