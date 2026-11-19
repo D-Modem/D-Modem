@@ -41,12 +41,14 @@ namespace usb9x {
 /* an IOCTL that waits in the driver (IOCTL_DMODEM_USB_TRANSFER) */
 class Pending {
 public:
+	/* (a pending IOCTL ends with its owner) */
 	virtual ~Pending() {}
 };
 
 /* the way to the driver.  Errors are LIBUSB_ERROR_* */
 class Io {
 public:
+	/* (the Io ends with its last context) */
 	virtual ~Io() {}
 	/* device n (\\.\DModemUsb<n>) opened: 0 and *h, or an error
 	   (LIBUSB_ERROR_NOT_FOUND: no device n) */

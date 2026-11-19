@@ -33,6 +33,7 @@ namespace usb9x {
 
 namespace {
 
+/* see above */
 std::shared_ptr<Io> &the_io()
 {
 	static std::shared_ptr<Io> io;
@@ -52,11 +53,13 @@ struct Priv {
 
 const size_t PRIV = (sizeof(Priv) + 15) & ~static_cast<size_t>(15);
 
+/* see libusb.h */
 Priv *priv_of(libusb_transfer *t)
 {
 	return reinterpret_cast<Priv *>(reinterpret_cast<char *>(t) - PRIV);
 }
 
+/* see above */
 uint16_t le16(const uint8_t *p)
 {
 	return static_cast<uint16_t>(p[0] | p[1] << 8);
@@ -85,6 +88,7 @@ int sync_error(uint32_t status)
 
 } // namespace
 
+/* see above */
 void set_io(std::shared_ptr<Io> io)
 {
 	the_io() = std::move(io);
@@ -168,6 +172,7 @@ int read_info(libusb_context *ctx, intptr_t h, libusb_device *dev,
 	return 0;
 }
 
+/* see libusb.h */
 void unref(libusb_device *dev)
 {
 	if (dev && --dev->refs == 0)
@@ -204,6 +209,7 @@ std::vector<uint8_t> xfer_buffer(uint8_t type, uint8_t ep,
 	return b;
 }
 
+/* see above */
 dmodem_usb_xfer xfer_of(const std::vector<uint8_t> &b)
 {
 	dmodem_usb_xfer x;
@@ -228,6 +234,7 @@ int run(libusb_device_handle *h, std::vector<uint8_t> &b)
 	return err;
 }
 
+/* see libusb.h */
 uint32_t next_tag(libusb_context *ctx)
 {
 	if (++ctx->next_tag == 0)
@@ -307,6 +314,7 @@ struct Config : libusb_config_descriptor {
 	std::vector<std::vector<std::vector<libusb_endpoint_descriptor>>> eps;
 };
 
+/* see above */
 int parse_config(const std::vector<uint8_t> &raw,
 		 libusb_config_descriptor **out)
 {
@@ -509,6 +517,7 @@ void reap(libusb_context *ctx)
 
 /* ---- libusb's calls */
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_init(libusb_context **ctx)
 {
 	libusb_context *c = new (std::nothrow) libusb_context();
@@ -528,6 +537,7 @@ int LIBUSB_CALL libusb_init(libusb_context **ctx)
 	return 0;
 }
 
+/* see libusb.h */
 void LIBUSB_CALL libusb_exit(libusb_context *ctx)
 {
 	if (!ctx)
@@ -536,6 +546,7 @@ void LIBUSB_CALL libusb_exit(libusb_context *ctx)
 	delete ctx;
 }
 
+/* see libusb.h */
 int LIBUSB_CALLV libusb_set_option(libusb_context *, enum libusb_option o,
 				   ...)
 {
@@ -545,6 +556,7 @@ int LIBUSB_CALLV libusb_set_option(libusb_context *, enum libusb_option o,
 	return LIBUSB_SUCCESS;
 }
 
+/* see libusb.h */
 const char *LIBUSB_CALL libusb_strerror(int err)
 {
 	switch (err) {
@@ -579,6 +591,7 @@ const char *LIBUSB_CALL libusb_strerror(int err)
 	}
 }
 
+/* see libusb.h */
 ssize_t LIBUSB_CALL libusb_get_device_list(libusb_context *ctx,
 					   libusb_device ***list)
 {
@@ -614,6 +627,7 @@ ssize_t LIBUSB_CALL libusb_get_device_list(libusb_context *ctx,
 	return static_cast<ssize_t>(devs.size());
 }
 
+/* see libusb.h */
 void LIBUSB_CALL libusb_free_device_list(libusb_device **list,
 					 int unref_devices)
 {
@@ -625,6 +639,7 @@ void LIBUSB_CALL libusb_free_device_list(libusb_device **list,
 	free(list);
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_get_device_descriptor(libusb_device *dev,
 					     struct libusb_device_descriptor *desc)
 {
@@ -632,31 +647,37 @@ int LIBUSB_CALL libusb_get_device_descriptor(libusb_device *dev,
 	return 0;
 }
 
+/* see libusb.h */
 uint8_t LIBUSB_CALL libusb_get_bus_number(libusb_device *)
 {
 	return 1;
 }
 
+/* see libusb.h */
 uint8_t LIBUSB_CALL libusb_get_device_address(libusb_device *dev)
 {
 	return static_cast<uint8_t>(dev->index + 1);
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_get_port_numbers(libusb_device *, uint8_t *, int)
 {
 	return LIBUSB_ERROR_NOT_SUPPORTED;
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_get_device_speed(libusb_device *dev)
 {
 	return dev->speed;
 }
 
+/* see libusb.h */
 libusb_device *LIBUSB_CALL libusb_get_device(libusb_device_handle *h)
 {
 	return h->dev;
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **out)
 {
 	libusb_context *ctx = dev->ctx;
@@ -690,6 +711,7 @@ int LIBUSB_CALL libusb_open(libusb_device *dev, libusb_device_handle **out)
 	return 0;
 }
 
+/* see libusb.h */
 void LIBUSB_CALL libusb_close(libusb_device_handle *h)
 {
 	if (!h)
@@ -703,6 +725,7 @@ void LIBUSB_CALL libusb_close(libusb_device_handle *h)
 	delete h;
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device *dev,
 		struct libusb_config_descriptor **config)
 {
@@ -711,6 +734,7 @@ int LIBUSB_CALL libusb_get_active_config_descriptor(libusb_device *dev,
 	return parse_config(dev->cfg, config);
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_get_config_descriptor(libusb_device *dev,
 		uint8_t index, struct libusb_config_descriptor **config)
 {
@@ -721,12 +745,14 @@ int LIBUSB_CALL libusb_get_config_descriptor(libusb_device *dev,
 	return parse_config(dev->cfg, config);
 }
 
+/* see libusb.h */
 void LIBUSB_CALL libusb_free_config_descriptor(
 	struct libusb_config_descriptor *config)
 {
 	delete static_cast<Config *>(config);
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_set_configuration(libusb_device_handle *h, int c)
 {
 	libusb_context *ctx = h->dev->ctx;
@@ -740,22 +766,26 @@ int LIBUSB_CALL libusb_set_configuration(libusb_device_handle *h, int c)
 	return 0;
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_claim_interface(libusb_device_handle *, int)
 {
 	return 0;
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_release_interface(libusb_device_handle *, int)
 {
 	return 0;
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_set_auto_detach_kernel_driver(libusb_device_handle *,
 						     int)
 {
 	return LIBUSB_ERROR_NOT_SUPPORTED;
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_set_interface_alt_setting(libusb_device_handle *h,
 						 int itf, int alt)
 {
@@ -765,6 +795,7 @@ int LIBUSB_CALL libusb_set_interface_alt_setting(libusb_device_handle *h,
 				      sizeof(v), nullptr, 0, nullptr);
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_clear_halt(libusb_device_handle *h,
 				  unsigned char endpoint)
 {
@@ -773,6 +804,7 @@ int LIBUSB_CALL libusb_clear_halt(libusb_device_handle *h,
 				      sizeof(v), nullptr, 0, nullptr);
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_control_transfer(libusb_device_handle *h,
 	uint8_t request_type, uint8_t request, uint16_t value,
 	uint16_t index, unsigned char *data, uint16_t length,
@@ -834,6 +866,7 @@ static int sync_transfer(libusb_device_handle *h, uint8_t type,
 	return sync_error(x.status);
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_interrupt_transfer(libusb_device_handle *h,
 	unsigned char endpoint, unsigned char *data, int length,
 	int *transferred, unsigned int timeout)
@@ -842,6 +875,7 @@ int LIBUSB_CALL libusb_interrupt_transfer(libusb_device_handle *h,
 			     length, transferred, timeout);
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_bulk_transfer(libusb_device_handle *h,
 	unsigned char endpoint, unsigned char *data, int length,
 	int *transferred, unsigned int timeout)
@@ -850,6 +884,7 @@ int LIBUSB_CALL libusb_bulk_transfer(libusb_device_handle *h,
 			     transferred, timeout);
 }
 
+/* see libusb.h */
 struct libusb_transfer *LIBUSB_CALL libusb_alloc_transfer(int iso_packets)
 {
 	if (iso_packets < 0)
@@ -867,6 +902,7 @@ struct libusb_transfer *LIBUSB_CALL libusb_alloc_transfer(int iso_packets)
 	return t;
 }
 
+/* see libusb.h */
 void LIBUSB_CALL libusb_free_transfer(struct libusb_transfer *t)
 {
 	if (!t)
@@ -893,6 +929,7 @@ void LIBUSB_CALL libusb_free_transfer(struct libusb_transfer *t)
 	free(p);
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_submit_transfer(struct libusb_transfer *t)
 {
 	Priv *p = priv_of(t);
@@ -958,6 +995,7 @@ int LIBUSB_CALL libusb_submit_transfer(struct libusb_transfer *t)
 	return 0;
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_cancel_transfer(struct libusb_transfer *t)
 {
 	Priv *p = priv_of(t);
@@ -970,6 +1008,7 @@ int LIBUSB_CALL libusb_cancel_transfer(struct libusb_transfer *t)
 	return err == LIBUSB_ERROR_NO_DEVICE ? err : 0;
 }
 
+/* see libusb.h */
 int LIBUSB_CALL libusb_handle_events_timeout_completed(libusb_context *ctx,
 	struct timeval *tv, int *completed)
 {
@@ -988,11 +1027,13 @@ int LIBUSB_CALL libusb_handle_events_timeout_completed(libusb_context *ctx,
 	return 0;
 }
 
+/* see libusb.h */
 const struct libusb_pollfd **LIBUSB_CALL libusb_get_pollfds(libusb_context *)
 {
 	return nullptr;
 }
 
+/* see libusb.h */
 void LIBUSB_CALL libusb_free_pollfds(const struct libusb_pollfd **)
 {
 }
@@ -1004,6 +1045,7 @@ namespace usb9x {
 
 namespace {
 
+/* a Win32 error as libusb's */
 int win32_error(DWORD e)
 {
 	switch (e) {
@@ -1035,11 +1077,13 @@ int win32_error(DWORD e)
 
 class Win32Pending : public Pending {
 public:
+	/* an overlapped IOCTL's state, its event made */
 	explicit Win32Pending(HANDLE h_) : h(h_)
 	{
 		memset(&ov, 0, sizeof(ov));
 		ov.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
 	}
+	/* an overlapped IOCTL's state, its event made */
 	~Win32Pending() override
 	{
 		if (ov.hEvent)
@@ -1052,6 +1096,7 @@ public:
 
 class Win32Io : public Io {
 public:
+	/* see usb9x::Io */
 	int open(unsigned n, intptr_t *h) override
 	{
 		char name[32];
@@ -1069,11 +1114,13 @@ public:
 		return 0;
 	}
 
+	/* see usb9x::Io */
 	void close(intptr_t h) override
 	{
 		CloseHandle(reinterpret_cast<HANDLE>(h));
 	}
 
+	/* see above */
 	int ioctl(intptr_t h, uint32_t code, const void *in, uint32_t inlen,
 		  void *out, uint32_t outlen, uint32_t *got) override
 	{
@@ -1091,6 +1138,7 @@ public:
 		return 0;
 	}
 
+	/* see usb9x::Io */
 	Pending *start(intptr_t h, void *buf, uint32_t len, int *err) override
 	{
 		Win32Pending *p = new (std::nothrow)
@@ -1110,6 +1158,7 @@ public:
 		return p;
 	}
 
+	/* see usb9x::Io */
 	bool done(Pending *pending, int *err) override
 	{
 		Win32Pending *p = static_cast<Win32Pending *>(pending);
@@ -1120,6 +1169,7 @@ public:
 		return true;
 	}
 
+	/* see usb9x::Io */
 	void wait(const std::vector<Pending *> &ps, unsigned ms) override
 	{
 		HANDLE ev[MAXIMUM_WAIT_OBJECTS];
@@ -1136,6 +1186,7 @@ public:
 
 } // namespace
 
+/* see usb_win9x.h */
 std::shared_ptr<Io> win32_io()
 {
 	static std::shared_ptr<Io> io = std::make_shared<Win32Io>();

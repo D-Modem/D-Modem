@@ -80,6 +80,7 @@ public:
 	std::vector<uint8_t> last_setup;
 	int cancels = 0;
 
+	/* see usb9x::Io (usb_win9x.h) */
 	int open(unsigned n, intptr_t *h) override
 	{
 		if (n != 0)
@@ -89,6 +90,7 @@ public:
 		return 0;
 	}
 
+	/* see usb9x::Io (usb_win9x.h) */
 	void close(intptr_t h) override
 	{
 		open_.erase(h);
@@ -101,6 +103,7 @@ public:
 		}
 	}
 
+	/* h owns the modem from now on, if no other handle does */
 	bool take(intptr_t h)
 	{
 		if (owner && owner != h)
@@ -109,11 +112,13 @@ public:
 		return true;
 	}
 
+	/* the transfer's state into its IOCTL buffer */
 	static void put_xfer(Op *o)
 	{
 		memcpy(o->buf, &o->x, sizeof(o->x));
 	}
 
+	/* o done with status */
 	void finish(Op *o, uint32_t status)
 	{
 		o->x.status = status;
@@ -122,6 +127,7 @@ public:
 		put_xfer(o);
 	}
 
+	/* see above */
 	int ioctl(intptr_t h, uint32_t code, const void *in, uint32_t inlen,
 		  void *out, uint32_t outlen, uint32_t *got) override
 	{
@@ -174,6 +180,7 @@ public:
 		}
 	}
 
+	/* see usb9x::Io (usb_win9x.h) */
 	usb9x::Pending *start(intptr_t h, void *buf, uint32_t len,
 			      int *err) override
 	{
@@ -239,6 +246,7 @@ public:
 		return o;
 	}
 
+	/* see usb9x::Io (usb_win9x.h) */
 	bool done(usb9x::Pending *p, int *err) override
 	{
 		Op *o = static_cast<Op *>(p);
@@ -248,6 +256,7 @@ public:
 		return true;
 	}
 
+	/* see usb9x::Io (usb_win9x.h) */
 	void wait(const std::vector<usb9x::Pending *> &ps, unsigned ms) override
 	{
 		for (usb9x::Pending *p : ps) {
@@ -273,6 +282,7 @@ public:
 	}
 };
 
+/* an Op usb_win9x.cpp deleted: out of the driver's list */
 Op::~Op()
 {
 	d->forget(this);
@@ -280,6 +290,7 @@ Op::~Op()
 
 std::shared_ptr<FakeDriver> drv;
 
+/* see libusb.h */
 libusb_device_handle *open_modem(libusb_context *ctx, libusb_device **dev)
 {
 	libusb_device **list = nullptr;
@@ -295,6 +306,7 @@ libusb_device_handle *open_modem(libusb_context *ctx, libusb_device **dev)
 	return h;
 }
 
+/* see above */
 void test_list_and_descriptors()
 {
 	libusb_context *ctx;
@@ -344,6 +356,7 @@ void test_list_and_descriptors()
 	libusb_exit(ctx);
 }
 
+/* see above */
 void test_one_owner()
 {
 	libusb_context *a, *b;
@@ -365,6 +378,7 @@ void test_one_owner()
 	libusb_exit(b);
 }
 
+/* see above */
 void test_control()
 {
 	libusb_context *ctx;
@@ -410,12 +424,14 @@ void test_control()
 	libusb_exit(ctx);
 }
 
+/* see libusb.h */
 void LIBUSB_CALL order_cb(libusb_transfer *t)
 {
 	auto *v = static_cast<std::vector<libusb_transfer *> *>(t->user_data);
 	v->push_back(t);
 }
 
+/* see above */
 void test_iso()
 {
 	libusb_context *ctx;
@@ -487,12 +503,14 @@ void test_iso()
 int intr_done;
 libusb_transfer_status intr_status;
 
+/* see libusb.h */
 void LIBUSB_CALL intr_cb(libusb_transfer *t)
 {
 	intr_done++;
 	intr_status = t->status;
 }
 
+/* see above */
 void test_interrupt()
 {
 	libusb_context *ctx;
@@ -541,6 +559,7 @@ void test_interrupt()
 
 } // namespace
 
+/* see above */
 int main()
 {
 	drv = std::make_shared<FakeDriver>();
