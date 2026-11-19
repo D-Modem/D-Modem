@@ -113,6 +113,12 @@ generic WinUSB driver, not the drivers of their manufacturers:
 
 On Windows 7 and 8, use libusbK or UsbDk instead of WinUSB.
 
+On Windows 98 SE, ME, 2000 and XP, use the `win98` build. Give the modem
+the driver of D-Modem: `dmusb.inf` and `dmodem.sys` of the
+[windows-driver](https://github.com/D-Modem/windows-driver) repository.
+Then use `--usb list` and `--usb auto` as above. Nobody tried this on a
+real Windows 98 SE yet.
+
 ## What is not available on Windows
 
 These items are not available on Windows:

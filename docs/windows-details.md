@@ -24,7 +24,7 @@ Windows 7 is the oldest Windows on which D-Modem runs:
 | Part | Windows |
 |---|---|
 | dmodemd.exe, dmodem-driver.exe | 7 and later |
-| USB modems (`--usb`) | 8.1 and later on WinUSB; 7 and 8 on libusbK or UsbDk ([below](#windows-7-and-8)) |
+| USB modems (`--usb`) | 8.1 and later on WinUSB; 7 and 8 on libusbK or UsbDk ([below](#windows-7-and-8)); 98 SE, ME, 2000 and XP on `dmodem.sys` of D-Modem ([below](#windows-98-se-me-2000-and-xp)) |
 | Virtual modem driver (`--driver`) | 10 (1803 and later): `dmodemvm.dll`, `dmodem.inf`; 7, 8 and 8.1: `dmodemvm7.dll`, `dmodem7.inf` ([below](#windows-7-8-and-81)) |
 
 These parts are only for POSIX and do not build for Windows:
@@ -273,6 +273,19 @@ Before Windows 8.1, WinUSB cannot stream. It has no isochronous transfers there,
 The Microsoft OS 2.0 descriptors of the pico-serial sticks do not help there. Windows 7 and 8 do not read them, and the WinUSB that they would give cannot stream.
 
 When the driver cannot stream, dmodemd.exe tells this, and what to do: "WinUSB streams only from Windows 8.1 on: on Windows 7 and 8 give the modem libusbK with Zadig, or install UsbDk". `--usb list` adds that you cannot use a modem that it shows as ready on WinUSB. `dmodem-driver usb` tells this after it installs the driver.
+
+#### Windows 98 SE, ME, 2000 and XP
+
+These versions of Windows do not have WinUSB or UsbDk. Thus, libusb cannot operate a USB device on them. The `win98` build uses the driver of D-Modem in place of WinUSB: `dmodem.sys` of the [windows-driver](https://github.com/D-Modem/windows-driver) repository.
+
+- **The driver.** `dmusb.inf` (in windows-driver) installs `dmodem.sys` as the driver of the USB modem. One INF and one `dmodem.sys` are for all four versions of Windows. The driver sends the transfers of dmodemd.exe to the USB stack of Windows: control, bulk, interrupt and isochronous transfers. The SmartUSB56 and the pico-serial Line stream with isochronous transfers.
+- **The device.** Each modem is `\\.\DModemUsb<n>`. `--usb list` shows it on bus 1 at address `n + 1`. Thus, `--usb 1:1` is `\\.\DModemUsb0`.
+- **One process.** Only one process can use the modem at a time. A second dmodemd.exe gets "Resource busy".
+- **The code.** `usb_win9x.cpp` has the calls of libusb that `usb_line.cpp` uses, on the IOCTLs of `dmodem.sys` (`dmodem_usb.h`). It replaces libusb in the `dmodem_libusb` target. The build gets only `libusb.h` from the libusb release. CMake selects it when `DMODEM_WINNT` is less than `0x0600` (`DMODEM_USB_WIN9X`).
+- **USB 2.0.** Windows 98 SE and ME have no USB 2.0 stack. The Agere modem streams only at high speed. Thus, it does not operate on them.
+- **Tests.** `usb_win9x_test` (label `quick`) does a check of `usb_win9x.cpp` against a fake driver. It needs no Windows: it runs on Linux, and under Wine in the `windows` job of the CI.
+
+**Nobody has tried it on a real Windows 98 SE, ME, 2000 or XP yet.**
 
 #### How dmodemd.exe runs a USB line
 

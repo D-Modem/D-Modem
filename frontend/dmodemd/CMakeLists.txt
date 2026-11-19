@@ -278,6 +278,24 @@ if(DMODEM_DMODEMD)
 			dmodem_usb_fake(${_f} main.cpp ${_usb_headers})
 		endforeach()
 	endif()
+	# test/usb_win9x_test.cpp: usb_win9x.cpp (libusb's calls on
+	# dmodem.sys, for Windows 98 SE to XP) on a fake driver: no Windows
+	# needed, only libusb's header
+	if(DMODEM_TESTS AND (WIN32 OR APPLE) AND DMODEM_USB)
+		set(_usb9x_headers
+			$<TARGET_PROPERTY:dmodem_libusb,INTERFACE_INCLUDE_DIRECTORIES>)
+	elseif(DMODEM_TESTS AND LIBUSB_FOUND)
+		set(_usb9x_headers ${LIBUSB_INCLUDE_DIRS})
+	endif()
+	if(DEFINED _usb9x_headers)
+		add_executable(usb_win9x_test test/usb_win9x_test.cpp
+			usb_win9x.cpp)
+		target_include_directories(usb_win9x_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR} ${_usb9x_headers})
+		dmodem_flags(usb_win9x_test EXTRA)
+		dmodem_add_test(usb_win9x $<TARGET_FILE:usb_win9x_test>)
+		set_property(TEST usb_win9x APPEND PROPERTY LABELS quick)
+	endif()
 	# the simulated telephone exchange of the ALSA and USB lines' tests
 	if(DMODEM_TESTS AND (ALSA_FOUND OR LIBUSB_FOUND OR _usb_builtin_fakes))
 		add_executable(line_exchange test/line_exchange.cpp)
