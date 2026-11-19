@@ -1,0 +1,12 @@
+/*
+ * SPDX-License-Identifier: AGPL-3.0-only
+ * Copyright (C) 2026 D-Modem Authors
+ *
+ * dmodemd.rc - dmodemd.exe's icon: the program's, and the tray's
+ *              (windows_tray.cpp, IDI_DMODEMD).  dmodemd.ico is the
+ *              Windows app's (D-Modem/gui, windows/res/dmodem.ico):
+ *              16, 32 and 48 pixels in 256 colours for Windows 9x, and
+ *              in 32 bit colour for later Windows.
+ */
+
+1 ICON "dmodemd.ico"

@@ -15,7 +15,7 @@ What `cmake -B build -D<NAME>=<value>` takes, from the `option()`s and cache set
 | `DMODEM_FREESWITCH` | ON, but OFF on Windows | Build mod_dmodem when FreeSWITCH is found | `CMakeLists.txt` |
 | `DMODEM_ARI` | ON, but OFF on Windows | Build dmodem-ari (D-Modem as an Asterisk ARI application) | `CMakeLists.txt` |
 | `DMODEM_TESTS` | ON | Build the test programs (ctest) | `CMakeLists.txt` |
-| `DMODEM_USB` | ON | dmodemd's --usb on Windows and macOS (libusb, fetched) | `CMakeLists.txt` |
+| `DMODEM_USB` | ${_dmodem_usb_default} | dmodemd's --usb on Windows and macOS (libusb, fetched) | `CMakeLists.txt` |
 | `DMODEM_WERROR` | OFF | Treat compiler warnings as errors (CI) | `CMakeLists.txt` |
 | `DMODEM_TEST_BUILTIN_FAKES` | OFF | Linux: also test dmodemd with the fake USB modems linked in | `frontend/dmodemd/CMakeLists.txt` |
 
@@ -46,6 +46,7 @@ What `cmake -B build -D<NAME>=<value>` takes, from the `option()`s and cache set
 | `DMODEM_3COM_DIR` | `(depends on the system)` | path | tc110.bin, the 3Com TC110 flash (interop tests) | `dsp/test/CMakeLists.txt` |
 | `DMODEM_INTEL_DIR` | `(depends on the system)` | path | 537core.lib and wwh_dflt.c of the Intel 537EP soft modem (interop tests) | `dsp/test/CMakeLists.txt` |
 | `DMODEM_HOST_LINE_EXCHANGE` | `(depends on the system)` | filepath | a Linux build's line_exchange (Windows USB tests) | `frontend/dmodemd/CMakeLists.txt` |
+| `DMODEM_WINNT` | `(depends on the system)` | string | _WIN32_WINNT: the oldest Windows to run on | `platforms/windows/clang-retro.cmake` |
 | `DMODEM_UMDF1_INCLUDE` | `(depends on the system)` | path | UMDF 1.9's headers (wudfddi.h's directory) | `platforms/windows/winmodem/CMakeLists.txt` |
 | `DMODEM_WDF_INCLUDE` | `(depends on the system)` | path | UMDF 2.15's headers (wdf.h's directory) | `platforms/windows/winmodem/CMakeLists.txt` |
 | `DMODEM_WDF_STUB` | `(depends on the system)` | filepath | the WDK's WdfDriverStubUm.lib (UMDF 2.15, x64) | `platforms/windows/winmodem/CMakeLists.txt` |

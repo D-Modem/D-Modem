@@ -650,6 +650,19 @@ static const u8 XID_FI = 0x82, XID_GROUP = 0xf0, XID_ZYXEL = 0xff;
 static const u8 PI_NAME = 0xff, PI_OPT_CMD = 0xf1, PI_OPT_RSP = 0xfe,
 	PI_Y_CMD = 0xf2, PI_Y_RSP = 0xfd;
 
+/* 32 random bits for the PKDS value.  (clang-retro's builds for
+   Windows before XP: dmodem_retro.h's, as MinGW's std::random_device is
+   rand_s(), which those lack: it throws there) */
+static u32 zdes_random()
+{
+#ifdef DMODEM_RETRO_RANDOM
+	return dmodem_retro_random();
+#else
+	std::random_device rd;
+	return static_cast<u32>(rd());
+#endif
+}
+
 /* the link is up: with S102, our PKDS value (unless S102 bit 2), our
    XID command, and the I frames held until the remote's options come
    (T1 for them) */
@@ -660,9 +673,8 @@ void Lapb::zdes_start()
 	if (!(zdes_ & ZDES_ON))
 		return;
 	if (!(zdes_ & ZDES_NO_PKDS)) {
-		std::random_device rd;
 		for (int i = 0; i < ZDES_PKDS; i += 4) {
-			const u32 r = rd();
+			const u32 r = zdes_random();
 			for (int k = 0; k < 4; k++)
 				zx_[i + k] = static_cast<u8>(r >> (8 * k));
 		}

@@ -46,7 +46,36 @@ These items have not run:
 
 ## Building
 
-The usual build is a cross build from Linux. On Debian or Ubuntu:
+The usual build uses the toolchain of [clang-retro](https://github.com/clang-retro/dos-sdk) (the `clang-dos` package: Clang, lld, and the mingw-w64 sysroots for each Windows version, with `msvcrt.dll` and libc++). On Linux:
+
+    sh dos-sdk/packaging/get-toolchain.sh /opt/clang-dos
+    cmake -B build-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=platforms/windows/clang-retro.cmake \
+        -DCLANG_DOS=/opt/clang-dos -DCLANG_RETRO_CONFIG=win7-x64
+    cmake --build build-win
+
+### clang-retro
+
+**The target.** `CLANG_RETRO_CONFIG` is the name of a `.cfg` file in `$CLANG_DOS/bin` (default `win98`). The file gives the target triple, the sysroot and the linker. The toolchain file reads the Windows version from the triple and sets `DMODEM_WINNT` (`_WIN32_WINNT`) to it. Windows 98 SE is `0x0400`, as NT 4.0. The CI builds two targets:
+- `win7-x64`: Windows 7 and later, 64 bit. The CI runs the tests under Wine on this build.
+- `win98`: Windows 98 SE, ME, 2000, XP and later, 32 bit (i486). The CI checks its imports with `check-imports.py` of clang-retro, against Windows 9x and against NT 4.0.
+
+**Missing functions.** The sysroots do not have winpthreads. `platforms/windows/clang-retro/dmodem_retro.h` gives `clock_gettime()` (on the performance counter and the system time). The toolchain file includes it in each C++ source (`-include`). Before Windows XP, `std::random_device` of libc++ (`rand_s()`) is not available. `dmodem_retro_random()` (`dmodem_retro.c`) is used in its place.
+
+**libre before Vista.** For a `DMODEM_WINNT` below `0x0600`, `cmake/libre-win32-legacy.patch` changes libre:
+- No qWAVE (QoS).
+- Its own `inet_pton()` and `inet_ntop()`.
+- A condition variable on a semaphore, and `call_once()` on a flag, in place of those of Vista.
+- `getaddrinfo()` from `wspiapi.h` before Windows XP.
+- The digests of Mbed TLS, not the SHA-256 of CryptoAPI.
+- No `CaptureStackBackTrace()` before Windows XP.
+
+`cmake/mbedtls-win32-legacy.h` builds Mbed TLS without `bcrypt.dll` and without `vsnprintf_s()`.
+
+**Windows 98 SE.** The 32-bit build needs `msvcrt.dll`, `ws2_32.dll` (Winsock 2) and `iphlpapi.dll`. Windows 98 SE has them. Windows 95 does not have them all.
+
+### MinGW-w64
+
+You can also build with MinGW-w64. On Debian or Ubuntu:
 
     sudo apt-get install cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix clang lld
     cmake -B build-win -G Ninja -DCMAKE_TOOLCHAIN_FILE=platforms/windows/mingw-w64.cmake
@@ -139,6 +168,18 @@ The options are those of Linux, without the options that are only for POSIX (`dm
 The modem keeps its line data (the V.34/V.90 parameters that it learns) in `%LOCALAPPDATA%\dmodem\data.<name>`.
 
 The firewall of Windows asks one time if dmodemd can use the network. SIP and RTP need it.
+
+### The icon in the notification area
+
+dmodemd puts an icon in the notification area (`frontend/dmodemd/windows_tray.cpp`). The tooltip of the icon is "D-Modem" and the version (`dcore::Modem::version`, for example "D-Modem 1.0.0").
+- A double-click opens the log window.
+- A right-click opens a menu: "View Logs", "About" and "Exit". "Exit" stops the modem as Ctrl+C does (`RunLoop::stop()`). Then dmodemd saves its data and stops.
+
+**The log window.** dmodemd sends `stdout` and `stderr` through two pipes. A thread reads each pipe. It writes the text to the previous destination (the console, a file or a pipe), and it adds the text to the log. The log window shows the last 48 KB of the log in a read-only edit control. When you close the window, it is hidden and the log continues. When dmodemd stops, it writes the remaining text in the pipes, and the streams go back to their previous destinations.
+
+**Old Windows.** The icon uses only the ANSI functions and the Windows 95 size of `NOTIFYICONDATA`. The icon comes back when Explorer starts again (the `TaskbarCreated` message). The icon itself (`frontend/dmodemd/dmodemd.ico`) is the icon of the Windows app, with 256-color images for Windows 9x.
+
+`--no-tray` starts dmodemd without the icon and without the pipes. The tests under Wine use it.
 
 ### TCP (`--tcp`, the default)
 

@@ -43,3 +43,4 @@ This page gives all the options of `dmodemd`, from its option table (`frontend/d
 | `--pipe-connect` | text | `none` | Windows | The DTE a named pipe another program makes (a VM's COM port) |
 | `--tcp` | text | `127.0.0.1:2323` | Windows | The DTE a TCP connection on [address:]port. |
 | `--driver` | text | `none` | Windows | The DTE D-Modem's virtual modem driver: its COM port's name (COM7), or auto. |
+| `--no-tray` |  |  | Windows | No icon in the notification area (the tray) and no log window. |

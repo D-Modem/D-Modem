@@ -116,7 +116,7 @@ void lightness(const T44Image &img, std::vector<unsigned char> *y)
 void find_mask(const T44Image &img, std::vector<unsigned char> *mask)
 {
 	const u32 w = img.width, h = img.height;
-	std::vector<unsigned char> y, hm, m;
+	std::vector<unsigned char> y, hm;
 	lightness(img, &y);
 	hm.resize(y.size());
 	for (u32 r = 0; r < h; r++) {

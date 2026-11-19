@@ -86,7 +86,7 @@ endif()
 # system the build runs on)
 # (MinGW-w64: the compiler and target this build's toolchain file took;
 # Haiku: its packages, extracted, and cmake/rules.cmake's -fPIC)
-foreach(_v CMAKE_TOOLCHAIN_FILE CMAKE_USER_MAKE_RULES_OVERRIDE MINGW_TRIPLE MINGW_COMPILER HAIKU_SYSROOT HAIKU_TRIPLE
+foreach(_v CMAKE_TOOLCHAIN_FILE CMAKE_USER_MAKE_RULES_OVERRIDE MINGW_TRIPLE MINGW_COMPILER CLANG_DOS CLANG_RETRO_CONFIG HAIKU_SYSROOT HAIKU_TRIPLE
 	CMAKE_SYSTEM_NAME CMAKE_SYSTEM_VERSION
 	CMAKE_SYSROOT CMAKE_OSX_ARCHITECTURES CMAKE_OSX_SYSROOT
 	CMAKE_OSX_DEPLOYMENT_TARGET ANDROID_ABI ANDROID_PLATFORM
@@ -165,6 +165,15 @@ endfunction()
 # the digests: Mbed TLS's crypto library into the same prefix, or the
 # system's OpenSSL
 if(DMODEM_CRYPTO STREQUAL "mbedtls")
+	# (Windows before Vista: cmake/mbedtls-win32-legacy.h, no bcrypt.dll
+	# and no vsnprintf_s())
+	set(_tls_legacy "")
+	if(WIN32 AND DMODEM_WINNT)
+		math(EXPR _winnt "${DMODEM_WINNT}")
+		if(_winnt LESS 1536)
+			set(_tls_legacy "-DMBEDTLS_USER_CONFIG_FILE=${CMAKE_CURRENT_LIST_DIR}/mbedtls-win32-legacy.h")
+		endif()
+	endif()
 	set(_tls_lib ${_re_prefix}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}mbedcrypto${CMAKE_STATIC_LIBRARY_SUFFIX})
 	if(NOT EXISTS ${_tls_lib})
 		dmodem_fetch_build(mbedtls ${DMODEM_MBEDTLS_REPO}
@@ -173,7 +182,7 @@ if(DMODEM_CRYPTO STREQUAL "mbedtls")
 			-DENABLE_TESTING=OFF
 			# (its warnings its own: Clang for MinGW-w64 ignores
 			# its gnu_printf format attribute, and says so)
-			-DMBEDTLS_FATAL_WARNINGS=OFF)
+			-DMBEDTLS_FATAL_WARNINGS=OFF ${_tls_legacy})
 	endif()
 	set(_re_crypto -DUSE_MBEDTLS=ON -DUSE_OPENSSL=OFF
 		-DMBEDTLS_HINTS=${_re_prefix}
@@ -214,6 +223,16 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
 	list(APPEND libre_PATCHES ${CMAKE_CURRENT_LIST_DIR}/../platforms/haiku/libre-haiku.patch)
 endif()
+# (Windows: cmake/libre-win32-legacy.patch, for the Windows versions
+# before 10 that DMODEM_WINNT asks for: no qWAVE before Vista, its own
+# inet_pton(), condition variables and call_once() before Vista,
+# getaddrinfo() from wspiapi.h before XP; Mbed TLS's digests, not
+# CryptoAPI's SHA-256, which 9x, NT 4 and 2000 lack)
+if(WIN32)
+	list(APPEND libre_PATCHES ${CMAKE_CURRENT_LIST_DIR}/libre-win32-legacy.patch)
+	set(_re_winnt -DRE_WIN32_WINNT=${DMODEM_WINNT})
+	set(_re_stamp ${_re_stamp}-${DMODEM_WINNT})
+endif()
 foreach(_patch ${libre_PATCHES})
 	file(MD5 ${_patch} _sum)
 	string(SUBSTRING ${_sum} 0 8 _sum)
@@ -223,7 +242,7 @@ if(NOT EXISTS ${_re_lib} OR NOT EXISTS ${_re_stamp})
 	dmodem_fetch_build(libre ${DMODEM_LIBRE_REPO} ${DMODEM_LIBRE_TAG}
 		${_re_src} ${_re_build} ${_re_log} ${_cross} ${_re_crypto}
 		"-DCMAKE_C_FLAGS=${_re_cflags}"
-		-DLIBRE_BUILD_SHARED=OFF -DLIBRE_BUILD_STATIC=ON
+		-DLIBRE_BUILD_SHARED=OFF -DLIBRE_BUILD_STATIC=ON ${_re_winnt}
 		-DUSE_REM=OFF -DUSE_BFCP=OFF -DUSE_PCP=OFF -DUSE_RTMP=OFF
 		-DCMAKE_DISABLE_FIND_PACKAGE_ZLIB=ON)
 	file(TOUCH ${_re_stamp})

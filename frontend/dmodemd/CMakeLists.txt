@@ -59,8 +59,12 @@ if(DMODEM_DMODEMD)
 	if(WIN32)
 		# (Windows: its DTE a COM port or TCP, windows_dte.cpp; the
 		# system's timer at 1 ms, winmm)
-		add_executable(dmodemd main_windows.cpp)
-		target_link_libraries(dmodemd PRIVATE dmodem_sip winmm)
+		# (its icon in the tray and its log window, windows_tray.cpp:
+		# the shell's Shell_NotifyIcon; dmodemd.rc its icon)
+		add_executable(dmodemd main_windows.cpp windows_tray.cpp
+			dmodemd.rc)
+		target_link_libraries(dmodemd PRIVATE dmodem_sip winmm shell32
+			user32 gdi32)
 		install(TARGETS dmodemd RUNTIME
 			DESTINATION ${CMAKE_INSTALL_BINDIR})
 	else()
@@ -94,8 +98,11 @@ if(DMODEM_DMODEMD)
 			${PROJECT_SOURCE_DIR}/dsp)
 		target_link_libraries(dmodemd_fake_${fake} PRIVATE dmodem_sip)
 		if(WIN32)
+			# (main_windows.cpp's tray, windows_tray.cpp)
+			target_sources(dmodemd_fake_${fake} PRIVATE
+				windows_tray.cpp dmodemd.rc)
 			target_link_libraries(dmodemd_fake_${fake} PRIVATE
-				winmm ws2_32)
+				winmm ws2_32 shell32 user32 gdi32)
 		endif()
 		dmodem_flags(dmodemd_fake_${fake})
 	endfunction()
@@ -354,8 +361,10 @@ if(DMODEM_DMODEMD)
 		dmodem_flags(cx_daa_test EXTRA NOOPT)
 		dmodem_gtest(cx_daa_test LABELS quick)
 		# test/pipe_test.cpp: dmodemd.exe's named pipe DTE, both
-		# ways (and a bridge for frontend/asterisk/test's WIN_PIPE=1)
-		if(WIN32)
+		# ways (and a bridge for frontend/asterisk/test's WIN_PIPE=1).
+		# (Windows 7's, as the driver's: not for a clang-retro build
+		# for Windows 98 SE, which has no dmodem_winlink)
+		if(WIN32 AND TARGET dmodem_winlink)
 			add_executable(pipe_test test/pipe_test.cpp)
 			dmodem_flags(pipe_test EXTRA NOOPT)
 			target_link_libraries(pipe_test PRIVATE ws2_32)
