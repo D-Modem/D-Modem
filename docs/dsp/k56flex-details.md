@@ -112,7 +112,11 @@ clear gets an MS without the NS block, and the call is V.34 [seen].
 
 We copied our NS block from the CL template of the client (`... 83 21`)
 and added 0x40 to the last octet. Most possibly, the 0x40 identifies the
-digital modem [inferred]. When the client also has V.90 enabled, its MS
+digital modem [inferred]. The CL parser of the Conexant HCF controller (hcfpcimodem
+1.21) refuses this 7-octet block. It reads 2 more octets when bit 8 of the
+7th octet is 0. SM56 does not train with the blocks that this parser
+accepts [seen in emulation and in our runs]. Refer to
+[v8bis-details.md](v8bis-details.md#against-other-modems). When the client also has V.90 enabled, its MS
 sets bits 0 and 1 of `o[6]` [seen in code].
 
 **V.8.** The CM has no K56flex bit [seen]:
@@ -780,6 +784,9 @@ The firmware shows the data that the modems report about a call:
 - An A-law client: what sets its law, and do the INFO1a codes 5 and 13
   operate? Not tested.
 - The meaning of the x bit of INFO1a and of NS octets 3 to 7.
+- Which NS block does a real K56flex server send? The HCF controller of
+  Conexant reads 9 octets (`b5 02 00 94 81 83 xx yy zz`). SM56 trains only
+  with our 7-octet block.
 - Why is the data of sm56 after a renegotiation wrong? Why does its
   training in a retrain fail about half of the time? The probable cause
   is the table that sm56 adapts in data mode.

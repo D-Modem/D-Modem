@@ -59,7 +59,8 @@ two seconds more to start. This is the time of the exchange.
   the `+A8x` reports).
 - We tested it between two D-Modems, and against the SM56 modem of Motorola as a
   K56flex client.
-- Conexant modems of the V.92 period (HSF, HDA, HCF) possibly do not answer
-  V.8bis. They have V.8bis only for K56flex and V.70, which they do not have.
-  With these modems, the call continues with the normal answer tone. Refer to
-  [the technical details](v8bis-details.md#against-other-modems).
+- Conexant modems do not always answer V.8bis. The HSF engine of the Linux
+  driver (also for the HDA modems of Conexant) has no V.8bis. One HCF modem with
+  K56flex did not answer V.8bis (issue #119), and we do not know the cause
+  yet. With these modems, the call continues with the normal answer tone.
+  Refer to [the technical details](v8bis-details.md#against-other-modems).
