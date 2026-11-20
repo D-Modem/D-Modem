@@ -181,7 +181,9 @@ if(DMODEM_DMODEMD)
 		# under Wine, on the exchange of a Linux build
 		# (DMODEM_HOST_LINE_EXCHANGE: its line_exchange); macOS's on
 		# its own (below, with Linux's)
-		if(DMODEM_TESTS AND WIN32)
+		# (not before Vista, DMODEM_USB_WIN9X: there libusb is
+		# usb_win9x.cpp, which usb_win9x_test tests, below)
+		if(DMODEM_TESTS AND WIN32 AND NOT DMODEM_USB_WIN9X)
 			set(DMODEM_HOST_LINE_EXCHANGE
 				"${PROJECT_SOURCE_DIR}/build/dmodemd/line_exchange"
 				CACHE FILEPATH
@@ -208,7 +210,7 @@ if(DMODEM_DMODEMD)
 					dmodemd_pico_line_windows PROPERTIES
 					LABELS alsa TIMEOUT 400 RUN_SERIAL TRUE)
 			endif()
-		elseif(DMODEM_TESTS)
+		elseif(DMODEM_TESTS AND NOT WIN32)
 			set(_usb_builtin_fakes ON)
 		endif()
 	elseif(LIBUSB_FOUND)
@@ -277,6 +279,24 @@ if(DMODEM_DMODEMD)
 		foreach(_f st7554 pico_line pico_wb agere apple cadmus2)
 			dmodem_usb_fake(${_f} main.cpp ${_usb_headers})
 		endforeach()
+	endif()
+	# test/usb_win9x_test.cpp: usb_win9x.cpp (libusb's calls on
+	# dmodem.sys, for Windows 98 SE to XP) on a fake driver: no Windows
+	# needed, only libusb's header
+	if(DMODEM_TESTS AND (WIN32 OR APPLE) AND DMODEM_USB)
+		set(_usb9x_headers
+			$<TARGET_PROPERTY:dmodem_libusb,INTERFACE_INCLUDE_DIRECTORIES>)
+	elseif(DMODEM_TESTS AND LIBUSB_FOUND)
+		set(_usb9x_headers ${LIBUSB_INCLUDE_DIRS})
+	endif()
+	if(DEFINED _usb9x_headers)
+		add_executable(usb_win9x_test test/usb_win9x_test.cpp
+			usb_win9x.cpp)
+		target_include_directories(usb_win9x_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR} ${_usb9x_headers})
+		dmodem_flags(usb_win9x_test EXTRA)
+		dmodem_add_test(usb_win9x $<TARGET_FILE:usb_win9x_test>)
+		set_property(TEST usb_win9x APPEND PROPERTY LABELS quick)
 	endif()
 	# the simulated telephone exchange of the ALSA and USB lines' tests
 	if(DMODEM_TESTS AND (ALSA_FOUND OR LIBUSB_FOUND OR _usb_builtin_fakes))

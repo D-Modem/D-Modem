@@ -12,7 +12,9 @@
 #   or its Visual Studio one;
 # - macOS (IOKit): Apple's Clang, with the release's own Xcode/config.h,
 #   for every architecture of CMAKE_OSX_ARCHITECTURES (a universal
-#   dmodemd needs a universal libusb, which Homebrew's is not).
+#   dmodemd needs a universal libusb, which Homebrew's is not);
+# - Windows 98 SE to XP (DMODEM_USB_WIN9X): only its libusb.h, for
+#   usb_win9x.cpp (libusb's calls on D-Modem's dmodem.sys).
 # DMODEM_LIBUSB_DIR: an unpacked libusb source tree to use instead.
 #
 # libusb is LGPL-2.1-or-later (LICENSING.md).
@@ -47,6 +49,20 @@ if(NOT EXISTS ${_usb_src}/libusb/core.c)
 	message(FATAL_ERROR "libusb: no source tree in ${_usb_src}")
 endif()
 message(STATUS "libusb: ${_usb_src}")
+
+# Windows before Vista (DMODEM_USB_WIN9X): libusb's header only, and
+# libusb's calls on dmodem.sys (frontend/dmodemd/usb_win9x.cpp) as
+# dmodem_libusb
+if(WIN32 AND DMODEM_USB_WIN9X)
+	add_library(dmodem_libusb STATIC
+		${PROJECT_SOURCE_DIR}/frontend/dmodemd/usb_win9x.cpp)
+	target_include_directories(dmodem_libusb SYSTEM PUBLIC
+		${_usb_src}/libusb)
+	target_include_directories(dmodem_libusb PRIVATE
+		${PROJECT_SOURCE_DIR}/frontend/dmodemd)
+	dmodem_flags(dmodem_libusb EXTRA)
+	return()
+endif()
 
 set(_usb_cfg ${CMAKE_BINARY_DIR}/libusb-config)
 if(APPLE)

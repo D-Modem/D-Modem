@@ -15,7 +15,7 @@ What `cmake -B build -D<NAME>=<value>` takes, from the `option()`s and cache set
 | `DMODEM_FREESWITCH` | ON, but OFF on Windows | Build mod_dmodem when FreeSWITCH is found | `CMakeLists.txt` |
 | `DMODEM_ARI` | ON, but OFF on Windows | Build dmodem-ari (D-Modem as an Asterisk ARI application) | `CMakeLists.txt` |
 | `DMODEM_TESTS` | ON | Build the test programs (ctest) | `CMakeLists.txt` |
-| `DMODEM_USB` | ${_dmodem_usb_default} | dmodemd's --usb on Windows and macOS (libusb, fetched) | `CMakeLists.txt` |
+| `DMODEM_USB` | ON | dmodemd's --usb on Windows and macOS (libusb, fetched) | `CMakeLists.txt` |
 | `DMODEM_WERROR` | OFF | Treat compiler warnings as errors (CI) | `CMakeLists.txt` |
 | `DMODEM_TEST_BUILTIN_FAKES` | OFF | Linux: also test dmodemd with the fake USB modems linked in | `frontend/dmodemd/CMakeLists.txt` |
 
