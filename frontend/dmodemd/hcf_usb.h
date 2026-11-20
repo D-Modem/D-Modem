@@ -44,11 +44,9 @@
 #include <string>
 #include <vector>
 
-#include "hcf_image.h"
+#include <libusb.h>
 
-struct libusb_context;
-struct libusb_device_handle;
-struct libusb_transfer;
+#include "hcf_image.h"
 
 namespace hcf {
 
@@ -163,8 +161,8 @@ private:
 
 	bool out(int pipe, const uint8_t *p, size_t n);
 	void record(const uint8_t *r, size_t n);
-	static void status_done(libusb_transfer *t);
-	static void out_done(libusb_transfer *t);
+	static void LIBUSB_CALL status_done(libusb_transfer *t);
+	static void LIBUSB_CALL out_done(libusb_transfer *t);
 	void defaults();
 };
 

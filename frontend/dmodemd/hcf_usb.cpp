@@ -207,7 +207,7 @@ void Usb::close()
 }
 
 /* a status read done: its records taken, the read again */
-void Usb::status_done(libusb_transfer *t)
+void LIBUSB_CALL Usb::status_done(libusb_transfer *t)
 {
 	Usb *u = (Usb *)t->user_data;
 	int i = t == u->status_[0] ? 0 : 1;
@@ -260,7 +260,7 @@ void Usb::record(const uint8_t *r, size_t n)
 }
 
 /* an OUT transfer done */
-void Usb::out_done(libusb_transfer *t)
+void LIBUSB_CALL Usb::out_done(libusb_transfer *t)
 {
 	Usb *u = (Usb *)t->user_data;
 	if (t->status != LIBUSB_TRANSFER_COMPLETED)
