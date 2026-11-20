@@ -4299,7 +4299,11 @@ void V34Pump::mp_start()
 	mp->trellis = V34_TRELLIS;
 	mp->nonlinear = nonlinear_rx();
 	mp->aux = aux_req && !pcm ? 1 : 0;
-	mp->rate_mask = 0x3FFF;
+	/* the mask: no rate above the two directions' highest.  A mask
+	   with more (the 3Com TC110 at +MS 4800) makes the remote ask
+	   for them again with a renegotiation every 6 s */
+	s16 top = tx_max > max_rate_rx ? tx_max : max_rate_rx;
+	mp->rate_mask = static_cast<s16>(0x3FFF >> (14 - top));
 	mp->asym = 1;
 	mp->vfc = vfc && !pcm ? 1 : 0;
 	/* a cleardown: no rates either way (11.7/V.34) */

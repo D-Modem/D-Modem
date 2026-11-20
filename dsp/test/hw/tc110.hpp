@@ -27,8 +27,9 @@
  *    status as the DSP sees it (bit 7 DTR, bit 3 its change).
  *
  *    Port 0x8058 bit 6 and port 0x805f bits 4 and 7 are the I2C bus of
- *    the cable's 24Cxx EEPROM (its data in on port 0x805f bit 7): no
- *    cable by default (a landline).  Port
+ *    the cable's 24Cxx EEPROM (its data in on port 0x805f bit 7), port
+ *    0x805f bit 6 the cable's absence: no cable by default (a
+ *    landline), TC110_CABLE a cellular one (ETC).  Port
  *    0x8059 bit 0 is the line sense (1: line current).
  *
  *    The codec is on the serial port (DXR the DAC's sample, DRR the
@@ -265,6 +266,19 @@ public:
 		dsp.io_wr = [this](unsigned p, w16 v) { io_wr(p, v); };
 		dsp.mmr_wr = [this](C5x::u32 a, w16 old) { mmr_wr(a, old); };
 		dsp.pc = 0x8000;
+		/* TC110_CABLE=<hex>: a cellular cable plugged in, its
+		   EEPROM's last octets these (the cable's ID at 0x7fd to
+		   0x7ff, which page 0's 0xcbc3 knows: 200000 Motorola,
+		   210000 Ericsson, 0c0a0d the test cable) */
+		if (const char *c = getenv("TC110_CABLE")) {
+			ee_.present = true;
+			size_t n = strlen(c) / 2;
+			for (size_t k = 0; k < n && k < ee_.mem.size(); k++) {
+				char h[3] = { c[2 * k], c[2 * k + 1], 0 };
+				ee_.mem[ee_.mem.size() - n + k] =
+					(unsigned char)strtol(h, nullptr, 16);
+			}
+		}
 		return true;
 	}
 
@@ -570,8 +584,9 @@ private:
 		};
 		/* 0x0130 to 0x0727: the constellation and mapping tables. The
 		   same as 3453C 0x00c0 to 0x06b7, 0x70 words on, as the PP
-		   after them (the TC110 has 0x70 words more at 0x00c0: the
-		   differential coder at 0x00e0 is one of them) */
+		   after them, from 0x0400 at least (V.34's).  Below that the
+		   TC110 has V.32bis's points at 0x0100 (3453C 0x00c0 on,
+		   0x40 words on), which replace 0x0130 to 0x01ff */
 		static const w16 maps[] = {
 			0x0000, 0x0000, 0x0000, 0x0000, 0xd0f0, 0x3010, 0xd0f0, 0x3010,
 			0xd0f0, 0xf030, 0x10d0, 0x3010, 0x3010, 0x10d0, 0xf030, 0xd0f0,
@@ -1044,12 +1059,36 @@ private:
 		memcpy(&dsp.ROM[0x0080], probe, sizeof(probe));
 		memcpy(&dsp.ROM[0x0728], pp, sizeof(pp));
 		memcpy(&dsp.ROM[0x0130], maps, sizeof(maps));
-		/* 0x00e0: the differential coder (0x37f4: index the last
-		   quadrant times 4 plus the new one): their sum, modulo 4
-		   (the receiver at 0x6f1b takes the difference). Made from the
-		   code, not read from a TC110 */
+		/* 0x0100 to 0x01ff: V.32bis's signal points (0x72a6: at
+		   0x0100 + 2^(n + 1) for n bits a symbol), 3453C 0x00c0 to
+		   0x01bf: the points of A, B, C and D, then those of 4800 to
+		   14400 bit/s in the order of V.32bis's tables (Y0, Y1Y2, Q3
+		   up).  V.34 reads nothing of 0x0100 to 0x03ff */
+		memcpy(&dsp.ROM[0x0100], maps, 0x100 * sizeof(w16));
+		/* 0x00c0 to 0x00df: V.32bis's trellis coder (0x72e9): the
+		   index Y1Y2 (Q1Q2 added, modulo 4) in bits 3 and 4 and the
+		   convolutional coder's state in bits 0 to 2, the word the
+		   same with the next state (bit 2 Y0).  0x00e0 to 0x00ef:
+		   the differential code of 4800 bit/s (V.32's rate words,
+		   0x37f4): the last point (as 0x0108 orders them) in bits 0
+		   and 1, the dibit in 2 and 3.  0x00f8 to 0x00fb: the points
+		   of the receiver's 4 point slicer (0x3a87), A D B C.  Made
+		   from V.32bis, not read from a TC110 */
+		static const unsigned char conv_next[8][4] = {
+			{ 0, 2, 3, 1 }, { 4, 7, 5, 6 }, { 1, 3, 2, 0 },
+			{ 7, 4, 6, 5 }, { 2, 0, 1, 3 }, { 6, 5, 7, 4 },
+			{ 3, 1, 0, 2 }, { 5, 6, 4, 7 },
+		};
+		for (unsigned d = 0; d < 4; d++)
+			for (unsigned st = 0; st < 8; st++)
+				dsp.ROM[0x00c0 + (d << 3 | st)] =
+					(w16)(d << 3 | conv_next[st][d]);
+		static const unsigned char diff4800[16] = {
+			2, 0, 3, 1, 3, 2, 1, 0, 0, 1, 2, 3, 1, 3, 0, 2,
+		};
 		for (unsigned k = 0; k < 16; k++)
-			dsp.ROM[0x00e0 + k] = (w16)(((k >> 2) + k) & 3);
+			dsp.ROM[0x00e0 + k] = diff4800[k];
+		memcpy(&dsp.ROM[0x00f8], &maps[8], 4 * sizeof(w16));
 		memcpy(&dsp.ROM[0x074c], v34tab, sizeof(v34tab));
 		memcpy(&dsp.ROM[0x0a10], t0a10, sizeof(t0a10));
 		if (getenv("TC110_T0E0"))
@@ -1069,7 +1108,13 @@ private:
 		   codec's rate: 1800 Hz at 2400 baud, 1600 Hz at 2400 and
 		   1829 Hz at 2743, 1920 Hz at 3200, 1829 Hz at 3200 (and the
 		   other rates' carriers, at their codec rates).  Not of the
-		   ROM: made from how the firmware reads them */
+		   ROM: made from how the firmware reads them.  Their amplitude
+		   is 16384, Q14 as the firmware's other coefficients (PM 1,
+		   SACH shift 1).  With 32767 the data's level was 6 dB above
+		   that of L2 (V.34 sends the two at the nominal power), and
+		   the peaks of the data overflowed the shift 2 store to 0x022f
+		   (at 0x603c): one sample wrong, a burst of errors at the
+		   receiver */
 		static const int car[4][2] = { { 1, 4 }, { 2, 9 }, { 1, 5 },
 					       { 4, 21 } };
 		unsigned at = 0x0a7c;
@@ -1080,8 +1125,8 @@ private:
 			for (int j = 0; j < per; j++) {
 				double th = -carrier_sign * 2 * M_PI * car[n][0] *
 					    j / per;
-				dsp.ROM[at++] = (w16)lrint(32767 * cos(th));
-				dsp.ROM[at++] = (w16)lrint(32767 * sin(th));
+				dsp.ROM[at++] = (w16)lrint(16384 * cos(th));
+				dsp.ROM[at++] = (w16)lrint(16384 * sin(th));
 			}
 		}
 
@@ -1185,7 +1230,8 @@ private:
 			ev_ = 0;
 			break;
 		case 0x805f:
-			v = (w16)((ee_.line() ? 0x80 : 0) | 0x40);
+			v = (w16)((ee_.line() ? 0x80 : 0) |
+				  (ee_.present ? 0 : 0x40));
 			break;
 		}
 		return v;

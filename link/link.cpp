@@ -135,10 +135,12 @@ bool Link::usr_start(UsrMode mode, u8 enable, u8 disable)
    Synchronous Access Mode when asked for, else the
    originator's MNP at once when it is first or alone (no LAPM), the
    detection phase (detect, or an answerer without LAPM: MNP's LR comes
-   in it), LAPM straight away, or no error correction */
-void Link::start(bool on, bool detect)
+   in it; far: its originator's T400 three times), LAPM straight away,
+   or no error correction */
+void Link::start(bool on, bool detect, bool far)
 {
 	mnp_tried_ = false;
+	detect_far_ = far;
 	phase_v42_ = false;
 	proto_ = Protocol::None;
 	if (asked_.b2 != B2::Modem) {

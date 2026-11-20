@@ -281,8 +281,9 @@ public:
 
 	/* the data pump has connected: on, error correction as asked
 	   (Config), the detection phase (detect) and LAPM or MNP, else
-	   async */
-	void start(bool on, bool detect);
+	   async; far: the pump's two directions may start far apart
+	   (after V.8), the originator waits three times T400 for ADPs */
+	void start(bool on, bool detect, bool far = false);
 	/* the data pump has connected after V.8 bis chose DSVD (V.70):
 	   V.76's multiplexer, its data channel the DTE's (v76.h), no
 	   detection phase, XID or compression; the initiator opens it */
@@ -406,6 +407,8 @@ public:
 	void mnp_fallback() { no_ec(); }
 	/* we are the originator */
 	bool caller() const { return caller_; }
+	/* start()'s far: the originator's T400 three times */
+	bool detect_far() const { return detect_far_; }
 	/* the parameters, for XID */
 	Config &cfg() { return cfg_; }
 	/* characters between the DTE and LAPM or the async framer,
@@ -507,6 +510,7 @@ private:
 	Protocol proto_ = Protocol::None;
 	bool mnp_tried_ = false;
 	bool phase_v42_ = false;
+	bool detect_far_ = false;
 	s32 hst_bps_ = 0;
 	bool hst_resume_ = false;       /* start(): HST's link after its switch */
 	s32 timer_ = 0;

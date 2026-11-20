@@ -28,7 +28,7 @@ emulation of the hardware that the driver expects.
 | ESS | its Windows driver, on the same small Windows kernel | V.92 at 49333 down, 41333 up |
 | spandsp | the open-source library used by Asterisk and FreeSWITCH | its speeds, up to V.22bis (2400 bit/s) |
 | USRobotics Courier V.Everything | the whole modem emulated, running its own firmware (a 1998 flash image) | HST at 9600 bit/s with HST's own link, the channels turning around; V.32bis at 14400 bit/s with V.42 |
-| 3Com Megahertz TC110 PC Card | its signal processor emulated, running the 3Com flash firmware | V.34 training to CONNECT at 31200 bit/s and at 4800 bit/s |
+| 3Com Megahertz TC110 PC Card | its signal processor emulated, running the 3Com flash firmware | V.34 at 33600 bit/s (with `S33=0`), 31200 bit/s and 4800 bit/s; V.42 and V.42bis; V.32bis at 14400 bit/s; ETC with a cellular cable |
 
 In the V.90 and V.92 calls, D-Modem is the "digital" end. This is the role that the
 equipment of an internet provider had. Each modem also connects at the
@@ -47,8 +47,44 @@ Courier cannot read the data of D-Modem yet. V.34 does not operate yet.
 
 The 3Com TC110 is a PC Card modem with a TMS320C5x signal processor. The
 tests emulate this processor and run the 3Com flash firmware on it. D-Modem
-calls the TC110 in V.34, and the two modems complete the training and send
-CONNECT. The data mode does not operate yet. Thus, the tests stop at CONNECT.
+calls the TC110 in V.34, and the TC110 calls D-Modem. The two modems
+complete the training and send CONNECT. The factory setting of the TC110 is `S33=32`. This setting stops
+the 3429 baud symbol rate, thus the maximum rate is 31200 bit/s. With
+`ATS33=0`, the two modems connect at 33600 bit/s, the maximum rate of the
+TC110. At 33600 bit/s and at 4800 bit/s, the tests send data in the two
+directions, and the two modems receive the data correctly. When `AT+MS`
+sets a maximum rate, the MP sequence of D-Modem shows only the rates up to
+that maximum. If the MP sequence shows faster rates, the TC110 starts a
+rate renegotiation every 6 seconds to get a faster rate, and some data is
+lost each time.
+
+With error correction, the two modems connect with V.42 (LAPM) and
+V.42bis in the two directions. When the TC110 answers, it waits for the
+detection patterns (ODP) of V.42 after V.8. Thus, D-Modem sends them
+also after V.8. With `S32=60` (no V.34), the two modems connect in
+V.32bis at 14400 bit/s in the two directions. The 4800 to 12000 bit/s
+rates of V.32bis also operate.
+
+Without error correction, the D-Modem receiver now gives ones to the DTE
+for the B1 signal at the start of the data (V.34 and V.32bis). Before,
+the first frames from the TC110 gave two or three incorrect octets. The
+TC110 itself gives about seven incorrect octets to its DTE at the start
+of V.32bis data. This also occurs between two TC110s, thus it is the
+operation of its firmware. To disable error correction on D-Modem, use
+`\N0`. `&M0` does not change it. With `&M0`, D-Modem sends the
+detection patterns of V.42 (0x11 and 0x91) for T400, and a remote modem
+with no error correction gives them to its DTE.
+
+The tests can also attach an emulated cellular cable to the TC110
+(`TC110_CABLE=200000`, the ID of a Motorola cable in the EEPROM of the
+cable). Then the TC110 shows "Motorola Cable" and goes into the
+cellular mode of ETC (V.32bis only, error correction necessary). The
+TC110 with the cable calls D-Modem in `AT&F6` (the land side of ETC).
+D-Modem in `AT&F5` (the cellular side, with its 1500 Hz calling tone)
+calls the TC110 without the cable, and the TC110 finds the calling
+tone. In the two calls, the modems connect in V.32bis at 14400 bit/s
+with V.42 and frames of 64 octets (N401), and the TC110 shows
+`CONNECT 14400/ARQ/ETC/V32/LAPM/V42BIS`.
 
 The test suite also runs D-Modem on an emulated HD-audio modem
 chip (the type in laptops from about 2005 to 2010). This tests the code

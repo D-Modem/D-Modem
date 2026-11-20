@@ -1672,23 +1672,90 @@ std::vector<Call> calls()
 
 	/* --- 3Com's TC110 PC Card (XJ5560 / CC5560), its TMS320C5x
 	   emulated with the TC110 flash's code (half_3com, its line at 8000
-	   Hz): the open modem calls it in V.34, at its fastest and at 4800.
-	   Only to CONNECT: the 3Com does not yet decode the open modem's
-	   data (its Viterbi decoder), and the open modem sees bursts of
-	   errors in the 3Com's.  TC110_PRE_FLAT=1: a flat pre-emphasis
-	   filter (the TC110's own tables are not known yet).  The 3Com as
-	   the caller stops after V.8 */
-	for (auto [n, ms, rate] : std::vector<std::tuple<const char *,
-		     const char *, const char *>>{
-		     { "34", "ATX3;AT+MS=34;AT+ES=1,0,1", "[0-9]+" },
-		     { "34_4800", "ATX3;AT+MS=34,1,2400,4800;AT+ES=1,0,1",
-		       "4800" } })
-		add("3com", std::string("3com_") + n + "_open_calls", "open8",
-		    "3com", ms,
-		    { "CONNECT_ONLY=1", "STREAM=5", "TC110_PRE_FLAT=1",
-		      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
-		      std::string("EXPECT_A=v34: connect ") + rate + "/",
-		      std::string("EXPECT_B=CONNECT ") + rate + "/V34" });
+	   Hz): the open modem calls it in V.34.  With its own profile (S33
+	   32: no 3429 baud in its INFO0) its fastest is 31200: only to
+	   CONNECT.  With S33=0 (3429 baud on), 33600, its fastest: 1 s of
+	   data both ways, both checked.  At 4800, 8 s of data both ways:
+	   past 6 s, when the 3Com asked for a faster rate again (a
+	   renegotiation) while the rate mask of our MP had rates above
+	   +MS's highest.  The 3Com calls the open modem: the same, at
+	   33600 and 4800.  With V.42 both ways: LAPM and V.42bis (the
+	   3Com answering waits for the caller's ODPs after V.8).  V.32bis
+	   (the 3Com's S32=60: no V.34) at 14400 both ways, the open modem
+	   in \N0 (our &M0 leaves V.42 on: its ODPs, 0x11 and 0x91 for
+	   T400, went to the 3Com's DTE).  ETC: the 3Com
+	   with a cellular cable (TC110_CABLE, Motorola's) calls the open
+	   modem in AT&F6 (ETC's land side), and the open modem in AT&F5
+	   (the cellular side: its 1500 Hz calling tone) calls the 3Com
+	   on a landline, which finds the tone: V.32bis, V.42 with N401 64
+	   octets, /ETC in the 3Com's CONNECT.
+	   TC110_PRE_FLAT=1: a flat pre-emphasis filter (the
+	   TC110's own tables are not known yet) */
+	add("3com", "3com_34_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34;AT+ES=1,0,1",
+	    { "CONNECT_ONLY=1", "STREAM=5", "TC110_PRE_FLAT=1",
+	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
+	      "EXPECT_A=v34: connect 31200/",
+	      "EXPECT_B=CONNECT 31200/V34" });
+	add("3com", "3com_34_33600_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34;AT+ES=1,0,1",
+	    { "STREAM=1", "TC110_PRE_FLAT=1",
+	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0S33=0",
+	      "EXPECT_A=v34: connect 33600/",
+	      "EXPECT_B=CONNECT 33600/V34" });
+	add("3com", "3com_34_4800_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34,1,2400,4800;AT+ES=1,0,1",
+	    { "STREAM=8", "TC110_PRE_FLAT=1",
+	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
+	      "EXPECT_A=v34: connect 4800/",
+	      "EXPECT_B=CONNECT 4800/V34" });
+
+	add("3com", "3com_34_33600_3com_calls", "3com", "open8",
+	    "ATX3&M0S33=0",
+	    { "STREAM=1", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3;AT+MS=34;AT+ES=1,0,1",
+	      "EXPECT_A=CONNECT 33600/V34",
+	      "EXPECT_B=v34: connect 33600/" });
+	add("3com", "3com_34_4800_3com_calls", "3com", "open8",
+	    "ATX3&M0",
+	    { "STREAM=8", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3;AT+MS=34,1,2400,4800;AT+ES=1,0,1",
+	      "EXPECT_A=CONNECT 4800/V34",
+	      "EXPECT_B=v34: connect 4800/" });
+	add("3com", "3com_34_lapm_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3",
+	      "EXPECT_A=detect: done, V\\.42",
+	      "EXPECT_B=CONNECT [0-9]+/ARQ/V34/LAPM/V42BIS" });
+	add("3com", "3com_34_lapm_3com_calls", "3com", "open8", "ATX3",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3;AT+MS=34",
+	      "EXPECT_A=CONNECT [0-9]+/ARQ/V34/LAPM/V42BIS",
+	      "EXPECT_B=ec: connected" });
+	add("3com", "3com_32b_open_calls", "open8", "3com",
+	    "ATX3\\N0;AT+MS=V32B",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3S32=60&M0",
+	      "EXPECT_A=v32: connect 14400/14400",
+	      "EXPECT_B=CONNECT 14400/V32" });
+	add("3com", "3com_32b_3com_calls", "3com", "open8",
+	    "ATX3S32=60&M0",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3\\N0",
+	      "EXPECT_A=CONNECT 14400/V32",
+	      "EXPECT_B=v32: connect 14400/14400" });
+	add("3com", "3com_etc_cell_3com_calls", "3com", "open8", "ATX3",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "TC110_CABLE=200000", "PROTO_B=AT&F6;ATX3",
+	      "EXPECT_A=CONNECT 14400/ARQ/ETC/V32/LAPM/V42BIS",
+	      "EXPECT_B=N401 64/64" });
+	add("3com", "3com_etc_cell_open_calls", "open8", "3com",
+	    "AT&F5;ATX3",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3",
+	      "EXPECT_A=N401 64/64",
+	      "EXPECT_B=CONNECT 14400/ARQ/ETC/V32/LAPM/V42BIS" });
 
 	/* --- Intel's 537EP soft modem, its line at 9600 Hz (its codec's
 	   rates are 7200 to 16000 Hz, 9600 by default, 72000 / 7 for V.34,

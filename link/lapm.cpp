@@ -434,9 +434,11 @@ void Lapm::t401_timeout()
 		/* an XID unanswered by a remote whose ADP said it has
 		   V.42: offered again without zstd's private set, which
 		   an older V.42 takes for a reason to ignore the frame
-		   (the USRobotics Courier answering) */
+		   (the USRobotics Courier answering); not after V.8,
+		   whose first XIDs a noisy start of the line may take */
 		if (config_ && !was_up_ && link_->caller() &&
-		    link_->phase_v42() && link_->cfg().zstd && !no_zstd_) {
+		    link_->phase_v42() && !link_->detect_far() &&
+		    link_->cfg().zstd && !no_zstd_) {
 			no_zstd_ = true;
 			link_->logf("ec: XID unanswered: offered without zstd.");
 		}

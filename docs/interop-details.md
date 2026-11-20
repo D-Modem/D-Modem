@@ -1923,6 +1923,12 @@ The tests (`ctest -R _v80_syn`):
 Two open modems run the same SYN hunt calls (`open_v80_syn1`,
 `open_v80_syn2`).
 
+## Data one way only
+
+`STREAM_ONLY=A` (or `B`) makes a `STREAM` call pass when the data that
+modem receives is right, whatever the other modem receives. It is for a
+peer whose transmitter is not yet right. No test uses it at this time.
+
 ## The call's statistics in the middle of a call
 
 `EXPECT_MIDCALL_A=<regex>` (`_B`) checks the answers of a modem to its

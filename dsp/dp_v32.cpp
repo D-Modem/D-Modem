@@ -313,6 +313,8 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	float b1_err[32];
 	s16 b1_best;
 	s16 b1_syms;
+	s16 b1_out;             /* B1's decoded symbols still to come,
+				   ones to the core whatever they are */
 	s16 agc_free;           /* symbols the AGC still follows the input
 				   after its level came back */
 
@@ -664,6 +666,7 @@ void V32Pump::b1_start()
 	}
 	b1_best = -1;
 	b1_syms = 0;
+	b1_out = V32_B1_SYMS;
 	rx_fpos = 0;
 }
 
@@ -931,6 +934,14 @@ void V32Pump::rx_symbol()
 				for (k = 0; k < n; k++)
 					bits[k] = descramble(&rx_scr,
 							     rx_scr_tap, q >> k);
+				/* B1 is ones: the decoder's first symbols
+				   (the remote's trellis state, its scrambler
+				   at the change from E) may be wrong, and gave
+				   the DTE a few octets of junk */
+				if (b1_out > 0) {
+					b1_out--;
+					std::fill_n(bits, n, 1);
+				}
 				modem_put_bits(modem, 1, bits, n);
 			} else if (q >= 0)
 				for (k = 0; k < n; k++)

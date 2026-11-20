@@ -213,11 +213,16 @@ void Detector::start(Link *link)
 }
 
 /* the originator's marks are out: its ODPs from now on, until an ADP
-   or T400 */
+   or T400 (three times when the pump's two directions may start far
+   apart: after V.8, V.34's answerer may only hear the first ODPs some
+   hundreds of ms after ours started, and its ADPs take the round trip
+   back) */
 void Detector::begin()
 {
 	s32 t = t400(link_);
 
+	if (link_->detect_far())
+		t *= 3;
 	link_->logf("detect: ODPs, T400 %" PRId32 " bits.", t);
 	tx_count_ = 1;
 	link_->set_timer(t, Link::Timer::DetectEnd);

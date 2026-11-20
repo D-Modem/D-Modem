@@ -64,8 +64,45 @@ static int host_is_true(const char *v)
 	       !strcmp(v, "1");
 }
 
+static std::mutex threads_mu;
+static std::vector<std::thread> threads;
+
+/* the bridge's threads (its connects, and the reaps of those it no
+   longer waits for): kept to be joined, as a connect can end after its
+   call and log then */
+static int host_thread(void *(*fn)(void *), void *arg)
+{
+	std::lock_guard<std::mutex> l(threads_mu);
+	threads.emplace_back(fn, arg);
+	return 0;
+}
+
+/* the bridge's threads joined after the last test: before the log
+   (log_lines) is destroyed, which a thread that logs late would
+   otherwise use at the exit */
+class JoinThreads : public ::testing::Environment {
+public:
+	/* each thread joined, those it started too */
+	void TearDown() override
+	{
+		for (;;) {
+			std::thread t;
+			{
+				std::lock_guard<std::mutex> l(threads_mu);
+				if (threads.empty())
+					return;
+				t = std::move(threads.back());
+				threads.pop_back();
+			}
+			t.join();
+		}
+	}
+};
+static ::testing::Environment *const join_threads =
+	::testing::AddGlobalTestEnvironment(new JoinThreads);
+
 static const struct dmbridge_host host = { host_log, host_is_true, nullptr,
-					   nullptr, nullptr };
+					   nullptr, host_thread };
 
 /* whether a line of the log has s */
 static bool logged(const char *s)

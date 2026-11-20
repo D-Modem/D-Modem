@@ -448,6 +448,8 @@ struct V34DataRx {
 	V34Precoder pc; /* the receiver's copy of the precoder */
 	VfcViterbi<V34_TB> vvit; /* V.FC: its decoder, the short frame */
 	s16 vfc_sh;             /* pattern's state; e[]: z << 9 | index */
+	s16 b1_left;            /* B1's mapping frames still to come: ones
+				   to link, whatever they decoded to */
 
 	void viterbi_init();
 	void init(const V34Params *p_);
