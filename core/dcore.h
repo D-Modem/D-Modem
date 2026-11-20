@@ -28,6 +28,7 @@
 #include <modem_defs.h>
 #include <modem_dp.h>
 
+#include "ebcdic.h"
 #include "etc.h"
 #include "modem_homolog.h"
 #include "v13.h"
@@ -709,6 +710,16 @@ private:
 	/* (see puts(const char *)) */
 	void puts(const std::string &s) { puts(s.c_str()); }
 	void crlf();
+	/* the modem's own text to the DTE (echo, results, information):
+	   in EBCDIC while the DTE's command text is EBCDIC */
+	void put_text(const char *buf, s32 n);
+	/* EBCDIC at the DTE (+DEBC, ebcdic.h, docs/ebcdic.md): true while
+	   the DTE's command text is EBCDIC */
+	bool ebcdic() const;
+	/* true while the data of a call is changed too (+DEBC's <data>) */
+	bool ebcdic_data() const;
+	/* +DEBC's code page */
+	const ebcdic::CodePage &ebcdic_page();
 
 	Host &host_;
 	struct modem *handle_;
@@ -781,6 +792,15 @@ private:
 	u16 at_count_ = 0;
 	char at_line_[64] = {};
 	char at_cmd_[64] = {};
+	/* EBCDIC (+DEBC=1): the last command line's "AT" was EBCDIC; the
+	   first octet of the command line, as the DTE sent it; the code
+	   page */
+	bool ebc_ = false;
+	char at_raw0_ = 0;
+	/* while a command line runs: 1 if its text is EBCDIC, 0 if not;
+	   -1 at other times */
+	s8 line_ebc_ = -1;
+	ebcdic::CodePage ebc_page_;
 
 	/* rings */
 	u16 ring_count_ = 0;

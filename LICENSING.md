@@ -45,6 +45,16 @@ under the BSD-3-Clause licence. The file keeps that licence's notice
 with a dmodemd that is shipped. It combines with D-Modem under the AGPL
 and under the commercial licence alike.
 
+## IBM's EBCDIC code pages
+
+`core/ebcdic_tables.h` (the EBCDIC code pages of `+DEBC`,
+[docs/ebcdic.md](docs/ebcdic.md)) has mapping tables from the ICU data
+of the Unicode Consortium (the `ibm-*.ucm` files of icu-data), through
+go3270's code pages. The ICU data is under the Unicode License v3
+(Unicode-3.0). The file names both licences
+(`SPDX-License-Identifier: AGPL-3.0-only AND Unicode-3.0`). It combines
+with D-Modem under the AGPL and under the commercial licence alike.
+
 ## Not covered: the interop test binaries
 
 The closed modem drivers and objects in `dsp/test/` (`smartlink/`,

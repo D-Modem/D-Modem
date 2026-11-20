@@ -57,6 +57,8 @@ measurements, and test lists.
 - [The data link layer](link.md): error correction and compression
 - [The x2 upgrade host](x2-upgrade.md): enable x2 in a USRobotics
   Courier that calls in, as the U.S. Robotics host did in 1997
+- [EBCDIC terminals and hosts](ebcdic.md): AT commands and result codes
+  in EBCDIC. The modem identifies the character set from the `AT`.
 - [The MNP protocol suite](mnp/README.md): MNP 1 to 10 and 10EC, one class at a time
 - [The modem core](core.md): AT commands, settings and how a call operates
 - [ISDN](isdn.md): 64000 bit/s ISDN data calls
