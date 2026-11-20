@@ -59,6 +59,8 @@ measurements, and test lists.
   Courier that calls in, as the U.S. Robotics host did in 1997
 - [EBCDIC terminals and hosts](ebcdic.md): AT commands and result codes
   in EBCDIC. The modem identifies the character set from the `AT`.
+- [ZMODEM with zstd](zmodem-zstd.md): the specification of the zstd
+  mode of ZMODEM in the D-Modem BBS, GUI and app
 - [The MNP protocol suite](mnp/README.md): MNP 1 to 10 and 10EC, one class at a time
 - [The modem core](core.md): AT commands, settings and how a call operates
 - [ISDN](isdn.md): 64000 bit/s ISDN data calls
