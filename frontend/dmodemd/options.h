@@ -81,6 +81,8 @@ struct Options {
 	/* or the COM port of D-Modem's virtual modem driver (--driver:
 	   its name, or auto for the first there is) */
 	const char *driver = nullptr;
+	/* Windows: no icon in the tray (--no-tray, windows_tray.h) */
+	bool no_tray = false;
 };
 
 /* parses argv (prints the usage and exits on an error, -h, -v,

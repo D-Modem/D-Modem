@@ -195,6 +195,16 @@ A ATX\r
 A ATQ1\r
 A ATI0\r
 A ATQ0V1E1\r
+# +X2UP: the upgrade host's switches (enable, disable; not one in both)
+A AT+X2UP=?\r
+A AT+X2UP=2,12,16\r
+A AT+X2UP?\r
+A AT+X2UP=1\r
+A AT+X2UP?\r
+A AT+X2UP=2,16,16\r
+A AT+X2UP=2,1\r
+A AT+X2UP?\r
+A AT+X2UP=0,16,0\r
 # other line ends
 A ATS3=13S4=10S5=8S2=43\r
 A ATS3=33\r

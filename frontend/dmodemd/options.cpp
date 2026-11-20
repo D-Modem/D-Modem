@@ -58,6 +58,7 @@ enum {
 #endif
 #ifdef _WIN32
 	OPT_COM, OPT_PIPE, OPT_PIPE_CONNECT, OPT_TCP, OPT_DRIVER,
+	OPT_NO_TRAY,
 #endif
 	OPT_COUNT
 };
@@ -162,6 +163,9 @@ const Option OPTIONS[OPT_COUNT] = {
 	{ 0, "driver", Takes::Text, true,
 	  "the DTE D-Modem's virtual modem driver: its COM port's name "
 	  "(COM7), or auto", "none", false },
+	{ 0, "no-tray", Takes::Nothing, false,
+	  "no icon in the notification area (the tray) and no log window",
+	  nullptr, false },
 #endif
 };
 
@@ -302,7 +306,8 @@ void CommandLine::usage() const
 		"dmodem.log.<name>.  The DTE talks to it on a COM port\n"
 		"(--com), a named pipe (--pipe, --pipe-connect), D-Modem's\n"
 		"virtual modem driver (--driver) or by TCP (--tcp, the\n"
-		"default).\n"
+		"default).  Its icon is in the notification area: a\n"
+		"double-click shows the log, a right-click a menu.\n"
 #else
 		"The name is the modem's (default %s): its pty's link is\n"
 		"/dev/ttyDM<n> (n the digits it ends with), its data file\n"
@@ -487,6 +492,8 @@ void CommandLine::apply(Options &opt) const
 		opt.tcp = o[OPT_TCP].value;
 	if (o[OPT_DRIVER].given)
 		opt.driver = o[OPT_DRIVER].value;
+	if (o[OPT_NO_TRAY].given)
+		opt.no_tray = true;
 #endif
 	opt.name = name_ ? name_ : DEFAULT_NAME;
 }

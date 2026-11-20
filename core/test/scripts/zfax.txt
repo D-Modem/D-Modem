@@ -1,0 +1,16 @@
+# ZyXEL's fax mode (+FCLASS=6): B answers as a data modem first, as
+# ZyXEL's do; a data caller (A in +FCLASS=0) has a data call (CONNECT,
+# no DATA), and B is in class 6 again after it.  ZyXEL's # settings
+# (#B2 polls only when B calls)
+B ATE0+FCLASS=6#B1#V0#T0#R0#L2#C7#F&N32\r
+B AT#B2\r
+B AT#P5552222\r
+A ATE0X3+FCLASS=0\r
+B ATA\r
+A ATD\r
+until B CONNECT 30000
+until A CONNECT 2000
+hangup A
+until B NO CARRIER 10000
+run 500
+B AT+FCLASS?\r

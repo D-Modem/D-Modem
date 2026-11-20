@@ -11,8 +11,13 @@
 #   DMODEM_LINK_DIR
 
 set(DMODEM_LINK_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(_link g729a_common.cpp g729a_dec.cpp g729a_enc.cpp g729a_tab.cpp g729b.cpp h245.cpp hdlc.cpp hst_link.cpp lapb.cpp lapm.cpp ppp_sync.cpp mnp.cpp mnp10.cpp mnp5.cpp v42bis.cpp v44.cpp v44_preset.cpp v76.cpp v80.cpp zstd_codec.cpp zstd_dict.cpp link.cpp)
+set(_link g729a_common.cpp g729a_dec.cpp g729a_enc.cpp g729a_tab.cpp g729b.cpp h245.cpp hdlc.cpp hst_link.cpp lapb.cpp zcrypt.cpp lapm.cpp usr_feature.cpp ppp_sync.cpp mnp.cpp mnp10.cpp mnp5.cpp v42bis.cpp v44.cpp v44_preset.cpp v76.cpp v80.cpp zstd_codec.cpp zstd_dict.cpp link.cpp)
 list(TRANSFORM _link PREPEND ${DMODEM_LINK_DIR}/)
+# (clang-retro's Windows builds: dmodem_retro_random(), for lapb.cpp)
+if(CLANG_RETRO_CONFIG)
+	list(APPEND _link
+		${PROJECT_SOURCE_DIR}/platforms/windows/clang-retro/dmodem_retro.c)
+endif()
 add_library(dmodem_link OBJECT ${_link})
 target_include_directories(dmodem_link PUBLIC ${DMODEM_LINK_DIR})
 dmodem_flags(dmodem_link EXTRA)
@@ -25,6 +30,10 @@ if(DMODEM_TESTS)
 	target_link_libraries(link_test PRIVATE dmodem_link)
 	dmodem_flags(link_test EXTRA)
 	dmodem_gtest(link_test LABELS quick)
+	add_executable(zcrypt_test test/zcrypt_test.cpp)
+	target_link_libraries(zcrypt_test PRIVATE dmodem_link)
+	dmodem_flags(zcrypt_test EXTRA)
+	dmodem_gtest(zcrypt_test LABELS quick)
 	# G.729 Annex A; its vectors where docs/specs/fetch_g729.sh puts them
 	add_executable(g729a_test test/g729a_test.cpp)
 	target_link_libraries(g729a_test PRIVATE dmodem_link)

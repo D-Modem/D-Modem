@@ -28,9 +28,11 @@
 #include <modem_defs.h>
 #include <modem_dp.h>
 
+#include "etc.h"
 #include "modem_homolog.h"
 #include "v13.h"
 #include "v54.h"
+#include "zyxel_sec.h"
 
 /* printf's format checked by GCC and Clang (not MSVC, nor clang-cl) */
 #ifndef DMODEM_PRINTF
@@ -350,6 +352,12 @@ public:
 	   voice path has gone), the data going on; nothing on another
 	   call */
 	void dsvd_close_voice();
+	/* the USRobotics remote feature upgrade now, in a call with LAPM
+	   (link/usr_feature.h): mode 1 reads the Courier's records, 2 also
+	   enables and disables features (sums of Terbo 4, V.FC 8, x2 16);
+	   its +X2UP: line goes to the DTE at the end.  false when it
+	   cannot start (no LAPM up, one going on, a value out of range) */
+	bool usr_feature_now(int mode, int enable, int disable);
 	/* the device reports an error */
 	void error();
 
@@ -392,7 +400,8 @@ public:
 	const char *dial_string() const { return dial_string_; }
 	/* data, fax or voice */
 	enum MODEM_MODE mode() const { return mode_; }
-	/* in fax mode, the class: 1, 10 for 1.0, 2, or 20 for 2.0 */
+	/* in fax mode, the class: 1, 10 for 1.0, 2, 20 for 2.0, or 6 for
+	   ZyXEL's own */
 	u8 fax_class() const { return fax_class_; }
 	/* the call's state */
 	LinkState link_state() const;
@@ -478,6 +487,15 @@ public:
 	void mnp10_line(s16 &dbm, s16 &eqm) const;
 	bool mnp10_shift(const dlink::Shift &s);
 	void mnp10_tx_level(s16 db);
+	/* ETC (S116, core/etc.h): AT&F5's cellular settings or AT&F6's
+	   landline ones */
+	void etc_profile(int n);
+	/* ETC is on (/ETC in CONNECT, 0x82 in #UD's error control):
+	   S116's bits 0 to 2, or the landline side found an ETC caller */
+	bool etc_on() const
+	{
+		return (sregs_[SREG_ETC] & 7) != 0 || etc_peer_;
+	}
 	/* the DTE's in-band command in V.80's Synchronous Access Mode */
 	void sync_command(dlink::SyncCommand c, u8 tx, u8 rx);
 	/* a debug line with the modem's name */
@@ -487,7 +505,7 @@ public:
 	static const char *const author, *const product, *const version;
 	/* the extended parameters of other modems' setup strings it keeps
 	   (at most), their values (at most) */
-	enum { KEPT_PARAMS = 28, KEPT_VALUES = 9 };
+	enum { KEPT_PARAMS = 30, KEPT_VALUES = 9 };
 
 private:
 	enum State {
@@ -506,6 +524,9 @@ private:
 		/* local hangups AT#UD tells apart: a character from the
 		   DTE while the call came up, ATZ, DTR off */
 		AnyKey, DteReset, DtrOff,
+		/* ZyXEL's security (*G3 to *G5): the third wrong
+		   password */
+		Security,
 	};
 	enum { EV_RING_CHECK = 0x01, EV_ESCAPE = 0x02 };
 
@@ -649,11 +670,19 @@ private:
 	s16 at_ampV(char *p, s16 *len);
 	s16 at_S(char *p, s16 *len);
 	s16 at_Z(char *p, s16 *len);
+	/* ZyXEL's security commands (*G, *Hn=, *HS=, *V) and stored
+	   numbers (&Zn=) */
+	static bool zyxel_star(const char *p);
+	s16 at_star(char *p, s16 *len);
+	s16 at_ampZ(char *p, s16 *len);
+	bool sec_unlocked(std::string &arg) const;
 	s16 at_GCI(char *p, s16 *len);
 	s16 at_MS(char *p, s16 *len);
 	s16 at_text(char *p, s16 *len);
 	s16 at_PMH(char *p, s16 *len);
 	s16 at_FCLASS(char *p, s16 *len);
+	s16 at_zfax(char *p, s16 *len);
+	s16 at_CK(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);
 	s16 at_voice(char *p, s16 *len, bool hash = false);
 	s16 at_hash(char *p, s16 *len);
@@ -734,6 +763,15 @@ private:
 	Leased leased_role_ = Leased::None;
 	u64 leased_at_ms_ = 0;
 	bool leased_auto_ = true;
+	/* ZyXEL's security on an answered call (zyxel_sec.h), the stored
+	   numbers (AT&Z0= to AT&Z9=), and a call back due: its number,
+	   when (now_ms(), 0: none) */
+	ZyxelSecurity zsec_;
+	std::string stored_[ZyxelSecurity::SLOTS];
+	std::string callback_;
+	u64 callback_at_ms_ = 0;
+	void zsec_poll();
+	s16 zsec_out(u8 *buf, s16 n);
 	/* when the line's samples last went through (now_ms()): a stop due
 	   after samples is done on time once they have stopped coming (a
 	   SIP call ringing without early media has none) */
@@ -847,6 +885,14 @@ private:
 	/* the cellular transmit level (a gain on the pump's samples), the
 	   received signal's power (mean square, smoothed) */
 	float tx_gain_ = 1;
+	/* ETC's transmit filter (S116 bit 5, +EF) on this call */
+	EtcFilter etc_filter_;
+	bool etc_tx_ = false;
+	/* the landline side's detector of an ETC caller: samples it still
+	   listens, the caller found */
+	EtcToneDetector etc_det_;
+	s32 etc_listen_ = 0;
+	bool etc_peer_ = false;
 	float rx_pow_ = 0;
 	void shift_tick();
 	void shift_end(bool ok);
@@ -971,12 +1017,37 @@ private:
 	dsp::CngDetect *cng_ = nullptr;
 	u16 cng_cut_ = 0;
 	u64 answer_tone_at_ = 0;
-	/* +FCLASS's fax class: 1, 10 for 1.0, 2, or 20 for 2.0 (mode_ is
-	   MODEM_MODE_FAX for each); the engine in fax_ class 2's (FAX2_*) */
+	/* +FCLASS's fax class: 1, 10 for 1.0, 2, 20 for 2.0, or 6 for
+	   ZyXEL's own (mode_ is MODEM_MODE_FAX for each); the engine in
+	   fax_ class 2's (FAX2_*) */
 	u8 fax_class_ = 1;
 	bool fax2_ = false;
-	/* class 2 or 2.0 (else class 1 or 1.0) */
-	bool fax2_class() const { return fax_class_ == 2 || fax_class_ == 20; }
+	/* class 2, 2.0 or 6, the engine class 2's (else class 1 or 1.0) */
+	bool fax2_class() const {
+		return fax_class_ == 2 || fax_class_ == 20 || fax_class_ == 6;
+	}
+	/* ZyXEL's fax mode (class 6, docs/zyxel-fax.md): #B (0, 1: the
+	   DTE's DC2 for each page), #V, #T, #R, #L, #C and #P (the local
+	   identity) */
+	struct ZFax {
+		u8 b = 0, v = 1, t = 0, r = 0, l = 2, c = 0;
+		std::string p;
+		bool poll = false;      /* #B2: the next call polls */
+	} zfax_;
+	/* #B3, ZyXEL's ring cadence meter: on until a key; a ring burst
+	   on now, the time of the last change and of the last pulse */
+	bool cadence_ = false, cadence_on_ = false;
+	u64 cadence_edge_ms_ = 0, cadence_pulse_ms_ = 0;
+	void cadence_start();
+	void cadence_line(const char *label, u64 ms);
+	void cadence_poll();
+	s32 cadence_next_ms() const;
+	/* ATCK's key (ZyXEL's encryption, S102): registers A and B, from
+	   the power-on value (zdes_default_key) */
+	u8 zkey_[16] = { 0xab, 0xcd, 0x01, 0x23, 0xef, 0x45, 0x67, 0x89,
+			 0xab, 0xcd, 0x01, 0x23, 0xef, 0x45, 0x67, 0x89 };
+	/* class 6 answered a data call: class 6 again after it */
+	bool z6_data_ = false;
 	/* +F34 (T.31 class 1.0): the primary channel's highest and lowest
 	   rate (in 2400 bit/s, 0: no V.34), the control channel's (0 any,
 	   1 1200, 2 2400 bit/s), and two more kept */

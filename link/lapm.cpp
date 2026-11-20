@@ -379,7 +379,8 @@ void Lapm::configure()
 	timer_start();
 }
 
-/* T401 (9.2.1), in bits: 2 s at the data pump's rate and the time of
+/* T401 (9.2.1), in bits: 2 s (Config::t401_s) at the data pump's rate
+   and the time of
    three frames (ours going out, the remote's ahead of its answer, its
    answer, and the pump's delay): of the longest N401 either way in the
    data phase with I frames outstanding, of 64 octets for XID, SABME,
@@ -395,7 +396,7 @@ s32 Lapm::t401_bits() const
 	s32 info = 64;
 	if (state_ == DATA && !config_ && vs_ != va_)
 		info = std::max<s32>(std::max(tx_info_, rx_info_), 128);
-	return 2 * rate + 3 * (info + 8) * 8;
+	return link_->config().t401_s * rate + 3 * (info + 8) * 8;
 }
 
 /* T401 starts again, the retransmission count from 0 */
@@ -433,9 +434,11 @@ void Lapm::t401_timeout()
 		/* an XID unanswered by a remote whose ADP said it has
 		   V.42: offered again without zstd's private set, which
 		   an older V.42 takes for a reason to ignore the frame
-		   (the USRobotics Courier answering) */
+		   (the USRobotics Courier answering); not after V.8,
+		   whose first XIDs a noisy start of the line may take */
 		if (config_ && !was_up_ && link_->caller() &&
-		    link_->phase_v42() && link_->cfg().zstd && !no_zstd_) {
+		    link_->phase_v42() && !link_->detect_far() &&
+		    link_->cfg().zstd && !no_zstd_) {
 			no_zstd_ = true;
 			link_->logf("ec: XID unanswered: offered without zstd.");
 		}
@@ -522,6 +525,21 @@ s16 Lapm::tx_unnum(u8 addr, u8 ctrl)
 		std::copy(ud->begin(), ud->end(), f->buf + 2);
 		f->size = static_cast<s16>(2 + ud->size());
 	}
+	return 0;
+}
+
+/* (see lapm.h): in the data phase only */
+s16 Lapm::tx_ui(const u8 *info, s16 n)
+{
+	if (state_ != DATA || n < 0 || n > LAPM_MAX_INFO)
+		return -1;
+	Frame *f = ctrl_frame();
+	if (!f)
+		return -1;
+	f->buf[0] = cmd_addr_;
+	f->buf[1] = U_UI;
+	memcpy(f->buf + 2, info, static_cast<size_t>(n));
+	f->size = static_cast<s16>(2 + n);
 	return 0;
 }
 
@@ -984,7 +1002,9 @@ void Lapm::rx_super_rsp(Frame *f)
 /* a U command, in any state: SABME (re-)establishes and is always
    accepted (8.3.2.1, 8.4.9.1); DISC releases (8.7.2), or gets a DM
    while disconnected (8.8); an XID is answered with what was agreed
-   (8.10); UI (break) and TEST (loop-back) are not implemented */
+   (8.10); a UI in the data phase goes to the USRobotics remote feature
+   upgrade (usr_feature.h), as a Courier sends its answers in UI
+   commands; break (UI) and TEST (loop-back) are not implemented */
 void Lapm::rx_unnum_cmd(Frame *f)
 {
 	const u8 pf = f->buf[1] & PF;
@@ -1025,6 +1045,9 @@ void Lapm::rx_unnum_cmd(Frame *f)
 		}
 		break;
 	case U_UI:
+		if (state_ == DATA)
+			link_->usr_rx(f->buf + 2, static_cast<s16>(f->count - 2));
+		break;
 	case U_TEST:
 		break;
 	default:
@@ -1038,8 +1061,9 @@ void Lapm::rx_unnum_cmd(Frame *f)
    the link; DM with F 0 asks for the link while it has not been up in
    this call (8.8, Table 9), and ends the data phase (8.4.9.1); the
    XID answering ours ends the negotiation, then the establishment
-   begins (or, in the data phase, our receiver is free again); UI and
-   FRMR are ignored */
+   begins (or, in the data phase, our receiver is free again); a UI
+   goes to the remote feature upgrade as a command's does; FRMR is
+   ignored */
 void Lapm::rx_unnum_rsp(Frame *f)
 {
 	const bool fin = f->buf[1] & PF;
@@ -1113,6 +1137,9 @@ void Lapm::rx_unnum_rsp(Frame *f)
 		}
 		break;
 	case U_UI:
+		if (state_ == DATA)
+			link_->usr_rx(f->buf + 2, static_cast<s16>(f->count - 2));
+		break;
 	case U_FRMR:
 		break;
 	default:

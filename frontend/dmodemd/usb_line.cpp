@@ -1431,16 +1431,13 @@ void UsbLine::pulse_dialling(dcore::Modem &, bool on)
 /* see usb_line.h */
 void UsbLine::watch(RunLoop &loop)
 {
-	const libusb_pollfd **fds;
-
 	if (!ctx_)
 		return;
 #ifdef _WIN32
+	/* (no descriptors; and no POLLIN before Vista's winsock2.h) */
 	(void)loop;
-	(void)fds;
-	return;
-#endif
-	fds = libusb_get_pollfds(ctx_);
+#else
+	const libusb_pollfd **fds = libusb_get_pollfds(ctx_);
 	if (!fds)
 		return;
 	for (s16 i = 0; fds[i]; i++)
@@ -1449,6 +1446,7 @@ void UsbLine::watch(RunLoop &loop)
 		else if (fds[i]->events & POLLOUT)
 			loop.watch_write(fds[i]->fd);
 	libusb_free_pollfds(fds);
+#endif
 }
 
 /* see usb_line.h */

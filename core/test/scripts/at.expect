@@ -75,7 +75,7 @@
       0 A: ERROR\r\n
       0 A< AT+MS=?\r
       0 A: AT+MS=?\r\r\n
-      0 A: (21,22,23,26,126,226,27,29,229,122,32,132,232,168,128,61,33,34,103,18,45,110,118,121,123,203,5,12,212,201,202,208,56,57,90,91,92,150,200,255,64),(0,1),(300-56000),(300-56000)\r\n
+      0 A: (21,22,23,26,126,226,27,29,229,122,32,132,232,234,168,128,61,33,34,103,18,45,110,118,121,123,203,5,12,212,201,202,208,56,57,90,91,92,150,200,255,64),(0,1),(300-56000),(300-56000)\r\n
       0 A: OK\r\n
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
@@ -218,7 +218,7 @@
       0 A: ERROR\r\n
       0 A< AT+FCLASS=?\r
       0 A: AT+FCLASS=?\r\r\n
-      0 A: 0,1,1.0,2,2.0,8\r\n
+      0 A: 0,1,1.0,2,2.0,6,8\r\n
       0 A: OK\r\n
       0 A< AT+FCLASS?\r
       0 A: AT+FCLASS?\r\r\n
@@ -403,7 +403,8 @@
       0 A: +ICF=3,3 +IPR=0 +ILRR=0 +IDSR=0 +ILSD=0 +MR=0 +ER=0 +DR=0 +ES=3,0,2\r\n
       0 A: +ESA=0,0,0,0,0,0,255,255 +ITF=383,128,0 +A8E=1,1,0,0 +DSVD=0 +ASVD=0\r\n
       0 A: +DS=3,0,2048,34 +DS44=3,0,0,4096,4096,255,255,12288,12288 +DSZ=1,1 +B2=0\r\n
-      0 A: +CBST=0,0,0 +CRC=0 +PCW=2 +PIG=1 +FAA=0 +FPR=0 -SEC=0 +CVM=63,8000,0\r\n
+      0 A: +X2UP=0,16,0 +CBST=0,0,0 +CRC=0 +PCW=2 +PIG=1 +FAA=0 +FPR=0 -SEC=0 +EF=5\r\n
+      0 A: +CVM=63,8000,0\r\n
       0 A: STORED PROFILES: none\r\n
       0 A: OK\r\n
       0 A< AT\\V2&V1\r
@@ -429,7 +430,8 @@
       0 A: +ICF=3,3 +IPR=0 +ILRR=0 +IDSR=0 +ILSD=0 +MR=0 +ER=0 +DR=0 +ES=3,0,2\r\n
       0 A: +ESA=0,0,0,0,0,0,255,255 +ITF=383,128,0 +A8E=1,1,0,0 +DSVD=0 +ASVD=0\r\n
       0 A: +DS=3,0,2048,34 +DS44=3,0,0,4096,4096,255,255,12288,12288 +DSZ=1,1 +B2=0\r\n
-      0 A: +CBST=0,0,0 +CRC=0 +PCW=2 +PIG=1 +FAA=0 +FPR=0 -SEC=0 +CVM=63,8000,0\r\n
+      0 A: +X2UP=0,16,0 +CBST=0,0,0 +CRC=0 +PCW=2 +PIG=1 +FAA=0 +FPR=0 -SEC=0 +EF=5\r\n
+      0 A: +CVM=63,8000,0\r\n
       0 A: STORED PROFILES: none\r\n
       0 A: OK\r\n
       0 A< AT&W\r
@@ -713,6 +715,37 @@
       0 A< ATI0\r
       0 A: D-Modem\r\n
       0 A< ATQ0V1E1\r
+      0 A: OK\r\n
+      0 A< AT+X2UP=?\r
+      0 A: AT+X2UP=?\r\r\n
+      0 A: +X2UP: (0-2),(0,4,8,12,16,20,24,28),(0,4,8,12,16,20,24,28)\r\n
+      0 A: OK\r\n
+      0 A< AT+X2UP=2,12,16\r
+      0 A: AT+X2UP=2,12,16\r\r\n
+      0 A: OK\r\n
+      0 A< AT+X2UP?\r
+      0 A: AT+X2UP?\r\r\n
+      0 A: +X2UP: 2,12,16\r\n
+      0 A: OK\r\n
+      0 A< AT+X2UP=1\r
+      0 A: AT+X2UP=1\r\r\n
+      0 A: OK\r\n
+      0 A< AT+X2UP?\r
+      0 A: AT+X2UP?\r\r\n
+      0 A: +X2UP: 1,12,16\r\n
+      0 A: OK\r\n
+      0 A< AT+X2UP=2,16,16\r
+      0 A: AT+X2UP=2,16,16\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+X2UP=2,1\r
+      0 A: AT+X2UP=2,1\r\r\n
+      0 A: ERROR\r\n
+      0 A< AT+X2UP?\r
+      0 A: AT+X2UP?\r\r\n
+      0 A: +X2UP: 1,12,16\r\n
+      0 A: OK\r\n
+      0 A< AT+X2UP=0,16,0\r
+      0 A: AT+X2UP=0,16,0\r\r\n
       0 A: OK\r\n
       0 A< ATS3=13S4=10S5=8S2=43\r
       0 A: ATS3=13S4=10S5=8S2=43\r\r\n

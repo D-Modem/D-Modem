@@ -1,0 +1,689 @@
+diff --git a/cmake/re-config.cmake b/cmake/re-config.cmake
+index 8dea2f6..f89efa9 100644
+--- a/cmake/re-config.cmake
++++ b/cmake/re-config.cmake
+@@ -181,9 +181,13 @@ if(MSVC)
+ endif()
+ 
+ if(WIN32)
++  # (RE_WIN32_WINNT: the oldest Windows to run on, default Windows 10)
++  if(NOT RE_WIN32_WINNT)
++    set(RE_WIN32_WINNT 0x0A00)
++  endif()
+   list(APPEND RE_DEFINITIONS
+     WIN32
+-    _WIN32_WINNT=0x0A00
++    _WIN32_WINNT=${RE_WIN32_WINNT}
+   )
+ 
+   unset(CMAKE_EXTRA_INCLUDE_FILES)
+@@ -274,8 +278,12 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+ endif()
+ 
+ if(WIN32)
++  # (qWAVE: Windows Vista and later, src/udp/udp.c)
++  math(EXPR _re_winnt "${RE_WIN32_WINNT}")
++  if(_re_winnt GREATER_EQUAL 1536)
++    list(APPEND RE_LIBS qwave)
++  endif()
+   list(APPEND RE_LIBS
+-    qwave
+     iphlpapi
+     wsock32
+     ws2_32
+diff --git a/include/re_btrace.h b/include/re_btrace.h
+index 5304929..cb8742c 100644
+--- a/include/re_btrace.h
++++ b/include/re_btrace.h
+@@ -24,7 +24,8 @@ static inline int btrace(struct btrace *bt)
+ 
+ 	return 0;
+ }
+-#elif defined(WIN32)
++#elif defined(WIN32) && _WIN32_WINNT >= 0x0501
++/* (CaptureStackBackTrace(): kernel32's from XP on) */
+ #ifndef WIN32_LEAN_AND_MEAN
+ #define WIN32_LEAN_AND_MEAN
+ #endif
+diff --git a/include/re_net.h b/include/re_net.h
+index 2962ddc..d4cd2c9 100644
+--- a/include/re_net.h
++++ b/include/re_net.h
+@@ -6,6 +6,46 @@
+ #if defined(WIN32)
+ #include <winsock2.h>
+ #include <ws2tcpip.h>
++#if _WIN32_WINNT < 0x0501
++/* (Windows 9x, NT 4 and 2000: getaddrinfo() is ws2_32's only on XP and
++   later; wspiapi.h's takes it there, or its own IPv4 one) */
++/* (its template, _WSPIAPI_COUNTOF, C++'s even in an extern "C" block) */
++#ifdef __cplusplus
++extern "C++" {
++#endif
++#include <wspiapi.h>
++#ifdef __cplusplus
++}
++#endif
++/* (as functions alone: struct dnsc_conf has a getaddrinfo member) */
++#undef getaddrinfo
++#undef getnameinfo
++#undef freeaddrinfo
++#define getaddrinfo(n, s, h, r) WspiapiGetAddrInfo(n, s, h, r)
++#define getnameinfo(a, l, h, hl, s, sl, f) \
++	WspiapiGetNameInfo(a, l, h, hl, s, sl, f)
++#define freeaddrinfo(ai) WspiapiFreeAddrInfo(ai)
++/* (and mingw-w64's gai_strerrorA() is its gai_strerrorW()'s, on
++   FormatMessageW(), which Windows 9x has only as a stub) */
++#undef gai_strerror
++#define gai_strerror(e) re_gai_strerror(e)
++static inline const char *re_gai_strerror(int e)
++{
++	(void)e;
++	return "address lookup failed";
++}
++#endif
++#ifndef AI_ADDRCONFIG
++#define AI_ADDRCONFIG 0
++#endif
++#if _WIN32_WINNT < 0x0600
++/* (inet_pton() and inet_ntop(): ws2_32's on Vista and later; src/sa/sa.c
++   has them for the others) */
++int re_inet_pton(int af, const char *src, void *dst);
++const char *re_inet_ntop(int af, const void *src, char *dst, size_t size);
++#define inet_pton re_inet_pton
++#define inet_ntop re_inet_ntop
++#endif
+ #else
+ #include <sys/types.h>
+ #ifndef _BSD_SOCKLEN_T_
+diff --git a/include/re_thread.h b/include/re_thread.h
+index eba0053..5314028 100644
+--- a/include/re_thread.h
++++ b/include/re_thread.h
+@@ -31,10 +31,22 @@ struct thrd_win32 {
+ 	HANDLE hdl;
+ 	DWORD id;
+ };
++#if _WIN32_WINNT >= 0x0600
+ #define ONCE_FLAG_INIT INIT_ONCE_STATIC_INIT
+ typedef INIT_ONCE once_flag;
+-typedef struct thrd_win32 thrd_t;
+ typedef CONDITION_VARIABLE cnd_t;
++#else
++/* (Windows 9x, NT 4, 2000 and XP: no INIT_ONCE and no condition
++   variables; a flag, and a semaphore with a count of the waiters) */
++#define ONCE_FLAG_INIT {0}
++typedef struct { volatile LONG state; } once_flag;
++typedef struct {
++	CRITICAL_SECTION lock;
++	HANDLE sema;
++	LONG waiters;
++} cnd_t;
++#endif
++typedef struct thrd_win32 thrd_t;
+ typedef CRITICAL_SECTION mtx_t;
+ typedef DWORD tss_t;
+ 
+diff --git a/src/fmt/time.c b/src/fmt/time.c
+index ee5b0bc..f547e1d 100644
+--- a/src/fmt/time.c
++++ b/src/fmt/time.c
+@@ -16,6 +16,8 @@
+ 
+ #include <re_types.h>
+ #include <re_fmt.h>
++#include <re_list.h>
++#include <re_tmr.h>
+ 
+ 
+ static const char *dayv[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+@@ -150,11 +152,15 @@ int fmt_timestamp_us(struct re_printf *pf, void *arg)
+ 	struct timespec tspec;
+ 	struct tm tm = {0};
+ 
+-#if defined(WIN32) && !defined(__MINGW32__)
+-	timespec_get(&tspec, TIME_UTC);
+-	int err = localtime_s(&tm, &tspec.tv_sec);
+-	if (err)
+-		return err;
++#if defined(WIN32)
++	/* (localtime() is per thread in Windows' C libraries) */
++	struct tm *ltm;
++
++	(void)tmr_timespec_get(&tspec, 0);
++	ltm = localtime(&tspec.tv_sec);
++	if (!ltm)
++		return EINVAL;
++	tm = *ltm;
+ #else
+ 	(void)clock_gettime(CLOCK_REALTIME, &tspec);
+ 	if (!localtime_r(&tspec.tv_sec, &tm))
+diff --git a/src/hmac/hmac_sha1.c b/src/hmac/hmac_sha1.c
+index d69536a..543eeda 100644
+--- a/src/hmac/hmac_sha1.c
++++ b/src/hmac/hmac_sha1.c
+@@ -11,7 +11,7 @@
+ #include <openssl/err.h>
+ #elif defined (__APPLE__)
+ #include <CommonCrypto/CommonHMAC.h>
+-#elif defined (WIN32)
++#elif defined (WIN32) && !defined (USE_MBEDTLS)
+ #include <windows.h>
+ #include <wincrypt.h>
+ #elif defined (USE_MBEDTLS)
+@@ -26,7 +26,7 @@
+ #include <re_dbg.h>
+ 
+ 
+-#if !defined (USE_OPENSSL) && defined (WIN32)
++#if !defined (USE_OPENSSL) && !defined (USE_MBEDTLS) && defined (WIN32)
+ static void compute_hash(ALG_ID alg_id, const void* data, size_t dataSize,
+ 			 uint8_t hashBuf[64], DWORD hashSize,
+ 			 const void *hmacSecret, size_t hmacSecretSize)
+@@ -113,7 +113,7 @@ void hmac_sha1(const uint8_t *k,  /* secret key */
+ 
+ 	CCHmac(kCCHmacAlgSHA1, k, lk, d, ld, out);
+ 
+-#elif defined (WIN32)
++#elif defined (WIN32) && !defined (USE_MBEDTLS)
+ 	compute_hash(CALG_SHA1, d, ld,
+ 		     out, (DWORD)t, k, lk);
+ #elif defined (MBEDTLS_MD_C)
+@@ -157,7 +157,7 @@ void hmac_sha256(const uint8_t *key, size_t key_len,
+ 
+ 	CCHmac(kCCHmacAlgSHA256, key, key_len, data, data_len, out);
+ 
+-#elif defined (WIN32)
++#elif defined (WIN32) && !defined (USE_MBEDTLS)
+ 	compute_hash(CALG_SHA_256, data, data_len,
+ 		     out, (DWORD)out_len, key, key_len);
+ #elif defined (MBEDTLS_MD_C)
+diff --git a/src/md5/wrap.c b/src/md5/wrap.c
+index 6b8168b..75c749b 100644
+--- a/src/md5/wrap.c
++++ b/src/md5/wrap.c
+@@ -9,7 +9,7 @@
+ #include <openssl/md5.h>
+ #elif defined (__APPLE__)
+ #include <CommonCrypto/CommonDigest.h>
+-#elif defined (WIN32)
++#elif defined (WIN32) && !defined (USE_MBEDTLS)
+ #include <windows.h>
+ #include <wincrypt.h>
+ #elif defined (USE_MBEDTLS)
+@@ -46,7 +46,7 @@ void md5(const uint8_t *d, size_t n, uint8_t *md)
+ #elif defined (__APPLE__)
+ 	CC_MD5(d, (unsigned int)n, md);
+ 
+-#elif defined (WIN32)
++#elif defined (WIN32) && !defined (USE_MBEDTLS)
+ 	HCRYPTPROV context;
+ 	HCRYPTHASH hash;
+ 	DWORD hash_size = MD5_SIZE;
+diff --git a/src/sa/sa.c b/src/sa/sa.c
+index 8f6abb7..3d9670b 100644
+--- a/src/sa/sa.c
++++ b/src/sa/sa.c
+@@ -21,6 +21,92 @@
+ #include <re_dbg.h>
+ 
+ 
++#if defined(WIN32) && _WIN32_WINNT < 0x0600
++/* inet_pton() for Windows before Vista: IPv4's dotted quads (four
++   decimal numbers, no more and no less), IPv6 through Winsock 2's
++   WSAStringToAddressA() where the system has IPv6 */
++int re_inet_pton(int af, const char *src, void *dst)
++{
++	if (!src || !dst)
++		return -1;
++
++	if (af == AF_INET) {
++		uint8_t b[4];
++		int i;
++
++		for (i = 0; i < 4; i++) {
++			unsigned v = 0;
++			int n = 0;
++
++			while (*src >= '0' && *src <= '9' && n < 4) {
++				v = v * 10 + (unsigned)(*src++ - '0');
++				++n;
++			}
++			if (n == 0 || n > 3 || v > 255)
++				return 0;
++			b[i] = (uint8_t)v;
++			if (i < 3 && *src++ != '.')
++				return 0;
++		}
++		if (*src)
++			return 0;
++		memcpy(dst, b, 4);
++		return 1;
++	}
++#ifdef AF_INET6
++	if (af == AF_INET6) {
++		struct sockaddr_in6 sin6;
++		char buf[INET6_ADDRSTRLEN];
++		INT len = sizeof(sin6);
++
++		if (!strchr(src, ':') || strlen(src) >= sizeof(buf))
++			return 0;
++		str_ncpy(buf, src, sizeof(buf));
++		memset(&sin6, 0, sizeof(sin6));
++		if (WSAStringToAddressA(buf, AF_INET6, NULL,
++					(struct sockaddr *)&sin6, &len))
++			return 0;
++		memcpy(dst, &sin6.sin6_addr, sizeof(sin6.sin6_addr));
++		return 1;
++	}
++#endif
++	return -1;
++}
++
++
++/* inet_ntop() for Windows before Vista, as re_inet_pton() */
++const char *re_inet_ntop(int af, const void *src, char *dst, size_t size)
++{
++	if (!src || !dst)
++		return NULL;
++
++	if (af == AF_INET) {
++		const uint8_t *b = src;
++
++		if (re_snprintf(dst, size, "%u.%u.%u.%u",
++				b[0], b[1], b[2], b[3]) < 0)
++			return NULL;
++		return dst;
++	}
++#ifdef AF_INET6
++	if (af == AF_INET6) {
++		struct sockaddr_in6 sin6;
++		DWORD n = (DWORD)size;
++
++		memset(&sin6, 0, sizeof(sin6));
++		sin6.sin6_family = AF_INET6;
++		memcpy(&sin6.sin6_addr, src, sizeof(sin6.sin6_addr));
++		if (WSAAddressToStringA((struct sockaddr *)&sin6,
++					sizeof(sin6), NULL, dst, &n))
++			return NULL;
++		return dst;
++	}
++#endif
++	return NULL;
++}
++#endif
++
++
+ /**
+  * Initialize a Socket Address
+  *
+diff --git a/src/sha/wrap.c b/src/sha/wrap.c
+index 8694500..87a34c0 100644
+--- a/src/sha/wrap.c
++++ b/src/sha/wrap.c
+@@ -11,7 +11,7 @@
+ #include <openssl/sha.h>
+ #elif defined (__APPLE__)
+ #include <CommonCrypto/CommonDigest.h>
+-#elif defined (WIN32)
++#elif defined (WIN32) && !defined (USE_MBEDTLS)
+ #include <windows.h>
+ #include <wincrypt.h>
+ #elif defined (USE_MBEDTLS)
+@@ -26,7 +26,7 @@
+ #define DEBUG_LEVEL 5
+ #include <re_dbg.h>
+ 
+-#if !defined (USE_OPENSSL) && defined (WIN32)
++#if !defined (USE_OPENSSL) && !defined (USE_MBEDTLS) && defined (WIN32)
+ static void compute_hash(ALG_ID alg_id, const void *data, size_t data_size,
+ 			 uint8_t *md, DWORD hash_size)
+ {
+@@ -58,7 +58,7 @@ void sha1(const uint8_t *d, size_t n, uint8_t *md)
+ 	(void)SHA1(d, n, md);
+ #elif defined (__APPLE__)
+ 	CC_SHA1(d, (uint32_t)n, md);
+-#elif defined (WIN32)
++#elif defined (WIN32) && !defined (USE_MBEDTLS)
+ 	compute_hash(CALG_SHA1, d, n, md, SHA1_DIGEST_SIZE);
+ #elif defined (MBEDTLS_MD_C)
+ 	int err;
+@@ -89,7 +89,7 @@ void sha256(const uint8_t *d, size_t n, uint8_t *md)
+ 	(void)SHA256(d, n, md);
+ #elif defined (__APPLE__)
+ 	CC_SHA256(d, (uint32_t)n, md);
+-#elif defined (WIN32)
++#elif defined (WIN32) && !defined (USE_MBEDTLS)
+ 	compute_hash(CALG_SHA_256, d, n, md, SHA256_DIGEST_SIZE);
+ #elif defined (MBEDTLS_MD_C)
+ 	int err;
+diff --git a/src/thread/win32.c b/src/thread/win32.c
+index a5e791d..a743a87 100644
+--- a/src/thread/win32.c
++++ b/src/thread/win32.c
+@@ -98,7 +98,8 @@ int thrd_create(thrd_t *thr, thrd_start_t func, void *arg)
+ 	th->func = func;
+ 	th->arg	 = arg;
+ 
+-	handle = _beginthreadex(NULL, 0, thrd_handler, th, 0, NULL);
++	unsigned id = 0;
++	handle = _beginthreadex(NULL, 0, thrd_handler, th, 0, &id);
+ 	if (handle == 0) {
+ 		if (errno == EAGAIN || errno == EACCES) {
+ 			err = thrd_nomem;
+@@ -109,7 +110,7 @@ int thrd_create(thrd_t *thr, thrd_start_t func, void *arg)
+ 	}
+ 
+ 	thr->hdl = (HANDLE)handle;
+-	thr->id	 = GetThreadId((HANDLE)handle);
++	thr->id	 = id;
+ out:
+ 	if (err)
+ 		mem_deref(th);
+@@ -161,6 +162,7 @@ int thrd_join(thrd_t thr, int *res)
+ }
+ 
+ 
++#if _WIN32_WINNT >= 0x0600
+ struct impl_call_once_param {
+ 	void (*func)(void);
+ };
+@@ -183,6 +185,21 @@ void call_once(once_flag *flag, void (*func)(void))
+ 	param.func = func;
+ 	InitOnceExecuteOnce(flag, call_once_callback, (PVOID)&param, NULL);
+ }
++#else
++/* (0: not run, 1: running, 2: done; the others wait for it) */
++void call_once(once_flag *flag, void (*func)(void))
++{
++	if (flag->state == 2)
++		return;
++	if (InterlockedCompareExchange(&flag->state, 1, 0) == 0) {
++		func();
++		InterlockedExchange(&flag->state, 2);
++		return;
++	}
++	while (flag->state != 2)
++		Sleep(0);
++}
++#endif
+ 
+ 
+ void thrd_exit(int res)
+@@ -191,6 +208,22 @@ void thrd_exit(int res)
+ }
+ 
+ 
++static uint32_t abs2ms(const struct timespec *ts)
++{
++	struct timespec now;
++	if (!ts)
++		return 0;
++
++	uint64_t abs_ms = (ts->tv_sec * 1000U) + (ts->tv_nsec / 1000000L);
++
++	tmr_timespec_get(&now, 0);
++	uint64_t now_ms = (now.tv_sec * 1000U) + (now.tv_nsec / 1000000L);
++
++	return (abs_ms > now_ms) ? (uint32_t)(abs_ms - now_ms) : 0;
++}
++
++
++#if _WIN32_WINNT >= 0x0600
+ int cnd_init(cnd_t *cnd)
+ {
+ 	if (!cnd)
+@@ -235,30 +268,117 @@ int cnd_wait(cnd_t *cnd, mtx_t *mtx)
+ }
+ 
+ 
+-static uint32_t abs2ms(const struct timespec *ts)
++int cnd_timedwait(cnd_t *cnd, mtx_t *mtx, const struct timespec *abstime)
+ {
+-	struct timespec now;
+-	if (!ts)
+-		return 0;
++	if (!cnd || !mtx || !abstime)
++		return thrd_error;
+ 
+-	uint64_t abs_ms = (ts->tv_sec * 1000U) + (ts->tv_nsec / 1000000L);
++	if (SleepConditionVariableCS(cnd, mtx, abs2ms(abstime)))
++		return thrd_success;
+ 
+-	tmr_timespec_get(&now, 0);
+-	uint64_t now_ms = (now.tv_sec * 1000U) + (now.tv_nsec / 1000000L);
++	return (GetLastError() == ERROR_TIMEOUT) ? thrd_timedout : thrd_error;
++}
+ 
+-	return (abs_ms > now_ms) ? (uint32_t)(abs_ms - now_ms) : 0;
++
++void cnd_destroy(cnd_t *cnd)
++{
++	if (!cnd)
++		return;
++	/* do nothing */
+ }
++#else
++/* Windows before Vista: a waiter counts itself in, lets go of the mutex
++   and waits for the semaphore; a signal releases it once for one waiter,
++   a broadcast once for each.  A waiter that times out after it was
++   released leaves the semaphore's count for another, which then wakes
++   for nothing (as a condition variable may) */
++int cnd_init(cnd_t *cnd)
++{
++	if (!cnd)
++		return thrd_error;
+ 
++	cnd->sema = CreateSemaphoreA(NULL, 0, 0x7fffffff, NULL);
++	if (!cnd->sema)
++		return thrd_error;
++	InitializeCriticalSection(&cnd->lock);
++	cnd->waiters = 0;
+ 
+-int cnd_timedwait(cnd_t *cnd, mtx_t *mtx, const struct timespec *abstime)
++	return thrd_success;
++}
++
++
++int cnd_signal(cnd_t *cnd)
+ {
+-	if (!cnd || !mtx || !abstime)
++	if (!cnd)
+ 		return thrd_error;
+ 
+-	if (SleepConditionVariableCS(cnd, mtx, abs2ms(abstime)))
++	EnterCriticalSection(&cnd->lock);
++	if (cnd->waiters > 0) {
++		--cnd->waiters;
++		ReleaseSemaphore(cnd->sema, 1, NULL);
++	}
++	LeaveCriticalSection(&cnd->lock);
++
++	return thrd_success;
++}
++
++
++int cnd_broadcast(cnd_t *cnd)
++{
++	if (!cnd)
++		return thrd_error;
++
++	EnterCriticalSection(&cnd->lock);
++	if (cnd->waiters > 0) {
++		ReleaseSemaphore(cnd->sema, cnd->waiters, NULL);
++		cnd->waiters = 0;
++	}
++	LeaveCriticalSection(&cnd->lock);
++
++	return thrd_success;
++}
++
++
++static int cnd_wait_ms(cnd_t *cnd, mtx_t *mtx, DWORD ms)
++{
++	DWORD w;
++
++	EnterCriticalSection(&cnd->lock);
++	++cnd->waiters;
++	LeaveCriticalSection(&cnd->lock);
++
++	LeaveCriticalSection(mtx);
++	w = WaitForSingleObject(cnd->sema, ms);
++	if (w != WAIT_OBJECT_0) {
++		EnterCriticalSection(&cnd->lock);
++		if (cnd->waiters > 0)
++			--cnd->waiters;
++		LeaveCriticalSection(&cnd->lock);
++	}
++	EnterCriticalSection(mtx);
++
++	if (w == WAIT_OBJECT_0)
+ 		return thrd_success;
+ 
+-	return (GetLastError() == ERROR_TIMEOUT) ? thrd_timedout : thrd_error;
++	return (w == WAIT_TIMEOUT) ? thrd_timedout : thrd_error;
++}
++
++
++int cnd_wait(cnd_t *cnd, mtx_t *mtx)
++{
++	if (!cnd || !mtx)
++		return thrd_error;
++
++	return cnd_wait_ms(cnd, mtx, INFINITE);
++}
++
++
++int cnd_timedwait(cnd_t *cnd, mtx_t *mtx, const struct timespec *abstime)
++{
++	if (!cnd || !mtx || !abstime)
++		return thrd_error;
++
++	return cnd_wait_ms(cnd, mtx, abs2ms(abstime));
+ }
+ 
+ 
+@@ -266,8 +386,11 @@ void cnd_destroy(cnd_t *cnd)
+ {
+ 	if (!cnd)
+ 		return;
+-	/* do nothing */
++
++	CloseHandle(cnd->sema);
++	DeleteCriticalSection(&cnd->lock);
+ }
++#endif
+ 
+ 
+ int mtx_init(mtx_t *mtx, int type)
+@@ -299,7 +422,26 @@ int mtx_trylock(mtx_t *mtx)
+ 	if (!mtx)
+ 		return thrd_error;
+ 
++#if _WIN32_WINNT >= 0x0500
+ 	return TryEnterCriticalSection(mtx) ? thrd_success : thrd_busy;
++#else
++	/* (Windows 9x has no TryEnterCriticalSection: NT's alone) */
++	{
++		typedef BOOL (WINAPI *try_fn)(LPCRITICAL_SECTION);
++		static try_fn fn;
++		static volatile LONG looked;
++
++		if (!looked) {
++			fn = (try_fn)(void *)GetProcAddress(
++				GetModuleHandleA("kernel32.dll"),
++				"TryEnterCriticalSection");
++			InterlockedExchange(&looked, 1);
++		}
++		if (!fn)
++			return thrd_error;
++		return fn(mtx) ? thrd_success : thrd_busy;
++	}
++#endif
+ }
+ 
+ 
+diff --git a/src/tmr/tmr.c b/src/tmr/tmr.c
+index d8911ed..46cec46 100644
+--- a/src/tmr/tmr.c
++++ b/src/tmr/tmr.c
+@@ -272,8 +272,15 @@ int tmr_timespec_get(struct timespec *tp, uint64_t offset)
+ 	if (!tp)
+ 		return EINVAL;
+ 
+-#if defined(WIN32) && !defined(__MINGW32__)
+-	err = (timespec_get(tp, TIME_UTC) == TIME_UTC) ? 0 : EINVAL;
++#if defined(WIN32)
++	/* (the system's clock: every C library and Windows version has
++	   it, not timespec_get() or clock_gettime()) */
++	{
++		uint64_t us = tmr_jiffies_rt_usec();
++		tp->tv_sec  = (time_t)(us / 1000000u);
++		tp->tv_nsec = (long)(us % 1000000u) * 1000;
++		err = 0;
++	}
+ #else
+ 	err = (clock_gettime(CLOCK_REALTIME, tp) == 0) ? 0 : errno;
+ #endif
+diff --git a/src/udp/udp.c b/src/udp/udp.c
+index 3362290..bcb016c 100644
+--- a/src/udp/udp.c
++++ b/src/udp/udp.c
+@@ -27,7 +27,11 @@
+ #include <re_main.h>
+ #include <re_sa.h>
+ #include <re_udp.h>
+-#ifdef WIN32
++/* (qWAVE's QoS: Windows Vista and later) */
++#if defined(WIN32) && _WIN32_WINNT >= 0x0600
++#define RE_QOS2 1
++#endif
++#ifdef RE_QOS2
+ #ifndef HAVE_QOS_FLOWID
+ typedef UINT32 QOS_FLOWID;
+ #endif
+@@ -41,7 +45,7 @@ typedef UINT32 *PQOS_FLOWID;
+ #ifndef QOS_NON_ADAPTIVE_FLOW
+ #define QOS_NON_ADAPTIVE_FLOW 0x00000002
+ #endif
+-#endif /*WIN32*/
++#endif /*RE_QOS2*/
+ 
+ #define DEBUG_MODULE "udp"
+ #define DEBUG_LEVEL 5
+@@ -76,7 +80,7 @@ struct udp_sock {
+ 	bool conn;           /**< Connected socket flag       */
+ 	size_t rxsz;         /**< Maximum receive chunk size  */
+ 	size_t rx_presz;     /**< Preallocated rx buffer size */
+-#ifdef WIN32
++#ifdef RE_QOS2
+ 	HANDLE qos;          /**< QOS subsystem handle        */
+ 	QOS_FLOWID qos_id;   /**< QOS flow id                 */
+ #endif
+@@ -132,7 +136,7 @@ static void udp_destructor(void *data)
+ 
+ 	mem_deref(us->lock);
+ 
+-#ifdef WIN32
++#ifdef RE_QOS2
+ 	if (us->qos && us->qos_id)
+ 		(void)QOSRemoveSocketFromFlow(us->qos, 0, us->qos_id, 0);
+ 	if (us->qos)
+@@ -627,7 +631,7 @@ int udp_settos(struct udp_sock *us, uint8_t tos)
+ 	int err = 0;
+ 	int v = tos;
+ 	struct sa sa;
+-#ifdef WIN32
++#ifdef RE_QOS2
+ 	QOS_VERSION qos_version = { 1 , 0 };
+ 	QOS_TRAFFIC_TYPE qos_type = QOSTrafficTypeBestEffort;
+ 	if (tos >= 32) /* >= DSCP_CS1 */
+@@ -644,7 +648,7 @@ int udp_settos(struct udp_sock *us, uint8_t tos)
+ 	if (!us)
+ 		return EINVAL;
+ 
+-#ifdef WIN32
++#ifdef RE_QOS2
+ 	err = QOSCreateHandle(&qos_version, &us->qos);
+ 	if (!err)
+ 		return GetLastError();

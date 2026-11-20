@@ -117,6 +117,29 @@ enum S_REGISTER {
 	SREG_MNP10                        = 113, /* MNP 10 offered (bit 0),
 						    and between D-Modems
 						    every modulation (bit 1) */
+	SREG_MNP_V42BIS                   = 114, /* 1: our MNP LR offers
+						    V.42bis as the initiator
+						    (the responder always
+						    takes it, with %C2 or
+						    %C3) */
+	SREG_ETC                          = 116, /* ETC's flags, as 3Com's
+						    TC110 firmware keeps
+						    them (AT&F5: 0xEE
+						    cellular, AT&F6: 0xB0
+						    landline; bit 5 the
+						    transmit filter, bits
+						    0-2 /ETC) */
+	SREG_ZYX_DES                      = 102, /* ZyXEL's encryption on
+						    X.75 and V.120 (bit 0
+						    on, 1 triple DES, 2 no
+						    PKDS: the ATCK key, 3
+						    disconnect without it) */
+	SREG_ZYX_PEER                     = 115, /* 1: the V.32bis and ZyX
+						    pumps send ZyXEL's peer
+						    marker, and go to ZyX on
+						    the remote's (the
+						    answerer always listens
+						    for it, and logs it) */
 	SREG_LEASED                       = 47,  /* AT&L: 1 a 2-wire leased
 						    line, 2 a 4-wire one (no
 						    dial tone or ringing: ATD
@@ -232,6 +255,11 @@ enum DP_ID {
 	DP_V32TERBO = 232,      /* V.32terbo: V.32bis and 16800, 19200
 				   bit/s (dp_v32.cpp); not in V.250, the
 				   number is D-Modem's */
+	DP_ZYX      = 234,      /* ZyXEL's ZyX 7200 to 19200: V.32bis at
+				   2742.857 baud, an 8 symbol frame with a
+				   ring table (dp_v32.cpp, zyx.h), D-Modem
+				   to D-Modem; not in V.250, the number is
+				   D-Modem's */
 	DP_PEP      = 255,      /* Telebit's PEP: 511 carriers, half duplex
 				   in packets (dsp/pep.h), D-Modem to
 				   D-Modem; not in V.250, the number is

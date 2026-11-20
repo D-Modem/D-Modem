@@ -33,8 +33,49 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#if _WIN32_WINNT < 0x0501
+/* (Windows 9x, NT 4 and 2000: getaddrinfo() is ws2_32's only on XP and
+   later; wspiapi.h's takes it there, or does IPv4 itself.  As function
+   macros, as libre's re_net.h has them: its struct dnsc_conf has a
+   getaddrinfo member) */
+extern "C++" {
+#include <wspiapi.h>
+}
+#undef getaddrinfo
+#undef getnameinfo
+#undef freeaddrinfo
+#define getaddrinfo(n, s, h, r) WspiapiGetAddrInfo(n, s, h, r)
+#define getnameinfo(a, l, h, hl, s, sl, f) \
+	WspiapiGetNameInfo(a, l, h, hl, s, sl, f)
+#define freeaddrinfo(ai) WspiapiFreeAddrInfo(ai)
+#endif
+#ifndef AI_NUMERICSERV
+#define AI_NUMERICSERV 0
+#endif
 
 namespace dmd {
+
+/* the overlapped I/O on h (ov's, or all of it with nullptr) cancelled:
+   CancelIoEx() where there is one (Vista and later; any thread's I/O),
+   else CancelIo() (NT 4 and 98 and later; this thread's I/O alone) */
+inline void cancel_io(HANDLE h, OVERLAPPED *ov)
+{
+#if _WIN32_WINNT >= 0x0600
+	CancelIoEx(h, ov);
+#else
+	typedef BOOL(WINAPI * ex_fn)(HANDLE, LPOVERLAPPED);
+	typedef BOOL(WINAPI * io_fn)(HANDLE);
+	static const HMODULE k = GetModuleHandleA("kernel32.dll");
+	static const ex_fn ex = reinterpret_cast<ex_fn>(
+		reinterpret_cast<void *>(GetProcAddress(k, "CancelIoEx")));
+	static const io_fn io = reinterpret_cast<io_fn>(
+		reinterpret_cast<void *>(GetProcAddress(k, "CancelIo")));
+	if (ex)
+		ex(h, ov);
+	else if (io)
+		io(h);
+#endif
+}
 
 /* Winsock started, once (the process's first use of a socket) */
 inline bool net_init()
@@ -97,7 +138,13 @@ inline void fd_close(int fd)
 /* the local time of t into *tm (localtime_r) */
 inline void local_time(time_t t, struct tm *tm)
 {
+#ifdef __PICOLIBC__
+	/* (picolibc, the C library of clang-retro's builds for 98 to XP:
+	   POSIX's, no localtime_s) */
+	localtime_r(&t, tm);
+#else
 	localtime_s(tm, &t);
+#endif
 }
 
 /* (sends never raise a signal on Windows; MSG_DONTWAIT: the sockets it
@@ -107,13 +154,35 @@ const int SEND_NOSIGNAL = 0;
 #define MSG_DONTWAIT 0
 #endif
 
-/* socket(2), not inherited by child processes */
+/* Winsock's socket calls with a protocol info: the W ones, which 9x
+   lacks; the A ones for builds that run there (_WIN32_WINNT below
+   2000's: clang-retro's), which MSVC calls deprecated */
+#if _WIN32_WINNT < 0x0500
+#define DMD_WSASocket WSASocketA
+#define DMD_WSADuplicateSocket WSADuplicateSocketA
+typedef WSAPROTOCOL_INFOA DMD_WSAPROTOCOL_INFO;
+#else
+#define DMD_WSASocket WSASocketW
+#define DMD_WSADuplicateSocket WSADuplicateSocketW
+typedef WSAPROTOCOL_INFOW DMD_WSAPROTOCOL_INFO;
+#endif
+
+/* socket(2), not inherited by child processes.  (WSA_FLAG_NO_HANDLE_
+   INHERIT is Windows 7 SP1's, refused (WSAEINVAL) before it: there the
+   handle is made not inheritable after, where the system can, NT) */
 inline int socket_cloexec(int domain, int type, int protocol)
 {
 	if (!net_init())
 		return -1;
-	SOCKET s = WSASocketW(domain, type, protocol, nullptr, 0,
+	SOCKET s = DMD_WSASocket(domain, type, protocol, nullptr, 0,
 			      WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT);
+	if (s == INVALID_SOCKET && WSAGetLastError() == WSAEINVAL) {
+		s = DMD_WSASocket(domain, type, protocol, nullptr, 0,
+			       WSA_FLAG_OVERLAPPED);
+		if (s != INVALID_SOCKET)
+			SetHandleInformation((HANDLE)s, HANDLE_FLAG_INHERIT,
+					     0);
+	}
 	if (s == INVALID_SOCKET) {
 		errno = sock_errno();
 		return -1;
@@ -124,12 +193,19 @@ inline int socket_cloexec(int domain, int type, int protocol)
 /* another descriptor for the socket fd (F_DUPFD_CLOEXEC) */
 inline int fd_dup(int fd)
 {
-	WSAPROTOCOL_INFOW pi;
-	if (WSADuplicateSocketW((SOCKET)fd, GetCurrentProcessId(), &pi))
+	DMD_WSAPROTOCOL_INFO pi;
+	if (DMD_WSADuplicateSocket((SOCKET)fd, GetCurrentProcessId(), &pi))
 		return -1;
-	SOCKET s = WSASocketW(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO,
+	SOCKET s = DMD_WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO,
 			      FROM_PROTOCOL_INFO, &pi, 0,
 			      WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT);
+	if (s == INVALID_SOCKET && WSAGetLastError() == WSAEINVAL) {
+		s = DMD_WSASocket(FROM_PROTOCOL_INFO, FROM_PROTOCOL_INFO,
+			       FROM_PROTOCOL_INFO, &pi, 0, WSA_FLAG_OVERLAPPED);
+		if (s != INVALID_SOCKET)
+			SetHandleInformation((HANDLE)s, HANDLE_FLAG_INHERIT,
+					     0);
+	}
 	return s == INVALID_SOCKET ? -1 : (int)s;
 }
 

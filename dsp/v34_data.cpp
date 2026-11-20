@@ -721,6 +721,13 @@ void V34DataRx::decode_frame(u32 *scr, s16 tap)
 	for (i = 0; i < n; i++)
 		bits[i] = static_cast<unsigned char>(
 			descramble(scr, tap, bits[i]));
+	/* B1 is ones (10.1.3.10/V.34): the first frames' bits as the
+	   remote's change to data left them (the 3Com TC110's gave the
+	   DTE a few octets of junk) */
+	if (b1_left > 0) {
+		b1_left--;
+		std::fill_n(bits, n, 1);
+	}
 	link.put(bits, n);
 }
 

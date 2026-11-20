@@ -90,6 +90,9 @@ const std::map<std::string, const char *> &programs()
 #ifdef HALF_COURIER
 		{ "courier", HALF_COURIER },
 #endif
+#ifdef HALF_3COM
+		{ "3com", HALF_3COM },
+#endif
 	};
 	return p;
 }
@@ -388,11 +391,125 @@ std::vector<Call> calls()
 	      ".*k56rx: MP at.*K56flex connect [0-9]+/56000 \\(analogue "
 	      "modem\\)",
 	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect 56000/" });
+	/* a digital pad and robbed bits on the way down: TRN1B finds
+	   them (k56rx's means against SM56's models), our J's octet
+	   says them, and the digital modem codes for them; the rate the
+	   least distance allows */
+	add("open", "open_k56flex_pad3", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_PAD=3", "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: TRN1B: pad 3 dB, robbed bits 0000"
+	      ".*K56flex connect [0-9]+/54000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)the caller's J \\(16 point, robbed bits 0x40\\)"
+	      ".*K56flex connect 54000/" });
+	add("open", "open_k56flex_rbs", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_RBS=0x24", "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: TRN1B: pad 0 dB, robbed bits 0x12"
+	      ".*K56flex connect [0-9]+/5[0-9]000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)robbed bits 0x12\\).*K56flex connect 5[0-9]000/" });
+	add("open", "open_k56flex_pad6_rbs", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "NET_PAD=6", "NET_RBS=0x21",
+	      "BULK=100000",
+	      "EXPECT_A=(?s)k56rx: TRN1B: pad 6 dB, robbed bits 0x18"
+	      ".*K56flex connect [0-9]+/46000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)robbed bits 0x98\\).*K56flex connect 46000/" });
+	/* rate renegotiation in the data mode: ours, the analogue
+	   modem's S, to 50000 bit/s; and the digital modem's R, the
+	   analogue modem asking for what its error allows */
+	add("open", "open_k56flex_reneg", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_K56_RENEG=2000:10c",
+	      "EXPECT_A=(?s)K56flex renegotiation \\(test\\).*"
+	      "K56flex renegotiated [0-9]+/50000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)K56flex renegotiation \\(the caller's\\).*"
+	      "K56flex renegotiated 50000/" });
+	add("open", "open_k56flex_reneg_dm", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_K56_RENEG=2000a",
+	      "EXPECT_A=(?s)k56rx: R in data mode.*K56flex renegotiation "
+	      "\\(the digital modem's\\).*K56flex renegotiated "
+	      "[0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)K56flex renegotiation \\(test\\).*"
+	      "K56flex renegotiated 56000/" });
+	/* retrains (phase 2 again) in the data mode, by either modem */
+	add("open", "open_k56flex_retrain", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_V34_RETRAIN=2000c",
+	      "EXPECT_A=(?s)retrain 1 \\(test\\).*"
+	      "K56flex retrained [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)retrain 1 \\(tone B\\).*"
+	      "K56flex retrained 56000/" });
+	add("open", "open_k56flex_retrain_dm", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_V34_RETRAIN=2000a",
+	      "EXPECT_A=(?s)retrain 1 \\(tone A\\).*"
+	      "K56flex retrained [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)retrain 1 \\(test\\).*"
+	      "K56flex retrained 56000/" });
+	/* noise down from 4 s into the data mode: the analogue modem's
+	   watch on the error retrains (the error is over 4 times the
+	   limit), and the new training takes a lower rate */
+	add("open", "open_k56flex_noise", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "NET_NOISE=24:30",
+	      "NET_NOISE_DIR=ba",
+	      "EXPECT_A=(?s)retrain 1 \\(errors\\).*"
+	      "K56flex retrained [0-9]+/4[0-9]000 \\(analogue modem\\)" });
+	/* noise that grows slowly: renegotiations down, one rate at a
+	   time */
+	add("open", "open_k56flex_noise_ramp", "open", "open8",
+	    "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "NET_NOISE=24:30:20",
+	      "NET_NOISE_DIR=ba",
+	      "EXPECT_A=(?s)K56flex renegotiation \\(rate down\\).*"
+	      "K56flex renegotiated [0-9]+/5[0-9]000 \\(analogue modem\\)" });
 	add("open", "open_k56flex_alaw", "open", "open8", "ATX3;AT+MS=56",
 	    { "NET=9600:8000:alaw", "DSP_G711=alaw",
 	      "EXPECT_A=(?s)INFO1a: K56flex \\(0x5\\).*A-law.*"
 	      "K56flex connect [0-9]+/56000 \\(analogue modem\\)",
 	      "EXPECT_B=K56flex connect 56000/" });
+	/* x2 both ways: the open modem as the client (the analogue modem,
+	   calling at 9600 Hz) and as the server (8000 Hz): INFO0a marked
+	   x2, our marker after its L1, its preamble and TRN train the PCM
+	   receiver and its J words decode; our MP, its record, our MP'
+	   and E; the data at the start-up's rate (docs/dsp/x2.md) */
+	add("open", "open_x2", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "BULK=100000",
+	      "EXPECT_A=(?s)INFO0a: an x2 server.*x2: our marker 0x4d.*"
+	      "x2rx: J words: 99 good.*x2rx: the server's record f33c.*"
+	      "x2 connect [0-9]+/32000 \\(client\\)",
+	      "EXPECT_B=(?s)x2 marker 0x4d.*x2 connect 32000/" });
+	/* and its renegotiation 12.7 s into the data, as the Courier's: the
+	   rate its noise allows (here the most), the server's marker and
+	   records, the next rate's ones and data; 28800 up */
+	add("open", "open_x2_reneg", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "BULK=300000",
+	      "EXPECT_A=(?s)x2 connect 24000/32000 \\(client\\).*"
+	      "x2: our renegotiation: down 15.*x2rx: the server's marker"
+	      ".*x2: renegotiated, up 28800.*x2rx: the next rate: 15 .*"
+	      "x2: down 56000 from here",
+	      "EXPECT_B=(?s)x2 connect 32000/24000.*x2: down 56000 from "
+	      "here" });
+	/* behind a 6 dB pad: the client finds it in the sync frames'
+	   levels and says so in its MP (pad 2), the server's levels are
+	   that pad's from the start on and at the next rate */
+	add("open", "open_x2_pad", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "NET_PAD=6", "BULK=300000",
+	      "EXPECT_A=(?s)x2rx: the pad: 6 dB.*x2 connect 24000/32000 "
+	      "\\(client\\).*x2: our renegotiation: down 1[0-5].*"
+	      "x2: down 5[0-9]+ from here",
+	      "EXPECT_B=(?s)pad 2\\).*x2 connect 32000/" });
+	/* a noisy line: the rate the client takes is the one its noise
+	   allows, below the most, and its data are good */
+	add("open", "open_x2_noise", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "NET_FLOOR=20", "BULK=300000",
+	      "EXPECT_A=(?s)x2 connect 24000/32000 \\(client\\).*"
+	      "x2: our renegotiation: down ([2-9]|1[0-4]) .*"
+	      "x2: down [0-9]+ from here",
+	      "EXPECT_B=x2 connect 32000/" });
+	/* the client's codec 100 ppm fast, a third of a sample off: the
+	   timing loop finds it */
+	add("open", "open_x2_ppm", "open", "open8", "ATX3;AT+MS=X2",
+	    { "NET=9600:8000:ulaw", "NET_PPM=100", "NET_PHASE=0.3",
+	      "BULK=300000",
+	      "EXPECT_A=(?s)x2rx: timing \\+(99.[5-9]|100.[0-4])[0-9]* "
+	      "ppm.*x2 connect 24000/32000 \\(client\\).*"
+	      "x2: down 5[0-9]+ from here",
+	      "EXPECT_B=x2 connect 32000/" });
 	/* its codec's clock 100 ppm fast, half a sample off */
 	add("open", "open_k56flex_ppm", "open", "open8", "ATX3;AT+MS=56",
 	    { "NET=9600:8000:ulaw", "NET_PPM=100", "NET_PHASE=0.3",
@@ -1043,6 +1160,14 @@ std::vector<Call> calls()
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect",
 	      "PROTO_B=ATX3;AT+MS=56" });
+	/* robbed bits on the codes to it (netsim's NET_RBS_TO: its line
+	   digital, as the call above): its J's octet says them, from
+	   TRN1B's start, and our data on that grid of 24 code for them */
+	add("sm56", "sm56_k56flex_rbs", "sm56", "open8", "ATX3;AT+MS=K56FLEX",
+	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "NET_RBS_TO=a", "NET_RBS=0x08",
+	      "EXPECT_B=(?s)robbed bits 0x04\\).*K56flex connect",
+	      "PROTO_B=ATX3;AT+MS=56" });
 	/* V.92: its QC1a on the first call already; on the second, quick
 	   connect with short phase 2.  (Its upstream stays V.34: the module
 	   chooses PCM upstream only in quick connect's INFO1a, from an
@@ -1229,6 +1354,23 @@ std::vector<Call> calls()
 		    { "NET_LOOP=0.45", "NET=8000:8000:" + law,
 		      "DSP_G711=" + law, "EXPECT_B=V.90 connect 5[0-9]{4}/",
 		      "PROTO_B=ATX3;AT+MS=90" });
+	/* our answer with V.8bis (+A8E) and with K56flex (+MS=56): the HSF
+	   modem has V.8bis on (+A8E: 1,1,C1,1) but no K56flex and no
+	   V.70, and it does not answer MRe.  After 3 s our ANSam, and V.90
+	   (docs/dsp/v8bis-details.md, Conexant modems) */
+	add("hsf", "hsf_v8bis_mre_unanswered", "hsf", "open8",
+	    "ATX3;AT+MS=V90",
+	    { "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "PROTO_B=ATX3;AT+MS=90;AT+A8E=1,1,,1",
+	      "EXPECT_B=(?s)v8bis: MRe out.*v8bis: no answer to MRe"
+	      ".*V.90 connect 5[0-9]{4}/",
+	      "REJECT_B=v8bis: CRd in" });
+	add("hsf", "hsf_k56flex_mre_unanswered", "hsf", "open8",
+	    "ATX3;AT+MS=V90",
+	    { "NET=8000:8000:ulaw", "DSP_G711=ulaw",
+	      "PROTO_B=ATX3;AT+MS=56",
+	      "EXPECT_B=(?s)V.8bis MRe.*V.8bis: no CRd, V.8"
+	      ".*V.90 connect 5[0-9]{4}/" });
 	/* our INFO0d lost (DSP_V34_LOSE_INFO0): the HSF modem takes it all
 	   the same (its INFO0a acknowledges it) but repeats its INFO0a
 	   until ours acknowledges that (9.2.1.2/V.90) */
@@ -1528,6 +1670,93 @@ std::vector<Call> calls()
 				"EXPECT_A=vfc: connect 26400/26400",
 				"EXPECT_B=CONNECT 26400" });
 
+	/* --- 3Com's TC110 PC Card (XJ5560 / CC5560), its TMS320C5x
+	   emulated with the TC110 flash's code (half_3com, its line at 8000
+	   Hz): the open modem calls it in V.34.  With its own profile (S33
+	   32: no 3429 baud in its INFO0) its fastest is 31200: only to
+	   CONNECT.  With S33=0 (3429 baud on), 33600, its fastest: 1 s of
+	   data both ways, both checked.  At 4800, 8 s of data both ways:
+	   past 6 s, when the 3Com asked for a faster rate again (a
+	   renegotiation) while the rate mask of our MP had rates above
+	   +MS's highest.  The 3Com calls the open modem: the same, at
+	   33600 and 4800.  With V.42 both ways: LAPM and V.42bis (the
+	   3Com answering waits for the caller's ODPs after V.8).  V.32bis
+	   (the 3Com's S32=60: no V.34) at 14400 both ways, the open modem
+	   in \N0 (our &M0 leaves V.42 on: its ODPs, 0x11 and 0x91 for
+	   T400, went to the 3Com's DTE).  ETC: the 3Com
+	   with a cellular cable (TC110_CABLE, Motorola's) calls the open
+	   modem in AT&F6 (ETC's land side), and the open modem in AT&F5
+	   (the cellular side: its 1500 Hz calling tone) calls the 3Com
+	   on a landline, which finds the tone: V.32bis, V.42 with N401 64
+	   octets, /ETC in the 3Com's CONNECT.
+	   TC110_PRE_FLAT=1: a flat pre-emphasis filter (the
+	   TC110's own tables are not known yet) */
+	add("3com", "3com_34_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34;AT+ES=1,0,1",
+	    { "CONNECT_ONLY=1", "STREAM=5", "TC110_PRE_FLAT=1",
+	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
+	      "EXPECT_A=v34: connect 31200/",
+	      "EXPECT_B=CONNECT 31200/V34" });
+	add("3com", "3com_34_33600_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34;AT+ES=1,0,1",
+	    { "STREAM=1", "TC110_PRE_FLAT=1",
+	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0S33=0",
+	      "EXPECT_A=v34: connect 33600/",
+	      "EXPECT_B=CONNECT 33600/V34" });
+	add("3com", "3com_34_4800_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34,1,2400,4800;AT+ES=1,0,1",
+	    { "STREAM=8", "TC110_PRE_FLAT=1",
+	      "TC110_DEBUG=1", "PROTO_B=ATX3&M0",
+	      "EXPECT_A=v34: connect 4800/",
+	      "EXPECT_B=CONNECT 4800/V34" });
+
+	add("3com", "3com_34_33600_3com_calls", "3com", "open8",
+	    "ATX3&M0S33=0",
+	    { "STREAM=1", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3;AT+MS=34;AT+ES=1,0,1",
+	      "EXPECT_A=CONNECT 33600/V34",
+	      "EXPECT_B=v34: connect 33600/" });
+	add("3com", "3com_34_4800_3com_calls", "3com", "open8",
+	    "ATX3&M0",
+	    { "STREAM=8", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3;AT+MS=34,1,2400,4800;AT+ES=1,0,1",
+	      "EXPECT_A=CONNECT 4800/V34",
+	      "EXPECT_B=v34: connect 4800/" });
+	add("3com", "3com_34_lapm_open_calls", "open8", "3com",
+	    "ATX3;AT+MS=34",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3",
+	      "EXPECT_A=detect: done, V\\.42",
+	      "EXPECT_B=CONNECT [0-9]+/ARQ/V34/LAPM/V42BIS" });
+	add("3com", "3com_34_lapm_3com_calls", "3com", "open8", "ATX3",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3;AT+MS=34",
+	      "EXPECT_A=CONNECT [0-9]+/ARQ/V34/LAPM/V42BIS",
+	      "EXPECT_B=ec: connected" });
+	add("3com", "3com_32b_open_calls", "open8", "3com",
+	    "ATX3\\N0;AT+MS=V32B",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3S32=60&M0",
+	      "EXPECT_A=v32: connect 14400/14400",
+	      "EXPECT_B=CONNECT 14400/V32" });
+	add("3com", "3com_32b_3com_calls", "3com", "open8",
+	    "ATX3S32=60&M0",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3\\N0",
+	      "EXPECT_A=CONNECT 14400/V32",
+	      "EXPECT_B=v32: connect 14400/14400" });
+	add("3com", "3com_etc_cell_3com_calls", "3com", "open8", "ATX3",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "TC110_CABLE=200000", "PROTO_B=AT&F6;ATX3",
+	      "EXPECT_A=CONNECT 14400/ARQ/ETC/V32/LAPM/V42BIS",
+	      "EXPECT_B=N401 64/64" });
+	add("3com", "3com_etc_cell_open_calls", "open8", "3com",
+	    "AT&F5;ATX3",
+	    { "STREAM=3", "TC110_PRE_FLAT=1", "TC110_DEBUG=1",
+	      "PROTO_B=ATX3",
+	      "EXPECT_A=N401 64/64",
+	      "EXPECT_B=CONNECT 14400/ARQ/ETC/V32/LAPM/V42BIS" });
+
 	/* --- Intel's 537EP soft modem, its line at 9600 Hz (its codec's
 	   rates are 7200 to 16000 Hz, 9600 by default, 72000 / 7 for V.34,
 	   and its V.90 is better without the resampling to 8000), and the
@@ -1604,9 +1833,17 @@ std::vector<Call> calls()
 	   8 outstanding, of up to 256 octets */
 	const std::string mnp5 = "mnp: LR: framing mode 3, k 8, N401 256, "
 		"optimization 3, MNP 5";
+	/* the SM56 and HSF modems have V.42bis on an MNP link (the SM56's
+	   LR has parameter 14, the HSF's parameter 9's short form): when
+	   they call, our answerer takes V.42bis in place of MNP 5
+	   (docs/mnp/mnp5.md); our caller offers it only with S114=1 */
+	const std::string v42 = "mnp: LR: framing mode 3, k 8, N401 256, "
+		"optimization 3\\.\n.*mnp: LR: V\\.42bis \\(parameter";
 	for (const char *p : { "agere", "pctel", "sm56", "hsf", "broadcom",
 			       "intel", "ess" }) {
 		std::string n = p;
+		const std::string &want = n == "sm56" || n == "hsf" ? v42 :
+			mnp5;
 		/* (the Intel modem's line at 9600 Hz, the others' 8000;
 		   INTEL_RATE only half_intel reads) */
 		bool i = n == "intel";
@@ -1614,13 +1851,30 @@ std::vector<Call> calls()
 		add(p, n + "_mnp5_" + n + "_calls", p, "open",
 		    "ATX3;AT+MS=V34;AT+ES=4,4,6",
 		    { "NET=" + r + ":9600:ulaw", "PROTO_B=ATX3;AT+MS=34",
-		      "BULK=20000", "EXPECT_B=" + mnp5, i537 });
+		      "BULK=20000", "EXPECT_B=" + want, i537 });
 		add(p, n + "_mnp5_open_calls", "open", p,
 		    "ATX3;AT+MS=34;AT\\N5",
 		    { "NET=9600:" + r + ":ulaw",
 		      "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6", "BULK=20000",
 		      "EXPECT_A=" + mnp5, i537 });
 	}
+	/* and our caller's offer (S114=1) to the two that have it, with
+	   MNP 10 offered too (S113's default) */
+	for (const char *p : { "sm56", "hsf" }) {
+		std::string n = p;
+		add(p, n + "_mnp_v42bis_open_calls", "open", p,
+		    "ATX3;AT+MS=34;AT\\N5S114=1",
+		    { "NET=9600:8000:ulaw",
+		      "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6", "BULK=20000",
+		      "EXPECT_A=" + v42 });
+	}
+	/* the ESS modem with our caller's offer: it answers with MNP 5 (it
+	   retrains 0.2 s into the call, and then it waits for a new LR:
+	   docs/interop-details.md) */
+	add("ess", "ess_mnp_v42bis_open_calls", "open", "ess",
+	    "ATX3;AT+MS=34;AT\\N5S114=1",
+	    { "NET=9600:8000:ulaw", "PROTO_B=ATX3;AT+MS=V34;AT+ES=3,0,6",
+	      "BULK=20000", "EXPECT_A=" + mnp5, i537 });
 	/* and MNP 4 alone (our %C2: no MNP 5) */
 	add("agere", "agere_mnp4_agere_calls", "agere", "open",
 	    "ATX3;AT+MS=V34;AT+ES=4,4,6",

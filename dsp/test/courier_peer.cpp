@@ -17,11 +17,14 @@
  *    default); COURIER_PEER_DEBUG: the log level (default 5);
  *    COURIER_PEER_SEND: text to send once online (and again every
  *    COURIER_PEER_EVERY ms, numbered, when that is set); COURIER_PEER_DIAL:
- *    dial that number instead of answering.  What the DTE gets
- *    is in the log, as "dte: ...".
+ *    dial that number instead of answering; COURIER_PEER_ANALOG=1: the
+ *    modem on an analogue line at 9600 Hz behind a codec (the line's
+ *    G.711 to and from it resampled), as a customer's modem calling an
+ *    I-modem.  What the DTE gets is in the log, as "dte: ...".
  *
  */
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -32,6 +35,43 @@
 #include <sys/socket.h>
 
 #include "dmodem.h"
+#include "g711.h"
+
+/* a band-limited resampler (windowed sinc, 16 taps either side), from
+   rate in to rate out, as a stream: the line's codec */
+struct Resample {
+	double in, out, t = 0, fc;
+	std::vector<double> x;          /* the inputs not yet behind us */
+	long base = 0;                  /* x[0]'s index */
+
+	/* from rate i to rate o (the band to the lower one's half) */
+	Resample(double i, double o) : in(i), out(o), fc(o < i ? o / i : 1) {}
+	/* n inputs v in; the outputs they complete onto y */
+	void run(const double *v, int n, std::vector<double> &y)
+	{
+		x.insert(x.end(), v, v + n);
+		double step = in / out;
+		while (t + 17 < base + (double)x.size()) {
+			long c = (long)floor(t);
+			double s = 0;
+			for (long j = c - 15; j <= c + 16; j++) {
+				if (j < base)
+					continue;
+				double d = t - j, a = M_PI * fc * d;
+				double w = 0.5 + 0.5 * cos(M_PI * d / 17);
+				s += x[j - base] * w * fc *
+					(fabs(a) < 1e-9 ? 1 : sin(a) / a);
+			}
+			y.push_back(s);
+			t += step;
+		}
+		long drop = (long)floor(t) - 20 - base;
+		if (drop > 0) {
+			x.erase(x.begin(), x.begin() + drop);
+			base += drop;
+		}
+	}
+};
 
 /* n octets from stdin: false at its end */
 static bool read_all(void *p, size_t n)
@@ -93,9 +133,16 @@ int main()
 		DMODEM_LAW_ULAW;
 	std::string init = std::string(at ? at : "AT+MS=X2") + "\r";
 	cfg.init = init.c_str();
-	struct dmodem *d = dmodem_create(&cfg);
+	const char *an = getenv("COURIER_PEER_ANALOG");
+	bool analog = an && atoi(an);
+	struct dmodem *d = analog ? dmodem_create_rate(&cfg, 9600) :
+		dmodem_create(&cfg);
 	if (!d)
 		return 1;
+	bool alaw = cfg.law == DMODEM_LAW_ALAW;
+	Resample up(8000, 9600), down(9600, 8000);
+	std::vector<double> lin8, lin96, back;
+	std::vector<int16_t> pin, pout;
 	bool answered = false, sent = false;
 	const char *every_s = getenv("COURIER_PEER_EVERY");
 	long every = every_s ? atol(every_s) * 8 : 0, samples = 0, next = 0,
@@ -110,7 +157,8 @@ int main()
 		out.assign(n, 0xff);
 		if (n && !read_all(in.data(), n))
 			break;
-		if (!answered) {
+		/* (once the AT commands are in: 100 ms) */
+		if (!answered && samples >= 800) {
 			const char *dial = getenv("COURIER_PEER_DIAL");
 			if (dial)
 				dmodem_dial(d, dial);
@@ -119,7 +167,32 @@ int main()
 			answered = true;
 		}
 		dmodem_poll_dte(d);
-		dmodem_process_g711(d, in.data(), out.data(), n);
+		if (analog) {
+			/* the line's octets to 9600 Hz, the modem's samples
+			   back to 8000 Hz and the law (as many as came) */
+			lin8.resize(n);
+			for (int i = 0; i < n; i++)
+				lin8[i] = dsp::g711::decode(alaw, in[i]);
+			lin96.clear();
+			up.run(lin8.data(), n, lin96);
+			pin.resize(lin96.size());
+			pout.assign(lin96.size(), 0);
+			for (size_t i = 0; i < lin96.size(); i++)
+				pin[i] = (int16_t)lrint(fmax(-32768, fmin(32767,
+								    lin96[i])));
+			if (!pin.empty())
+				dmodem_process(d, pin.data(), pout.data(),
+					       (int32_t)pin.size());
+			std::vector<double> o(pout.begin(), pout.end());
+			down.run(o.data(), (int)o.size(), back);
+			for (int i = 0; i < n && !back.empty(); i++) {
+				double v = back.front();
+				back.erase(back.begin());
+				out[i] = dsp::g711::encode(alaw, (int32_t)lrint(
+					fmax(-32768, fmin(32767, v))));
+			}
+		} else
+			dmodem_process_g711(d, in.data(), out.data(), n);
 		char buf[512];
 		ssize_t r;
 		while ((r = read(sv[1], buf, sizeof buf)) > 0) {

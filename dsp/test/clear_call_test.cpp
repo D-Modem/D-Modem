@@ -940,3 +940,118 @@ TEST(Clear, V120OverV110)
 		<< c.text;
 	EXPECT_TRUE(exchange(l, c, a, 5000, 10));
 }
+
+namespace {
+
+/* 6 octets of data at 100, 1000 or 2000 in one of the frames on line
+   (as the DTE sent them) */
+bool on_line(const std::vector<unsigned char> &line, const std::string &data)
+{
+	auto frames = hdlc_frames(line);
+	for (size_t at : { 100, 1000, 2000 }) {
+		const std::vector<unsigned char> s(data.begin() + at,
+						   data.begin() + at + 6);
+		for (const auto &f : frames)
+			if (std::search(f.begin(), f.end(), s.begin(),
+					s.end()) != f.end())
+				return true;
+	}
+	return false;
+}
+
+/* a frame on line with "ZyXEL" in it */
+bool zyxel_xid(const std::vector<unsigned char> &line)
+{
+	const std::string s = "ZyXEL";
+	for (const auto &f : hdlc_frames(line))
+		if (std::search(f.begin(), f.end(), s.begin(), s.end()) !=
+		    f.end())
+			return true;
+	return false;
+}
+
+} // namespace
+
+/* ZyXEL's encryption (S102=1: DES, the PKDS key) on X.75: each end's
+   XID with ZyXEL's group, then 50 kB each way as sent, and none of the
+   DTE's octets on the line as they were */
+TEST(Clear, ZyxelDesPkds)
+{
+	debug();
+	Channel l;
+	End c("caller", "ATE0X3S102=1+MS=CLEAR\r"),
+		a("answerer", "ATE0S102=1+MS=CLEAR\r");
+	ASSERT_TRUE(call(l, c, a, 1)) << c.text << a.text;
+	ASSERT_TRUE(exchange(l, c, a, 50000, 20)) << c.data.size() << " "
+						  << a.data.size();
+	EXPECT_TRUE(zyxel_xid(l.tap_ca));
+	EXPECT_TRUE(zyxel_xid(l.tap_ac));
+	EXPECT_FALSE(on_line(l.tap_ca, bulk(50000, 1)));
+	EXPECT_FALSE(on_line(l.tap_ac, bulk(50000, 2)));
+}
+
+/* the cipher goes on over X.75's recovery: 0.3 s lost both ways in
+   100 kB each way, all of it delivered */
+TEST(Clear, ZyxelDesDropout)
+{
+	debug();
+	Channel l;
+	End c("caller", "ATE0X3S102=1+MS=CLEAR\r"),
+		a("answerer", "ATE0S102=1+MS=CLEAR\r");
+	ASSERT_TRUE(call(l, c, a, 1)) << c.text << a.text;
+	l.drop_at = static_cast<double>(l.t) / 8000 + 2;
+	l.drop_s = 0.3;
+	EXPECT_TRUE(exchange(l, c, a, 100000, 60)) << c.data.size() << " "
+						   << a.data.size();
+}
+
+/* triple DES with ATCK's key (S102=7) on V.120 */
+TEST(Clear, ZyxelTripleDesV120)
+{
+	debug();
+	Channel l;
+	End c("caller", "ATE0X3S102=7CK<open sesame>+MS=CLEAR;+B2=9\r"),
+		a("answerer", "ATE0S102=7CK<open sesame>+MS=CLEAR;+B2=9\r");
+	ASSERT_TRUE(call(l, c, a, 1)) << c.text << a.text;
+	ASSERT_TRUE(exchange(l, c, a, 30000, 20)) << c.data.size() << " "
+						  << a.data.size();
+	EXPECT_FALSE(on_line(l.tap_ca, bulk(30000, 1)));
+}
+
+/* ATCK's keys not the same (S102=5): the octets come, but not as they
+   were sent */
+TEST(Clear, ZyxelDesWrongKey)
+{
+	debug();
+	Channel l;
+	End c("caller", "ATE0X3S102=5CK<alpha>+MS=CLEAR\r"),
+		a("answerer", "ATE0S102=5CK<omega>+MS=CLEAR\r");
+	ASSERT_TRUE(call(l, c, a, 1)) << c.text << a.text;
+	EXPECT_FALSE(exchange(l, c, a, 5000, 10));
+	EXPECT_EQ(a.data.size(), 5000u);
+	EXPECT_EQ(c.data.size(), 5000u);
+}
+
+/* S102 at one end only: the link stays clear; with bit 3 (S102=9) the
+   end that asks for it hangs up */
+TEST(Clear, ZyxelDesOneEnd)
+{
+	debug();
+	{
+		Channel l;
+		End c("caller", "ATE0X3S102=1+MS=CLEAR\r"),
+			a("answerer", "ATE0+MS=CLEAR\r");
+		ASSERT_TRUE(call(l, c, a, 1)) << c.text << a.text;
+		ASSERT_TRUE(exchange(l, c, a, 5000, 10));
+		EXPECT_TRUE(on_line(l.tap_ca, bulk(5000, 1)));
+	}
+	Channel l;
+	End c("caller", "ATE0X3S102=9+MS=CLEAR\r"),
+		a("answerer", "ATE0+MS=CLEAR\r");
+	ASSERT_TRUE(call(l, c, a, 1)) << c.text << a.text;
+	run(l, c, a, 10,
+	    [&] { return c.no_carriers > 0 && a.no_carriers > 0; });
+	EXPECT_EQ(c.no_carriers, 1) << c.text;
+	EXPECT_EQ(a.no_carriers, 1) << a.text;
+}
+

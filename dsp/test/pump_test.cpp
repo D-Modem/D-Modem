@@ -21,6 +21,7 @@
 #include "dsplibs.h"
 #include "codec_sim.h"
 #include "loopback.h"
+#include "zyx.h"
 
 struct Pumps {
 	const char *name;
@@ -93,7 +94,7 @@ static std::string name(const testing::TestParamInfo<Pumps> &i)
 	return i.param.name;
 }
 
-/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 232 V.32terbo, 168 HST, 61 V.61, 126 V.26 ter, 226 V.26 bis,
+/* data pump ids: 8 V.34, 32 V.32, 132 V.32bis, 232 V.32terbo, 234 ZyX, 168 HST, 61 V.61, 126 V.26 ter, 226 V.26 bis,
    22 V.22, 122 V.22bis, 212 Bell 212A, 21 V.21, 23 V.23, 103 Bell 103 */
 INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v32bis", line(132, 40, 20) },
@@ -116,6 +117,14 @@ INSTANTIATE_TEST_SUITE_P(Line, PumpLoopback, testing::Values(
 	Pumps{ "v32terbo_8000", line(232, 40, 20, 8000) },
 	Pumps{ "v32terbo_300ppm", line(232, 40, 30, 9600, 0.5f, 300) },
 	Pumps{ "v32terbo_echo6", line(232, 40, 20, 9600, 0.5f, 0, -6) },
+	/* ZyXEL's ZyX: 19200 bit/s at 2742.857 baud on a clean line,
+	   the framed rates below (ZyX.Rates checks them), at 8000 Hz,
+	   with a clock offset and with an echo */
+	Pumps{ "zyx", line(234, 40, 20) },
+	Pumps{ "zyx_snr27", line(234, 27, 20) },
+	Pumps{ "zyx_8000", line(234, 40, 20, 8000) },
+	Pumps{ "zyx_300ppm", line(234, 40, 30, 9600, 0.5f, 300) },
+	Pumps{ "zyx_echo6", line(234, 40, 20, 9600, 0.5f, 0, -6) },
 	/* V.61 without speech: data alone, 14400 bit/s down to 4800 */
 	Pumps{ "v61", line(61, 40, 15) },
 	Pumps{ "v61_snr15", line(61, 15, 15) },
@@ -848,4 +857,128 @@ TEST(V34J, RandomBitsAreNoJ)
 	for (s16 i = 0; i < 16; i++)
 		rx.got_bit(static_cast<s16>((J_DASH >> i) & 1));
 	EXPECT_EQ(rx.ev_jp, 1);
+}
+
+/* ZyX at each of its rates (MDMPRM_MAX_RATE), on a clean line: that
+   rate both ways, no errors; and the rate follows the line: 19200 bit/s
+   at 40 dB of SNR, the framed 14400 at 26, 12000 at 20 (16800's band
+   is narrow, between 19200's and 14400's: not a point the line's noise
+   draws the same on each platform) */
+TEST(ZyX, Rates)
+{
+	for (int rate : { 19200, 16800, 14400, 12000, 9600, 7200 }) {
+		LoopbackConfig c = line(234, 40, 15);
+		c.max_rate = rate;
+		LoopbackResult r = loopback_run(c);
+		for (int k = 0; k < 2; k++) {
+			const char *who = k ? "answerer" : "caller";
+			EXPECT_TRUE(r.side[k].ok()) << rate << ": "
+						     << r.side[k].text(who);
+			EXPECT_EQ(r.side[k].tx_rate, rate);
+			EXPECT_EQ(r.side[k].rx_rate, rate);
+			EXPECT_EQ(r.side[k].errors, 0) << rate << ": "
+						      << r.side[k].text(who);
+		}
+	}
+	for (auto [snr, rate] : { std::make_pair(40.0f, 19200),
+				  std::make_pair(26.0f, 14400),
+				  std::make_pair(20.0f, 12000) }) {
+		LoopbackResult r = loopback_run(line(234, snr, 15));
+		for (int k = 0; k < 2; k++) {
+			const char *who = k ? "answerer" : "caller";
+			EXPECT_TRUE(r.side[k].ok()) << snr << " dB: "
+						     << r.side[k].text(who);
+			EXPECT_EQ(r.side[k].tx_rate, rate) << snr << " dB";
+			EXPECT_EQ(r.side[k].rx_rate, rate) << snr << " dB";
+			EXPECT_EQ(r.side[k].errors, 0) << snr << " dB: "
+						      << r.side[k].text(who);
+		}
+	}
+}
+
+/* ZyX's peer marker (S115=1, SREG_ZYX_PEER): two D-Modems that both
+   send it go to ZyX from V.32bis (or from ZyX's own start), 19200 bit/s
+   on a clean line, no errors; with the marker at one side only, the
+   other side does not send its reply, and the call stays V.32bis at
+   14400 bit/s */
+TEST(ZyX, PeerMarker)
+{
+	struct Case {
+		int dp;
+		int on[2];      /* S115 of the caller, the answerer */
+		int rate;
+	};
+	for (const Case &t : { Case{ 132, { 1, 1 }, 19200 },
+			       Case{ 234, { 1, 1 }, 19200 },
+			       Case{ 132, { 1, 0 }, 14400 },
+			       Case{ 132, { 0, 1 }, 14400 } }) {
+		LoopbackConfig c = line(t.dp, 40, 15);
+		for (int k = 0; k < 2; k++)
+			c.side_sregs[k] = { { SREG_ZYX_PEER, t.on[k] } };
+		LoopbackResult r = loopback_run(c);
+		for (int k = 0; k < 2; k++) {
+			const char *who = k ? "answerer" : "caller";
+			std::string id = std::to_string(t.dp) + " S115=" +
+				std::to_string(t.on[0]) + "," +
+				std::to_string(t.on[1]);
+			EXPECT_TRUE(r.side[k].ok()) << id << ": "
+						     << r.side[k].text(who);
+			EXPECT_EQ(r.side[k].tx_rate, t.rate) << id << " " << who;
+			EXPECT_EQ(r.side[k].rx_rate, t.rate) << id << " " << who;
+			EXPECT_EQ(r.side[k].errors, 0) << id << ": "
+						      << r.side[k].text(who);
+		}
+	}
+}
+
+/* ZyX's frame mapper against the U-1496S firmware: its frame split
+   (0x92D9E, run in an emulator) on 7 random groups gives the ring
+   table's row and each symbol's M bits (Q1 Q2 first, then the uncoded
+   ones); encode() must give the same, decode() the groups back */
+TEST(ZyX, FrameMapper)
+{
+	static const struct {
+		int bps;
+		u8 groups[7];
+		int row;
+		u8 sym[8];
+	} vec[] = {
+	{ 16800, { 0x11, 0x48, 0x6C, 0x66, 0x61, 0x08, 0x20 }, 17, { 0x12, 0x0C, 0x1B, 0x1C, 0x10, 0x11, 0x00, 0x08 } },
+	{ 16800, { 0x0F, 0x3F, 0x61, 0x39, 0x3C, 0x53, 0x30 }, 399, { 0x0F, 0x01, 0x07, 0x07, 0x1E, 0x06, 0x05, 0x0C } },
+	{ 16800, { 0x64, 0x1A, 0x0C, 0x3E, 0x03, 0x72, 0x6A }, 356, { 0x06, 0x0C, 0x18, 0x17, 0x01, 0x04, 0x17, 0x1A } },
+	{ 14400, { 0x18, 0x1B, 0x26, 0x30, 0x31, 0x00, 0x2C }, 728, { 0x09, 0x09, 0x00, 0x07, 0x0C, 0x00, 0x00, 0x0B } },
+	{ 14400, { 0x1C, 0x11, 0x2E, 0x33, 0x0E, 0x25, 0x3C }, 92, { 0x09, 0x0B, 0x03, 0x0B, 0x03, 0x05, 0x02, 0x0F } },
+	{ 14400, { 0x06, 0x39, 0x14, 0x01, 0x01, 0x01, 0x29 }, 582, { 0x03, 0x05, 0x01, 0x04, 0x00, 0x01, 0x04, 0x0A } },
+	{ 12000, { 0x11, 0x00, 0x1E, 0x1C, 0x0C, 0x15, 0x06 }, 17, { 0x07, 0x01, 0x07, 0x04, 0x05, 0x02, 0x05, 0x01 } },
+	{ 12000, { 0x1F, 0x0D, 0x17, 0x00, 0x10, 0x07, 0x18 }, 1471, { 0x03, 0x01, 0x00, 0x00, 0x06, 0x03, 0x00, 0x06 } },
+	{ 12000, { 0x0E, 0x1E, 0x0F, 0x11, 0x07, 0x0B, 0x07 }, 1998, { 0x07, 0x02, 0x04, 0x07, 0x04, 0x05, 0x06, 0x01 } },
+	{ 9600, { 0x0A, 0x03, 0x0C, 0x07, 0x0F, 0x04, 0x0E }, 3130, { 0x03, 0x01, 0x03, 0x03, 0x00, 0x01, 0x02, 0x03 } },
+	{ 9600, { 0x00, 0x06, 0x0D, 0x0E, 0x08, 0x0E, 0x0A }, 3424, { 0x02, 0x03, 0x00, 0x02, 0x02, 0x03, 0x02, 0x02 } },
+	{ 9600, { 0x01, 0x02, 0x0A, 0x0F, 0x0B, 0x0D, 0x04 }, 2593, { 0x03, 0x03, 0x03, 0x02, 0x01, 0x03, 0x00, 0x01 } },
+	{ 7200, { 0x00, 0x05, 0x02, 0x07, 0x05, 0x07, 0x05 }, 8, { 0x01, 0x01, 0x03, 0x03, 0x02, 0x03, 0x03, 0x02 } },
+	{ 7200, { 0x04, 0x07, 0x07, 0x03, 0x04, 0x06, 0x07 }, 28, { 0x03, 0x03, 0x03, 0x00, 0x02, 0x02, 0x03, 0x03 } },
+	{ 7200, { 0x05, 0x01, 0x02, 0x02, 0x04, 0x07, 0x07 }, 13, { 0x00, 0x01, 0x02, 0x00, 0x02, 0x03, 0x03, 0x03 } },
+	};
+	for (const auto &v : vec) {
+		const dsp::ZyxFrameRate &f = v.bps == 16800 ? dsp::zyx_16800 :
+			v.bps == 14400 ? dsp::zyx_14400 :
+			v.bps == 12000 ? dsp::zyx_12000 :
+			v.bps == 9600 ? dsp::zyx_9600 : dsp::zyx_7200;
+		u8 bits[ZYX_MAX_BITS], back[ZYX_MAX_BITS];
+		int i = 0;
+		for (int g = 0; g < ZYX_GROUPS; g++)
+			for (int b = 0; b < f.n; b++)
+				bits[i++] = (v.groups[g] >> b) & 1;
+		s16 q[ZYX_FRAME];
+		f.encode(bits, q);
+		u16 rings = dsp::zyx_rings[v.row];
+		for (int k = 0; k < ZYX_FRAME; k++) {
+			int want = (v.sym[k] & 3) | ((rings >> (2 * k)) & 3) << 2 |
+				(v.sym[k] >> 2) << 4;
+			EXPECT_EQ(q[k], want) << v.bps << " symbol " << k;
+		}
+		EXPECT_TRUE(f.decode(q, back)) << v.bps;
+		for (int j = 0; j < f.frame_bits(); j++)
+			EXPECT_EQ(back[j], bits[j]) << v.bps << " bit " << j;
+	}
 }
