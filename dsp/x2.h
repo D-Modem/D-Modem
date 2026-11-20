@@ -26,6 +26,7 @@
 
 
 #include "dm_types.h"
+#include "k56flex.h"
 
 namespace dsp {
 
@@ -53,8 +54,18 @@ struct X2Rate {
 	s16 B, MD;
 	s16 n[X2_FRAME];                        /* levels of position i */
 	const unsigned char *lv[X2_FRAME];      /* as G.711 octets (positive),
-						   the largest first */
+						   the largest first: the
+						   levels the client gets */
+	const unsigned char *tx[X2_FRAME];      /* the octets sent for them
+						   across a digital pad,
+						   nullptr: lv's */
 };
+
+/* the code (as K56Enc's, positive) sent for level d of position i */
+inline unsigned char x2_code(const X2Rate &r, s16 i, s16 d)
+{
+	return k56_code(r.tx[i] ? r.tx[i][d] : r.lv[i][d], 0);
+}
 
 /* the downstream's mapper: frames of MD + B data bits to 6 codes (as
    K56Enc's: bit 7 positive, bits 0 to 6 the magnitude's mu-law index) */
@@ -77,17 +88,18 @@ struct X2Map {
 /* the start-up rates' levels: A for the ones before the record, B the
    first data rate's (19 bits and 5 signs, 32000 bit/s) */
 extern const X2Rate x2_rate_a, x2_rate_b;
-/* the rates the I-modem went on to after its records in the data: C
-   for a client whose renegotiation's MP takes 14 (word 0's bits 2 to
-   5; 54666 bit/s), D for 12 (52000), E for 8 (46666), F for 11
-   (50666), G for 13 (53333): B is 22 more than the index */
-extern const X2Rate x2_rate_c, x2_rate_d, x2_rate_e, x2_rate_f,
-	x2_rate_g;
-/* the rate for the most the client takes (as its MP has it), nullptr
-   for one whose rate is not known: the client expects that rate's
-   levels and no other (a Courier that took 14 sent 52000's levels
-   renegotiates within 3 s and hangs up) */
-const X2Rate *x2_rate_for(s16 down);
+/* the data rates the client can take after the start-up, by its MP's
+   index n (word 0's bits 2 to 5, 1 to 15): B = 19, 22, 25, then 22 + n
+   bits a frame and 5 signs, 32000 to 56000 bit/s; and by the digital
+   pad it measured (its MP's word 0's bits 11 to 14, the mode): 0 none,
+   1 3 dB, 2 6 dB, where the octets sent are louder than the levels
+   it gets.  The levels the Quad x2 modem builds for each (the
+   I-modem's own where seen); nullptr for any other.  The client
+   expects the levels of the rate it took and no other (a Courier that
+   took 14 sent 52000's levels renegotiates within 3 s and hangs up) */
+#define X2_MODES        3
+extern const X2Rate x2_rates[X2_MODES][15];
+const X2Rate *x2_rate_for(s16 down, s16 mode = 0);
 
 /* the server's training, the codes before the data */
 enum X2Seg {

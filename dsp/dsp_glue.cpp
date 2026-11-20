@@ -52,6 +52,7 @@ int prop_dp_init(void)
 	dp_v26_init();
 	dp_v26bis_init();
 	dp_hst_init();
+	dp_vfc_init();
 	dp_v29fp_init();
 	dp_v61_init();
 	dp_v34_init();
@@ -80,6 +81,7 @@ void prop_dp_exit(void)
 	dp_v26_exit();
 	dp_v26bis_exit();
 	dp_hst_exit();
+	dp_vfc_exit();
 	dp_v29fp_exit();
 	dp_v61_exit();
 	dp_v34_exit();
@@ -256,6 +258,18 @@ void dp_runtime_set_framed(void *runtime, int framed)
 	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
 	if (rt)
 		rt->framed = framed;
+}
+
+/* see dsplibs.h */
+void dp_runtime_set_restart(void *runtime, int ans_sent)
+{
+	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
+	if (!rt)
+		return;
+	rt->ans_sent = rt->after_v8 = static_cast<s16>(ans_sent ? 1 : 0);
+	rt->v32_automode = 0;
+	rt->v8_tried = 1;
+	rt->v8_for = 0;
 }
 
 /* see dsplibs.h */
@@ -672,7 +686,7 @@ struct Voice {
 	   DTE sample falls after it, in line samples */
 	double tx_pos;
 	float tx_prev, tx_cur;
-	s16 tx_more[2], tx_nmore, tx_next;
+	s16 tx_more[voice::Codec::MAX_SAMPLES], tx_nmore, tx_next;
 	double rx_t;
 	float rx_prev;
 	/* this process()'s characters to the DTE */

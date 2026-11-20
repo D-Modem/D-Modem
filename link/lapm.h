@@ -55,6 +55,9 @@ public:
 	void set_user_data(bool cmd, const std::vector<u8> &u);
 	/* in the data phase */
 	bool up() const { return state_ == DATA; }
+	/* a UI command with the n octets of info (the USRobotics remote
+	   feature upgrade, usr_feature.h); -1 if it cannot go */
+	s16 tx_ui(const u8 *info, s16 n);
 	/* I frames not sent yet or not acknowledged */
 	bool tx_pending() const override {
 		return sent_info_ && info_list_ && sent_info_ != info_list_;
@@ -103,6 +106,9 @@ private:
 	void rx_unnum_cmd(Frame *f);
 	void rx_unnum_rsp(Frame *f);
 	bool valid_data_state();
+	/* the call may become MNP 10 by XID (-K1): MNP and MNP 10 offered,
+	   before LAPM is first up, not a DLC of V.76's, not synchronous */
+	bool mnp_upgrade() const;
 	void log_frame(const char *title, bool cmd, const Frame *f);
 
 	Link *link_ = nullptr;
@@ -114,6 +120,9 @@ private:
 	bool peer_busy_ = false;
 	bool v76_ = false;      /* a DLC of V.76's multiplexer */
 	bool hst_pending_ = false;      /* to HST once our frames are out */
+	/* -K1: the remote's XID carried MNP's LR parameters and they agreed
+	   (our response carries ours), and to MNP once it is out */
+	bool mnp_agreed_ = false, mnp_pending_ = false;
 	/* the 32-bit FCS: asked for by the remote's XID command, agreed by
 	   the XID exchange */
 	bool fcs32_asked_ = false, fcs32_ = false;

@@ -56,6 +56,12 @@ void dp_runtime_set_analog(void *runtime, int analog);
    characters), so that a packet pump (PEP) may leave its idle out; 0
    (the default): they are a raw stream (synchronous data, tests) */
 void dp_runtime_set_framed(void *runtime, int framed);
+/* an MNP 10 rate shift's new pump, in the call's roles: with ans_sent
+   the answerer's answer tone counts as sent and the modulation as
+   agreed (no automode chain: its handshake's next step at once), else
+   the start of a call (V.8's ANSam again); the caller goes to no V.8
+   after the call's 2100 Hz tone */
+void dp_runtime_set_restart(void *runtime, int ans_sent);
 /* a clear channel's V.110 user rate (300 to 56000, AT+CBST) for the
    call's pump, 0 for none: then the answerer runs V.110 at the rate of
    the caller's frames if they come, else D-Modem's clear channel */
@@ -138,7 +144,10 @@ void FAX_t38_rx(void *obj, const void *ifp);
    keeps of +FLI, +FIS and +FBO for
    the engine */
 struct fax2_settings {
-	unsigned cls;           /* 2, or 20 for 2.0 */
+	unsigned cls;           /* 2, or 20 for 2.0; 6: ZyXEL's own fax mode
+				   (+FCLASS=6, docs/zyxel-fax.md): no +F
+				   commands, CONNECT FAX/... and the pages
+				   as they are, DISCONNECTn at the end */
 	char ident[21];         /* +FLI */
 	unsigned vr, br, ec;    /* +FIS: fine resolution, the fastest rate
 				   (0 2400 to 5 14400 bit/s; 6 16800 to 13
@@ -150,6 +159,12 @@ struct fax2_settings {
 				   the DIS says so, a DTC has it sent) */
 	char pi[21];            /* +FPI: our CIG when we poll */
 	unsigned sp;            /* +FSP: calling, we poll (V.8 says so) */
+	unsigned zb;            /* class 6, ZyXEL's #B: 1, receiving, the
+				   DTE's DC2 for the parameters and each
+				   page */
+	unsigned zpoll;         /* class 6, ZyXEL's #B2: calling, we poll
+				   (our CIG and DTC after the DIS, then we
+				   receive) */
 };
 /* the class 2 commands for FAX2_command() */
 enum FAX2_CMD { FAX2_CMD_FDT, FAX2_CMD_FDR, FAX2_CMD_FET, FAX2_CMD_FKS };

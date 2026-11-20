@@ -25,7 +25,8 @@
 #                      against Smart Link's original DSP library)
 #   DMODEM_USB         Windows and macOS: dmodemd's --usb (the SmartUSB56,
 #                      the pico-serial Line and the Agere modem through
-#                      libusb, fetched and built)
+#                      libusb, fetched and built; before Vista through
+#                      D-Modem's dmodem.sys, usb_win9x.cpp)
 #   DMODEM_WERROR      warnings are errors (as in CI)
 #   DMODEM_PREFER_CLANG  Clang where it is installed, not GCC (a first
 #                      configure without CC, CXX or a toolchain file)
@@ -101,7 +102,20 @@ option(DMODEM_ARI "Build dmodem-ari (D-Modem as an Asterisk ARI application)"
 option(DMODEM_TESTS "Build the test programs (ctest)" ON)
 # (Windows and macOS: libusb is fetched and built for it,
 # cmake/libusb.cmake; elsewhere the system's, pkg-config's libusb-1.0)
-option(DMODEM_USB "dmodemd's --usb on Windows and macOS (libusb, fetched)" ON)
+# (Windows before Vista, DMODEM_WINNT below 0x0600, the toolchain
+# file's: libusb's Windows back ends need WinUSB or UsbDk, which 98 SE,
+# ME, 2000 and XP do not have.  There dmodemd has libusb's calls on
+# D-Modem's own driver instead, the windows-driver repository's
+# dmodem.sys: frontend/dmodemd/usb_win9x.cpp, DMODEM_USB_WIN9X)
+set(DMODEM_USB_WIN9X OFF)
+if(WIN32 AND DMODEM_WINNT)
+	math(EXPR _winnt "${DMODEM_WINNT}")
+	if(_winnt LESS 1536)
+		set(DMODEM_USB_WIN9X ON)
+	endif()
+endif()
+option(DMODEM_USB "dmodemd's --usb on Windows and macOS (libusb, fetched)"
+	ON)
 option(DMODEM_WERROR "Treat compiler warnings as errors (CI)" OFF)
 
 # the compilers' flags: GCC's and Clang's, or MSVC's (cl.exe, clang-cl).

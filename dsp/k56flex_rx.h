@@ -73,6 +73,21 @@ struct K56Rx : PcmEqualizer<K56Rx, K56RX_TAPS> {
 	/* (the equaliser and the timing loop: PcmEqualizer) */
 	s16 ls2_n;
 
+	/* TRN1B: each of its 6 magnitudes' mean at each symbol of the 24
+	   symbol cycle (from TRN1B's start), the equaliser held; then
+	   (rbs_detect) the pad and the robbed bits that fit them best,
+	   our J's octet, the equaliser's gain taken out of it, and what
+	   each code comes to at each symbol (rv), either sign */
+	double rb_sum[24][6];
+	s32 rb_n[24][6];
+	s16 det;                /* found */
+	s16 pad;                /* 0, 1: 3 dB, 2: 6 dB */
+	s16 rb_a[24], rb_b[24]; /* the models (k56_rbs_value) */
+	unsigned char robbed;   /* bit k: symbol k in 6 robbed */
+	unsigned char j_rbs;    /* pad << 6 | robbed */
+	float gain;
+	float rv[2][24][128];   /* [negative][symbol][magnitude] */
+
 	/* where the segments start (symbols); -1 not yet known */
 	s32 k_js, k_sil2, k_r2, k_trn2a, k_trn2b, k_mp, k_data;
 	K56Train r2;            /* the second R's codes */
@@ -81,6 +96,7 @@ struct K56Rx : PcmEqualizer<K56Rx, K56RX_TAPS> {
 	s16 js_n;
 	u16 js;                 /* Js: J's 16 bits, the first the lowest */
 	s16 ones;               /* TRN2A's descrambled ones in a row */
+	s16 zeros;              /* and then zeros (MARK) */
 	/* TRN2B on: the descrambled bits (2 a symbol), the last 88 for
 	   the MP frames */
 	unsigned char mpw[88];
@@ -102,6 +118,12 @@ struct K56Rx : PcmEqualizer<K56Rx, K56RX_TAPS> {
 	s16 qh, qn;
 	float dpow, de_mse;
 	s32 dec_err0;
+	/* data mode: the last 16 symbols (R's search), R2's first 16
+	   codes; the error each rate allows (lim, as SM56's
+	   MOD_rate_det: 0 none) */
+	float dy[16];
+	unsigned char r2c[16];
+	double lim[K56_NRATES];
 
 	/* events (cleared by the caller) */
 	s16 ev_r;               /* R's reversal */
@@ -113,6 +135,22 @@ struct K56Rx : PcmEqualizer<K56Rx, K56RX_TAPS> {
 	s16 ev_mpack;           /* an MP' frame */
 	s16 ev_data;            /* the data frames have begun */
 	s16 bad;                /* the MP's rate is not one we decode */
+	s16 ev_reneg_r;         /* R in data mode: a rate renegotiation
+				   (the digital modem's, or its answer to
+				   our S); R2, TRN2A ... E follow */
+	s32 renegs;             /* how many */
+
+	/* the most we can take down (1: 32000 bit/s .. 13: 56000; 0:
+	   none), from the pad, the robbed bits and the error of late, as
+	   SM56's MOD_rate_det */
+	s16 max_rate() const;
+	/* data mode: the decisions' error of late in the units of the
+	   limits (lim: the code values' steps, 14 bit mu-law, 13 bit
+	   A-law, squared) */
+	double data_err() const;
+	/* the step of rate i's (0: 32000 bit/s) constellation at its
+	   closest, in those units, with the pad and robbed bits found */
+	double dmin(s16 i) const;
 
 	/* the line at rate (9600 Hz), the law */
 	void init(s16 alaw_, s16 rate = 9600);
@@ -137,9 +175,12 @@ private:
 	void refine();
 	void timing_locked(double loop_ppm) const;
 	float value(unsigned char code) const;
+	float expect(unsigned char code, s32 kk) const;
+	void rbs_detect();
 	void symbol(float y);
 	void mp_bit(s16 bit);
 	void data(float y);
+	void reneg_r(s32 s);
 };
 
 } // namespace dsp

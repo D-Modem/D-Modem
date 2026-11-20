@@ -28,10 +28,14 @@ void RunLoop::catch_signals()
 #ifdef _WIN32
 	/* (Windows: Ctrl+C, Ctrl+Break, the console closed, the user
 	   logging off or the system shutting down stop it too) */
-	SetConsoleCtrlHandler([](DWORD) -> BOOL {
-		stop();
-		return TRUE;
-	}, TRUE);
+	struct Ctrl {
+		static BOOL WINAPI handler(DWORD)
+		{
+			stop();
+			return TRUE;
+		}
+	};
+	SetConsoleCtrlHandler(Ctrl::handler, TRUE);
 #endif
 }
 

@@ -48,9 +48,10 @@ def realtime():
 
 
 def dte_args(dmodemd):
-    """dmodemd's DTE options: none (its pty), or a TCP port of its own"""
+    """dmodemd's DTE options: none (its pty), or a TCP port of its own
+    (and no icon in the tray: no desktop under the tests' Wine)"""
     if windows(dmodemd):
-        return ["--tcp", "127.0.0.1:%d" % free_port()]
+        return ["--tcp", "127.0.0.1:%d" % free_port(), "--no-tray"]
     return []
 
 

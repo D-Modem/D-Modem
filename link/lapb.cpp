@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <random>
 
 #include "dm_types.h"
 #include "link.h"
@@ -40,7 +41,7 @@ static const u8 V120_HEADER = 0x83;
    octet */
 static const u8 S_RR = 0x01, S_RNR = 0x05, S_REJ = 0x09;
 static const u8 U_SABM = 0x2f, U_SABME = 0x6f, U_DM = 0x0f, U_DISC = 0x43,
-	U_UA = 0x63, U_FRMR = 0x87;
+	U_UA = 0x63, U_FRMR = 0x87, U_XID = 0xaf;
 static const u8 PF = 0x10, PF_EXT = 0x01;
 
 /* T1 when the data pump's rate is not known: a 64 kbit/s B-channel */
@@ -79,6 +80,12 @@ void Lapb::init(Link *link, Variant v)
 		ctrl_frame_[i].buf = ctrl_buf_[i];
 	}
 	ctrl_tx_ = ctrl_free_ = 0;
+	zdes_ = link->config().zdes;
+	for (int i = 0; i < 2; i++) {
+		xid_frame_[i] = Frame();
+		xid_frame_[i].buf = xid_buf_[i];
+		xid_pending_[i] = false;
+	}
 	reset();
 	state_ = IDLE;
 	heard_ = false;
@@ -132,6 +139,7 @@ void Lapb::reset()
 	vs_ = va_ = vr_ = 0;
 	reject_ = busy_ = peer_busy_ = false;
 	sent_ = next_ = free_ = 0;
+	zwait_ = zon_ = false;
 }
 
 /* the data phase begins (again) */
@@ -142,6 +150,7 @@ void Lapb::connect()
 	timer_stop();
 	link_->logf("%s: connected.", tag_);
 	link_->status(Status::Up);
+	zdes_start();
 }
 
 /* the link set up by us: SABM, T1 for the UA */
@@ -206,6 +215,8 @@ void Lapb::t1_timeout()
 			ctrl(cmd_addr_, static_cast<u8>(sabm_ | PF));
 		else if (state_ == DISC)
 			ctrl(cmd_addr_, U_DISC | PF);
+		else if (zwait_)
+			zdes_xid(true);
 		else
 			super(cmd_addr_, busy_ ? S_RNR : S_RR, true);
 		link_->set_timer(t1_bits(), Link::Timer::T1);
@@ -219,6 +230,11 @@ void Lapb::t1_timeout()
 		release("no answer to DISC");
 		break;
 	case DATA:
+		if (zwait_) {
+			link_->logf("%s: no answer to XID.", tag_);
+			zdes_agree();
+			break;
+		}
 		link_->logf("%s: no answer to %d polls.", tag_, N2);
 		disconnect();
 		tries_ = N2 - 1;
@@ -271,7 +287,7 @@ void Lapb::super(const u8 *addr, u8 fn, bool pf)
    DTE's characters */
 bool Lapb::tx_info()
 {
-	if (peer_busy_ || seq_diff(vs_, va_) >= LAPB_WIN)
+	if (zwait_ || peer_busy_ || seq_diff(vs_, va_) >= LAPB_WIN)
 		return false;
 	if (next_ != free_)
 		return true;
@@ -285,6 +301,8 @@ bool Lapb::tx_info()
 	if (!n)
 		return false;
 	f.size = static_cast<s16>(info_at_ + n);
+	if (zon_)
+		ztx_.encrypt(f.buf + info_at_, static_cast<size_t>(n));
 	free_ = static_cast<s16>((free_ + 1) % INFO_FRAMES);
 	return true;
 }
@@ -299,6 +317,11 @@ Frame *Lapb::next_tx_frame()
 		ctrl_tx_ = static_cast<s16>((ctrl_tx_ + 1) % CTRL_FRAMES);
 		return f;
 	}
+	for (int i = 1; i >= 0; i--)
+		if (xid_pending_[i]) {
+			xid_pending_[i] = false;
+			return &xid_frame_[i];
+		}
 	if (state_ != DATA || !tx_info())
 		return nullptr;
 	Frame *f = &info_[next_].frame;
@@ -395,6 +418,10 @@ void Lapb::rx_info(Frame *f, bool pf)
 			super(rsp_addr_, S_RNR, true);
 		return;
 	}
+	/* (before the remote's options: dropped, the remote sends it
+	   again) */
+	if (zwait_)
+		return;
 	if (ns != vr_) {
 		if (!reject_) {
 			reject_ = true;
@@ -413,7 +440,9 @@ void Lapb::rx_info(Frame *f, bool pf)
 		at++;
 	}
 	const s16 n = static_cast<s16>(at < f->count ? f->count - at : 0);
-	const u8 *info = f->buf + at;
+	u8 *info = f->buf + at;
+	if (zon_ && n)
+		zrx_.decrypt(info, static_cast<size_t>(n));
 	if (n && backlog_.deliver(link_, info, n))
 		busy_ = true;
 	vr_ = seq(vr_ + 1);
@@ -478,6 +507,10 @@ void Lapb::rx_unnum(Frame *f, bool cmd)
 	const u8 c = f->buf[alen_];
 	const u8 pf = c & PF;
 	const u8 t = static_cast<u8>(c & ~PF);
+	if (t == U_XID) {
+		zdes_rx_xid(f, cmd);
+		return;
+	}
 	if (cmd) {
 		switch (t) {
 		case U_SABM:
@@ -602,6 +635,192 @@ void Lapb::rx_complete(Frame *f)
 		return;
 	}
 	rx_super(f, cmd);
+}
+
+
+/*
+ *    ZyXEL's encryption (the Elite 2864I's S102: zcrypt.h)
+ *
+ */
+
+/* XID's format identifier (ISO 8885), ZyXEL's group and its parameters:
+   our options in a command (F1) or response (FE), our PKDS value (F2,
+   FD) */
+static const u8 XID_FI = 0x82, XID_GROUP = 0xf0, XID_ZYXEL = 0xff;
+static const u8 PI_NAME = 0xff, PI_OPT_CMD = 0xf1, PI_OPT_RSP = 0xfe,
+	PI_Y_CMD = 0xf2, PI_Y_RSP = 0xfd;
+
+/* 32 random bits for the PKDS value.  (clang-retro's builds for
+   Windows before XP: dmodem_retro.h's, as MinGW's std::random_device is
+   rand_s(), which those lack: it throws there) */
+static u32 zdes_random()
+{
+#ifdef DMODEM_RETRO_RANDOM
+	return dmodem_retro_random();
+#else
+	std::random_device rd;
+	return static_cast<u32>(rd());
+#endif
+}
+
+/* the link is up: with S102, our PKDS value (unless S102 bit 2), our
+   XID command, and the I frames held until the remote's options come
+   (T1 for them) */
+void Lapb::zdes_start()
+{
+	zremote_ = -1;
+	zremote_y_ = false;
+	if (!(zdes_ & ZDES_ON))
+		return;
+	if (!(zdes_ & ZDES_NO_PKDS)) {
+		for (int i = 0; i < ZDES_PKDS; i += 4) {
+			const u32 r = zdes_random();
+			for (int k = 0; k < 4; k++)
+				zx_[i + k] = static_cast<u8>(r >> (8 * k));
+		}
+		zdes_public(zx_, zy_);
+	}
+	zwait_ = true;
+	zdes_xid(true);
+	timer_start();
+}
+
+/* our XID frame, a command or a response (as the firmware's, 0x19DF36
+   and 0x1A7764): group 0xF0 with the protocol's name ("X75", "V120"),
+   and parameters 1 to 3 as the firmware has them; ZyXEL's group with
+   its name and, with S102, our options (S102's bits 0 to 2) and our
+   PKDS value */
+void Lapb::zdes_xid(bool cmd)
+{
+	u8 *b = xid_buf_[cmd ? 0 : 1];
+	s16 n = 0;
+	memcpy(b, cmd ? cmd_addr_ : rsp_addr_, alen_);
+	n = alen_;
+	b[n++] = U_XID;
+	b[n++] = XID_FI;
+	auto group = [&](u8 gi) {
+		b[n++] = gi;
+		n += 2;
+		return n;
+	};
+	auto group_end = [&](s16 at) {
+		const s16 len = static_cast<s16>(n - at);
+		b[at - 2] = static_cast<u8>(len >> 8);
+		b[at - 1] = static_cast<u8>(len);
+	};
+	s16 at = group(XID_GROUP);
+	const char *name = variant_ == Variant::V120 ? "V120" : "X75";
+	const s16 nl = static_cast<s16>(strlen(name));
+	b[n++] = 0;
+	b[n++] = static_cast<u8>(nl);
+	memcpy(b + n, name, nl);
+	n += nl;
+	static const u8 params[] = { 1, 1, 0, 2, 2, 0x08, 0x00, 3, 1, 0x20 };
+	memcpy(b + n, params, sizeof(params));
+	n += sizeof(params);
+	group_end(at);
+	at = group(XID_ZYXEL);
+	b[n++] = PI_NAME;
+	b[n++] = 5;
+	memcpy(b + n, "ZyXEL", 5);
+	n += 5;
+	if (zdes_ & ZDES_ON) {
+		const u8 opt = zdes_ & (ZDES_ON | ZDES_TRIPLE | ZDES_NO_PKDS);
+		b[n++] = cmd ? PI_OPT_CMD : PI_OPT_RSP;
+		b[n++] = 1;
+		b[n++] = opt;
+		if (!(opt & ZDES_NO_PKDS)) {
+			b[n++] = cmd ? PI_Y_CMD : PI_Y_RSP;
+			b[n++] = ZDES_PKDS;
+			memcpy(b + n, zy_, ZDES_PKDS);
+			n += ZDES_PKDS;
+		}
+	}
+	group_end(at);
+	xid_frame_[cmd ? 0 : 1].size = n;
+	xid_pending_[cmd ? 0 : 1] = true;
+}
+
+/* an XID frame: a command answered by our response; ZyXEL's options
+   and PKDS value taken from either (the firmware's parser, 0x1A7894,
+   takes them from the response); while we wait, the agreement once the
+   options have come, or on a response without them */
+void Lapb::zdes_rx_xid(const Frame *f, bool cmd)
+{
+	if (cmd)
+		zdes_xid(false);
+	const u8 *b = f->buf;
+	s16 at = static_cast<s16>(alen_ + 1);
+	const s16 end = f->count;
+	if (at < end && b[at] == XID_FI) {
+		at++;
+		while (at + 3 <= end) {
+			const u8 gi = b[at];
+			s16 gend = static_cast<s16>(at + 3 + (b[at + 1] << 8 | b[at + 2]));
+			at = static_cast<s16>(at + 3);
+			if (gend > end)
+				gend = end;
+			while (at + 2 <= gend) {
+				const u8 pi = b[at], pl = b[at + 1];
+				const u8 *pv = b + at + 2;
+				if (at + 2 + pl > gend)
+					break;
+				if (gi == XID_ZYXEL) {
+					if ((pi == PI_OPT_CMD || pi == PI_OPT_RSP) &&
+					    pl == 1)
+						zremote_ = pv[0];
+					if ((pi == PI_Y_CMD || pi == PI_Y_RSP) &&
+					    pl == ZDES_PKDS) {
+						memcpy(zry_, pv, ZDES_PKDS);
+						zremote_y_ = true;
+					}
+				}
+				at = static_cast<s16>(at + 2 + pl);
+			}
+			at = gend;
+		}
+	}
+	if (zwait_ && (zremote_ >= 0 || !cmd))
+		zdes_agree();
+}
+
+/* the end of the XID exchange (the firmware's 0x1A750A): DES if both
+   offer it; triple DES if both ask for it; the PKDS key if neither has
+   S102 bit 2 and the remote's value came, else ATCK's; the DSP's key
+   check, the IV, and the I frames go.  Without it the link stays clear,
+   or with S102 bit 3 goes down */
+void Lapb::zdes_agree()
+{
+	zwait_ = false;
+	timer_stop();
+	if (zremote_ < 0 || !(zremote_ & ZDES_ON)) {
+		if (zdes_ & ZDES_REQUIRED) {
+			link_->logf("%s: no DES from the remote: disconnect.",
+				    tag_);
+			disconnect();
+			return;
+		}
+		link_->logf("%s: no DES from the remote: clear.", tag_);
+		return;
+	}
+	const bool triple = (zdes_ & ZDES_TRIPLE) && (zremote_ & ZDES_TRIPLE);
+	const bool pkds = !(zdes_ & ZDES_NO_PKDS) &&
+		!(zremote_ & ZDES_NO_PKDS) && zremote_y_;
+	u8 key[ZDES_KEY];
+	if (pkds) {
+		zdes_shared(zry_, zx_, key);
+		zdes_key_check(key, true);
+	} else {
+		memcpy(key, link_->config().zkey, ZDES_KEY);
+		zdes_key_check(key, triple);
+	}
+	u8 iv[8];
+	zdes_iv(key, iv);
+	ztx_.init(key, triple, iv);
+	zrx_.init(key, triple, iv);
+	zon_ = true;
+	link_->logf("%s: %s with the %s key.", tag_,
+		    triple ? "triple DES" : "DES", pkds ? "PKDS" : "ATCK");
 }
 
 } // namespace dlink

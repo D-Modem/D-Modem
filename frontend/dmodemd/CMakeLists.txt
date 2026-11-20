@@ -59,8 +59,12 @@ if(DMODEM_DMODEMD)
 	if(WIN32)
 		# (Windows: its DTE a COM port or TCP, windows_dte.cpp; the
 		# system's timer at 1 ms, winmm)
-		add_executable(dmodemd main_windows.cpp)
-		target_link_libraries(dmodemd PRIVATE dmodem_sip winmm)
+		# (its icon in the tray and its log window, windows_tray.cpp:
+		# the shell's Shell_NotifyIcon; dmodemd.rc its icon)
+		add_executable(dmodemd main_windows.cpp windows_tray.cpp
+			dmodemd.rc)
+		target_link_libraries(dmodemd PRIVATE dmodem_sip winmm shell32
+			user32 gdi32)
 		install(TARGETS dmodemd RUNTIME
 			DESTINATION ${CMAKE_INSTALL_BINDIR})
 	else()
@@ -94,8 +98,11 @@ if(DMODEM_DMODEMD)
 			${PROJECT_SOURCE_DIR}/dsp)
 		target_link_libraries(dmodemd_fake_${fake} PRIVATE dmodem_sip)
 		if(WIN32)
+			# (main_windows.cpp's tray, windows_tray.cpp)
+			target_sources(dmodemd_fake_${fake} PRIVATE
+				windows_tray.cpp dmodemd.rc)
 			target_link_libraries(dmodemd_fake_${fake} PRIVATE
-				winmm ws2_32)
+				winmm ws2_32 shell32 user32 gdi32)
 		endif()
 		dmodem_flags(dmodemd_fake_${fake})
 	endfunction()
@@ -174,7 +181,9 @@ if(DMODEM_DMODEMD)
 		# under Wine, on the exchange of a Linux build
 		# (DMODEM_HOST_LINE_EXCHANGE: its line_exchange); macOS's on
 		# its own (below, with Linux's)
-		if(DMODEM_TESTS AND WIN32)
+		# (not before Vista, DMODEM_USB_WIN9X: there libusb is
+		# usb_win9x.cpp, which usb_win9x_test tests, below)
+		if(DMODEM_TESTS AND WIN32 AND NOT DMODEM_USB_WIN9X)
 			set(DMODEM_HOST_LINE_EXCHANGE
 				"${PROJECT_SOURCE_DIR}/build/dmodemd/line_exchange"
 				CACHE FILEPATH
@@ -201,7 +210,7 @@ if(DMODEM_DMODEMD)
 					dmodemd_pico_line_windows PROPERTIES
 					LABELS alsa TIMEOUT 400 RUN_SERIAL TRUE)
 			endif()
-		elseif(DMODEM_TESTS)
+		elseif(DMODEM_TESTS AND NOT WIN32)
 			set(_usb_builtin_fakes ON)
 		endif()
 	elseif(LIBUSB_FOUND)
@@ -309,6 +318,24 @@ if(DMODEM_DMODEMD)
 			dmodem_usb_fake(${_f} main.cpp ${_usb_headers})
 		endforeach()
 	endif()
+	# test/usb_win9x_test.cpp: usb_win9x.cpp (libusb's calls on
+	# dmodem.sys, for Windows 98 SE to XP) on a fake driver: no Windows
+	# needed, only libusb's header
+	if(DMODEM_TESTS AND (WIN32 OR APPLE) AND DMODEM_USB)
+		set(_usb9x_headers
+			$<TARGET_PROPERTY:dmodem_libusb,INTERFACE_INCLUDE_DIRECTORIES>)
+	elseif(DMODEM_TESTS AND LIBUSB_FOUND)
+		set(_usb9x_headers ${LIBUSB_INCLUDE_DIRS})
+	endif()
+	if(DEFINED _usb9x_headers)
+		add_executable(usb_win9x_test test/usb_win9x_test.cpp
+			usb_win9x.cpp)
+		target_include_directories(usb_win9x_test PRIVATE
+			${CMAKE_CURRENT_SOURCE_DIR} ${_usb9x_headers})
+		dmodem_flags(usb_win9x_test EXTRA)
+		dmodem_add_test(usb_win9x $<TARGET_FILE:usb_win9x_test>)
+		set_property(TEST usb_win9x APPEND PROPERTY LABELS quick)
+	endif()
 	# the simulated telephone exchange of the ALSA and USB lines' tests
 	if(DMODEM_TESTS AND (ALSA_FOUND OR LIBUSB_FOUND OR _usb_builtin_fakes))
 		add_executable(line_exchange test/line_exchange.cpp)
@@ -392,8 +419,10 @@ if(DMODEM_DMODEMD)
 		dmodem_flags(cx_daa_test EXTRA NOOPT)
 		dmodem_gtest(cx_daa_test LABELS quick)
 		# test/pipe_test.cpp: dmodemd.exe's named pipe DTE, both
-		# ways (and a bridge for frontend/asterisk/test's WIN_PIPE=1)
-		if(WIN32)
+		# ways (and a bridge for frontend/asterisk/test's WIN_PIPE=1).
+		# (Windows 7's, as the driver's: not for a clang-retro build
+		# for Windows 98 SE, which has no dmodem_winlink)
+		if(WIN32 AND TARGET dmodem_winlink)
 			add_executable(pipe_test test/pipe_test.cpp)
 			dmodem_flags(pipe_test EXTRA NOOPT)
 			target_link_libraries(pipe_test PRIVATE ws2_32)
@@ -462,6 +491,13 @@ if(DMODEM_DMODEMD)
 			${CMAKE_CURRENT_SOURCE_DIR}/test/anonymous_test.py
 			$<TARGET_FILE:dmodemd>)
 		set_tests_properties(dmodemd_anonymous PROPERTIES LABELS quick
+			TIMEOUT 60)
+		# a host's name found as RFC 3263 has it (NAPTR, SRV over
+		# UDP and TCP), the script's own DNS server and SIP peer
+		dmodem_add_test(dmodemd_dns ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/dns_test.py
+			$<TARGET_FILE:dmodemd>)
+		set_tests_properties(dmodemd_dns PROPERTIES LABELS quick
 			TIMEOUT 60)
 		# V.150.1's modem relay (SIP_V150=yes) both ways, the
 		# script's own SIP peer and gateway (SSE, SPRT)

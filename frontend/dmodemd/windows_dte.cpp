@@ -529,7 +529,7 @@ void PipeDte::wake()
 {
 	std::lock_guard<std::mutex> lk(mu_);
 	if (pipe_)
-		CancelIoEx((HANDLE)pipe_, nullptr);
+		cancel_io((HANDLE)pipe_, nullptr);
 }
 
 /* see windows_dte.h */
@@ -541,7 +541,7 @@ bool PipeDte::finish(void *h, void *ovp, unsigned long *got)
 	BOOL ok;
 
 	if (WaitForMultipleObjects(2, w, FALSE, INFINITE) != WAIT_OBJECT_0)
-		CancelIoEx((HANDLE)h, ov);
+		cancel_io((HANDLE)h, ov);
 	ok = GetOverlappedResult((HANDLE)h, ov, &n, TRUE);
 	if (got)
 		*got = n;
@@ -664,7 +664,7 @@ s32 PipeDte::write(const char *buf, s32 n)
 		if (GetLastError() == ERROR_IO_PENDING) {
 			if (WaitForSingleObject(ov.hEvent, WRITE_WAIT_MS) !=
 			    WAIT_OBJECT_0)
-				CancelIoEx((HANDLE)pipe_, &ov);
+				cancel_io((HANDLE)pipe_, &ov);
 			if (!GetOverlappedResult((HANDLE)pipe_, &ov, &done,
 						 TRUE) &&
 			    GetLastError() != ERROR_OPERATION_ABORTED)
@@ -742,7 +742,7 @@ void DriverDte::wake()
 {
 	std::lock_guard<std::mutex> lk(mu_);
 	if (pipe_)
-		CancelIoEx((HANDLE)pipe_, nullptr);
+		cancel_io((HANDLE)pipe_, nullptr);
 }
 
 /* see windows_dte.h */
@@ -919,7 +919,7 @@ void DriverDte::serve_driver(void *h)
 	}
 	if (reading || writing) {
 		DWORD n;
-		CancelIoEx((HANDLE)h, nullptr);
+		cancel_io((HANDLE)h, nullptr);
 		if (reading)
 			GetOverlappedResult((HANDLE)h, &rov, &n, TRUE);
 		if (writing)

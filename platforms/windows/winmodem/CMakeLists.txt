@@ -45,6 +45,13 @@ endif()
 if(NOT WIN32)
 	return()
 endif()
+# (the drivers and their installer are Windows 7's (UMDF 1 and 2,
+# newdev's UpdateDriverForPlugAndPlayDevices): not for an older
+# DMODEM_WINNT, a clang-retro build for Windows 98 SE)
+math(EXPR _winnt "${DMODEM_WINNT}")
+if(_winnt LESS 1536)
+	return()
+endif()
 add_library(dmodem_winlink STATIC link.cpp)
 target_link_libraries(dmodem_winlink PUBLIC dmodem_winmodem advapi32)
 dmodem_flags(dmodem_winlink EXTRA)

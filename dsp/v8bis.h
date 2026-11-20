@@ -139,6 +139,15 @@ enum Sig : u8 {
 /* a signal's name, for the log */
 const char *sig_name(u8 s);
 
+/* the levels (peak amplitudes for SigTx and MsgTx, 16 bit linear; 0 dBm0
+   is a sine of peak 22300): the messages and the "d" signals at V.8's
+   level, about -14.5 dBm0; MRe and CRe at -22 dBm0.  7.1.4 sets MRe and
+   CRe 12 to 15 dB below the nominal permitted power (V.2: -9 to -10
+   dBm0), that is -21 to -25 dBm0.  It does not set them 12 dB below the
+   modem's own level, which is lower than the permitted level */
+constexpr float AMP_MSG = 4225.0f;
+constexpr float AMP_E = 1773.0f;
+
 /* a signal out: segment 1 (400 ms) on the initiating pair or the
    responding one, segment 2 (100 ms) its tone; ESi and ESr without their
    segment 2, which is the message's preamble that follows (7.2.4) */

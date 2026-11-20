@@ -92,7 +92,8 @@ TEST(V8bis, TreeWithLevel3)
 }
 
 /* each signal from its station, through the detector of the other: told
-   apart, at MRe's low level too; the other pair is not heard */
+   apart, at the messages' level, at MRe's level and at MRe's level after
+   12 dB of line loss; the other pair is not heard */
 TEST(V8bis, Signals)
 {
 	struct Case {
@@ -105,7 +106,7 @@ TEST(V8bis, Signals)
 	};
 	const s32 srate = 8000;
 	for (const Case &c : cases) {
-		for (float amp : { 4225.0f, 1060.0f }) {
+		for (float amp : { AMP_MSG, AMP_E, AMP_E / 4 }) {
 			SigTx tx;
 			SigRx rx, other;
 			tx.init(c.sig, c.initiating, amp, srate);
@@ -132,6 +133,34 @@ TEST(V8bis, Signals)
 			EXPECT_EQ(other_got, SIG_NONE) << sig_name(c.sig);
 		}
 	}
+}
+
+/* the power of MRe's segment 1 and segment 2 at AMP_E: -21 to -25 dBm0,
+   12 to 15 dB below the nominal permitted power of -9 to -10 dBm0
+   (7.1.4); the messages' level above it (issue #119: MRe at -26.5 dBm0
+   was below that range) */
+TEST(V8bis, MreLevel)
+{
+	const s32 srate = 8000;
+	const double dbm0 = 2.49e8; /* DP_DBM0_POWER */
+	SigTx tx;
+	tx.init(SIG_MRE, true, AMP_E, srate);
+	double e1 = 0, e2 = 0;
+	s32 n1 = 0, n2 = 0;
+	while (!tx.done()) {
+		bool seg1 = tx.n < tx.seg1;
+		double x = tx.next();
+		(seg1 ? e1 : e2) += x * x;
+		(seg1 ? n1 : n2)++;
+	}
+	double l1 = 10 * std::log10(e1 / n1 / dbm0);
+	double l2 = 10 * std::log10(e2 / n2 / dbm0);
+	EXPECT_GE(l1, -25.0);
+	EXPECT_LE(l1, -21.0);
+	EXPECT_GE(l2, -25.0);
+	EXPECT_LE(l2, -21.0);
+	double lm = 10 * std::log10(AMP_MSG * AMP_MSG / 2 / dbm0);
+	EXPECT_GT(lm, l1 + 6);
 }
 
 /* ESi: segment 1, then its message's preamble is segment 2 */

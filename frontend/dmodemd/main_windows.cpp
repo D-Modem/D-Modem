@@ -13,6 +13,10 @@
  *    or WB stick or an Agere USB modem through libusb (usb_line.cpp, on
  *    WinUSB), not SIP; the DTE is any of the above.
  *
+ *    Its icon is in the notification area (windows_tray.h; not with
+ *    --no-tray): a double-click shows the log, a right-click a menu
+ *    (View Logs, About, Exit).
+ *
  *    What main.cpp does for POSIX's ptys, root and realtime scheduling
  *    has no place here: the process runs as the user who starts it, at
  *    high priority with the system's timer at 1 ms (the call's 20 ms
@@ -43,12 +47,25 @@
 #include "usb_line.h"
 #endif
 #include "windows_dte.h"
+#include "windows_tray.h"
 
 #include <mmsystem.h>
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
 
 namespace {
+
+/* the tray's icon (Tray::start()) gone when main() returns, whatever
+   way it does */
+struct TrayGuard {
+	bool on = false;
+	/* (Tray::stop() if Tray::start() made the icon) */
+	~TrayGuard()
+	{
+		if (on)
+			dmd::Tray::stop();
+	}
+};
 
 /* the line: 8000 samples a second */
 const s32 RATE = 8000;
@@ -122,6 +139,7 @@ int main(int argc, char *argv[])
 	const char *name, *slash;
 	std::unique_ptr<dmd::Dte> dte;
 	std::string where;
+	TrayGuard tray;
 	s16 ret;
 
 	/* (Windows' C library buffers a pipe whole, line buffering or
@@ -148,6 +166,10 @@ int main(int argc, char *argv[])
 		    "--tcp\n");
 		return 255;
 	}
+	/* the icon in the tray, and the output to its log window from
+	   here on */
+	if (!opt.no_tray)
+		tray.on = dmd::Tray::start(name);
 	dcore::log_open(name);
 	dmd::print_version();
 	prop_dp_init();
@@ -219,6 +241,7 @@ int main(int argc, char *argv[])
 	}
 	fprintf(stderr, "modem `%s' created. DTE is %s\n", name,
 		where.c_str());
+	dmd::Tray::set_dte(where.c_str());
 
 	dmd::DataFile data(data_path(name).c_str());
 	data.load(&m->dsp_info());

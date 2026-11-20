@@ -1,0 +1,21 @@
+# V.32bis with MNP (\N5) and V.42bis in the LRs (%C3: MNP 5 and
+# V.42bis; S114=1: the caller offers V.42bis, V.42bis chosen): dial,
+# answer, data both ways, ATI11 gives MNP and V42bis; the remote hangs
+# up
+A ATE0X3\\N5S114=1+MS=132\r
+B ATE0\\N5+MS=132\r
+B ATA\r
+A ATD\r
+until A CONNECT 30000
+until B CONNECT 2000
+send A 3000
+send B 2000
+run 4000
+B +++
+run 1000
+B ATI11\r
+B ATH\r
+until A NO CARRIER 10000
+until B OK 5000
+run 500
+A ATI11\r

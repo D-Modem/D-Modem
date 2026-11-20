@@ -999,6 +999,8 @@ private:
 		c.unhook(0x814c);
 		c.hook(0x8151, [this](C5x &x) {
 			int i = x.acc & 0xffff;
+			if (dbg & 1)
+				msg("codec rate %d asked (from %04x)", i, x.top());
 			if (i < 6 && i != rate_) {
 				rate_ = i;
 				if (on_rate) on_rate(RATES[i]);
@@ -1031,7 +1033,9 @@ private:
 		frame_ = true;
 		dsp_due_ += dsp_ips_ / rate();
 		while (dsp_due_ > 0) {
-			if (frame_ && !c.intm) {
+			/* not between RPT and the instruction it repeats:
+			   the C5x takes no interrupt there */
+			if (frame_ && !c.intm && !c.rpt_pending()) {
 				frame_ = false;
 				passed_ = false;
 				c.intr(c.D[0x65], c.pc);

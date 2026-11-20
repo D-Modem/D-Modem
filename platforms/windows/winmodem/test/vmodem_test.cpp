@@ -66,7 +66,8 @@ public:
 	/* dmodemd started with args (-n, an account nobody answers) */
 	explicit Daemon(const std::string &args)
 	{
-		std::string cmd = "\"" + dmodemd_path() + "\" -n -d1 " + args;
+		std::string cmd = "\"" + dmodemd_path() +
+			"\" -n --no-tray -d1 " + args;
 		STARTUPINFOA si = {};
 		si.cb = sizeof(si);
 		SetEnvironmentVariableA("SIP_LOGIN", "test:test@127.0.0.1:9");

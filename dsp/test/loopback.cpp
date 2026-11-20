@@ -115,6 +115,7 @@ struct Side {
 	   microphone's samples given, the earpiece's kept */
 	struct dp_voice voice;
 	int voice_hz;
+	int max_rate;           /* LoopbackConfig::max_rate */
 	bool voice_on;
 	long mic_sent;
 	std::vector<s16> ear;
@@ -239,6 +240,8 @@ intptr_t modem_get_param(struct modem *m, unsigned name)
 		return (intptr_t)&voice;
 	case GetCallingToneFlag:
 		return 1;
+	case MDMPRM_MAX_RATE:
+		return side_of(m).max_rate > 0 ? side_of(m).max_rate : -1;
 	default:
 		return -1;
 	}
@@ -266,12 +269,17 @@ long modem_set_param(struct modem *m, unsigned name, int val)
 /* the run's settings (loopback_run()'s, while it runs) */
 static const LoopbackConfig *run_cfg;
 
-/* the S-registers the pumps read: the run's own (LoopbackConfig::sregs),
+/* the S-registers the pumps read: the run's own (LoopbackConfig's
+   side_sregs, then sregs),
    else 50 s for the handshake, 1.4 s of carrier loss, 95 ms DTMF and the
    dial timings, +MS's modulation for PEP (the call progress listens for
    its tones); 0 for all others (blind dialling among them) */
-int modem_get_sreg(struct modem *, unsigned int num)
+int modem_get_sreg(struct modem *m, unsigned int num)
 {
+	if (run_cfg && m)
+		for (const auto &r : run_cfg->side_sregs[m->side])
+			if ((unsigned)r.first == num)
+				return r.second;
 	if (run_cfg)
 		for (const auto &r : run_cfg->sregs)
 			if ((unsigned)r.first == num)
@@ -815,6 +823,7 @@ LoopbackResult loopback_run(const LoopbackConfig &cfg)
 		s.received.reserve(RECORD_BITS);
 		s.voice = { &s, voice_state, voice_mic, voice_ear };
 		s.voice_hz = cfg.voice_hz[k];
+		s.max_rate = cfg.max_rate;
 		s.voice_on = false;
 		s.mic_sent = 0;
 		s.ear.clear();

@@ -1,7 +1,7 @@
 # Every job but windows-msvc builds with Clang: the build takes it where it
-# is installed (DMODEM_PREFER_CLANG; for Windows
-# platforms/windows/mingw-w64.cmake), with GCC's C++ library (libstdc++;
-# g++ and g++-multilib stay for it).
+# is installed (DMODEM_PREFER_CLANG), with GCC's C++ library (libstdc++;
+# g++ and g++-multilib stay for it); windows with clang-retro's Clang and
+# libc++.
 #
 # build: everything (with the 32 bit interop test programs, against Smart
 # Link's original DSP library) and the offline tests, V.110's against
@@ -11,8 +11,12 @@
 #
 # musl: the same build and offline tests on musl libc (Alpine).
 #
-# windows: the Windows build (MinGW-w64, cross from Linux) with its
-# offline tests under Wine; dmodemd.exe kept as an artifact.
+# windows: the Windows builds with clang-retro's toolchain (cross from
+# Linux, platforms/windows/clang-retro.cmake), one for each target (the
+# matrix): win7-x64 (Windows 7 and later) with its offline tests under
+# Wine, and win98 (Windows 98 SE and later, 32 bit) with its imports
+# checked against Windows 9x and NT 4.0; each dmodemd.exe kept as an
+# artifact.
 #
 # windows-msvc: the same with Microsoft's compiler (cl.exe, Ninja) on a
 # Windows runner, the offline tests on Windows itself; its dmodemd.exe
@@ -30,6 +34,10 @@
 # sysroot of Haiku's own packages, platforms/haiku/haiku_sysroot.py),
 # warnings as errors; nothing here runs its programs, so no tests;
 # dmodemd kept as an artifact.
+#
+# x2upgrade-host: the x2 upgrade host's caller screens, the Go version
+# (tools/x2upgrade-host) vetted and tested, and the Python version's
+# tests (tools/test_x2upgrade_host.py).
 #
 # asterisk, freeswitch: the modules' tests (frontend/asterisk/test,
 # frontend/freeswitch/test) in a private Asterisk (Ubuntu's packages) and
@@ -224,6 +232,16 @@ jobs:
 
   windows:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: win7-x64
+            artifact: dmodemd-windows-x86_64
+            tests: true
+          - target: win98
+            artifact: dmodemd-windows-98-x86
+            tests: false
     env:
       WINEDEBUG: -all
       CMAKE_C_COMPILER_LAUNCHER: ccache
@@ -235,8 +253,12 @@ jobs:
         uses: ./.github/actions/apt
         with:
           packages: >-
-            cmake ninja-build pkg-config g++-mingw-w64-x86-64-posix
-            clang lld wine wine64 ccache
+            cmake ninja-build pkg-config wine wine64 ccache
+
+      # clang-retro's clang-dos package (the nightly), unpacked to
+      # $CLANG_DOS
+      - uses: clang-retro/dos-sdk/.github/actions/setup-toolchain@main
+        id: clang-dos
 
       # libre and Mbed TLS are fetched and built while configuring: keep
       # them
@@ -244,19 +266,20 @@ jobs:
         uses: actions/cache@v5
         with:
           path: build-win/_deps/libre-install
-          key: libre-v4.12.0-mingw-${{ hashFiles('cmake/libre.cmake', 'cmake/libre-mbedtls-aes.patch', 'platforms/windows/mingw-w64.cmake') }}
+          key: libre-v4.12.0-clang-retro-${{ matrix.target }}-${{ steps.clang-dos.outputs.sources }}-${{ hashFiles('cmake/libre.cmake', 'cmake/libre-mbedtls-aes.patch', 'cmake/libre-win32-legacy.patch', 'cmake/mbedtls-win32-legacy.h', 'platforms/windows/clang-retro.cmake') }}
 
       - name: ccache
         uses: actions/cache/restore@v5
         with:
           path: /tmp/ccache
-          key: ccache-mingw-${{ github.sha }}
-          restore-keys: ccache-mingw-
+          key: ccache-clang-retro-${{ matrix.target }}-${{ github.sha }}
+          restore-keys: ccache-clang-retro-${{ matrix.target }}-
 
       - name: Configure
         run: |
           cmake -B build-win -G Ninja -DDMODEM_WERROR=ON \
-            -DCMAKE_TOOLCHAIN_FILE=platforms/windows/mingw-w64.cmake
+            -DCMAKE_TOOLCHAIN_FILE=$PWD/platforms/windows/clang-retro.cmake \
+            -DCLANG_RETRO_CONFIG=${{ matrix.target }}
 
       - name: Build
         run: cmake --build build-win && ccache -s
@@ -265,10 +288,25 @@ jobs:
         uses: actions/cache/save@v5
         with:
           path: /tmp/ccache
-          key: ccache-mingw-${{ github.sha }}
+          key: ccache-clang-retro-${{ matrix.target }}-${{ github.sha }}
+
+      # (Windows 98 SE: no W functions, which 9x has only as stubs; and
+      # nothing newer than NT 4.0's, whose check also refuses the 9x
+      # subsystem version 4.10: that line alone is let through)
+      - name: Imports (98 SE, NT 4.0)
+        if: matrix.target == 'win98'
+        run: |
+          check=$CLANG_DOS/share/clang-dos/check-imports.py
+          python3 $check build-win/dmodemd/dmodemd.exe
+          out=$(python3 $check --nt 4.0 build-win/dmodemd/dmodemd.exe || true)
+          echo "$out"
+          if echo "$out" | grep "error:" | grep -v "subsystem version"; then
+            exit 1
+          fi
 
       # (Wine's first start makes its prefix: before the tests' timeouts)
       - name: Wine prefix
+        if: matrix.tests
         run: wineboot --init && wineserver -w
 
       # (Wine's own processes, wineserver and its services, kept running
@@ -276,6 +314,7 @@ jobs:
       # started by a test's wine they took its stdout with them, and
       # ctest waited on that pipe until its timeout, the test long done)
       - name: Tests
+        if: matrix.tests
         run: |
           wineserver -p </dev/null >/dev/null 2>&1
           (sleep 7200 </dev/null 2>/dev/null | wine cmd /c "set /p x=" >/dev/null 2>&1 &)
@@ -286,7 +325,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: test-logs-windows
+          name: test-logs-windows-${{ matrix.target }}
           path: |
             build-win/test-logs/
             !build-win/test-logs/latest
@@ -296,7 +335,7 @@ jobs:
       - name: dmodemd.exe
         uses: actions/upload-artifact@v7
         with:
-          name: dmodemd-windows-x86_64
+          name: ${{ matrix.artifact }}
           path: build-win/dmodemd/dmodemd.exe
           retention-days: 30
 
@@ -510,6 +549,28 @@ jobs:
 
   # (the steps' scripts in the matrix: one shard each, its calls one after
   # another; shell bash -e, so the first failure ends it)
+  x2upgrade-host:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: tools/x2upgrade-host
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/x2upgrade-host/go.mod
+          cache: false
+
+      - name: Vet and test
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }
+          go vet ./...
+          go test ./...
+
+      - name: Python version
+        run: python3 ../test_x2upgrade_host.py
+
   asterisk:
     name: asterisk (${{ matrix.shard }})
     runs-on: ubuntu-24.04

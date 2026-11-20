@@ -111,7 +111,8 @@ elif windows and os.environ.get("WIN_PIPE"):
     dte_args = [pipe_mode, pipe_name]
 else:
     dte_args = ["--tcp", "127.0.0.1:2399"]
-argv = ["stdbuf", "-oL", "-eL"] + (["wine", dmodemd] + dte_args if windows else [dmodemd])
+# (no icon in the tray: no desktop under the tests' Wine)
+argv = ["stdbuf", "-oL", "-eL"] + (["wine", dmodemd, "--no-tray"] + dte_args if windows else [dmodemd])
 p = subprocess.Popen(argv + ["-d" + os.environ.get("DMODEMD_DEBUG", "1")] + (["-L"] if incoming else []), stdout=subprocess.PIPE,
                      stderr=subprocess.STDOUT)
 log = open(os.environ.get("SIP_LOG", "/tmp/sip_call.log"), "wb")

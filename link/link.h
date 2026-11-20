@@ -51,6 +51,7 @@
 #include "v80.h"
 #include "v76.h"
 #include "ppp_sync.h"
+#include "usr_feature.h"
 
 namespace dlink {
 
@@ -80,8 +81,31 @@ struct Config {
 	s16 mnp_info = MNP_MAX_INFO;
 	s16 mnp_opt = 3;
 	bool mnp5 = false;
+	/* the initiator's LR offers V.42bis too (S114; the responder takes
+	   it whenever comp has it: docs/mnp/mnp5.md) */
+	bool mnp_v42_offer = false;
+	/* MNP 10 offered in the LR (mnp.h), with: its cellular mode ()M1,
+	   the DK dial modifier), the lowest rate it may go to (-Q: 0
+	   neither 2400 nor 1200, 1 not 1200, 2 any), the cellular transmit
+	   level's start (@M), :T19's 120 s at 1200 bit/s, V.42's XID
+	   upgrade (-K1), D-Modem's extension (parameter 0xC0), the long
+	   LR (all of MNP 10's parameters and 0x11, with no limit to the
+	   caller's LR, which some modems refuse: off by default), the top
+	   speed its rate masks come from */
+	bool mnp10 = false;
+	bool mnp10_cellular = false;
+	s16 mnp10_lowest = 2;
+	s16 mnp10_level = 0;
+	bool mnp10_t19 = true;
+	bool mnp10_upgrade = true;
+	bool mnp10_ext = true;
+	bool mnp10_long = false;
+	s32 mnp10_top = 33600;
 	s16 tx_win = LAPM_MAX_WIN, rx_win = LAPM_MAX_WIN;
 	s16 tx_info = LAPM_MAX_INFO, rx_info = LAPM_MAX_INFO;
+	/* LAPM's T401: its seconds before the time of the frames (2; ETC's
+	   3, as 3Com's firmware) */
+	s16 t401_s = 2;
 	/* LAPM's 32-bit FCS (10 c/V.42) offered by the originator, agreed
 	   to by the answerer; in the remote's XID, what it asked for or
 	   agreed to */
@@ -123,6 +147,17 @@ struct Config {
 	SyncConfig sync_cfg;
 	/* on a clear channel: X.75 or PPP rather than all of the above */
 	B2 b2 = B2::Modem;
+	/* ZyXEL's encryption on X.75 and V.120 (zcrypt.h): S102's bits
+	   (ZDES_*), and ATCK's key (registers A and B) */
+	u8 zdes = 0;
+	u8 zkey[16] = {};
+	/* the USRobotics remote feature upgrade (usr_feature.h, +X2UP):
+	   once LAPM is up, read a Courier's records, and enable and
+	   disable its features (record 2's values: Terbo 4, V.FC 8,
+	   x2 16) */
+	UsrMode usr_feature = UsrMode::Off;
+	u8 usr_enable = 1 << (USR_BIT_X2 - 1);
+	u8 usr_disable = 0;
 };
 
 /* the error correction a call has */
@@ -173,6 +208,26 @@ public:
 	   swaps its forward and back channels, the one sending the
 	   forward channel training it again */
 	virtual void hst_turn() {}
+	/* MNP 10 (mnp.h): the modulations the pumps can change to on this
+	   line (bit n: Mod n); none, no shifts */
+	virtual u32 mnp10_mods() { return 0; }
+	/* the modulation running (Mod::Count: none of the ladder's) */
+	virtual Mod mnp10_mod() { return Mod::Count; }
+	/* the receiver now: its level (dBm0, 0 when not known) and its
+	   eye quality, the mean squared error as 1024ths of the signal's
+	   power (0 to 255, -1 when not known) */
+	virtual void mnp10_line(s16 &dbm, s16 &eqm) {
+		dbm = 0;
+		eqm = -1;
+	}
+	/* a rate shift's physical change: true if it began, and
+	   Link::shift_done() says when it is over */
+	virtual bool mnp10_shift(const Shift &s) {
+		(void)s;
+		return false;
+	}
+	/* the cellular mode's transmit level, db below the nominal */
+	virtual void mnp10_tx_level(s16 db) { (void)db; }
 	/* the DTE's in-band command in Synchronous Access Mode (<EM><rate>:
 	   tx and rx are its rate codes) */
 	virtual void sync_command(SyncCommand c, u8 tx, u8 rx) {
@@ -205,6 +260,8 @@ public:
 		(void)pcm;
 		(void)n;
 	}
+	/* the remote feature upgrade's end (Config::usr_feature) */
+	virtual void usr_feature(const UsrReport &r) { (void)r; }
 protected:
 	~Owner() = default;
 };
@@ -224,8 +281,9 @@ public:
 
 	/* the data pump has connected: on, error correction as asked
 	   (Config), the detection phase (detect) and LAPM or MNP, else
-	   async */
-	void start(bool on, bool detect);
+	   async; far: the pump's two directions may start far apart
+	   (after V.8), the originator waits three times T400 for ADPs */
+	void start(bool on, bool detect, bool far = false);
 	/* the data pump has connected after V.8 bis chose DSVD (V.70):
 	   V.76's multiplexer, its data channel the DTE's (v76.h), no
 	   detection phase, XID or compression; the initiator opens it */
@@ -349,6 +407,8 @@ public:
 	void mnp_fallback() { no_ec(); }
 	/* we are the originator */
 	bool caller() const { return caller_; }
+	/* start()'s far: the originator's T400 three times */
+	bool detect_far() const { return detect_far_; }
 	/* the parameters, for XID */
 	Config &cfg() { return cfg_; }
 	/* characters between the DTE and LAPM or the async framer,
@@ -370,8 +430,51 @@ public:
 	void hst_turn() { owner_->hst_turn(); }
 	/* what MNP's LRs agreed (cfg()) to the owner */
 	void negotiated() { owner_->negotiated(cfg_); }
+	/* the V.42bis coders are made (MNP may offer V.42bis in its LR) */
+	bool v42bis_coders() const { return enc_.ready() && dec_.ready(); }
+	/* MNP's LRs agreed V.42bis in the directions comp (Config::comp's
+	   bits; 0: none) with N2 and N7: the coders set up, cfg() set */
+	void mnp_v42bis(s16 comp, s32 n2, s32 n7);
+	/* MNP 10's side of the owner (see Owner) */
+	u32 mnp10_mods() { return owner_->mnp10_mods(); }
+	/* (see Owner) */
+	Mod mnp10_mod() { return owner_->mnp10_mod(); }
+	/* (see Owner) */
+	void mnp10_line(s16 &dbm, s16 &eqm) { owner_->mnp10_line(dbm, eqm); }
+	/* (see Owner) */
+	bool mnp10_shift(const Shift &s) { return owner_->mnp10_shift(s); }
+	/* (see Owner) */
+	void mnp10_tx_level(s16 db) { owner_->mnp10_tx_level(db); }
+	/* the pumps' change for MNP 10's rate shift is over (ok: connected
+	   again); the link's framers start again */
+	void shift_done(bool ok);
+	/* MNP 10's shift is waiting for the pumps */
+	bool shifting() const {
+		return mode_ == Mode::Mnp && mnp_.shifting();
+	}
+	/* the call runs MNP 10 */
+	bool mnp10() const { return mode_ == Mode::Mnp && mnp_.mnp10(); }
+	/* the call's MNP (for its MNP 10 state) */
+	const Mnp &mnp() const { return mnp_; }
+	/* V.42's XID agreed to MNP 10 (-K1): MNP from now on, in HDLC
+	   frames (initiator: the LA first) */
+	void mnp_upgrade(bool initiator);
+	/* (for LAPM's XID) the call's MNP */
+	Mnp &mnp() { return mnp_; }
 	/* LAPM keeps characters the DTE did not take; push them on */
 	bool push_pending = false;
+	/* the remote feature upgrade (usr_feature.h): a UI frame of ours
+	   with the n octets of info */
+	void usr_send(const u8 *info, s16 n) { lapm_.tx_ui(info, n); }
+	/* (see usr_send()) a UI frame's information field received */
+	void usr_rx(const u8 *info, s16 n) { usr_.rx(info, n); }
+	/* (see usr_send()) the exchange's end, to the owner */
+	void usr_report(const UsrReport &r) { owner_->usr_feature(r); }
+	/* the remote feature upgrade now, in a call that is on with LAPM
+	   (the program's ask, not Config's): mode, the features to enable
+	   and to disable as usr_feature.h has them; false (nothing done)
+	   with no LAPM up, or with an exchange going on */
+	bool usr_start(UsrMode mode, u8 enable, u8 disable);
 
 private:
 	void end_detect();
@@ -407,6 +510,7 @@ private:
 	Protocol proto_ = Protocol::None;
 	bool mnp_tried_ = false;
 	bool phase_v42_ = false;
+	bool detect_far_ = false;
 	s32 hst_bps_ = 0;
 	bool hst_resume_ = false;       /* start(): HST's link after its switch */
 	s32 timer_ = 0;
@@ -416,6 +520,7 @@ private:
 	Hdlc hdlc_;
 	Async async_;
 	Lapm lapm_;
+	UsrFeature usr_;
 	Mux mux_;
 	Lapb lapb_;
 	HstLink hst_;

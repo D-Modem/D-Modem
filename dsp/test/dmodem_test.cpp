@@ -391,13 +391,6 @@ static PairCase alaw(PairCase c)
 	return c;
 }
 
-/* the case with the answerer on its own AT commands ms_b */
-static PairCase answerer_ms(PairCase c, const char *ms_b)
-{
-	c.ms_b = ms_b;
-	return c;
-}
-
 /* the case with bytes of bulk data from the caller after the text */
 static PairCase bulk(PairCase c, long bytes)
 {
@@ -424,12 +417,11 @@ INSTANTIATE_TEST_SUITE_P(Modulations, DmodemPair, testing::Values(
 	pair("hst", "+MS=HST", 2, 30),
 	pair("hst_7200", "+MS=HST,0,4800,7200", 1, 30),
 	pair("hst_12000", "+MS=HST,0,12000,16800", 1, 30),
-	/* V.FC's data mode (from the Courier's firmware) after V.34's
-	   start-up, both MPs asking for it; and at 19200 bit/s at most */
+	/* V.FC (from the Courier's firmware): its own start-up, then its
+	   data mode (26400 bit/s, D-Modem's fastest); and at 19200 bit/s
+	   at most */
 	pair("vfc", "+MS=VFC", 2, 30),
 	pair("vfc_19200", "+MS=VFC,0,14400,19200", 1, 30),
-	/* and against a V.34 answerer: V.34's data mode */
-	answerer_ms(pair("vfc_to_v34", "+MS=VFC", 1, 30), "+MS=34"),
 	v8_to_122("v8_to_122_d0", 0), v8_to_122("v8_to_122_d5", 5)), name);
 
 /* point of sale fast connect through the whole modem: V.22, Bell 212A
@@ -443,11 +435,15 @@ INSTANTIATE_TEST_SUITE_P(FastConnect, DmodemPair, testing::Values(
 	pair("v22_normal", "\\N0S92=0+MS=22", 1, 20)), name);
 
 /* retrains in the middle of the data (V.42 carries on): by both modems,
-   by the answerer or the caller alone (the other one follows); V.34 rate
+   by the answerer or the caller alone (the other one follows); V.32bis
+   rate renegotiations (both at once, the answerer's, the caller's); V.34 rate
    renegotiations (to 19200 bit/s, then back up a step at a time while
    the margin allows), the other one answering */
 INSTANTIATE_TEST_SUITE_P(Retrain, DmodemPair, testing::Values(
 	pair("v32_retrain", "+MS=132", 1, 30, { { "DSP_V32_RETRAIN", "1500" } }),
+	pair("v32_reneg_both", "+MS=132", 1, 30, { { "DSP_V32_RENEG", "1500" } }),
+	pair("v32_reneg_a", "+MS=132", 1, 30, { { "DSP_V32_RENEG", "1500a" } }),
+	pair("v32_reneg_c", "+MS=132", 1, 30, { { "DSP_V32_RENEG", "1500c" } }),
 	pair("v34_retrain_both", "+MS=34", 1, 60, { { "DSP_V34_RETRAIN", "3000" } }),
 	pair("v34_retrain_a", "+MS=34", 1, 60, { { "DSP_V34_RETRAIN", "3000a" } }),
 	pair("v34_retrain_c", "+MS=34", 1, 60, { { "DSP_V34_RETRAIN", "3000c" } }),

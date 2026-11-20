@@ -32,6 +32,7 @@
 #include "str.h"
 #include "reinit.h"
 #include "voice_codec.h"
+#include <zcrypt.h>
 
 namespace dcore {
 
@@ -143,11 +144,21 @@ const struct {
 } taken_cmds[] = {
 	{ "B", "0-3,15,16" }, { "C", "1" }, { "F", "1" }, { "W", "0-2" },
 	{ "&B", "0-2" }, { "&G", "0-2" }, { "&I", "0-5" }, { "&J", "0-1" },
-	{ "&K", "4-6" }, { "&M", "0,4,5" }, { "&N", "0-14" }, { "&W", "0-1" },
+	{ "&K", "4-6" }, { "&M", "0,4,5" }, { "&N", "0-14,32" }, { "&W", "0-1" },
 	{ "&Y", "0-1" }, { "\\G", "0-1" }, { "\\J", "0-1" }, { "\\K", "0-5" },
 	{ "\\Q", "0-3" }, { "\\R", "0-1" }, { "\\T", "0-255" },
-	{ "-C", "0-1" }, { "-K", "0-2" }, { "-Q", "0-1" }, { ")M", "0-2" },
-	{ "@M", "0-30" }, { "*H", "0-2" },
+	{ "-C", "0-1" },
+};
+
+/* MNP 10's commands (Microcom's): the name, the S-register, the values
+   taken */
+const struct {
+	const char *name;
+	s16 reg, lo, hi;
+} mnp10_cmds[] = {
+	{ "-K", SREG_MNP10_UPGRADE, 0, 2 }, { "-Q", SREG_MNP10_LOWEST, 0, 2 },
+	{ ")M", SREG_MNP10_CELLULAR, 0, 2 }, { "@M", SREG_MNP10_LEVEL, 0, 30 },
+	{ "*H", SREG_MNP10_START, 0, 2 }, { ":T19", SREG_MNP10_T19, 0, 1 },
 };
 
 /* the command at p is a taken one: *len its characters */
@@ -227,6 +238,14 @@ const struct Kept {
 	   in synchronous HDLC, 7 the modem's (\N, +ES), 9 V.120
 	   (asynchronous); modem.cpp reads it */
 	{ "+B2", 1, { 0 }, "(0,5,7,9)" },
+	/* D-Modem's own: the USRobotics remote feature upgrade, the host's
+	   side (link/usr_feature.h, docs/x2-upgrade.md): once LAPM is up,
+	   1 reads a Courier's serial number and feature records, 2 also
+	   enables the features <enable> and disables <disable> (sums of
+	   Terbo 4, V.FC 8, x2 16; not one in both); the result goes to the
+	   DTE as +X2UP:.  modem.cpp's link_init() reads it */
+	{ "+X2UP", 3, { 0, 16, 0 },
+	  "(0-2),(0,4,8,12,16,20,24,28),(0,4,8,12,16,20,24,28)" },
 	/* the bearer service (27.007 6.7): <speed> a V.110 rate on a clear
 	   channel (0: none, the answerer takes the caller's), <name> 0
 	   asynchronous (the DTE's characters), 1 synchronous (+B2's link);
@@ -243,6 +262,9 @@ const struct Kept {
 	{ "+FAA", 1, { 0 }, "(0,1)" },
 	{ "+FPR", 1, { 0 }, "(0,1,2,4,8,10,18)" },
 	{ "-SEC", 1, { 0 }, "(0,1),(0-30)" },
+	/* ETC's transmit filter (3Com's AT+EF, core/etc.h): its set of
+	   taps; modem.cpp reads it */
+	{ "+EF", 1, { 5 }, "(0-10)" },
 	/* V.cvm (Table 12-1/V.cvm): the modes, the signal interface's rate,
 	   +CVMR */
 	{ "+CVM", 3, { 63, 8000, 0 }, "(0-63),(8000,16000),(0,1)" },
@@ -292,6 +314,7 @@ const struct {
 	{ "V21", DP_V21 }, { "V22", DP_V22 }, { "V22B", DP_V22BIS },
 	{ "V23C", DP_V23 }, { "V32", DP_V32 }, { "V32B", DP_V32BIS },
 	{ "V32T", DP_V32TERBO }, { "V32TERBO", DP_V32TERBO },
+	{ "ZYX", DP_ZYX },
 	{ "V61", DP_V61 },
 	{ "V34", DP_V34 }, { "V90", DP_V90 }, { "V91", DP_V91 },
 	{ "V92", DP_V92 }, { "B103", DP_B103 }, { "BELL103", DP_B103 },
@@ -315,13 +338,12 @@ const struct {
 };
 
 /* +MS may choose pump id: it has a code and is registered (K56flex
-   while V.90 is, V.FC while V.8's pump is, which run for them) */
+   while V.90 is, which runs for it) */
 bool ms_choosable(u32 id)
 {
 	const DpDriver *d = dp_driver(id);
 	return d && d->code &&
-		(d->op || (id == DP_K56 && dp_registered(DP_V90)) ||
-		 (id == DP_VFC && dp_registered(DP_V8)));
+		(d->op || (id == DP_K56 && dp_registered(DP_V90)));
 }
 
 /* +GMI, +GMM, +GMR (and +FMx) by their last letter: the author, the
@@ -463,6 +485,15 @@ void Modem::at_process()
 	};
 	char c;
 
+	/* (#B3's meter: a key ends it, OK) */
+	if (cadence_) {
+		if (get_chars(&c, 1) != 1)
+			return;
+		cadence_ = false;
+		cadence_on_ = false;
+		logf("ring cadence: stopped\n");
+		report(Result::Ok);
+	}
 	while (!conf_ && get_chars(&c, 1) == 1) {
 		bool echo = sregs_[SREG_ECHO] != 0;
 		char bs = static_cast<char>(sregs_[SREG_BS_CHAR]);
@@ -537,6 +568,11 @@ s16 Modem::at_command(char *cmd)
 
 		if (kept_command(p) >= 0) {
 			ret = at_kept(p, &len);
+		} else if (zyxel_star(p)) {
+			ret = at_star(p, &len);
+		} else if (starts_nocase(p, "CK")) {
+			ret = at_CK(p, &len);
+		} else if (mnp10_command(p, &len, &ret)) {
 		} else if (taken(p, &len)) {
 			ret = 0;
 		} else {
@@ -640,8 +676,15 @@ s16 Modem::at_command(char *cmd)
 				case 'C':
 					ret = setting(SREG_CD, 2, 0, 1);
 					break;
-				case 'D':
 				case 'F':
+					/* &F5, &F6: ETC's settings (3Com's
+					   ETC_CELL, ETC_LAND); the others
+					   change nothing */
+					len = 2 + is_digit(p[2]);
+					if (p[2] == '5' || p[2] == '6')
+						etc_profile(p[2] - '0');
+					break;
+				case 'D':
 				case 'R':
 				case 'S':
 					len = 2 + is_digit(p[2]);
@@ -693,6 +736,9 @@ s16 Modem::at_command(char *cmd)
 					break;
 				case 'T':
 					ret = at_ampT(p, &len);
+					break;
+				case 'Z':
+					ret = at_ampZ(p, &len);
 					break;
 				default:
 					ret = -1;
@@ -803,6 +849,153 @@ s16 Modem::at_set_sreg(s16 num, char c, s16 lo, s16 hi, s16 *len)
 	return 0;
 }
 
+/* MNP 10's commands (mnp10_cmds): -K, -Q, )M, @M, *H, :T19 with their
+   number (none: 0); true if p is one (*ret 0, or -1 for a value out of
+   its range) */
+bool Modem::mnp10_command(const char *p, s16 *len, s16 *ret)
+{
+	for (const auto &c : mnp10_cmds) {
+		std::string_view name = c.name;
+		size_t n = name.size();
+		const char *e;
+		if (!starts_nocase(p, name))
+			continue;
+		u32 v = decimal(p + n, &e);
+		*len = static_cast<s16>(e - p);
+		if (v < static_cast<u32>(c.lo) || v > static_cast<u32>(c.hi)) {
+			*ret = -1;
+			return true;
+		}
+		sregs_[c.reg] = static_cast<unsigned char>(v);
+		*ret = 0;
+		return true;
+	}
+	return false;
+}
+
+/*
+ *    ZyXEL's security (zyxel_sec.h) and stored numbers
+ */
+
+/* p is one of ZyXEL's security commands: *G, *V, *HS, *Hn= (*H0 to *H2
+   without '=' are MNP 10's) */
+bool Modem::zyxel_star(const char *p)
+{
+	if (p[0] != '*')
+		return false;
+	char c = upper(p[1]);
+	return c == 'G' || c == 'V' ||
+		(c == 'H' && (upper(p[2]) == 'S' ||
+			      (is_digit(p[2]) && p[3] == '=')));
+}
+
+namespace {
+
+/* a command's text after its '=': in quotes (to the next quote) or the
+   rest of the line; *len the command's characters, from p */
+std::string text_arg(const char *p, const char *eq, s16 *len)
+{
+	const char *v = eq + 1, *e;
+	std::string t;
+	if (*v == '"') {
+		e = strchr(v + 1, '"');
+		if (!e)
+			e = v + strlen(v);
+		t.assign(v + 1, e);
+		if (*e)
+			e++;
+	} else {
+		e = v + strlen(v);
+		t.assign(v, e);
+	}
+	*len = static_cast<s16>(e - p);
+	return t;
+}
+
+} // namespace
+
+/* the supervisory password before a comma in arg (taken out of arg),
+   when one is set: true if it is right, or none is set */
+bool Modem::sec_unlocked(std::string &arg) const
+{
+	if (zsec_.super.empty())
+		return true;
+	size_t c = arg.find(',');
+	if (c == std::string::npos || arg.compare(0, c, zsec_.super))
+		return false;
+	arg.erase(0, c + 1);
+	return true;
+}
+
+/* *G0 to *G5 (type 1, *G1 and *G2, ERROR: ZyXEL to ZyXEL only);
+   *Hn=[<super>,]<password> the user password n (none: the slot
+   empty); *HS=[<old>,]<password> the supervisory one; *V[=<super>]
+   the table: *G, then each slot set, its password and its stored
+   number */
+s16 Modem::at_star(char *p, s16 *len)
+{
+	char c = upper(p[1]);
+	if (c == 'G') {
+		s16 v = is_digit(p[2]) ? p[2] - '0' : 0;
+		*len = static_cast<s16>(2 + is_digit(p[2]));
+		if (v > 5 || v == 1 || v == 2)
+			return -1;
+		zsec_.type = v;
+		return 0;
+	}
+	if (c == 'V') {
+		std::string arg;
+		*len = 2;
+		if (p[2] == '=')
+			arg = text_arg(p, p + 2, len) + ",";
+		if (!sec_unlocked(arg))
+			return -1;
+		puts(("*G" + std::to_string(zsec_.type)).c_str());
+		crlf();
+		for (s16 i = 0; i < ZyxelSecurity::SLOTS; i++) {
+			if (zsec_.user[i].empty() && stored_[i].empty())
+				continue;
+			puts((std::to_string(i) + ": " + zsec_.user[i] + " " +
+			      stored_[i]).c_str());
+			crlf();
+		}
+		return 0;
+	}
+	std::string arg = text_arg(p, p + 3, len);
+	if (!sec_unlocked(arg) || arg.size() > ZyxelSecurity::PW_MAX ||
+	    arg.find(',') != std::string::npos)
+		return -1;
+	if (upper(p[2]) == 'S') {
+		if (p[3] != '=')
+			return -1;
+		zsec_.super = arg;
+	} else {
+		zsec_.user[p[2] - '0'] = arg;
+	}
+	return 0;
+}
+
+/* &Zn=<number> the stored number n (0 to 9; none: empty), &Zn? it */
+s16 Modem::at_ampZ(char *p, s16 *len)
+{
+	if (!is_digit(p[2]))
+		return -1;
+	s16 i = static_cast<s16>(p[2] - '0');
+	if (p[3] == '?') {
+		*len = 4;
+		puts(stored_[i].c_str());
+		crlf();
+		return 0;
+	}
+	if (p[3] != '=')
+		return -1;
+	std::string n = text_arg(p, p + 3, len);
+	if (n.size() >= sizeof(dial_string_))
+		return -1;
+	stored_[i] = n;
+	return 0;
+}
+
 /*
  *    basic commands
  */
@@ -838,7 +1031,9 @@ s16 Modem::at_B(char *, s16 *len)
 
 /* ATD<dial string>: the rest of the line; after its first ';' the rest
    of the line runs once the number is dialled; ATDL the last number
-   again; S=<n> (a stored number) ERROR; its result later, or ERROR */
+   again; ATDS=n or ATDSn (after T or P too) the stored number n
+   (AT&Zn=, ERROR if none); S=<n> later in the string ERROR; its result
+   later, or ERROR */
 s16 Modem::at_D(char *p, s16 *len)
 {
 	char *s = p + 1, *semi = strchr(s, ';');
@@ -847,6 +1042,21 @@ s16 Modem::at_D(char *p, s16 *len)
 
 	*len = static_cast<s16>(strlen(p));
 	dial_rest_[0] = '\0';
+	/* DS=n, DSn: the stored number n (AT&Zn=) */
+	{
+		char *q = s;
+		if (upper(*q) == 'T' || upper(*q) == 'P')
+			sregs_[SREG_TONE_OR_PULSE] = upper(*q++) == 'T';
+		if (upper(*q) == 'S' && (is_digit(q[1]) ||
+					 (q[1] == '=' && is_digit(q[2])))) {
+			s16 i = static_cast<s16>(q[q[1] == '=' ? 2 : 1] - '0');
+			if (stored_[i].empty())
+				return -1;
+			if (mode_ == MODEM_MODE_VOICE)
+				return voice_dial(stored_[i].c_str());
+			return dial(stored_[i].c_str()) ? -1 : 1;
+		}
+	}
 	for (char *q = s; *q && q != semi; q++)
 		if (upper(q[0]) == 'S' && q[1] == '=' && is_digit(q[2]))
 			return -1;
@@ -1192,6 +1402,8 @@ s16 Modem::at_ampV(char *p, s16 *len)
 	put("\\V" + dec(sregs_[SREG_CONNECT_PROTOCOL]));
 	put("%C" + dec(sregs_[SREG_COMP]));
 	put("%E" + dec(sregs_[SREG_LINE_QUALITY_CONTROL]));
+	for (const auto &c : mnp10_cmds)
+		put(c.name + dec(sregs_[c.reg]));
 	end();
 	for (unsigned char r : regs) {
 		put("S" + dec(r, 2) + ":" + dec(sregs_[r], 3));
@@ -1498,6 +1710,8 @@ std::string Modem::fclass() const
 {
 	if (mode_ == MODEM_MODE_FAX && fax_class_ == 10)
 		return "1.0";
+	if (mode_ == MODEM_MODE_FAX && fax_class_ == 6)
+		return "6";
 	if (mode_ == MODEM_MODE_FAX && fax2_class())
 		return fax_class_ == 2 ? "2" : "2.0";
 	return dec(static_cast<s16>(mode_));
@@ -1505,13 +1719,14 @@ std::string Modem::fclass() const
 
 /* +FCLASS=?, +FCLASS?, +FCLASS=<d>: data (0), class 1 fax (1), class
    1.0 (1.0: T.31's with V.34 half-duplex, +F34), class 2 and 2.0 fax (2,
-   2.0: T.32, with the T.30 library), voice (8) */
+   2.0: T.32, with the T.30 library), ZyXEL's own fax mode (6, with the
+   T.30 library), voice (8) */
 s16 Modem::at_FCLASS(char *p, s16 *len)
 {
 	const char *q = p + 7;
 
 	if (q[0] == '=' && q[1] == '?') {
-		puts(has_fax2() ? "0,1,1.0,2,2.0,8" : "0,1,1.0,8");
+		puts(has_fax2() ? "0,1,1.0,2,2.0,6,8" : "0,1,1.0,8");
 		crlf();
 		*len = 9;
 		return 0;
@@ -1528,6 +1743,14 @@ s16 Modem::at_FCLASS(char *p, s16 *len)
 		if (set_mode(MODEM_MODE_FAX))
 			return -1;
 		fax_class_ = c20 ? 20 : 2;
+		return 0;
+	}
+	if (q[0] == '=' && q[1] == '6' && !is_digit(q[2]) && has_fax2()) {
+		*len = 9;
+		if (set_mode(MODEM_MODE_FAX))
+			return -1;
+		fax_class_ = 6;
+		hash_voice_ = false;
 		return 0;
 	}
 	if (q[0] == '=' && q[1] == '1' && q[2] == '.' && q[3] == '0') {
@@ -2305,6 +2528,10 @@ void Modem::hash_init()
    #VRN, #VIT, #VIP) */
 s16 Modem::at_hash(char *p, s16 *len)
 {
+	char c = static_cast<char>(upper(p[1]));
+	if ((c == 'F' && !isalpha(static_cast<unsigned char>(p[2]))) ||
+	    c == 'P' || (c && strchr("BVTRLC", c) && is_digit(p[2])))
+		return at_zfax(p, len);
 	if (starts_nocase(p, "#CLS"))
 		return at_CLS(p, len);
 	if (starts_nocase(p, "#VLS"))
@@ -2375,6 +2602,73 @@ s16 Modem::at_hash(char *p, s16 *len)
 	}
 	if (upper(p[1]) == 'V')
 		return at_voice(p, len, true);
+	return -1;
+}
+
+/* ATCK<key>: ZyXEL's encryption key (S102) from the characters up to
+   '>' or the end of the line; without '<', ERROR */
+s16 Modem::at_CK(char *p, s16 *len)
+{
+	if (p[2] != '<')
+		return -1;
+	const char *k = p + 3, *e = k;
+	while (*e && *e != '>')
+		e++;
+	dlink::zdes_atck(k, static_cast<size_t>(e - k), zkey_);
+	*len = static_cast<s16>(e - p + (*e == '>' ? 1 : 0));
+	return 0;
+}
+
+/* ZyXEL's fax commands (class 6, docs/zyxel-fax.md): #F (as &N32: a fax
+   call, which class 6's calls are), #B0 and #B1 (receiving: the pages
+   at once, or for the DTE's DC2), #V0 and #V1 (the resolution), #T,
+   #R, #L, #C (kept: the DTE's data is MH, 1728 pels, any length, no
+   fill), #P<number> (the local identity, up to 25 characters, 20 of
+   them in the TSI or CSI).  #B2: the next call polls (calling).  #B3,
+   idle: the ring cadence meter (cadence_start()), its OK at a key */
+s16 Modem::at_zfax(char *p, s16 *len)
+{
+	static const struct {
+		char name;
+		u8 hi;
+		u8 ZFax::*v;
+	} cmds[] = {
+		{ 'B', 1, &ZFax::b }, { 'V', 1, &ZFax::v }, { 'T', 1, &ZFax::t },
+		{ 'R', 2, &ZFax::r }, { 'L', 2, &ZFax::l }, { 'C', 7, &ZFax::c },
+	};
+	char c = static_cast<char>(upper(p[1]));
+
+	if (c == 'F') {
+		*len = 2;
+		return 0;
+	}
+	if (c == 'P') {
+		std::string id = text_arg(p, p + 1, len);
+		if (id.size() > 25)
+			return -1;
+		zfax_.p = id;
+		return 0;
+	}
+	if (c == 'B' && (p[2] == '2' || p[2] == '3') && !is_digit(p[3])) {
+		*len = 3;
+		if (p[2] == '2') {
+			zfax_.poll = true;
+			return 0;
+		}
+		if (state_ != IDLE || started_)
+			return -1;
+		cadence_start();
+		return 1;
+	}
+	for (const auto &k : cmds) {
+		if (k.name != c)
+			continue;
+		if (!is_digit(p[2]) || is_digit(p[3]) || p[2] - '0' > k.hi)
+			return -1;
+		zfax_.*k.v = static_cast<u8>(p[2] - '0');
+		*len = 3;
+		return 0;
+	}
 	return -1;
 }
 
@@ -2561,6 +2855,9 @@ s16 Modem::at_kept(const char *p, s16 *len)
 	/* +ITF: <off> above <on> (8.4/V.80), else ERROR */
 	if (name == "+ITF" && v[0] <= v[1])
 		return -1;
+	/* +X2UP: a feature both to enable and to disable, ERROR */
+	if (name == "+X2UP" && (v[1] & v[2]))
+		return -1;
 	dsp::copy_array(kept_[i], v);
 	kept_n_[i] = n;
 	if (name == "+ES")
@@ -2584,6 +2881,30 @@ const u32 *Modem::kept(const char *name) const
 {
 	s16 i = kept_index(name);
 	return i < 0 ? nullptr : kept_[i];
+}
+
+/* &F5 (n 5): 3Com's ETC_CELL, the cellular side: its flags, V.32bis
+   and below (its S32 60: no V.FC, V.34 or x2), error control a must
+   (its &M5: \N2), and as its cable's attachment sets them a 4 s wait
+   for a lost carrier and 90 s for the carrier.  &F6: ETC_LAND, the
+   landline side: its flags and error control if the remote has it
+   (&M4: \N3), the modulations as they are; its 1500 Hz detector and
+   lower level are modem.cpp's (docs/link-details.md) */
+void Modem::etc_profile(int n)
+{
+	if (n == 5) {
+		sregs_[SREG_ETC] = 0xEE;
+		if (ms_choosable(DP_V32BIS)) {
+			sregs_[SREG_DP] = DP_V32BIS;
+			sregs_[SREG_AUTOMODE] = 1;
+		}
+		set_ec_mode(2);
+		sregs_[SREG_CARRIER_LOSS_DISCONNECT_TIME] = 40;
+		sregs_[SREG_WAIT_CARRIER_AFTER_DIAL] = 90;
+	} else {
+		sregs_[SREG_ETC] = 0xB0;
+		set_ec_mode(3);
+	}
 }
 
 /* \N<n>: S103, and +ES as V.250 has the same error control */

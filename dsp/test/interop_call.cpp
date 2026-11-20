@@ -1321,6 +1321,11 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 						     fail) != std::string::npos);
 			if (!connected)
 				done(false);
+			/* CONNECT_ONLY=1: the call passes at CONNECT (a
+			   modulation whose start-up works but not yet its
+			   data) */
+			if (env("CONNECT_ONLY") == "1")
+				done(true);
 			/* (B answered the ringing, not by itself) */
 			if (ringing &&
 			    dte.buf[1].find("RING") == std::string::npos) {
@@ -1563,6 +1568,13 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 			    "AB"[k], i, show(got.substr(from, 64)).c_str(),
 			    show(want.substr(from, 64)).c_str());
 		}
+		/* STREAM_ONLY=A or B: only that modem's data must come
+		   right (a peer whose own transmitter is not yet right) */
+		std::string only = env("STREAM_ONLY");
+		if (only == "A")
+			ok_b = true;
+		else if (only == "B")
+			ok_a = true;
 		done(ok_a && ok_b);
 		result = false;
 	} catch (const Done &d) {

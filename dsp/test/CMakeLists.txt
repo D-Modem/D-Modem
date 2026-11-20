@@ -138,9 +138,13 @@ target_link_libraries(vcvm_data_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_test_exe(k56flex_test k56flex_test.cpp ${S}/k56flex.cpp
 	${S}/k56flex_tables.cpp)
 dmodem_gtest(k56flex_test LABELS quick)
-dmodem_test_exe(x2_test x2_test.cpp ${S}/x2.cpp ${S}/k56flex.cpp
+dmodem_test_exe(x2_test x2_test.cpp ${S}/x2.cpp ${S}/x2_tables.cpp ${S}/k56flex.cpp
 	${S}/k56flex_tables.cpp)
 dmodem_gtest(x2_test LABELS quick)
+# x2's client receiver on the server's training through a line
+dmodem_test_exe(x2_rx_test x2_rx_test.cpp)
+target_link_libraries(x2_rx_test PRIVATE dmodem_loopback dmodem_dsp)
+dmodem_gtest(x2_rx_test LABELS quick)
 dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
 dmodem_gtest(rs_test LABELS quick)
 # jbig.h: T.82's coder test and artificial image, T.85's markers
@@ -589,6 +593,19 @@ if(EXISTS "${DMODEM_USR_DIR}/IDSDL302.ROM")
 	message(STATUS "tests: the USRobotics Courier: ${DMODEM_USR_DIR}")
 endif()
 
+# 3Com/Megahertz's XJ5560 / CC5560 PC Card as a peer (half_3com.cpp): its
+# TMS320C5x emulated running the TC110 flash update's code
+set(DMODEM_3COM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/3com" CACHE
+	PATH "tc110.bin, the 3Com TC110 flash (interop tests)")
+if(EXISTS "${DMODEM_3COM_DIR}/tc110.bin")
+	add_executable(half_3com half_3com.cpp modem_half.cpp)
+	target_compile_definitions(half_3com PRIVATE
+		TC110_FLASH="${DMODEM_3COM_DIR}/tc110.bin")
+	target_compile_options(half_3com PRIVATE -O2)
+	target_link_libraries(half_3com PRIVATE ${DMODEM_LIBM})
+	message(STATUS "tests: the 3Com TC110 PC Card: ${DMODEM_3COM_DIR}")
+endif()
+
 # Intel's 537EP soft modem as a peer (half_intel.cpp): the core of Intel's
 # Intel537EP 2.37.50.1 driver for Fedora Core 1 (537core.lib) with its
 # country tables (wwh_dflt.c); its own exit, index and pow renamed, and
@@ -638,7 +655,7 @@ set(_progs "HALF_SMARTLINK=\"$<TARGET_FILE:half_smartlink>\""
 	"HALF_OPEN=\"$<TARGET_FILE:half_open>\""
 	"HALF_OPEN8=\"$<TARGET_FILE:half_open8>\"")
 foreach(_p agere sm56 spandsp pctel hsf hsf_usb broadcom intel ess hda
-		courier)
+		courier 3com)
 	if(TARGET half_${_p})
 		string(TOUPPER ${_p} _u)
 		list(APPEND _progs "HALF_${_u}=\"$<TARGET_FILE:half_${_p}>\"")
@@ -685,6 +702,10 @@ endif()
 # the emulated Courier (HST, V.FC, V.34 against the open modem)
 if(TARGET half_courier)
 	interop_tests(courier)
+endif()
+# the emulated 3Com TC110 PC Card (V.34 against the open modem)
+if(TARGET half_3com)
+	interop_tests(3com)
 endif()
 # the open modem on the emulated HD-audio modem codec (half_hda)
 interop_tests(hda)

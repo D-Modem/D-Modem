@@ -223,7 +223,15 @@ static cplx tx_symbol(V34Tx *t)
 			if (t->nbits)
 				t->mp_sent++;
 			t->mp.ack = t->ack_mp;
-			t->nbits = t->mp.build(t->bits);
+			if (t->x2) {
+				t->x2_w[0] = static_cast<u16>(
+					(t->x2_w[0] & 0x7fff) |
+					(t->ack_mp ? 0x8000 : 0));
+				t->nbits = x2_record(t->x2_w, 4, t->bits);
+				t->bits[t->nbits++] = 0;
+				t->bits[t->nbits++] = 0;
+			} else
+				t->nbits = t->mp.build(t->bits);
 			t->pos = 0;
 		}
 		k = t->dibit(t->bits[t->pos], t->bits[t->pos + 1]);
@@ -1468,6 +1476,7 @@ float V34Rx::precoder(s16 h[6]) const
 void V34Rx::start_data(const V34Params *p, CoreBits link, V34Aux aux)
 {
 	drx.init(p);
+	drx.b1_left = p->P;
 	drx.link = link;
 	drx.aux = aux;
 	mse = 0;

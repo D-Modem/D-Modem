@@ -1,13 +1,12 @@
 # ITU-T Recommendations
 
-These are the standards (ITU-T "Recommendations") that D-Modem
-implements, and where each one lives in the code.
+This page gives the standards (ITU-T "Recommendations") that D-Modem
+implements, and the location of each one in the code.
 
-ITU-T publishes them free of charge at itu.int, but does not allow
-copies to be shared, so they are not in the repository. Run
-`docs/specs/fetch.sh` to download the current English edition of each
-into this folder (`fetch.sh V.34 T.30` fetches just those two). The
-"Local copy" links below then work.
+ITU-T publishes them free of charge at itu.int. But ITU-T does not let persons share
+copies. Thus, they are not in the repository. To download the current English edition of each
+standard into this folder, run `docs/specs/fetch.sh` (`fetch.sh V.34 T.30` downloads only those two).
+Then the "Local copy" links in the table operate.
 
 | Recommendation | Subject | In D-Modem | Local copy |
 |---|---|---|---|
@@ -46,7 +45,8 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.42](https://www.itu.int/rec/T-REC-V.42) | Error correction (LAPM) | `link/lapm.cpp`, `link/hdlc.cpp` | [V.42.pdf](V.42.pdf) |
 | [V.42bis](https://www.itu.int/rec/T-REC-V.42bis) | Data compression | `link/v42bis.cpp` | [V.42bis.pdf](V.42bis.pdf) |
 | [V.44](https://www.itu.int/rec/T-REC-V.44) | Data compression (LZJH) | `link/v44.cpp` | [V.44.pdf](V.44.pdf) |
-| [V.52](https://www.itu.int/rec/T-REC-V.52) | Test patterns (the 511-bit pattern) | `core/v54.cpp` (`AT&T7`, `AT&T8`) | [V.52.pdf](V.52.pdf) |
+| [V.52](https://www.itu.int/rec/T-REC-V.52) | Test patterns (the 511-bit pattern). Withdrawn. Use O.153 | `core/v54.cpp` (`AT&T7`, `AT&T8`) | none (refer to the text after this table) |
+| [O.153](https://www.itu.int/rec/T-REC-O.153) | Error performance measurement below the primary rate (the 511-bit pattern, 2.1/O.153) | `core/v54.h` (`Prbs9`), `core/v54.cpp` | [O.153.pdf](O.153.pdf) |
 | [V.54](https://www.itu.int/rec/T-REC-V.54) | Loop test devices (loops 2 and 3) | `core/v54.cpp` (`AT&T`) | [V.54.pdf](V.54.pdf) |
 | [V.58](https://www.itu.int/rec/T-REC-V.58) | Management information model for V-series DCEs (its test objects, V.250's `+T` commands; its codes in `AT#UD`) | `core/v58.cpp`, `core/modem.cpp` (`unimodem_diag()`) | [V.58.pdf](V.58.pdf) |
 | [V.59](https://www.itu.int/rec/T-REC-V.59) | Managed objects for diagnostic information (V.250's `+TMO`) | `core/v59.cpp` | [V.59.pdf](V.59.pdf) |
@@ -68,23 +68,53 @@ into this folder (`fetch.sh V.34 T.30` fetches just those two). The
 | [V.251](https://www.itu.int/rec/T-REC-V.251) | AT commands for V.8 and V.8 bis (`+A8E`) | `core/at.cpp`, `core/modem.cpp` | [V.251.pdf](V.251.pdf) |
 | [V.253](https://www.itu.int/rec/T-REC-V.253) | Voice AT commands | `dsp/dsp_glue.cpp` (voice) | [V.253.pdf](V.253.pdf) |
 
-G.729's software (its test vectors among it) is a separate download:
-`docs/specs/fetch_g729.sh` puts Annex A's and Annex B's test vectors in `g729a/`,
-where `link/test/g729a_test.cpp` checks D-Modem's coder against them
-bit for bit (the test is skipped without them). Only the vectors are
-used, as data; the reference code is not built.
+The software of G.729 (which includes its test vectors) is a separate download.
+`docs/specs/fetch_g729.sh` puts the test vectors of Annex A and Annex B in `g729a/`.
+There, `link/test/g729a_test.cpp` compares the coder of D-Modem with them,
+bit for bit. Without the vectors, the test does not run. D-Modem uses only the vectors,
+as data. The build does not build the reference code.
 
-V.42's Annex A, the alternative procedure (MNP 4), which D-Modem
-implements (`link/mnp.cpp`), was deleted from V.42 in 2002; it is in the
+Annex A of V.42 is the alternative procedure (MNP 4). D-Modem
+implements it (`link/mnp.cpp`). The ITU deleted it from V.42 in 2002. It is in the
 superseded V.42 (10/96), `T-REC-V.42-199610-S` at itu.int
 ([link-details.md](../link-details.md#mnp)).
 
-Microsoft's Unimodem Diagnostics Command Reference Specification,
-version 1.0 (2 July 1998), is here as [umud10.rtf](umud10.rtf): `AT#UD`
-(`core/modem.cpp`, `unimodem_diag()`) follows it.  Microsoft grants the
+V.52 is withdrawn. Its only edition at itu.int is V.52 (12/72),
+`T-REC-V.52-197212-W`, and itu.int has no PDF of it. Thus, `fetch.sh`
+does not download V.52 by default. O.153 (10/92) is in force. Section
+2.1 of O.153 gives the same 511-bit pattern: a shift register with 9
+stages. The outputs of stages 5 and 9 are added modulo 2, and the result
+goes back to stage 1. `Prbs9` in `core/v54.h` uses this pattern.
+
+If a Recommendation has no edition in force, `fetch.sh` tries the
+newest superseded or withdrawn edition and shows a warning. If
+itu.int has no PDF of that edition, `fetch.sh` shows an error and
+continues with the next Recommendation.
+
+The Unimodem Diagnostics Command Reference Specification of Microsoft,
+version 1.0 (2 July 1998), is in this folder as [umud10.rtf](umud10.rtf) and as
+[umud10.pdf](umud10.pdf) (the same text, in PDF format). `AT#UD`
+(`core/modem.cpp`, `unimodem_diag()`) obeys it. Microsoft grants the
 right to reproduce and distribute it for making hardware that complies
 with it.
 
-Not from the ITU: Bell 103 and Bell 212A (AT&T), Bell 202 caller ID (Telcordia
-GR-30), TIFF-F (RFC 3949), Contact ID (SIA DC-05, `dsp/dp_contactid.cpp`), fixed-line SMS (ETSI ES 201 912 protocol 1, `dsp/dp_sms.cpp`; its messages are 3GPP TS 23.040's SMS-SUBMIT and SMS-DELIVER in TS 23.038's alphabets, `dsp/sms_pdu.cpp`). Section references in the code and in these
-documents, such as "9.6.2/V.34", are to these editions.
+The proposal of D-Modem for a new Recommendation, "Draft new
+Recommendation ITU-T V.cvm" (data over the speech paths of mobile
+networks), is in this folder as [v_cvm.pdf](v_cvm.pdf). It has the form of an
+ITU-T Recommendation, but ITU-T did not approve it. The D-Modem Authors
+wrote it. Thus, the PDF is in the repository. `docs/cellular/build.sh`
+builds it from its LaTeX source in [docs/cellular](../cellular/v_cvm.tex).
+[The V.cvm proposal](../vcvm-spec.md) and
+[its technical details](../vcvm-spec-details.md) describe it.
+`AT+MS=VCVM` (`dsp/dp_vcvm.cpp`, [vcvm.md](../dsp/vcvm.md)) implements it.
+
+These standards do not come from the ITU:
+
+- Bell 103 and Bell 212A (AT&T).
+- Bell 202 caller ID (Telcordia GR-30).
+- TIFF-F (RFC 3949).
+- Contact ID (SIA DC-05, `dsp/dp_contactid.cpp`).
+- Fixed-line SMS (ETSI ES 201 912 protocol 1, `dsp/dp_sms.cpp`). Its messages are the SMS-SUBMIT and SMS-DELIVER of 3GPP TS 23.040, in the alphabets of TS 23.038 (`dsp/sms_pdu.cpp`).
+
+Section references in the code and in these
+documents, for example "9.6.2/V.34", refer to these editions.

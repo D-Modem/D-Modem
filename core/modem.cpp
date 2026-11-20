@@ -63,6 +63,10 @@ extern "C" void dp_runtime_set_framed(void *runtime, int framed)
    (dsplibs.h): weak as well */
 extern "C" void dp_runtime_set_v110(void *runtime, long rate) DCORE_WEAK;
 extern "C" long dp_runtime_v110(void *runtime) DCORE_WEAK;
+/* an MNP 10 start-up's answerer: its answer tone already sent
+   (dsplibs.h): weak as well */
+extern "C" void dp_runtime_set_restart(void *runtime, int ans_sent)
+	DCORE_WEAK;
 /* the fax engine's CED cut short after an answer tone (dsplibs.h):
    Smart Link's library's fax engine has none */
 extern "C" void FAX_answer_tone(void *obj, unsigned ms) DCORE_WEAK;
@@ -105,6 +109,8 @@ static const u32 STOP_SAMPLES = 48;
 static const u32 STOP_IDLE_MS = 100;
 /* a leased line's call again so long after its NO CARRIER (AT&L1) */
 static const u32 LEASED_AGAIN_MS = 2000;
+/* ZyXEL's call back (*G4, *G5): the call after the hang-up */
+static const u32 CALLBACK_MS = 2000;
 /* the escape's guard time (before, between and after the S2s) */
 static const u32 ESCAPE_MS = 500;
 /* caller ID listens this long after the first ring */
@@ -120,6 +126,9 @@ static const u32 CID_PRE_MS = 5000;
    on and 1 off, Syria's 1 and 0.5), how long after a burst's first pulse
    the next pulse starts another */
 static const u32 RING_GAP_MS = 1500, RING_CHECK_MS = 2510;
+/* #B3: no pulse for this long, the burst is over (a ring signal's
+   cycle is 67 ms at most, 15 Hz) */
+static const u32 CADENCE_GAP_MS = 100;
 static const u32 RING_MIN_MS = 150;
 static const u16 RING_PULSES = 4;
 static const u32 RING_GONE_MS = 8010, RING_AGAIN_MS = 6000;
@@ -131,6 +140,7 @@ static const char *const cause_text[] = {
 	"Training failed", "Protocol failure", "No carrier",
 	/* (ATI11 calls these local hangups too) */
 	"Local hangup", "Local hangup", "Local hangup",
+	"Security check",
 };
 
 /* the result codes in words, by Result */
@@ -203,11 +213,21 @@ struct LinkOwner final : public dlink::Owner {
 
 	/* the DTE's characters for the line */
 	s16 read_chars(u8 *buf, s16 n) override {
+		if (m_.zsec_.holds())
+			return m_.zsec_out(buf, n);
 		return static_cast<s16>(m_.link_chars(
 			reinterpret_cast<char *>(buf), n));
 	}
-	/* the remote's characters for the DTE: what it took */
+	/* the remote's characters for the DTE: what it took (while
+	   ZyXEL's security holds the data, they are its) */
 	s16 write_chars(const u8 *buf, s16 n) override {
+		if (m_.zsec_.holds()) {
+			for (s16 i = 0; i < n; i++)
+				m_.zsec_.feed(buf[i],
+					      m_.sregs_[SREG_CR_CHAR],
+					      m_.sregs_[SREG_BS_CHAR]);
+			return n;
+		}
 		return m_.put_chars(reinterpret_cast<const char *>(buf), n);
 	}
 	/* the link's progress as the modem's */
@@ -236,6 +256,20 @@ struct LinkOwner final : public dlink::Owner {
 		m_.negotiated(c.comp, c.v44, c.zstd, c.dict_size,
 			      c.max_string, c.mnp5);
 	}
+	/* MNP 10's rate shifts (mnp.h) */
+	u32 mnp10_mods() override { return m_.mnp10_mods(); }
+	/* (see mnp10_mods()) */
+	dlink::Mod mnp10_mod() override { return m_.mnp10_mod(); }
+	/* (see mnp10_mods()) */
+	void mnp10_line(s16 &dbm, s16 &eqm) override {
+		m_.mnp10_line(dbm, eqm);
+	}
+	/* (see mnp10_mods()) */
+	bool mnp10_shift(const dlink::Shift &s) override {
+		return m_.mnp10_shift(s);
+	}
+	/* (see mnp10_mods()) */
+	void mnp10_tx_level(s16 db) override { m_.mnp10_tx_level(db); }
 	/* HST agreed in XID: the call changes to it */
 	void hst(s32 bps) override { m_.hst_switch(bps); }
 	/* HST's link turns the channels around: the pump follows */
@@ -280,6 +314,26 @@ struct LinkOwner final : public dlink::Owner {
 			m_.host_.dsvd_ear(m_, pcm, n);
 		else if (m_.dsvd_path_)
 			m_.dsvd_path_->ear(pcm, n);
+	}
+
+	/* the remote feature upgrade's end (+X2UP): one line to the DTE,
+	   +X2UP: <result>,"<serial>",<features before>,<after> (the
+	   records' second, as ATC8 and ATY14 show it, in decimal) */
+	void usr_feature(const dlink::UsrReport &r) override {
+		char line[96];
+		if (r.has_records)
+			snprintf(line, sizeof(line),
+				 "+X2UP: %s,\"%s\",%03u,%03u",
+				 dlink::usr_result_name(r.result), r.serial,
+				 r.before[dlink::USR_REC_FEATURES - 1],
+				 r.after[dlink::USR_REC_FEATURES - 1]);
+		else
+			snprintf(line, sizeof(line), "+X2UP: %s,\"%s\"",
+				 dlink::usr_result_name(r.result), r.serial);
+		m_.logf("%s\n", line);
+		m_.crlf();
+		m_.puts(line);
+		m_.crlf();
 	}
 
 	Modem &m_;
@@ -396,6 +450,11 @@ void Modem::sregs_init()
 		{ SREG_CONNNECT_MSG_SPEED_SRC, 0 }, { SREG_ANS_DELAY, 2 },
 		{ SREG_EC, 3 }, { SREG_COMP, 3 }, { SREG_MNP_BLOCK, 3 },
 		{ SREG_CONNECT_PROTOCOL, 0 },
+		{ SREG_MNP10_UPGRADE, 0 }, { SREG_MNP10_LOWEST, 2 },
+		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
+		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
+		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 },
+		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 }, { SREG_ZYX_DES, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -695,6 +754,26 @@ s16 Modem::start_call(bool keep_line)
 	timer_on_ = false;
 	escape_count_ = 0;
 	link_req_ = 0;
+	shift_ = ShiftPhase::None;
+	shift_cap_ = 0;
+	tx_gain_ = 1;
+	rx_pow_ = 0;
+	/* ETC's transmit filter (S116 bit 5): +EF's set at our rate */
+	etc_tx_ = (sregs_[SREG_ETC] & 0x20) && !wideband();
+	if (etc_tx_)
+		etc_filter_.start(static_cast<int>(kept("+EF")[0]), srate_);
+	/* the landline side (S116 bit 4, ETC not on yet): its listening
+	   for an ETC caller's 1500 Hz in the call's first 10 s, and its
+	   transmit level 6.6 dB under ours (the firmware's gains for
+	   ETC_LAND's attenuation of 20, 0x0CCD, and its default 13,
+	   0x1B35) */
+	etc_peer_ = false;
+	etc_listen_ = !caller_ && (sregs_[SREG_ETC] & 0x10) &&
+		!(sregs_[SREG_ETC] & 7) && !wideband() ? 10 * srate_ : 0;
+	if (etc_listen_)
+		etc_det_.start(srate_);
+	if ((sregs_[SREG_ETC] & 0x10) && !wideband())
+		tx_gain_ = 3277.0f / 6965;
 	if (!(keep_line && started_) && do_start())
 		return fail("the line does not start");
 	return 0;
@@ -714,6 +793,9 @@ s16 Modem::stop_call()
 	loop3_ = false;
 	loop3_buf_.clear();
 	sim_on_ = false;
+	zsec_.stop();
+	if (!callback_.empty())
+		callback_at_ms_ = host_.now_ms() + CALLBACK_MS;
 	if (started_) {
 		if (host_.stop(*this))
 			log_printf(1, "err: %s: the line does not stop\n",
@@ -730,9 +812,10 @@ s16 Modem::stop_call()
 	dial_rest_[0] = '\0';
 	/* an adaptive answer from fax mode that found out nothing: back in
 	   fax mode */
-	if (adapt_ == Adapt::Fax)
+	if (adapt_ == Adapt::Fax || z6_data_)
 		set_mode(MODEM_MODE_FAX);
 	adapt_ = Adapt::Off;
+	z6_data_ = false;
 	/* a leased line's call that the line ended (not ATH, DTR, ATZ):
 	   started again by itself in 2 s (poll()) */
 	if (leased_role_ != Leased::None && sregs_[SREG_LEASED] &&
@@ -874,7 +957,12 @@ void Modem::setup_config()
 	c.mnp_info = 64 * (1 + (sregs_[SREG_MNP_BLOCK] & 3));
 	c.tx_win = c.rx_win = dlink::LAPM_MAX_WIN;
 	c.tx_info = c.rx_info = dlink::LAPM_MAX_INFO;
-	c.comp = c.ec && (comp & 2) ? 3 : 0;
+	/* ETC (S116): V.42's N401 64 octets, as the firmware presets it
+	   in its XID (512 bits, not 1024) */
+	if (sregs_[SREG_ETC])
+		c.tx_info = c.rx_info = 64;
+	/* V.42bis with LAPM (XID) or with MNP (its LR: docs/mnp/mnp5.md) */
+	c.comp = (c.ec || c.mnp) && (comp & 2) ? 3 : 0;
 	c.mnp5 = c.mnp && (comp & 1);
 	c.dict_size = dlink::V42BIS_MAX_CODEWORDS;
 	c.max_string = dlink::V42BIS_MAX_STRING;
@@ -900,7 +988,7 @@ s16 Modem::dte_dirs(u32 direction)
    link agreed; logged if not */
 bool Modem::link_compression_ok()
 {
-	s16 agreed = cfg_.mnp_on ? 0 : cfg_.comp;
+	s16 agreed = cfg_.comp;
 	bool v44 = cfg_.v44 || cfg_.zstd;
 	if ((comp_need42_ & ~agreed) == 0 &&
 	    (!comp_need44_ || (v44 && (comp_need44_ & ~agreed) == 0)))
@@ -927,9 +1015,14 @@ s16 Modem::link_init()
 	c.required = cfg_.required;
 	c.mnp_info = cfg_.mnp_info;
 	c.mnp5 = cfg_.mnp5;
+	c.mnp_v42_offer = sregs_[SREG_MNP_V42BIS] != 0;
 	c.tx_win = cfg_.tx_win;
 	c.rx_win = cfg_.rx_win;
 	c.tx_info = cfg_.tx_info;
+	/* ETC (S116): T401 3 s, as 3Com's firmware sets it (data 0xBCE3:
+	   30 ticks of 100 ms, in place of 1.5 to 5 s by the rate) */
+	if (sregs_[SREG_ETC])
+		c.t401_s = 3;
 	c.rx_info = cfg_.rx_info;
 	/* +DS (V.42bis) and +DS44 (V.44): their <direction> from the
 	   DTE's side (bit 0 what it sends: our encoder, Config::comp's bit
@@ -958,6 +1051,23 @@ s16 Modem::link_init()
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
 	c.hst = hst_offer();
+	/* +X2UP: the remote feature upgrade, with LAPM */
+	c.usr_feature = static_cast<dlink::UsrMode>(kept("+X2UP")[0]);
+	c.usr_enable = static_cast<u8>(kept("+X2UP")[1]);
+	c.usr_disable = static_cast<u8>(kept("+X2UP")[2]);
+	/* MNP 10 (S113: bit 0 the offer, bit 1 parameter 0xC0, bit 2 the
+	   long LR; -K, -Q, )M, @M, :T19): with MNP, not synchronous;
+	   the D-Modem extension's top rate +MS's */
+	c.mnp10 = cfg_.mnp && !cfg_.sync && (sregs_[SREG_MNP10] & 1) &&
+		!clear_channel() && !relay_channel();
+	c.mnp10_ext = (sregs_[SREG_MNP10] & 2) != 0;
+	c.mnp10_long = (sregs_[SREG_MNP10] & 4) != 0;
+	c.mnp10_upgrade = sregs_[SREG_MNP10_UPGRADE] != 0;
+	c.mnp10_lowest = static_cast<s16>(sregs_[SREG_MNP10_LOWEST]);
+	c.mnp10_cellular = sregs_[SREG_MNP10_CELLULAR] != 0;
+	c.mnp10_level = static_cast<s16>(sregs_[SREG_MNP10_LEVEL]);
+	c.mnp10_t19 = sregs_[SREG_MNP10_T19] != 0;
+	c.mnp10_top = max_rate_ ? static_cast<s32>(max_rate_) : 33600;
 	v110_ = false;
 	/* +B2: on a clear channel (an ISDN B-channel) X.75 or PPP in place
 	   of the modem's link layer */
@@ -965,6 +1075,9 @@ s16 Modem::link_init()
 		const u32 b2 = kept("+B2")[0];
 		c.b2 = b2 == 0 ? dlink::B2::X75 : b2 == 5 ? dlink::B2::Ppp :
 			b2 == 9 ? dlink::B2::V120 : dlink::B2::Modem;
+		/* S102 and ATCK: ZyXEL's encryption on X.75 and V.120 */
+		c.zdes = static_cast<u8>(sregs_[SREG_ZYX_DES]);
+		memcpy(c.zkey, zkey_, sizeof(c.zkey));
 	}
 	if (c.sync) {
 		/* +ESA: <trans_idle>, <framed_idle>, <framed_un_ov>,
@@ -1015,6 +1128,248 @@ void Modem::hst_switch(s32 bps)
 	later(Later::ChangeDp, static_cast<u32>(srate_) * 50 / 1000);
 }
 
+/*
+ *    MNP 10's rate shifts: the pumps' side (dlink's mnp.h)
+ */
+
+/* the 25 s an MNP 10 start-up has (its retrain the same); the caller's
+   start after the answerer's */
+static const u32 SHIFT_TRAIN_MS = 25000;
+static const u32 SHIFT_CALLER_MS = 600;
+
+/* MNP 10's modulations and the pumps that run them */
+static const struct {
+	dlink::Mod mod;
+	u32 dp;
+	bool leased;    /* a 4-wire leased line's alone */
+} k_m10_pumps[] = {
+	{ dlink::Mod::V92, DP_V92, false }, { dlink::Mod::V90, DP_V90, false },
+	{ dlink::Mod::K56, DP_K56, false }, { dlink::Mod::X2, DP_X2, false },
+	{ dlink::Mod::V34, DP_V34, false }, { dlink::Mod::VFC, DP_VFC, false },
+	{ dlink::Mod::V32T, DP_V32TERBO, false },
+	{ dlink::Mod::V32B, DP_V32BIS, false },
+	{ dlink::Mod::V26T, DP_V26TER, false },
+	{ dlink::Mod::V22B, DP_V22BIS, false },
+	{ dlink::Mod::V22, DP_V22, false }, { dlink::Mod::B212, DP_B212, false },
+	{ dlink::Mod::V23, DP_V23, false }, { dlink::Mod::V21, DP_V21, false },
+	{ dlink::Mod::B103, DP_B103, false },
+	{ dlink::Mod::V33, DP_V33, true }, { dlink::Mod::V29, DP_V29, true },
+	{ dlink::Mod::V27T, DP_V27TER, true }, { dlink::Mod::V26, DP_V26, true },
+	{ dlink::Mod::B208, DP_B208, true }, { dlink::Mod::B201, DP_B201, true },
+	{ dlink::Mod::B202, DP_B202, true },
+};
+
+/* pumps the V.8 pump starts (driver DP_V8) */
+static bool v8_started(u32 id)
+{
+	return id == DP_V34 || id == DP_V90 || id == DP_V92;
+}
+
+/* the PCM pumps (their rates their own) */
+static bool pcm_dp(u32 id)
+{
+	return id == DP_V90 || id == DP_V92 || id == DP_K56 || id == DP_X2;
+}
+
+/* the pumps registered for each of MNP 10's modulations on this line:
+   the PCM ones only while a PCM pump runs (a PCM call's server side is
+   on a digital line, which the others cannot change to); a 4-wire
+   leased line's own only on one.  HST is not one: its start-up is
+   V.22bis's and its link HST's (hst_switch()) */
+u32 Modem::mnp10_mods() const
+{
+	const u32 cur = static_cast<u32>(modulation(dp_stats_, dp_));
+	u32 m = 0;
+	for (const auto &p : k_m10_pumps) {
+		if (p.leased && !four_wire())
+			continue;
+		if (pcm_dp(p.dp) && p.dp != cur)
+			continue;
+		u32 drv = v8_started(p.dp) ? static_cast<u32>(DP_V8) : p.dp;
+		if (!dp_registered(drv) ||
+		    (drv == DP_V8 && !dp_registered(p.dp)))
+			continue;
+		m |= 1u << static_cast<u32>(p.mod);
+	}
+	return m;
+}
+
+/* the modulation running, as MNP 10's (V.32 is V.32bis's rung) */
+dlink::Mod Modem::mnp10_mod() const
+{
+	u32 cur = static_cast<u32>(modulation(dp_stats_, dp_));
+	if (cur == DP_V32)
+		cur = DP_V32BIS;
+	for (const auto &p : k_m10_pumps)
+		if (p.dp == cur)
+			return p.mod;
+	return dlink::Mod::Count;
+}
+
+/* the receiver's level (dBm0 from the line's power: 0 dBm0 is a sine of
+   16024 RMS) and its eye quality, from the pump's SNR: the mean
+   squared error as 1024ths of the signal (-1 with no SNR) */
+void Modem::mnp10_line(s16 &dbm, s16 &eqm) const
+{
+	dbm = rx_pow_ > 0 ? static_cast<s16>(lroundf(10 * log10f(
+		rx_pow_ / (16024.0f * 16024.0f)))) : -99;
+	eqm = -1;
+	if (dp_ && (dp_stats_.have & DP_STATS_SNR))
+		eqm = static_cast<s16>(std::min(255.0f, roundf(1024 *
+			powf(10, -dp_stats_.snr / 10))));
+}
+
+/* the cellular transmit level: db below the nominal */
+void Modem::mnp10_tx_level(s16 db)
+{
+	tx_gain_ = powf(10, -static_cast<float>(db) / 20);
+	logf("MNP 10: transmit level %d dB down\n", db);
+}
+
+/* a rate shift's change of the pumps: the rate as the pumps' cap; in
+   the pump (V.32bis, V.32terbo, V.34) a retrain or V.34's rate
+   renegotiation, which only the side that asked starts (the other's
+   pump follows the remote's); else the pump goes, and after the
+   silence the new one starts in the call's roles (shift_tick()).
+   False if the modulation has no pump here */
+bool Modem::mnp10_shift(const dlink::Shift &s)
+{
+	u32 id = 0;
+	for (const auto &p : k_m10_pumps)
+		if (p.mod == s.mod)
+			id = p.dp;
+	if (!id || !(mnp10_mods() & (1u << static_cast<u32>(s.mod))) ||
+	    run_ != Run::Dp ||
+	    (!dp_ && s.kind != dlink::ShiftKind::Restart)) {
+		logf("MNP 10: no pump for the shift\n");
+		return false;
+	}
+	/* (V.34 and PCM pick their own rate going up: no cap, as their
+	   renegotiations cannot rise past their start-up's) */
+	const bool autor = s.mod == dlink::Mod::V34 ||
+		pcm_dp(id);
+	shift_cap_ = static_cast<u32>(s.rate) >= 56000 || (autor && s.up) ?
+		0 : static_cast<u32>(s.rate);
+	if (s.kind != dlink::ShiftKind::Restart) {
+		shift_ = ShiftPhase::InPump;
+		shift_mark_ = rate_sets_;
+		shift_end_ = count_ + static_cast<u32>(
+			static_cast<u64>(SHIFT_TRAIN_MS) * srate_ / 1000);
+		if (s.lead)
+			link_req_ = s.kind == dlink::ShiftKind::Reneg ? 2 : 1;
+		logf("MNP 10: %s to %" PRId32 " bit/s%s\n",
+		     s.kind == dlink::ShiftKind::Reneg ? "rate renegotiation" :
+		     "retrain", s.rate, s.lead ? "" : " (the remote's)");
+		return true;
+	}
+	/* the silence: S10/8 + 3 s, then 250 ms with the transmitter on
+	   (the caller 600 ms more, the answerer's pump listening first) */
+	u32 ms = (sregs_[SREG_CARRIER_LOSS_DISCONNECT_TIME] / 8 + 3) * 1000 +
+		250 + (caller_ ? SHIFT_CALLER_MS : 0);
+	/* the pump's last bits on the line first (the receiver's delay,
+	   a character or two more): 100 ms and 20 bits' time */
+	const u32 drain = 100 + 20000 / std::max<u32>(tx_rate_, 300);
+	shift_dp_ = id;
+	shift_ = ShiftPhase::Quiet;
+	shift_drop_ = count_ + static_cast<u32>(static_cast<u64>(drain) *
+						srate_ / 1000);
+	shift_end_ = shift_drop_ + static_cast<u32>(static_cast<u64>(ms) *
+						    srate_ / 1000);
+	/* (the pump goes in shift_tick(): this is called from within its
+	   process()) */
+	logf("MNP 10: the pump goes, pump %u in %u ms\n", id, ms);
+	return true;
+}
+
+/* the new pump of a shift's start-up: the answerer's with the answer
+   tone sent (its handshake's next step; V.8's pumps send ANSam
+   again), the caller's as at a call's start */
+void Modem::shift_pump()
+{
+	const u32 id = shift_dp_;
+	const u32 drv = v8_started(id) ? static_cast<u32>(DP_V8) : id;
+	if (DCORE_HAS(dp_runtime_set_restart) && dp_runtime_)
+		dp_runtime_set_restart(dp_runtime_, !caller_ && drv != DP_V8);
+	const DpDriver *d = dp_driver(drv);
+	struct dp *dp = nullptr;
+	if (d && d->op)
+		dp = d->op->create(handle(), static_cast<enum DP_ID>(id),
+				   caller_, srate_, frag_, d->op);
+	dsp::zero(dp_stats_);
+	if (!dp) {
+		log_printf(1, "err: %s: cannot create pump %u\n", name_, id);
+		shift_end(false);
+		return;
+	}
+	logf("MNP 10: pump %u (driver %u) starts, %s\n", id, drv,
+	     caller_ ? "caller" : "answerer");
+	dp_ = dp;
+	shift_ = ShiftPhase::Training;
+	shift_end_ = count_ + static_cast<u32>(
+		static_cast<u64>(SHIFT_TRAIN_MS) * srate_ / 1000);
+}
+
+/* the shift's timers, with the line's samples: the silence's end, the
+   pump's limit (25 s); a retrain is over once the pump set both its
+   rates again */
+void Modem::shift_tick()
+{
+	if (shift_ == ShiftPhase::None)
+		return;
+	const bool due = static_cast<s32>(count_ - shift_end_) >= 0;
+	switch (shift_) {
+	case ShiftPhase::InPump:
+		if (rate_sets_ - shift_mark_ >= 2)
+			shift_end(true);
+		else if (due)
+			shift_end(rate_sets_ != shift_mark_);
+		break;
+	case ShiftPhase::Quiet:
+		if (dp_ && static_cast<s32>(count_ - shift_drop_) >= 0) {
+			struct dp *old = dp_;
+			dp_ = nullptr;
+			old->op->destroy(old);
+		}
+		if (due)
+			shift_pump();
+		break;
+	case ShiftPhase::Training:
+		if (due) {
+			logf("MNP 10: no connection in %u s\n",
+			     SHIFT_TRAIN_MS / 1000);
+			shift_end(false);
+		}
+		break;
+	case ShiftPhase::None:
+		break;
+	}
+}
+
+/* the shift over (ok, the pump connected): the link told.  A failed
+   start-up's pump goes (the link may shift again, to another); with
+   no pump left and no shift, the call ends */
+void Modem::shift_end(bool ok)
+{
+	const ShiftPhase was = shift_;
+	shift_ = ShiftPhase::None;
+	if (was == ShiftPhase::None)
+		return;
+	logf("MNP 10: shift %s, %u/%u bit/s\n", ok ? "done" : "failed",
+	     tx_rate_, rx_rate_);
+	if (!ok && was != ShiftPhase::InPump && dp_) {
+		struct dp *old = dp_;
+		dp_ = nullptr;
+		old->op->destroy(old);
+	}
+	if (ok && was != ShiftPhase::InPump)
+		stats_.dp = static_cast<s16>(modulation(dp_stats_, dp_));
+	link_->shift_done(ok);
+	if (!dp_ && shift_ == ShiftPhase::None) {
+		logf("MNP 10: no pump after the shift\n");
+		update_status(ST_DP_ERROR);
+	}
+}
+
 /* what XID or MNP's LRs agreed: the call's compression */
 void Modem::negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
 		       s32 max_string, bool mnp5)
@@ -1054,7 +1409,7 @@ const char *Modem::protocol_name() const
 const char *Modem::compression_name() const
 {
 	if (cfg_.mnp_on)
-		return cfg_.mnp5 ? "MNP5" : "NONE";
+		return cfg_.comp ? "V42bis" : cfg_.mnp5 ? "MNP5" : "NONE";
 	if (cfg_.ec && cfg_.comp)
 		return cfg_.zstd ? "ZSTD" : cfg_.v44 ? "V44" : "V42bis";
 	return "NONE";
@@ -1069,8 +1424,11 @@ void Modem::update_status(Status s)
 	case ST_OK:
 		break;
 	case ST_DP_LINK:
-		/* adaptive answer: a data call (DATA, then its CONNECT) */
-		if (adaptive_answering())
+		/* adaptive answer: a data call (DATA, then its CONNECT;
+		   from class 6 only CONNECT, and class 6 again after it) */
+		if (adapt_ == Adapt::Fax && fax_class_ == 6)
+			z6_data_ = true;
+		else if (adaptive_answering())
 			report(Result::Data);
 		adapt_ = Adapt::Off;
 		if (loop3_ || (dp_ && (dp_->id == DP_V23 ||
@@ -1116,14 +1474,15 @@ void Modem::update_status(Status s)
 			link_->start_v76(!caller_);
 			break;
 		}
-		/* calling, the detection phase on a modulation older than
-		   V.8 (V.32bis, V.22bis, ...), whose answerers may wait for
-		   the ODPs (the USRobotics Courier; an answerer without the
-		   phase sends flags, which end it); not after V.8 (V.34,
-		   V.90, V.92's quick connect may have agreed LAPM:
-		   qc_lapm), nor on a leased line, a clear channel or PEP
-		   (whose turns put the ends' round trip past T400), whose
-		   two ends connect too far apart for T400 */
+		/* calling, the detection phase, after V.8 as well: the
+		   answerer may wait for the ODPs (the USRobotics Courier on
+		   V.32bis, the 3Com TC110 after V.8 on V.34; an answerer
+		   without the phase sends flags, which end it); after V.8
+		   with three times T400, as the two directions of V.34 and
+		   on may start some hundreds of ms apart; not on a leased
+		   line, a clear channel or PEP (whose turns put the ends'
+		   round trip past T400), whose two ends connect too far
+		   apart for T400 */
 		{
 			const unsigned id = dp_ ? dp_->id : 0;
 			const bool v8 = id == DP_V34 || id == DP_K56 ||
@@ -1132,9 +1491,9 @@ void Modem::update_status(Status s)
 				id == DP_V92;
 			link_->start(cfg_.ec || cfg_.mnp, cfg_.ec_detector &&
 				     !(caller_ && dsp_info_.qc_lapm &&
-				       (v8 || leased() || clear_channel() ||
+				       (leased() || clear_channel() ||
 					id == DP_PEP)) &&
-				     id != DP_VCVM);
+				     id != DP_VCVM, v8);
 		}
 		break;
 	case ST_PACK_LINK:
@@ -1175,6 +1534,11 @@ void Modem::update_status(Status s)
 			}
 		}
 		report(Result::Connect);
+		/* ZyXEL's security: the remote's password first */
+		if (!caller_ && zsec_.on() && !loop3_) {
+			logf("security (*G%d): the password\n", zsec_.type);
+			zsec_.start();
+		}
 		sync_tx_ = tx_rate_;
 		sync_rx_ = rx_rate_;
 		dte_rt_ = dte_rn_ = 0;
@@ -1545,8 +1909,9 @@ void Modem::sync_command(dlink::SyncCommand c, u8 tx, u8 rx)
 }
 
 /* the DTE's retrain (what 1) or rate renegotiation (2) for the pump to
-   start (MDMPRM_LINK_REQ), online and with V.34, V.90 or V.92 (their
-   data modes take it); false (logged) where it cannot be */
+   start (MDMPRM_LINK_REQ), online and with V.34, V.90, V.92 or the
+   V.32 family (their data modes take it; V.32's renegotiation is a
+   retrain); false (logged) where it cannot be */
 bool Modem::link_req(s32 what)
 {
 	const char *n = what == 1 ? "retrain" : "rate renegotiation";
@@ -1554,7 +1919,8 @@ bool Modem::link_req(s32 what)
 	if ((state_ != ONLINE && state_ != COMMAND_ONLINE) || !dp_ ||
 	    stats_.dp == DP_V91 ||
 	    (id != DP_V8 && id != DP_V34 && id != DP_V90 && id != DP_V92 &&
-	     id != DP_K56 && id != DP_X2)) {
+	     id != DP_K56 && id != DP_X2 && id != DP_V32 &&
+	     id != DP_V32BIS && id != DP_V32TERBO && id != DP_ZYX)) {
 		logf("%s asked: not with this modulation\n", n);
 		return false;
 	}
@@ -1731,6 +2097,7 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 	}
 	count_ += n;
 	samples_at_ms_ = host_.now_ms();
+	shift_tick();
 	if (later_ != Later::None &&
 	    static_cast<s64>(count_ - later_at_) >= 0)
 		later(later_, 0);
@@ -1761,7 +2128,34 @@ void Modem::run(s16 *in, s16 *out, s32 n)
 			std::fill_n(out, n, 0);
 			break;
 		}
+		if (link_->mnp10()) {
+			/* MNP 10: the received level, smoothed over about
+			   0.1 s; the cellular transmit level */
+			double sq = 0;
+			for (s32 i = 0; i < n; i++)
+				sq += static_cast<double>(in[i]) * in[i];
+			const float a = std::min(1.0f, static_cast<float>(n) /
+						 (0.1f * srate_));
+			if (n > 0)
+				rx_pow_ += a * (static_cast<float>(sq / n) -
+						rx_pow_);
+		}
+		if (etc_listen_ > 0) {
+			etc_listen_ -= n;
+			if (etc_det_.process(in, n)) {
+				etc_listen_ = 0;
+				etc_peer_ = true;
+				logf("ETC: the caller's 1500 Hz tone, ETC on\n");
+			}
+		}
 		dp_process(in, out, n);
+		/* (not on the call progress's tones: the firmware's bit 9) */
+		if (etc_tx_ && !(dp_ && dp_->id == DP_CALLPROG))
+			etc_filter_.process(out, n);
+		if (tx_gain_ != 1)
+			for (s32 i = 0; i < n; i++)
+				out[i] = static_cast<s16>(lroundf(out[i] *
+								  tx_gain_));
 		break;
 	case Run::CallerId:
 		cid_process(in, out, n);
@@ -1799,6 +2193,11 @@ void Modem::dp_process(s16 *in, s16 *out, s32 n)
 		case DPSTAT_OK:
 			break;
 		case DPSTAT_CONNECT:
+			/* MNP 10's start-up again: the link's again */
+			if (shift_ == ShiftPhase::Training) {
+				shift_end(true);
+				break;
+			}
 			/* (HST after V.22bis: the link waits in EC_ESTAB) */
 			if (state_ == IDLE || state_ == DP_ESTAB ||
 			    (hst_bps_ && dp_->id == DP_HST &&
@@ -1818,6 +2217,18 @@ void Modem::dp_process(s16 *in, s16 *out, s32 n)
 				  "V.8");
 			break;
 		case DPSTAT_ERROR:
+			/* an MNP 10 shift's pump that lost the line: the
+			   link may shift again */
+			if (shift_ != ShiftPhase::None &&
+			    state_ != DP_DISC && state_ != EC_DISC) {
+				struct dp *old = dp_;
+				dp_ = nullptr;
+				old->op->destroy(old);
+				shift_end(false);
+				if (!dp_)
+					return;
+				break;
+			}
 			failed = true;
 			/* hanging up: the pump's end (its cleardown) is
 			   over, the stop due now */
@@ -1898,8 +2309,7 @@ void Modem::change_dp()
 		} else if (host_.analog_line(*this) && id == DP_CLEAR)
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
-				      id == DP_V92 || id == DP_VCVM ||
-				      id == DP_VFC ?
+				      id == DP_V92 || id == DP_VCVM ?
 			      static_cast<u32>(DP_V8) :
 			      id;
 		/* the answerer's V.8 bis first (+A8E), then this again */
@@ -1909,6 +2319,18 @@ void Modem::change_dp()
 		   offer it in XID (hst_switch()) */
 		if (id == DP_HST && hst_offer())
 			id = drv = DP_V22BIS;
+		/* *H1, *H2: MNP 10's caller starts low, V.22 or V.32bis at
+		   4800 bit/s, and climbs from there */
+		const u32 h = sregs_[SREG_MNP10_START];
+		if (caller_ && h && cfg_.mnp && !cfg_.sync &&
+		    (sregs_[SREG_MNP10] & 1) &&
+		    (!dp_ || dp_->id == DP_CALLPROG) &&
+		    dp_registered(h == 1 ? DP_V22 : DP_V32BIS)) {
+			id = drv = h == 1 ? DP_V22 : DP_V32BIS;
+			shift_cap_ = h == 1 ? 0 : 4800;
+			logf("MNP 10: the call starts at %s (*H%u)\n",
+			     h == 1 ? "V.22" : "V.32bis 4800", h);
+		}
 	}
 	logf("pump %u (driver %u), %s\n", id, drv,
 	     caller_ ? "caller" : "answerer");
@@ -2083,7 +2505,7 @@ bool Modem::v8bis_call() const
 		id = DP_V34;
 	return id == DP_V8 || id == DP_V34 || id == DP_V90 ||
 	       id == DP_V91 || id == DP_V92 || id == DP_VCVM || id == DP_K56 ||
-	       id == DP_X2 || id == DP_VFC;
+	       id == DP_X2;
 }
 
 /* see dcore.h */
@@ -2105,6 +2527,18 @@ void Modem::dsvd_close_voice()
 {
 	if (link_)
 		link_->close_voice();
+}
+
+/* see dcore.h */
+bool Modem::usr_feature_now(int mode, int enable, int disable)
+{
+	const int sw = dlink::USR_SWITCHED;
+	if (!link_ || mode < 1 || mode > 2 || enable < 0 || disable < 0 ||
+	    (enable & ~sw) || (disable & ~sw) || (enable & disable))
+		return false;
+	return link_->usr_start(static_cast<dlink::UsrMode>(mode),
+				static_cast<u8>(enable),
+				static_cast<u8>(disable));
 }
 
 /* see dcore.h */
@@ -2255,9 +2689,11 @@ s16 Modem::answer(bool adaptive)
 	cng_->init(srate_);
 	cng_cut_ = 0;
 	answer_tone_at_ = 0;
-	if (adaptive && kept("+FAA")[0] && (mode_ == MODEM_MODE_DATA ||
-					    (mode_ == MODEM_MODE_FAX &&
-					     !fax2_class()))) {
+	/* (class 6 answers so whatever +FAA says, as ZyXEL's do) */
+	bool z6 = mode_ == MODEM_MODE_FAX && fax_class_ == 6;
+	if (adaptive && (z6 || (kept("+FAA")[0] &&
+				(mode_ == MODEM_MODE_DATA ||
+				 (mode_ == MODEM_MODE_FAX && !fax2_class()))))) {
 		adapt_ = mode_ == MODEM_MODE_FAX ? Adapt::Fax : Adapt::Data;
 		set_mode(MODEM_MODE_DATA);
 		logf("adaptive answer (+FAA=1, from %s mode)\n",
@@ -2273,14 +2709,17 @@ s16 Modem::answer(bool adaptive)
    CNG, its V.8 CM, T.38).  With +FAA=1: FAX to the DTE, class 1
    (+FCLASS=1), the fax engine as the answerer after the answer tone
    sent already (its CED cut short), its CONNECT for +FTH=3 to follow.
-   For the program's fax receiver (Options::fax_detect): fax_caller(),
+   From class 6 (ZyXEL's): class 6's engine, no FAX.  For the program's fax receiver (Options::fax_detect): fax_caller(),
    and after a V.8 CM no more data answer (the line silent) */
 void Modem::fax_found(const char *why)
 {
 	if (fax_caller_ || adapt_ == Adapt::Off)
 		return;
+	/* (from class 6: class 6's engine, its CONNECT FAX later) */
+	bool z6 = adapt_ == Adapt::Fax && fax_class_ == 6;
 	fax_caller_ = true;
-	fax_class_ = 1;
+	if (!z6)
+		fax_class_ = 1;
 	logf("adaptive answer: a fax call (%s)\n", why);
 	if (adapt_ == Adapt::Detect) {
 		adapt_ = Adapt::Off;
@@ -2293,6 +2732,10 @@ void Modem::fax_found(const char *why)
 	adapt_ = Adapt::Off;
 	set_mode(MODEM_MODE_FAX);
 	stats_.fax = true;
+	if (z6) {
+		fax_start();
+		return;
+	}
 	report(Result::Fax);
 	if (fax_start() == 0 && DCORE_HAS(FAX_answer_tone))
 		FAX_answer_tone(fax_, static_cast<unsigned>(sent));
@@ -2319,6 +2762,7 @@ s16 Modem::adaptive_param() const
 void Modem::hangup()
 {
 	conf_close();
+	cadence_ = false;
 	leased_stop();
 	if (state_ != IDLE)
 		set_cause(Cause::DtrOff);
@@ -2390,8 +2834,11 @@ void Modem::line_failed(Result r)
    nothing if the hook is there already; the Host's result */
 s16 Modem::hook(s16 state)
 {
-	if (state == MODEM_HOOK_ON)
+	if (state == MODEM_HOOK_ON) {
 		leased_stop();
+		callback_.clear();
+		callback_at_ms_ = 0;
+	}
 	if (state == MODEM_HOOK_ON && voice_held_) {
 		stop_call();
 		return 0;
@@ -2411,6 +2858,8 @@ s16 Modem::hook(s16 state)
 s16 Modem::reset()
 {
 	leased_stop();
+	callback_.clear();
+	callback_at_ms_ = 0;
 	/* (V.54: the far end's loop 2 refused again, AT&T5) */
 	test_.set_grant(false);
 	const bool in_call = state_ != IDLE;
@@ -2587,6 +3036,10 @@ void Modem::report(Result r)
 		} else if (sregs_[SREG_CONNECT_PROTOCOL]) {
 			const std::string_view comp = compression_name();
 			line = "CONNECT " + rate + "/" + protocol_name();
+			/* ETC, as 3Com's cards show it after the error
+			   correction */
+			if (etc_on())
+				line += "/ETC";
 			if (comp != "NONE")
 				line += "/" + std::string(comp);
 		} else {
@@ -2851,6 +3304,7 @@ void Modem::rockwell_stats()
 		case Cause::LocalHangup:
 		case Cause::DteReset:
 		case Cause::DtrOff:
+		case Cause::Security:
 			reason = "LOCAL REQUEST";
 			break;
 		case Cause::AnyKey:
@@ -3086,7 +3540,9 @@ void Modem::unimodem_diag()
 		num(0x33, d.retrains_local + d.retrains_remote, 2);
 		num(0x34, stats_.ended ? stats_.tx1 : tx_rate_, 4);
 		num(0x35, stats_.ended ? stats_.rx1 : rx_rate_, 4);
-		num(0x40, cfg_.ec ? 1 : cfg_.mnp_on ? 2 : 0);
+		/* (0x82: ETC with either, Table 7) */
+		num(0x40, etc_on() && (cfg_.ec || cfg_.mnp_on) ? 0x82 :
+		    cfg_.ec ? 1 : cfg_.mnp_on ? 2 : 0);
 		/* the error correction's frame size: the information
 		   field we send */
 		if (cfg_.ec)
@@ -3131,7 +3587,8 @@ void Modem::unimodem_diag()
 	if (stats_.ended) {
 		switch (stats_.cause) {
 		case Cause::None: cleared = 0x0; break;
-		case Cause::LocalHangup: cleared = 0x51; break;
+		case Cause::LocalHangup:
+		case Cause::Security: cleared = 0x51; break;
 		case Cause::AnyKey: cleared = 0x50; break;
 		case Cause::DteReset: cleared = 0x52; break;
 		case Cause::DtrOff: cleared = 0x20; break;
@@ -3181,6 +3638,7 @@ void Modem::poll()
 		new_event_ = 0;
 	}
 	leased_poll();
+	zsec_poll();
 	if (test_end_ms_ &&
 	    static_cast<s64>(host_.now_ms() - test_end_ms_) >= 0) {
 		test_end_ms_ = 0;
@@ -3188,6 +3646,7 @@ void Modem::poll()
 		test_end(true);
 	}
 	conf_poll();
+	cadence_poll();
 	if (!event_)
 		return;
 	ev = event_;
@@ -3225,6 +3684,63 @@ void Modem::leased_poll()
 	    sregs_[SREG_RINGS_TO_AUTO_ANSWER] && leased_auto_) {
 		logf("leased line: answering (S0)\n");
 		answer(false);
+	}
+}
+
+/* ZyXEL's security (zyxel_sec.h): what it sends to the remote, up to n
+   characters; how many */
+s16 Modem::zsec_out(u8 *buf, s16 n)
+{
+	s16 k = static_cast<s16>(std::min(static_cast<size_t>(n),
+					  zsec_.out.size()));
+	memcpy(buf, zsec_.out.data(), static_cast<size_t>(k));
+	zsec_.out.erase(0, static_cast<size_t>(k));
+	return k;
+}
+
+/* ZyXEL's security: its end once the remote has its last characters
+   (the data passes, a hang-up, a hang-up and a call back); the call
+   back when it falls due */
+void Modem::zsec_poll()
+{
+	if (callback_at_ms_ && state_ == IDLE && !started_ && !dp_ &&
+	    static_cast<s64>(host_.now_ms() - callback_at_ms_) >= 0) {
+		std::string number = callback_;
+		callback_at_ms_ = 0;
+		callback_.clear();
+		logf("security: the call back to %s\n", number.c_str());
+		if (dial(number.c_str()))
+			report(Result::NoCarrier);
+		return;
+	}
+	if (zsec_.step != ZyxelSecurity::Step::Done || !zsec_.out.empty() ||
+	    link_->tx_pending() || state_ != ONLINE)
+		return;
+	ZyxelSecurity::End end = zsec_.end;
+	s16 slot = zsec_.slot;
+	zsec_.stop();
+	switch (end) {
+	case ZyxelSecurity::End::Pass:
+		logf("security: password %d correct\n", slot);
+		break;
+	case ZyxelSecurity::End::Fail:
+		logf("security: three wrong passwords, hanging up\n");
+		set_cause(Cause::Security);
+		hup(true);
+		break;
+	case ZyxelSecurity::End::CallStored:
+	case ZyxelSecurity::End::CallNumber:
+		callback_ = end == ZyxelSecurity::End::CallNumber ?
+			zsec_.number : stored_[slot];
+		logf("security: password %d correct, call back to '%s'\n",
+		     slot, callback_.c_str());
+		if (callback_.empty())
+			logf("security: no stored number (AT&Z%d=)\n", slot);
+		set_cause(Cause::LocalHangup);
+		hup(true);
+		break;
+	case ZyxelSecurity::End::None:
+		break;
 	}
 }
 
@@ -3267,6 +3783,11 @@ s32 Modem::next_timer_ms()
 	}
 	if (conf_) {
 		s32 c = conf_next_ms();
+		if (c >= 0 && (left < 0 || c < left))
+			left = c;
+	}
+	{
+		s32 c = cadence_next_ms();
 		if (c >= 0 && (left < 0 || c < left))
 			left = c;
 	}
@@ -3345,6 +3866,17 @@ void Modem::ring()
 {
 	u32 now = static_cast<u32>(host_.now_ms());
 
+	if (cadence_) {
+		/* a burst starts: the time with no ring */
+		u64 t = host_.now_ms();
+		if (!cadence_on_) {
+			cadence_line("OFF ", t - cadence_edge_ms_);
+			cadence_edge_ms_ = t;
+			cadence_on_ = true;
+		}
+		cadence_pulse_ms_ = t;
+		return;
+	}
 	if (state_ != IDLE)
 		return;
 	if (!ring_count_) {
@@ -3362,6 +3894,50 @@ void Modem::ring()
 	}
 	ring_last_ = now;
 	ring_count_++;
+}
+
+/* #B3, ZyXEL's ring cadence meter (U-1496S 0x89622): its two lines,
+   then a line at each change of the ring signal (cadence_line()) until
+   a key (at_process()); no RING meanwhile */
+void Modem::cadence_start()
+{
+	puts("\r\nStart to measure ring cadence...\r\n"
+	     "Hit any key to stop!\r\n");
+	cadence_ = true;
+	cadence_on_ = false;
+	cadence_edge_ms_ = host_.now_ms();
+	logf("ring cadence: started\n");
+}
+
+/* a change: the label ("ON  ": a burst ended, "OFF ": one started) and
+   the time of what ended, as ZyXEL's: 8 characters of 10 ms steps,
+   then "0 ms" */
+void Modem::cadence_line(const char *label, u64 ms)
+{
+	char b[32];
+	snprintf(b, sizeof(b), "%s%8u0 ms\r\n", label,
+		 static_cast<unsigned>(std::min<u64>((ms + 5) / 10, 65535)));
+	puts(b);
+}
+
+/* #B3: a burst ends CADENCE_GAP_MS after its last pulse */
+void Modem::cadence_poll()
+{
+	if (!cadence_ || !cadence_on_ ||
+	    host_.now_ms() - cadence_pulse_ms_ < CADENCE_GAP_MS)
+		return;
+	cadence_line("ON  ", cadence_pulse_ms_ - cadence_edge_ms_);
+	cadence_edge_ms_ = cadence_pulse_ms_;
+	cadence_on_ = false;
+}
+
+/* the ms until cadence_poll() has a burst's end, -1 none */
+s32 Modem::cadence_next_ms() const
+{
+	if (!cadence_ || !cadence_on_)
+		return -1;
+	u64 at = cadence_pulse_ms_ + CADENCE_GAP_MS, now = host_.now_ms();
+	return at > now ? static_cast<s32>(at - now) : 0;
 }
 
 /* see dcore.h: a change only (the line may say it twice) */
@@ -3411,6 +3987,9 @@ void Modem::line_reversal()
    (idle, line stopped); on false the rings are over */
 void Modem::ring_signal(bool on)
 {
+	/* (#B3 measures a line's own ring signal alone) */
+	if (on && cadence_)
+		return;
 	if (!on) {
 		sregs_[SREG_RING_COUNTER] = 0;
 		ring_count_ = 0;
@@ -3972,6 +4551,24 @@ s16 Modem::fax_start()
 		s.bo = f2_bo_;
 		s.lp = f2_lp_;
 		f2_pi_.copy(s.pi, sizeof(s.pi) - 1);
+		if (fax_class_ == 6) {
+			/* ZyXEL's: V.17 at most, no ECM, the data's first
+			   bit lowest, the identity #P's */
+			std::memset(s.ident, 0, sizeof(s.ident));
+			zfax_.p.copy(s.ident, sizeof(s.ident) - 1);
+			s.vr = zfax_.v;
+			s.br = 5;
+			s.ec = 0;
+			s.sp = 0;
+			s.bo = 0;
+			s.lp = 0;
+			s.zb = zfax_.b;
+			/* #B2: this call polls, with #P as the CIG */
+			s.zpoll = caller_ && zfax_.poll;
+			zfax_.poll = false;
+			std::memset(s.pi, 0, sizeof(s.pi));
+			zfax_.p.copy(s.pi, sizeof(s.pi) - 1);
+		}
 		fax_ = DCORE_HAS(FAX2_create) ?
 			FAX2_create(handle(), caller_, srate_, &s) : nullptr;
 	} else {
@@ -3996,7 +4593,8 @@ s16 Modem::fax_start()
 		return -1;
 	}
 	logf("fax engine%s, %s%s\n", fax2_ ? fax_class_ == 2 ? ", class 2" :
-	     ", class 2.0" : "", caller_ ? "caller" : "answerer",
+	     fax_class_ == 6 ? ", class 6" : ", class 2.0" : "",
+	     caller_ ? "caller" : "answerer",
 	     t38_ ? ", T.38" : "");
 	return 0;
 }
@@ -4040,7 +4638,9 @@ void Modem::fax_process(s16 *in, s16 *out, s32 n)
 			stats_.up = static_cast<u32>(host_.now_ms());
 		}
 		set_state(ONLINE);
-		report(Result::Connect);
+		/* (class 6: the engine's CONNECT FAX/... went already) */
+		if (fax_class_ != 6)
+			report(Result::Connect);
 		command_ = false;
 		break;
 	case FAX_STATUS_NOCARRIER:
