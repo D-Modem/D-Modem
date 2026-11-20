@@ -13,9 +13,12 @@
  *    (docs/dsp/pep-details.md).  This modem takes their numbers:
  *
  *    the ensemble: a 1024 point FFT at 8000 Hz, its 511 carriers 7.8125
- *              Hz apart; an epoch is the 1024 samples and their first 64
- *              again after them (the patent's guard), 136 ms, 7.35 baud;
- *              0, 2, 4, 5 or 6 bits a carrier (QAM, each axis Gray coded)
+ *              Hz apart; an epoch is the 1024 samples and their first 61
+ *              again after them (the guard; 1085 samples, 135.6 ms, 7.37
+ *              baud, as a T3000's DSP and a T2000's recordings have it);
+ *              0, 2, 4, 5 or 6 bits a carrier, in Telebit's
+ *              constellations (a T3000's firmware's: the quadrant in the
+ *              two lowest bits, 5 bits a cross)
  *    the start-up (the patent's eight steps): the answerer's epoch of
  *              1437.5 and 1687.5 Hz at -3 dBR each, then its comb of all
  *              carriers at -27 dBR; both measure the line's noise in
@@ -38,8 +41,10 @@
  *    the packet's header (type, length, sequence number, the epochs left
  *    in the turn, the far side's acknowledgements) and a scrambler on
  *    it.  So it talks to another D-Modem; a TrailBlazer would not
- *    understand it (no recording or firmware has been found to check
- *    against).
+ *    understand it (Telebit's packets are still unknown).  A T3000's
+ *    firmware (docs/dsp/pep-details.md) gave the
+ *    constellations and the micro packets' carriers, which this modem
+ *    uses, but not the packets.
  *
  */
 
@@ -62,8 +67,10 @@ namespace pep {
 
 const s32 FS = 8000;            /* the ensemble's sample rate */
 const s32 N = 1024;             /* the FFT */
-const s32 GUARD = 64;           /* the first 8 ms repeated after it */
-const s32 EPOCH = N + GUARD;    /* 136 ms */
+const s32 GUARD = 61;           /* the first 61 samples repeated after it */
+const s32 EPOCH = N + GUARD;    /* 1085 samples, 135.6 ms: the start-up's */
+const s32 T_GUARD = 56;
+const s32 T_EPOCH = N + T_GUARD;        /* 1080, a turn's: 9 micro epochs */
 const s16 CARRIERS = 511;       /* bins 1 to 511 */
 const s16 TONE1 = 184;          /* 1437.5 Hz: the timing tones' bins */
 const s16 TONE2 = 216;          /* 1687.5 Hz */
@@ -200,8 +207,9 @@ private:
 	void tx_turn();
 	void tx_epoch_tones(s32 len);
 	void tx_epoch_comb(float sign, float gain,
-			   const std::vector<u8> *mask);
-	void tx_epoch_data(const PepLoading &l, const std::vector<u8> &oct);
+			   const std::vector<u8> *mask, s32 len);
+	void tx_epoch_data(const PepLoading &l, const std::vector<u8> &oct,
+			   s32 len);
 	void tx_samples(const std::vector<cf> &X, s32 len);
 	std::vector<u8> make_packet(u8 type, u8 seq, const u8 *pay, s32 n,
 				    u8 left, s32 cap);

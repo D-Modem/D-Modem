@@ -31,8 +31,12 @@ Five recordings of calls of a Telebit T2000 confirm the epoch, the comb,
 the timing tones and the order of the start-up. They also show the answer
 tone before PEP and the short turns of an idle line (refer to
 [the technical details](pep-details.md#what-the-t2000-recordings-show)).
-But we could not decode a turn of them to bits. Thus, the packets of a
-real Telebit are still unknown.
+But we could not decode a turn of them to bits. The firmware of a T3000
+later gave the constellations of Telebit, the carriers of its micro
+packets and the steps of its start-up, and D-Modem now uses the first two
+(refer to [what the firmware shows](pep-details.md#what-the-t3000s-firmware-shows)).
+The firmware does not give the packets. Thus, the packets of a real
+Telebit are still unknown.
 
 ## How to use it
 
