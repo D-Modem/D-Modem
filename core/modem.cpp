@@ -228,7 +228,22 @@ struct LinkOwner final : public dlink::Owner {
 					      m_.sregs_[SREG_BS_CHAR]);
 			return n;
 		}
-		return m_.put_chars(reinterpret_cast<const char *>(buf), n);
+		if (!m_.ebcdic_data())
+			return m_.put_chars(
+				reinterpret_cast<const char *>(buf), n);
+		/* (+DEBC's <data>: the remote's ISO 8859-1 as EBCDIC) */
+		char t[256];
+		s16 k = 0;
+		while (k < n) {
+			s16 run = std::min<s16>(n - k, sizeof(t));
+			memcpy(t, buf + k, run);
+			m_.ebcdic_page().out(t, run);
+			s16 w = static_cast<s16>(m_.put_chars(t, run));
+			k += w;
+			if (w < run)
+				break;
+		}
+		return k;
 	}
 	/* the link's progress as the modem's */
 	void status(dlink::Status s) override {
@@ -1957,7 +1972,11 @@ s32 Modem::link_chars(char *buf, s32 n)
 		memcpy(buf, esc_held_.data(), static_cast<size_t>(k));
 		esc_held_.erase(0, static_cast<size_t>(k));
 	}
-	return k + get_chars(buf + k, n - k);
+	k += get_chars(buf + k, n - k);
+	/* (+DEBC's <data>: the DTE's EBCDIC as ISO 8859-1) */
+	if (ebcdic_data())
+		ebcdic_page().in(buf, k);
+	return k;
 }
 
 /* n characters to the DTE: how many the Host took */
@@ -1970,16 +1989,57 @@ s32 Modem::put_chars(const char *buf, s32 n)
 	return ret < 0 ? 0 : ret;
 }
 
+/* the modem's own text to the DTE, in EBCDIC while the DTE's command
+   text is */
+void Modem::put_text(const char *buf, s32 n)
+{
+	if (line_ebc_ >= 0 ? !line_ebc_ : !ebcdic()) {
+		put_chars(buf, n);
+		return;
+	}
+	char t[64];
+	while (n > 0) {
+		s32 run = std::min<s32>(n, sizeof(t));
+		memcpy(t, buf, static_cast<size_t>(run));
+		ebcdic_page().out(t, run);
+		put_chars(t, run);
+		buf += run;
+		n -= run;
+	}
+}
+
+/* +DEBC=2, or +DEBC=1 and the last command line's "AT" in EBCDIC */
+bool Modem::ebcdic() const
+{
+	u32 mode = kept("+DEBC")[0];
+	return mode == 2 || (mode == 1 && ebc_);
+}
+
+/* (see ebcdic()) and +DEBC's <data> 1 */
+bool Modem::ebcdic_data() const
+{
+	return kept("+DEBC")[1] && ebcdic();
+}
+
+/* +DEBC's <cp>, the table changed when <cp> has */
+const ebcdic::CodePage &Modem::ebcdic_page()
+{
+	u16 id = static_cast<u16>(kept("+DEBC")[2]);
+	if (ebc_page_.id() != id)
+		ebc_page_.select(id);
+	return ebc_page_;
+}
+
 /* a string to the DTE */
 void Modem::puts(const char *s)
 {
-	put_chars(s, static_cast<s32>(strlen(s)));
+	put_text(s, static_cast<s32>(strlen(s)));
 }
 
 /* the end of a line to the DTE: S3, S4 */
 void Modem::crlf()
 {
-	put_chars(reinterpret_cast<const char *>(&sregs_[SREG_CR_CHAR]), 2);
+	put_text(reinterpret_cast<const char *>(&sregs_[SREG_CR_CHAR]), 2);
 }
 
 /* the escape (+++): this input (online) after the last one's, as the
@@ -1992,10 +2052,13 @@ s16 Modem::check_escape(const char *buf, s32 n)
 	u32 now = static_cast<u32>(host_.now_ms());
 	s32 since = static_cast<s32>(now - last_esc_check_);
 	bool escape = escape_count_ + n <= 3;
+	/* (an EBCDIC DTE sends S2 in EBCDIC: '+' is 0x4E) */
+	char esc = static_cast<char>(sregs_[SREG_ESCAPE_CHAR]);
+	if (ebcdic())
+		esc = ebcdic_page().out(esc);
 
 	for (s16 i = 0; escape && i < n; i++)
-		escape = static_cast<unsigned char>(buf[i]) ==
-			 sregs_[SREG_ESCAPE_CHAR];
+		escape = buf[i] == esc;
 	if (escape)
 		escape = escape_count_ ?
 			since < static_cast<s32>(ESCAPE_MS) :

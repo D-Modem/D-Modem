@@ -793,7 +793,7 @@ the terms that are less frequent.
 \cmdl[plusPMHR]{+PMHR} & Ask for modem-on-hold. & \cmdl[plusCVM]{+CVM} & \std{V.cvm}. \\ \hline
 \cmdl[minusSEC]{-SEC} & \std{MNP~10EC} (kept). & \cmdl[plusFCLASS]{+FCLASS} & Data, fax or voice. \\ \hline
 \cmdl[plusEF]{+EF} & \std{ETC} transmit filter. & \cmdl[etc]{\&F5, \&F6} & \std{ETC} settings (S116). \\ \hline
-\cmdl[plusX2UP]{+X2UP} & x2 upgrade host. & & \\ \hline
+\cmdl[plusX2UP]{+X2UP} & x2 upgrade host. & \cmdl[plusDEBC]{+DEBC} & EBCDIC \std{DTE}. \\ \hline
 \cmdl[plusFAA]{+FAA} & Adaptive answer. & \cmdl[plusFMI]{+FMI, +FMM, +FMR} & Fax identification. \\ \hline
 \cmdl[plusFTS]{+FTS, +FRS} & Fax silence. & \cmdl[plusFTM]{+FTM, +FRM} & Fax data. \\ \hline
 \cmdl[plusFTH]{+FTH, +FRH} & Fax \std{HDLC} frames. & \cmdl[plusFPR]{+FPR} & Fax \std{DTE} rate (kept). \\ \hline
@@ -2985,6 +2985,34 @@ sends one line to the \std{DTE}:
 \res{\rc{OK}}{Always.}
 \res{\rc{ERROR}}{For a value outside its range, or for a feature in
 \p{enable} and in \p{disable}.}
+\end{results}
+\end{command}
+
+\begin{command}{plusDEBC}{+DEBC}{EBCDIC DTE}
+This command is from D-Modem (\texttt{docs/ebcdic.md}).  It sets the
+character set of the \std{DTE}.  With \p{mode} 1, the first two
+characters of each command line identify the character set:
+\cmd{AT} in EBCDIC is 0xC1 0xE3.  Then the modem sends the echo, the
+information text and the result codes of that line in the same
+character set, and it also sends the unsolicited result codes (for
+example \rc{RING} and \rc{CONNECT}) in that character set.  In EBCDIC,
+the escape character (S2) is also in EBCDIC: \cmd{+} is 0x4E.
+\p{mode} 0 accepts only ASCII.  \p{mode} 2 accepts only EBCDIC.
+\p{data} 1 also changes the data of a call: the modem changes the
+EBCDIC of the \std{DTE} to ISO~8859-1 for the remote, and the
+ISO~8859-1 of the remote to EBCDIC.  With \p{data} 0, the modem does
+not change the data.  \p{cp} is the IBM code page.  The default is 37
+(USA and Canada).  The result of the command line that sets
+\cmd{+DEBC} is in the character set of that command line.
+\cmdl[Z]{Z} sets \cmd{+DEBC=1,0,37}.
+\begin{syntax}
+\item +DEBC=[\p{mode}][,[\p{data}][,\p{cp}]]
+\item +DEBC? (gives \rc{+DEBC: 1,0,37})
+\item +DEBC=? (gives \rc{+DEBC: (0-2),(0,1),(37,273,275,277,278,280,284,285,297,500,871,1047)})
+\end{syntax}
+\begin{results}
+\res{\rc{OK}}{Always.}
+\res{\rc{ERROR}}{For a value outside its range.}
 \end{results}
 \end{command}
 

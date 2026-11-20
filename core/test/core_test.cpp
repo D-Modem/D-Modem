@@ -214,6 +214,80 @@ static std::string cmd(Modem *m, Line &l, const char *s)
 	return l.out;
 }
 
+/* s in EBCDIC, in IBM's code page cp */
+static std::string ebc(const std::string &s, u16 cp = 37)
+{
+	dcore::ebcdic::CodePage page(cp);
+	std::string e = s;
+	page.out(&e[0], static_cast<s32>(e.size()));
+	return e;
+}
+
+/* each code page one octet for one octet both ways, "AT", "at" and
+   "A/" the same octets in each, and no ASCII "AT" (any parity) seen as
+   EBCDIC */
+TEST(Core, EbcdicCodePages)
+{
+	for (const dcore::ebcdic::Table &t : dcore::ebcdic::tables) {
+		dcore::ebcdic::CodePage p(t.id);
+		ASSERT_EQ(p.id(), t.id);
+		for (int i = 0; i < 256; i++)
+			EXPECT_EQ((u8)p.in(p.out((char)i)), i) << t.id;
+		EXPECT_EQ(dcore::ebcdic::detect(p.out('A'), p.out('T')), 1);
+		EXPECT_EQ(dcore::ebcdic::detect(p.out('a'), p.out('t')), 1);
+		EXPECT_EQ(dcore::ebcdic::detect(p.out('A'), p.out('/')), 1);
+		EXPECT_EQ(p.out('\r'), '\r');
+	}
+	for (int a : { 0x41, 0xC1, 0x61, 0xE1 })
+		for (int t : { 0x54, 0xD4, 0x74, 0xF4, 0x2F, 0xAF })
+			EXPECT_EQ(dcore::ebcdic::detect((char)a, (char)t), 0);
+	EXPECT_EQ(dcore::ebcdic::detect('A', 'X'), -1);
+	/* 1047 has the C brackets where 037 has Ý and ¨ */
+	EXPECT_EQ((u8)dcore::ebcdic::CodePage(1047).out('['), 0xAD);
+	EXPECT_EQ((u8)dcore::ebcdic::CodePage(37).out('['), 0xBA);
+	EXPECT_EQ(dcore::ebcdic::CodePage(999).id(), 37);
+}
+
+/* +DEBC=1: each command line's "AT" tells the character set; the echo,
+   the information and the result codes come in the same set.  0: ASCII
+   only; 2: EBCDIC only; <cp> from the list only */
+TEST(Core, EbcdicCommands)
+{
+	Line l;
+	Modem *m = make(l, "ebcdic");
+	EXPECT_EQ(cmd(m, l, ebc("ATI7\r").c_str()),
+		  ebc("ATI7\r\r\nCountry: USA\r\nOK\r\n"));
+	EXPECT_EQ(cmd(m, l, "AT\r"), "AT\r\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, ebc("at+debc?\r").c_str()),
+		  ebc("at+debc?\r\r\n+DEBC: 1,0,37\r\nOK\r\n"));
+	/* A/ in EBCDIC: the last line again */
+	EXPECT_EQ(cmd(m, l, ebc("A/").c_str()),
+		  ebc("At+debc?\r\r\n+DEBC: 1,0,37\r\nOK\r\n"));
+	/* a backspace (S5, EBCDIC 0x16) and an unknown code page */
+	EXPECT_EQ(cmd(m, l, ebc("ATX\b\r").c_str()),
+		  ebc("ATX\b \b\r\r\nOK\r\n"));
+	EXPECT_EQ(cmd(m, l, ebc("AT+DEBC=1,0,999\r").c_str()),
+		  ebc("AT+DEBC=1,0,999\r\r\nERROR\r\n"));
+	/* 0: EBCDIC is not a command line */
+	EXPECT_EQ(cmd(m, l, "AT+DEBC=0\r"), "AT+DEBC=0\r\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, ebc("AT\r").c_str()).find(ebc("OK")),
+		  std::string::npos);
+	/* 2: EBCDIC only, the line that sets it answered in ASCII */
+	EXPECT_EQ(cmd(m, l, "AT+DEBC=2,0,1047\r"),
+		  "AT+DEBC=2,0,1047\r\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT\r").find("OK"), std::string::npos);
+	EXPECT_EQ(cmd(m, l, ebc("AT+DEBC?\r", 1047).c_str()),
+		  ebc("AT+DEBC?\r\r\n+DEBC: 2,0,1047\r\nOK\r\n", 1047));
+	/* ATZ: +DEBC=1 again */
+	EXPECT_EQ(cmd(m, l, ebc("ATZ\r", 1047).c_str()),
+		  ebc("ATZ\r\r\nOK\r\n", 1047));
+	EXPECT_EQ(cmd(m, l, "AT\r"), "AT\r\r\nOK\r\n");
+	/* &V shows it */
+	EXPECT_NE(cmd(m, l, "AT&V\r").find(" +DEBC=1,0,37\r\n"),
+		  std::string::npos);
+	delete m;
+}
+
 /* the country, ATI7, S-registers out of range, an idle modem */
 TEST(Core, Options)
 {
@@ -1183,6 +1257,42 @@ TEST_P(CoreCall, DataBothWaysAndHangup)
 	EXPECT_TRUE(p.got_a.find("NO CARRIER") != std::string::npos);
 	if (getenv("SHOW"))
 		printf("A after the hangup: [%s]\n", p.got_a.c_str());
+}
+
+/* an EBCDIC DTE on a call (+DEBC=1,1, V.22): its data as ASCII to the
+   remote, the remote's as EBCDIC, CONNECT in EBCDIC, the escape as
+   EBCDIC "+++" (0x4E 0x4E 0x4E), its OK in EBCDIC */
+TEST(Core, EbcdicCall)
+{
+	Pair p("+MS=22");
+	std::string s = ebc("AT+DEBC=1,1\r");
+	p.a->dte_input(s.data(), s.size());
+	EXPECT_EQ(p.la.out, ebc("OK\r\n"));
+	p.la.out.clear();
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	EXPECT_NE(p.got_a.find(ebc("CONNECT")), std::string::npos) << p.got_a;
+	EXPECT_EQ(p.got_b.find(ebc("CONNECT")), std::string::npos);
+	p.got_a.clear();
+	p.got_b.clear();
+	std::string da = "Hello from an EBCDIC DTE [037]", db = "Hi, ASCII here!";
+	s = ebc(da);
+	p.a->dte_input(s.data(), s.size());
+	p.b->dte_input(db.data(), db.size());
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.got_b.size() >= 30 && q.got_a.size() >= 15; }, 15000));
+	EXPECT_EQ(p.got_b, da);
+	EXPECT_EQ(p.got_a, ebc(db));
+	p.got_a.clear();
+	p.run_until([](Pair &) { return false; }, 1100);
+	p.a->dte_input("\x4E\x4E\x4E", 3);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.got_a.find(ebc("OK")) != std::string::npos; }, 2000))
+		<< p.got_a;
+	EXPECT_EQ(p.a->link_state(), LinkState::Online);
 }
 
 /* the escape while the DTE's data still waits for the line (V.22 at

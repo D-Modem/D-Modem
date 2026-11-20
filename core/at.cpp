@@ -268,6 +268,13 @@ const struct Kept {
 	/* V.cvm (Table 12-1/V.cvm): the modes, the signal interface's rate,
 	   +CVMR */
 	{ "+CVM", 3, { 63, 8000, 0 }, "(0-63),(8000,16000),(0,1)" },
+	/* D-Modem's own: EBCDIC at the DTE (ebcdic.h, docs/ebcdic.md):
+	   <mode> 0 ASCII only, 1 each command line's "AT" tells EBCDIC
+	   from ASCII, 2 EBCDIC only; <data> 1 changes a call's data too
+	   (0: as the DTE and the remote send it); <cp> IBM's code page.
+	   modem.cpp's ebcdic() reads it */
+	{ "+DEBC", 3, { 1, 0, ebcdic::DEFAULT_PAGE },
+	  "(0-2),(0,1),(37,273,275,277,278,280,284,285,297,500,871,1047)" },
 };
 const s16 KEPT_COUNT = static_cast<s16>(std::size(kept_params));
 static_assert(KEPT_COUNT <= Modem::KEPT_PARAMS,
@@ -460,10 +467,10 @@ void Modem::at_process()
 			if (echo) {
 				const char *cr = reinterpret_cast<const char *>(
 					&sregs_[SREG_CR_CHAR]);
-				put_chars(cr, 1);
+				put_text(cr, 1);
 				for (u16 i = 0; i < typed; i++)
-					put_chars(" ", 1);
-				put_chars(cr, 1);
+					put_text(" ", 1);
+				put_text(cr, 1);
 			}
 			if (typed) {
 				memset(at_cmd_, ' ', typed);
@@ -476,11 +483,15 @@ void Modem::at_process()
 		memcpy(at_cmd_, at_line_, typed);
 		at_cmd_[typed] = '\0';
 		logf("run cmd: %s\n", cmd);
+		/* (the line's results in its own character set, though it
+		   changes +DEBC) */
+		line_ebc_ = ebcdic() ? 1 : 0;
 		ret = at_command(cmd);
 		if (!ret)
 			report(Result::Ok);
 		else if (ret < 0)
 			report(Result::Error);
+		line_ebc_ = -1;
 		return ret > 0 && ((!command_ && fax_) || conf_);
 	};
 	char c;
@@ -497,6 +508,25 @@ void Modem::at_process()
 	while (!conf_ && get_chars(&c, 1) == 1) {
 		bool echo = sregs_[SREG_ECHO] != 0;
 		char bs = static_cast<char>(sregs_[SREG_BS_CHAR]);
+		char raw = c;
+
+		/* EBCDIC: the character as ISO 8859-1; with +DEBC=1 the
+		   command line's first two characters tell the character set
+		   (its first one again in the set they tell) */
+		if (ebcdic())
+			c = ebcdic_page().in(c);
+		if (!at_count_) {
+			at_raw0_ = raw;
+		} else if (at_count_ == 1 && kept("+DEBC")[0] == 1) {
+			int e = ebcdic::detect(at_raw0_, raw);
+			if (e >= 0 && (e == 1) != ebc_) {
+				ebc_ = e == 1;
+				logf("DTE: %s\n", ebc_ ? "EBCDIC" : "ASCII");
+				at_line_[0] = ebc_ ?
+					ebcdic_page().in(at_raw0_) : at_raw0_;
+				c = ebc_ ? ebcdic_page().in(raw) : raw;
+			}
+		}
 
 		/* A/: the last line again, with no line end */
 		if (c == '/' && at_count_ == 1 && upper(at_line_[0]) == 'A') {
@@ -505,18 +535,18 @@ void Modem::at_process()
 				memcpy(at_line_ + 1, at_cmd_ + 1, n - 1);
 				at_count_ = n;
 				if (echo)
-					put_chars(at_cmd_ + 1,
-						  static_cast<s32>(n) - 1);
+					put_text(at_cmd_ + 1,
+						 static_cast<s32>(n) - 1);
 			}
 			if (echo)
-				put_chars(reinterpret_cast<const char *>(
-						  &sregs_[SREG_CR_CHAR]), 1);
+				put_text(reinterpret_cast<const char *>(
+						 &sregs_[SREG_CR_CHAR]), 1);
 			if (line_end())
 				return;
 			continue;
 		}
 		if (echo)
-			put_chars(&c, 1);
+			put_text(&c, 1);
 		if (c == static_cast<char>(sregs_[SREG_CR_CHAR]) ||
 		    c == static_cast<char>(sregs_[SREG_LF_CHAR])) {
 			if (line_end())
@@ -526,8 +556,8 @@ void Modem::at_process()
 		if (c == bs && at_count_) {
 			at_count_--;
 			if (echo) {
-				put_chars(" ", 1);
-				put_chars(&bs, 1);
+				put_text(" ", 1);
+				put_text(&bs, 1);
 			}
 			continue;
 		}
