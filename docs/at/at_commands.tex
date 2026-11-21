@@ -289,6 +289,9 @@
 \titlespacing*{\section}{0pt}{3.2ex plus 1ex minus .2ex}{1.6ex}
 % each section on a page of its own
 \newcommand{\sectionbreak}{\clearpage}
+% each subsection also starts on a new page (titlesec adds no break
+% straight after a section heading)
+\newcommand{\subsectionbreak}{\clearpage}
 \titleformat{\subsection}{\normalsize\bfseries\color{dmredtext}}
   {\textcolor{dmred}{\thesubsection}}{0.6em}{}
 \titleformat{\paragraph}[runin]{\bfseries\color{dmnavy}}{}{0pt}{}
