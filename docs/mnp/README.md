@@ -18,7 +18,7 @@ what D-Modem does with it now.
 | [MNP 3](mnp3.md) | Bit-oriented (HDLC) frames: no start and stop bits | V.42 Annex A (framing mode 3) | Supported (the default) |
 | [MNP 4](mnp4.md) | Data phase optimization and adaptive packet assembly | V.42 Annex A (parameter 8), US 4,691,314 | Optimization supported. The LT size does not change. |
 | [MNP 5](mnp5.md) | Data compression: run-length and adaptive frequency coding | No | Supported. V.42bis in place of MNP 5 is also supported ([V.42bis in MNP](mnp5.md#v42bis-in-mnp)). |
-| [MNP 6](mnp6.md) | Universal Link Negotiation and statistical duplexing | No | Not supported |
+| [MNP 6](mnp6.md) | Universal Link Negotiation and statistical duplexing | No (decoded from AX/9624c firmware) | Not supported. D-Modem ignores parameter 0x0A, thus the call stays at 2400 bit/s. |
 | [MNP 7](mnp7.md) | Enhanced data compression (Huffman coding with a Markov model) | No | Not supported |
 | MNP 8 | No product is known. Refer to [MNP 7](mnp7.md#mnp-8). | No | Not applicable |
 | [MNP 9](mnp9.md) | MNP 7 on V.32, with better acknowledgements | No | Not supported |
@@ -79,6 +79,9 @@ each statement.
   TravelCard FAST (M012315) ROM images, in the project files under
   `microcom-deskporte/firmware-decoded/`. These modems have MNP 2 to 5
   and MNP 10. They do not have MNP 6, 7 or 9.
+- The Microcom AX/9624c ROM (0095001 rev 1.6), in the project files under
+  `firmware/microcom/ax-9624c/`. It has MNP 2 to 6 (refer to
+  [MNP 6](mnp6.md)).
 - **Patents and secondary sources.** The Microcom patents US 4,691,314
   and US 5,191,583, and books and articles about MNP. A statement from
   a secondary source is marked "(secondary source)". We did not examine
@@ -86,15 +89,13 @@ each statement.
 
 ## Open questions
 
-These items are not known. Firmware of a modem with MNP 6, 7 or 9 can
+These items are not known. Firmware of a modem with MNP 7 or 9 can
 answer them. A ROM from a Microcom modem of the late 1980s is the most
 probable source.
 
 - The LR parameter or bit that offers MNP 7. The DeskPorte does not
   read the 0x02 bit of parameter 9 (refer to [firmware-findings.md](firmware-findings.md#f5-parameter-9)).
 - The MNP 7 code tables and the model of the Huffman coder.
-- The signals of Universal Link Negotiation (MNP 6), and the turnaround
-  rules of statistical duplexing.
 - The frame formats of the MNP 9 acknowledgement and of selective
   retransmission.
 - The data pump changes of MNP 10EC (Rockwell DSP code, not in a
