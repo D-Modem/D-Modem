@@ -34,6 +34,8 @@ On Linux, with CMake, git and a C++17 compiler, do these steps:
 3. Type `ATX3`. (SIP has no dial tone.)
 4. Dial with `ATDT`.
 
+To use D-Modem without a build, download the files of the [nightly release](https://github.com/D-Modem/D-Modem/releases/tag/nightly). CI builds them from `main` each night. They are not a stable release and they are not signed.
+
 ## Documentation
 
 The documentation is also a website, [d-modem.github.io/D-Modem](https://d-modem.github.io/D-Modem/). The website has reference pages that a script makes from the code.

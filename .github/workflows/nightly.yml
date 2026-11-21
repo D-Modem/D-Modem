@@ -1,0 +1,143 @@
+# Nightly: the "nightly" pre-release of D-Modem, from the artifacts of
+# the newest complete run of ci.yml on main. It does not build D-Modem
+# again. Each run replaces the release and moves its tag. When main has
+# no new commits, the run stops and the release does not change. A
+# manual run (Actions > Nightly > Run workflow) can publish again with
+# "force".
+#
+# A job of ci.yml that fails makes no artifact (its upload is after its
+# tests): the release lists each file that is missing. A push that
+# changes only documentation runs no CI (ci.yml): the release then has
+# the newest commit before it that has a CI run.
+#
+# The files are not signed: Windows SmartScreen and macOS Gatekeeper
+# show a warning for them. app_dmodem.so is never in the release: it may
+# not be distributed (LICENSING.md).
+name: Nightly
+
+on:
+  schedule:
+    - cron: "7 5 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Publish again, also when main has no new commits
+        type: boolean
+        default: false
+
+# (one at a time: a second run waits for the first)
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  nightly:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: The newest build of main
+        id: pick
+        run: .github/scripts/nightly-pick.sh ci.yml
+        env:
+          FORCE: ${{ inputs.force || 'false' }}
+
+      - uses: actions/download-artifact@v7
+        if: steps.pick.outputs.skip == 'false'
+        with:
+          run-id: ${{ steps.pick.outputs.run_ci_yml }}
+          github-token: ${{ github.token }}
+          path: dl
+
+      - name: Files
+        if: steps.pick.outputs.skip == 'false'
+        env:
+          SHA: ${{ steps.pick.outputs.sha }}
+          RUN: ${{ steps.pick.outputs.run_ci_yml }}
+        run: |
+          mkdir out
+          : > missing
+          # take ARTIFACT FILE NAME: copy the file if the build made it
+          take() {
+            if [ -f "dl/$1/$2" ]; then cp "dl/$1/$2" "out/$3"; else echo "- \`$3\`" >> missing; fi
+          }
+          # pack NAME ARTIFACT FILE...: the files in out/NAME.tar.gz, in
+          # its directory NAME/ (executable: an artifact does not keep
+          # the mode), when the build made all of them
+          pack() {
+            local name=$1 art=$2 f; shift 2
+            for f in "$@"; do
+              [ -f "dl/$art/$f" ] || { echo "- \`$name.tar.gz\`" >> missing; return; }
+            done
+            mkdir -p "pkg/$name"
+            for f in "$@"; do cp "dl/$art/$f" "pkg/$name/"; done
+            chmod 755 "pkg/$name"/*
+            tar -czf "out/$name.tar.gz" -C pkg --owner=0 --group=0 "$name"
+          }
+          pack dmodem-linux-x86_64 dmodem-linux-x86_64 \
+            dmodemd/dmodemd ari/dmodem-ari capi/dmodem-capid
+          pack dmodem-linux-musl-x86_64 dmodem-linux-musl-x86_64 \
+            dmodemd/dmodemd ari/dmodem-ari capi/dmodem-capid
+          take dmodemd-windows-x86_64 dmodemd.exe dmodemd-win7-x64.exe
+          take dmodemd-windows-98-x86 dmodemd.exe dmodemd-win98.exe
+          take dmodemd-windows-msvc-x86_64 dmodemd.exe dmodemd-windows-msvc-x64.exe
+          pack dmodemd-macos-universal dmodemd-macos-universal dmodemd
+          pack dmodemd-haiku-x86_64 dmodemd-haiku-x86_64 dmodemd
+          pack codec_clearmode-asterisk22-linux-x86_64 codec_clearmode-asterisk-22 \
+            codec_clearmode.so
+          pack mod_dmodem-freeswitch1.11-linux-x86_64 mod_dmodem-freeswitch-1.11 \
+            mod_dmodem.so
+          # the driver: its DLL (only when the runner's WDK has UMDF
+          # 2.15), the INF and the installer, in one zip
+          drv=dl/dmodem-driver-windows-x86_64-unsigned
+          if [ -n "$(find "$drv" -name dmodemvm.dll 2>/dev/null)" ]; then
+            find "$drv" -type f -print0 | xargs -0 zip -j -q out/dmodem-driver-windows-x86_64-unsigned.zip
+          else
+            echo "- \`dmodem-driver-windows-x86_64-unsigned.zip\`" >> missing
+          fi
+          fpbx=$(ls dl/dmodem-freepbx/dmodem-*.tgz 2>/dev/null | head -1)
+          if [ -n "$fpbx" ]; then
+            cp "$fpbx" "out/freepbx-$(basename "$fpbx")"
+          else
+            echo "- \`freepbx-dmodem-<version>.tgz\`" >> missing
+          fi
+          (cd out && sha256sum * > SHA256SUMS)
+          ls -l out
+          {
+            echo "The newest build of \`main\`, from commit $SHA ([CI run]($GITHUB_SERVER_URL/$GH_REPO/actions/runs/$RUN))."
+            echo "This is not a stable release. The files are not signed."
+            echo
+            echo "| File | What it is |"
+            echo "| --- | --- |"
+            echo "| \`dmodem-linux-x86_64.tar.gz\` | \`dmodemd\`, \`dmodem-ari\` and \`dmodem-capid\` for Linux (glibc), x86_64, built on Ubuntu 24.04. They need the shared libraries that they link, for example libusb-1.0 and ALSA (\`ldd\` shows them) |"
+            echo "| \`dmodem-linux-musl-x86_64.tar.gz\` | The same programs for Linux with musl libc, x86_64, built on Alpine 3.22 |"
+            echo "| \`dmodemd-win7-x64.exe\` | \`dmodemd\` for Windows 7 and later, x86_64 (clang-retro) |"
+            echo "| \`dmodemd-win98.exe\` | \`dmodemd\` for Windows 98 SE, ME, NT 4.0 and later, 32 bit (clang-retro) |"
+            echo "| \`dmodemd-windows-msvc-x64.exe\` | \`dmodemd\` for Windows, x86_64 (Microsoft's compiler) |"
+            echo "| \`dmodem-driver-windows-x86_64-unsigned.zip\` | The virtual modem driver for Windows, x86_64: \`dmodemvm.dll\`, \`dmodem.inf\` and \`dmodem-driver.exe\`. It is not signed: [docs/windows.md](https://github.com/$GH_REPO/blob/main/docs/windows.md) tells how to use test signing |"
+            echo "| \`dmodemd-macos-universal.tar.gz\` | \`dmodemd\` for macOS 11 and later, arm64 and x86_64 |"
+            echo "| \`dmodemd-haiku-x86_64.tar.gz\` | \`dmodemd\` for Haiku, x86_64 |"
+            echo "| \`codec_clearmode-asterisk22-linux-x86_64.tar.gz\` | \`codec_clearmode.so\`, the CLEARMODE codec module for Asterisk 22, x86_64 |"
+            echo "| \`mod_dmodem-freeswitch1.11-linux-x86_64.tar.gz\` | \`mod_dmodem.so\`, the modem module for FreeSWITCH 1.11, x86_64 |"
+            echo "| \`freepbx-dmodem-<version>.tgz\` | The FreePBX module |"
+            echo "| \`SHA256SUMS\` | The SHA-256 of each file |"
+            echo
+            echo "For Asterisk, use \`dmodem-ari\` (in the Linux files). A module that has the modem in Asterisk (\`app_dmodem.so\`) may not be distributed: [LICENSING.md](https://github.com/$GH_REPO/blob/main/LICENSING.md) tells why."
+            if [ -s missing ]; then
+              echo
+              echo "This build did not make these files:"
+              cat missing
+            fi
+          } > notes.md
+
+      - name: Publish
+        if: steps.pick.outputs.skip == 'false'
+        run: .github/scripts/nightly-publish.sh "${{ steps.pick.outputs.sha }}" notes.md out
