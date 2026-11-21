@@ -53,6 +53,13 @@
 # matrix), each a job of its own on its own runner, side by side, each
 # with its own build.
 #
+# The nightly release (nightly.yml) takes its files from the artifacts of
+# a run on main: build's and musl's programs (dmodemd, dmodem-ari,
+# dmodem-capid) and the FreePBX module, the dmodemd of each of windows,
+# windows-msvc, macos and haiku, windows-msvc's driver, and the modules of
+# the asterisk and freeswitch jobs' calls shards (codec_clearmode.so and
+# mod_dmodem.so; never app_dmodem.so, LICENSING.md).
+#
 # ccache keeps the jobs' compiles (all but windows-msvc): restored before
 # the build, saved after it (in a sharded job by its first shard alone).
 #
@@ -152,7 +159,10 @@ jobs:
             -DOSMOCORE_SRC="$RUNNER_TEMP/libosmocore"
 
       - name: Build
-        run: cmake --build build && ccache -s
+        run: |
+          cmake --build build
+          cmake --build build --target freepbx_module
+          ccache -s
 
       - name: ccache save
         uses: actions/cache/save@v5
@@ -179,6 +189,24 @@ jobs:
       # dmodemd started as root (ctest skips it as the runner's user)
       - name: dmodemd as root
         run: sudo python3 frontend/dmodemd/test/root_test.py build/dmodemd/dmodemd
+
+      # (for the nightly release, nightly.yml)
+      - name: Programs
+        uses: actions/upload-artifact@v7
+        with:
+          name: dmodem-linux-x86_64
+          path: |
+            build/dmodemd/dmodemd
+            build/ari/dmodem-ari
+            build/capi/dmodem-capid
+          retention-days: 30
+
+      - name: FreePBX module
+        uses: actions/upload-artifact@v7
+        with:
+          name: dmodem-freepbx
+          path: build/freepbx/dmodem-*.tgz
+          retention-days: 30
 
   musl:
     runs-on: ubuntu-24.04
@@ -229,6 +257,16 @@ jobs:
             !build/test-logs/latest
           if-no-files-found: ignore
           retention-days: 14
+
+      - name: Programs
+        uses: actions/upload-artifact@v7
+        with:
+          name: dmodem-linux-musl-x86_64
+          path: |
+            build/dmodemd/dmodemd
+            build/ari/dmodem-ari
+            build/capi/dmodem-capid
+          retention-days: 30
 
   windows:
     runs-on: ubuntu-24.04
@@ -708,6 +746,16 @@ jobs:
       - name: Tests (${{ matrix.shard }})
         run: ${{ matrix.run }}
 
+      # codec_clearmode.so alone: app_dmodem.so may not be distributed
+      # (LICENSING.md)
+      - name: codec_clearmode.so
+        if: matrix.shard == 'calls'
+        uses: actions/upload-artifact@v7
+        with:
+          name: codec_clearmode-asterisk-22
+          path: build/asterisk/codec_clearmode.so
+          retention-days: 30
+
       - name: Logs of a failed step
         if: failure()
         run: |
@@ -806,6 +854,14 @@ jobs:
 
       - name: Tests (${{ matrix.shard }})
         run: ${{ matrix.run }}
+
+      - name: mod_dmodem.so
+        if: matrix.shard == 'calls'
+        uses: actions/upload-artifact@v7
+        with:
+          name: mod_dmodem-freeswitch-1.11
+          path: build/freeswitch/mod_dmodem.so
+          retention-days: 30
 
       - name: Logs of a failed step
         if: failure()
