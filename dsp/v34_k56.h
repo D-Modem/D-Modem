@@ -120,10 +120,16 @@ struct V34K56 : HdlcTx<V34K56<P>, 64, HdlcK8>, HdlcRx<V34K56<P>, 64, HdlcK8> {
 };
 
 /* our CL (the capabilities list): K56flex's non-standard block, as the
-   SM56 client's own with 0x40 in its last octet (the digital modem) */
-static const unsigned char k8_cl[] = {
+   SM56 client's own with 0x40 in its last octet (the digital modem) and
+   0x80 there too: the octet is the block's last.  (Conexant's HCF
+   controller reads two more octets after a 7th octet without 0x80, so
+   it refuses a CL that has none; SM56 takes either.  Issue #119,
+   docs/dsp/v8bis-details.md) */
+static constexpr unsigned char k8_cl[] = {
 	0x12, 0xc9, 0x80, 0x80, 0x80,
-	0x07, 0xb5, 0x02, 0x00, 0x94, 0x81, 0x83, 0x61 };
+	0x07, 0xb5, 0x02, 0x00, 0x94, 0x81, 0x83, 0xe1 };
+static_assert(k8_cl[sizeof(k8_cl) - 1] & 0x80,
+	      "the CL's K56flex block ends at its 7th octet");
 /* the analogue modem's MS: the SM56 client's, the block without 0x40 */
 static const unsigned char k8_ms[] = {
 	0x11, 0xc9, 0x80, 0x80, 0x80,

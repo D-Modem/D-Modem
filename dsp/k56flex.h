@@ -159,6 +159,8 @@ struct K56Train {
 	s16 rcount;             /* R: symbols left */
 	u16 js;                 /* J's 16 bits, the first sent the lowest */
 	s16 no_trn1b;           /* TRN1B left out (as isdn_tx) */
+	s16 as_isdn;            /* TRN2A's first symbols as isdn_tx's too
+				   (not + - - +, which SM56 wants) */
 	s16 rn;                 /* a rate renegotiation's R2 to E: MP, MP'
 				   and E 1 bit a symbol (2 magnitudes), E
 				   24 symbols (SM56's

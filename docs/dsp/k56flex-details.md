@@ -112,11 +112,11 @@ clear gets an MS without the NS block, and the call is V.34 [seen].
 
 We copied our NS block from the CL template of the client (`... 83 21`)
 and added 0x40 to the last octet. Most possibly, the 0x40 identifies the
-digital modem [inferred]. The CL parser of the Conexant HCF controller (hcfpcimodem
-1.21) refuses this 7-octet block. It reads 2 more octets when bit 8 of the
-7th octet is 0. SM56 does not train with the blocks that this parser
-accepts [seen in emulation and in our runs]. Refer to
-[v8bis-details.md](v8bis-details.md#against-other-modems). When the client also has V.90 enabled, its MS
+digital modem [inferred]. We also set bit 8 of that octet (`... 83 e1`).
+The CL parser of the Conexant HCF controller (hcfpcimodem 1.21) reads 2
+more octets when bit 8 of the 7th octet is 0, and refuses a 7-octet
+block without it [seen in emulation]. The client accepts both [seen].
+Refer to [v8bis-details.md](v8bis-details.md#against-other-modems). When the client also has V.90 enabled, its MS
 sets bits 0 and 1 of `o[6]` [seen in code].
 
 **V.8.** The CM has no K56flex bit [seen]:
@@ -285,13 +285,51 @@ The sequence of the server that sm56 accepts, as D-Modem sends it
 | TRN1C | 8448, `isdn_tx`'s "TRN1B" |
 | Js | 128, J = `0x89b0` |
 | Silence 2 | until the client's J, 12288 at least, rounded up to 8 symbols |
-| R, TRN2A, MARK, TRN2B | 288, 16336, 32, then TRN2B until the client's MP and 2048 symbols at least |
+| R, TRN2A, MARK, TRN2B | 288, 16336, 32, then TRN2B until the client's MP and 2048 symbols at least; TRN2A starts with `+ - - +` (see below) |
 | MP, MP', E | 704, 704, 12 |
 | data | B1 first (6 frames of ones) |
 
 After its J, the client waits only about 0.75 s for the second R. Thus,
 the server must hear that J (its 24-bit type) and not wait for a timeout
 [seen].
+
+#### The second sync of the client
+
+The client finds the start of TRN2A from the end of the R-bar of the
+second R (`State_2ndSyncSearch`, `MOD_Sync`) [seen]. `MOD_Sync` keeps
+the received signal at 2 samples a symbol. For each symbol, it takes
+the difference of each symbol from the symbol before it, at 6 points 4
+symbols apart, less the same differences 24 symbols earlier. It does
+this on both samples of the symbol, and adds the squares. It adds the
+last 4 of these values. The sync is the first symbol where this sum
+falls, if the sum before it is more than 9.6 times the energy of the
+signal. Then the front end waits 76 symbols (`State_TRN2A_Wait`) and
+starts TRN2A with its symbol parity (MOD + 0xb59c) at 1. The sign of
+each second TRN2A symbol is against the running sum. sm56 descrambles
+only the other symbols.
+
+R-bar is only 24 symbols long, so the sum has its maximum at the last
+symbol of R-bar and almost the same value at the first symbol of TRN2A.
+In a model of `MOD_Sync` on our codes, the two values are different by
+about 0.1 % [inferred]. Thus, the phase of the samples of the client
+decides which symbol is the sync. With the later symbol, the parity of
+sm56 is wrong. It then descrambles the signs against the running sum,
+it stays in TRN2A (state 19), and it retrains with cause `0x21` [seen
+with `SM56_TRACE=1`].
+
+With the codes of `isdn_tx`, our TRN2A starts with `- + + -`. In our
+runs, sm56 trained for only 9 of 26 delays of our CL (steps of 4
+samples), and the result changed with the start of its DMA. Our server
+now chooses the data bits of the first two scrambled symbols of TRN2A
+so that TRN2A always starts with `+ - - +` (`K56Train::next()`). With
+this start, sm56 trained for each delay from -10 to 40 samples (steps
+of 1 sample) and with each delay of its DMA that we tried (0 to 180
+codec samples), with and without robbed bits [seen]. The cost is a
+few wrong descrambled bits at the start of TRN2A, and sm56 trains with
+them [seen]. Other starts gave these results for the 26 delays:
+`+ - + -` 17 or 21 (this depends on the symbols after it), `- + + -`
+and `- + - +` 9 [seen]. `k56flex_sm56` compares our codes with those of
+`isdn_tx` with the start of `isdn_tx` (`K56Train::as_isdn`).
 
 Code conventions [seen]:
 
@@ -453,7 +491,11 @@ The pattern comes from the J of the client [seen in `SC_A56_Gen_JA_RBS`]. The
 | 0 to 5 | bit k set: symbol k of the 6 symbol cycle is robbed |
 | 6 and 7 | the pad: 0 none, 1 3 dB, 2 6 dB |
 
-Symbol k is counted from the first symbol of TRN1B. The symbol counter
+Symbol k is counted from the first symbol of TRN1B. The robbed symbols
+are on the grid of the network, so k changes with the timing of the call.
+For example, with `NET_RBS=0x08` sm56 sent each of the 6 octets
+`0x01` to `0x20` for different delays of our CL, and each time it was the
+position of the robbed symbol from the TRN1B that netsim passed [seen]. The symbol counter
 of the client (MOD + 0x340c) is set to 0 in
 `State_TRN1B_RefDirInit`. Then it counts modulo 24 into data mode
 [seen]. The decoder of the client takes the robbed pattern from the first
@@ -583,16 +625,19 @@ Against sm56 [seen with `SM56_TRACE=1`]:
   a retrain. Its front end goes to the R search of a renegotiation
   (state 16), and its time limit expires (cause `0x26` or `0x27`). Its V.34 part does
   phase 2 again with us.
-- In phases 3 and 4 of a retrain, sm56 fails about half of the time.
+- In phases 3 and 4 of a retrain, sm56 failed about half of the time.
   Its front end stays in TRN2A (state 19) for more than 840 calls of
   `SC_A56Phase4_Handler`, and it retrains with cause `0x21`. Then our
-  modem retrains again. `State_TRN2A_DecDir` takes its
+  modem retrains again. This is the fault of the second sync (refer to
+  "The second sync of the client"), and the start of TRN2A that our
+  server now sends possibly removes it [inferred: we did not test the
+  retrain again]. `State_TRN2A_DecDir` takes its
   references from the table at MOD + 0x3840. sm56 copies this table from
   the table that it adapted in data mode (+ 0x4040). The first
   training uses the table from power-up [seen]. Thus, the adapted table
-  is the probable cause of this fault and of the bad data after a
-  renegotiation [inferred]. We did not add the sm56 retrain tests to
-  the test suite, because they do not pass each time.
+  is a possible cause of the bad data after a renegotiation [inferred].
+  We did not add the sm56 retrain tests to the test suite, because they
+  did not pass each time.
 
 ## 6. The client: D-Modem as the analogue modem
 
@@ -737,7 +782,7 @@ the data is 0.55 rms (77 dB below the signal). The tests:
 | `open_k56flex_noise_ramp` | noise that increases during 20 s: the client renegotiates down one rate at a time |
 | `open_k56flex_retrain` | the client retrains (`DSP_V34_RETRAIN=2000c`), the server finds its tone B; 200000 octets each way |
 | `open_k56flex_retrain_dm` | the server retrains, the client finds its tone A |
-| `sm56_k56flex_rbs` | sm56 with robbed bits on the codes to it (`NET_RBS_TO=a`): its J's octet `0x04`, data on the grid of 24 |
+| `sm56_k56flex_rbs` | sm56 with robbed bits on the codes to it (`NET_RBS_TO=a`): one robbed symbol in its J's octet, data on the grid of 24 |
 
 If the line of a modem is digital, `NET_RBS_TO=a` (or `b`) of netsim
 applies `NET_PAD` and `NET_RBS` to the 8000 Hz codes to that modem. This
@@ -785,8 +830,11 @@ The firmware shows the data that the modems report about a call:
   operate? Not tested.
 - The meaning of the x bit of INFO1a and of NS octets 3 to 7.
 - Which NS block does a real K56flex server send? The HCF controller of
-  Conexant reads 9 octets (`b5 02 00 94 81 83 xx yy zz`). SM56 trains only
-  with our 7-octet block.
+  Conexant reads 9 octets (`b5 02 00 94 81 83 xx yy zz`) when bit 8 of
+  the 7th octet is 0. Our block has 7 octets, with that bit set.
+- How does a real K56flex server start TRN2A? With the codes of
+  `isdn_tx`, the second sync of sm56 is nearly a tie (refer to "The
+  second sync of the client").
 - Why is the data of sm56 after a renegotiation wrong? Why does its
   training in a retrain fail about half of the time? The probable cause
   is the table that sm56 adapts in data mode.

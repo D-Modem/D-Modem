@@ -1162,11 +1162,14 @@ std::vector<Call> calls()
 	      "PROTO_B=ATX3;AT+MS=56" });
 	/* robbed bits on the codes to it (netsim's NET_RBS_TO: its line
 	   digital, as the call above): its J's octet says them, from
-	   TRN1B's start, and our data on that grid of 24 code for them */
+	   TRN1B's start, and our data on that grid of 24 code for them.
+	   The one robbed symbol in 6 is on the network's grid, not ours:
+	   which of TRN1B's 6 it is goes with the call's timing */
 	add("sm56", "sm56_k56flex_rbs", "sm56", "open8", "ATX3;AT+MS=K56FLEX",
 	    { "NET_LOOP=0.45", "NET=8000:8000:ulaw", "DSP_G711=ulaw",
 	      "NET_RBS_TO=a", "NET_RBS=0x08",
-	      "EXPECT_B=(?s)robbed bits 0x04\\).*K56flex connect",
+	      "EXPECT_B=(?s)robbed bits 0x(01|02|04|08|10|20)\\).*"
+	      "K56flex connect",
 	      "PROTO_B=ATX3;AT+MS=56" });
 	/* V.92: its QC1a on the first call already; on the second, quick
 	   connect with short phase 2.  (Its upstream stays V.34: the module

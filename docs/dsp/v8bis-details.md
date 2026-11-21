@@ -136,10 +136,11 @@ parser of the HCF controller on our CL of K56flex. It refuses our CL.
 After the 7th octet of the non-standard block (`61`), it reads 2 more
 octets, because bit 8 of that octet is 0. Our block has only 7 octets.
 With `e1` as the 7th octet, or with 9 octets (`... 61 00 85`, as the
-block of the HCF controller), it accepts the CL. But with each of these
-blocks, the K56flex training of SM56 fails ("no MP from the caller").
-Thus, the CL stays as before. This item is important only after the
-HCF modem answers with CRd.
+block of the HCF controller), it accepts the CL. Our CL now ends with
+`e1`. SM56 accepts both octets. (With `e1`, the K56flex training of
+SM56 first failed. The cause was not the block, but the start of our
+TRN2A: refer to [k56flex-details.md](k56flex-details.md#the-second-sync-of-the-client).)
+This item is important only after the HCF modem answers with CRd.
 
 **Data that we need.** To find the cause of issue #119, we need these
 items from a call of the HCF modem to D-Modem:
