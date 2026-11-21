@@ -262,6 +262,10 @@ bit and symbol (`DSP_DEBUG=6 ctest -R ...` for one test).
 `DMODEM_TEST_DEBUG=0` keeps the levels of the tests themselves. With all of this, a
 full run takes about a tenth more time.
 
+`dmodem_bridge_test` does not use `DMODEM_DEBUG`. Its 16 modems at level 5
+write more log data than ctest can read, and on macOS the calls then do not
+end in time. Use `BRIDGE_DEBUG=<level>` to get its log.
+
 A call that you run manually (`interop_call`, or a test program outside ctest)
 writes its modem logs to `LOG_DIR`, or to `build/dsp/test/logs/<test>/`
 for the test programs.
