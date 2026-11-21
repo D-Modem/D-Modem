@@ -111,7 +111,9 @@ unsigned char from_isdn(unsigned char c)
 
 /* the training from silence to E, with J's bits js and MP's octets
    random: isdn_tx's codes and ours (without TRN1B, which isdn_tx does
-   not send; SM56's receiver wants it, see sm56_k56flex) */
+   not send; SM56's receiver wants it, see sm56_k56flex; and with
+   TRN2A's start as isdn_tx's, which SM56's receiver may take a symbol
+   late, see K56Train::next) */
 bool check_train(u16 js)
 {
 	static char st[0x20000];
@@ -122,6 +124,7 @@ bool check_train(u16 js)
 	t.init(0);
 	t.js = js;
 	t.no_trn1b = 1;
+	t.as_isdn = 1;
 	field(st, 0x44) = js;
 	srand(js);
 	for (int i = 0; i < 11; i++) {

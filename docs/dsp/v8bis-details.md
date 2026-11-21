@@ -88,19 +88,69 @@ this change does not touch it.
 |---|---|
 | D-Modem | CRd, then transaction 10 |
 | SM56 (Motorola), as a K56flex client | CRd, then transaction 10 ([k56flex-details.md](k56flex-details.md)) |
-| Conexant HSF (hsfmodem 7.80), V.90 or V.92 | No answer |
+| Conexant HSF (hsfmodem 7.80), V.90 or V.92 | No answer. Its controller has no V.8 bis |
+| Conexant HCF (Sitecom DC009), K56flex, issue #119 | No answer (report of a user). The cause is not known |
 
-**Conexant modems.** The HSF modem of Conexant does not answer MRe,
-MRd, CRe or CRd. It is silent until our ANSam. Then it connects with
-V.90. Its `+A8E?` gives `1,1,C1,1`: V.8 bis is enabled. But it has no
-K56flex (`+MS=?` has no `K56`) and no V.70. Its configuration has V.8
-bis together with K56flex and V.70. Thus, it possibly answers V.8 bis
-only when it can offer one of these modes. The tests
+**Conexant HSF.** The HSF modem of Conexant (`hsfengine.o` of hsfmodem
+7.80.02.06oem) does not answer MRe, MRd, CRe or CRd. It is silent until
+our ANSam. Then it connects with V.90. The tests
 `hsf_v8bis_mre_unanswered` and `hsf_k56flex_mre_unanswered` (label
-`hsf`) show this behaviour. Other Conexant modems of the V.92 period (HSF,
-HDA and HCF) possibly operate in the same way. With these modems,
-V.8 bis and K56flex do not occur. The call continues with V.8, 3.5 s
-later than without V.8 bis.
+`hsf`) show this behaviour. Its `+A8E?` gives `1,1,C1,1`, but its
+controller has no V.8 bis code. The engine has no `v8bis.c` and no
+`cpv8bis.c`. It has only the tone detector of the DSP (`cr_det.cpp`) and
+the `V8BIS DSP VER` line of its diagnostics. Thus, an HSF modem cannot
+answer V.8 bis. This result does not apply to the HCF modems.
+
+**Conexant HCF.** An HCF modem has its DSP in the chip and its
+controller in the driver. We read the controller of the Linux driver
+hcfpcimodem 1.21 (`hcfengine-i386.O`). It has V.8 bis (`v8bis.c`,
+`cpv8bis.c`, `v8bpim.c`). These are the results:
+
+- On a call, the controller enables V.8 bis in call progress when `<v8b>`
+  of `+A8E` is not 0 and `+MS` is V34, K56, V90 or V92. It does not
+  look at the K56flex setting. Thus, the modem of issue #119 (`+MS=K56`,
+  `+A8E: 1,1,C1,1`) listens for V.8 bis.
+- When the DSP tells it that an initiating signal is there, the
+  controller sends CRd. Then it waits for a CL on V.21. On the CL, it
+  sends MS, and on ACK(1) the V.8 bis transaction ends. This is
+  transaction 10, as in our answerer.
+- In V.8 bis mode, the controller uses two different answer tone
+  detectors (`V8BTONE_2100_PARAMS` and `V8BTONE_2225_PARAMS` in its
+  configuration). If ANS, ANSam or the 2225 Hz tone stays for 200 ms, it
+  stops V.8 bis and continues with V.8.
+- The detector of the initiating signals is in the DSP of the chip. The
+  driver does not contain this code, thus we cannot read it. The DSP of
+  the HSF engine (`cr_det.cpp`, at 16000 Hz) possibly uses the same
+  method. That detector measures the two tones of segment 1 in a
+  window of 10 ms and compares each tone with the total power. Each tone
+  must have approximately the same level (the first tone can be 1.8 dB
+  below the second tone, or 5 dB above it). Then it measures the tone
+  of segment 2 for 80% of its length. We did not find a property of our
+  MRe that this detector refuses.
+
+Our tone pairs and tones agree with the 1996, 1998 and 2000 editions of
+V.8 bis (Tables 1 and 2). Thus, the frequencies are not the cause.
+
+**The CL of K56flex and the HCF controller.** We also emulated the CL
+parser of the HCF controller on our CL of K56flex. It refuses our CL.
+After the 7th octet of the non-standard block (`61`), it reads 2 more
+octets, because bit 8 of that octet is 0. Our block has only 7 octets.
+With `e1` as the 7th octet, or with 9 octets (`... 61 00 85`, as the
+block of the HCF controller), it accepts the CL. Our CL now ends with
+`e1`. SM56 accepts both octets. (With `e1`, the K56flex training of
+SM56 first failed. The cause was not the block, but the start of our
+TRN2A: refer to [k56flex-details.md](k56flex-details.md#the-second-sync-of-the-client).)
+This item is important only after the HCF modem answers with CRd.
+
+**Data that we need.** To find the cause of issue #119, we need these
+items from a call of the HCF modem to D-Modem:
+
+- The log of dmodemd with the DSP messages (`v8bis: MRe out`, `v8bis: no
+  answer to MRe`), and the `+MS` and `+A8E` settings of D-Modem.
+- A recording of the line (`DMODEM_REC=<base>`). It shows the level
+  of our MRe at the modem, and if the modem sends a signal.
+- The connection between the modem and D-Modem (for example, the
+  analogue telephone adapter and its codec).
 
 ## `+A8E`
 

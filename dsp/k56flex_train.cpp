@@ -174,8 +174,24 @@ unsigned char K56Train::next()
 		break;
 	}
 	case K56_TRN1C:
-	case K56_TRN2A:
 		c = alt ? put(rds > 0 ? 0xcf : 0x4f) : level(1, 0x4f);
+		break;
+	case K56_TRN2A:
+		/* (not isdn_tx's, unless as_isdn: the first two scrambled
+		   symbols + and - whatever the scrambler's state, their data
+		   bits chosen for it.  SM56 finds TRN2A by the end of R2's
+		   R-bar (MOD_Sync, the first fall of a 4 symbol sum), nearly
+		   a tie between two symbols, and the wrong one puts its
+		   TRN2A a symbol off.  + - - + ends the tie; see
+		   docs/dsp/k56flex-details.md) */
+		if (alt)
+			c = put(rds > 0 ? 0xcf : 0x4f);
+		else if (n < 4 && !as_isdn)
+			c = level(static_cast<s16>(
+				(n ? 0 : 1) ^ (((scr >> (SCR_GPA - 1)) ^
+						(scr >> 22)) & 1)), 0x4f);
+		else
+			c = level(1, 0x4f);
 		break;
 	case K56_MARK:
 		c = alt ? put(rds > 0 ? 0xcf : 0x4f) : level(0, 0x4f);
