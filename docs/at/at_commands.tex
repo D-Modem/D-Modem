@@ -3058,7 +3058,9 @@ not change the data.  \p{cp} is the IBM code page.  The default is 37
 \begin{syntax}
 \item +DEBC=[\p{mode}][,[\p{data}][,\p{cp}]]
 \item +DEBC? (gives \rc{+DEBC: 1,0,37})
-\item +DEBC=? (gives \rc{+DEBC: (0-2),(0,1),(37,273,275,277,278,280,284,285,297,500,871,1047)})
+\item +DEBC=? (gives \rc{+DEBC: (0-2),(0,1),}\allowbreak
+\rc{(37,273,275,277,278,280,}\allowbreak
+\rc{284,285,297,500,871,1047)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{Always.}
@@ -3168,6 +3170,12 @@ rate of the line.  This modem accepts it, but it changes nothing.
 \end{results}
 \end{command}
 
+\begin{command}{plusILRR}{+ILRR, +IDSR, +ILSD}{\texorpdfstring{\texttt{DTE}}{DTE} Rate Report, \texorpdfstring{\texttt{DSR}}{DSR}, Long Space}
+These commands are the rate report of the \std{DTE}, \std{DSR} and long
+space disconnect.  The modem keeps the values.  Each value is 0 or 1,
+\emph{default} 0.
+\end{command}
+
 \begin{command}{bsK}{\bs K\p{n}}{Break Control}
 On other modems, this command sets the function of a break.  This modem
 accepts it, but it changes nothing.
@@ -3191,12 +3199,6 @@ The modem accepts this command, but it changes nothing.
 \res{\rc{OK}}{If \p{n} = 0--255.}
 \res{\rc{ERROR}}{Otherwise.}
 \end{results}
-\end{command}
-
-\begin{command}{plusILRR}{+ILRR, +IDSR, +ILSD}{\texorpdfstring{\texttt{DTE}}{DTE} Rate Report, \texorpdfstring{\texttt{DSR}}{DSR}, Long Space}
-These commands are the rate report of the \std{DTE}, \std{DSR} and long
-space disconnect.  The modem keeps the values.  Each value is 0 or 1,
-\emph{default} 0.
 \end{command}
 
 \section{\texorpdfstring{\texttt{ISDN}}{ISDN} and Cellular}\label{sec:isdn}
