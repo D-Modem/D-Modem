@@ -11,7 +11,13 @@
  *    for ever.  The same with the handoff (the modem's DTE passed to the
  *    server, SCM_RIGHTS): the server on the modem's bytes themselves
  *
- *    DMODEM_DEBUG=<level>   libdmodem's log, and the bridge's
+ *    BRIDGE_DEBUG=<level>   libdmodem's log, and the bridge's.  (Not
+ *                           DMODEM_DEBUG: the test runner sets that to 5
+ *                           for each test, cmake/test_run.sh, and the
+ *                           log of 16 modems at that level is too much
+ *                           for ctest's pipe.  On macOS the modems then
+ *                           wait on the pipe, and the calls do not end
+ *                           in their 90 s)
  */
 
 #include <errno.h>
@@ -47,12 +53,12 @@ static const char line_ms[] = "+MS=22";
 static std::mutex log_mu;
 static std::vector<std::string> log_lines;
 
-/* the bridge's log: kept for the tests, printed with DMODEM_DEBUG */
+/* the bridge's log: kept for the tests, printed with BRIDGE_DEBUG */
 static void host_log(void *call, enum dmbridge_level level, const char *line)
 {
 	std::lock_guard<std::mutex> l(log_mu);
 	log_lines.push_back(line);
-	if (getenv("DMODEM_DEBUG"))
+	if (getenv("BRIDGE_DEBUG"))
 		printf("[%s] %d %s\n", call ? (const char *)call : "-", level,
 		       line);
 }
@@ -435,13 +441,13 @@ static void unix_profile(struct dmbridge_profile *p, const std::string &path,
 
 class Bridge : public testing::Test {
 protected:
-	/* libdmodem, its log as DMODEM_DEBUG says; a write to a gone
+	/* libdmodem, its log as BRIDGE_DEBUG says; a write to a gone
 	   server an error, not the end of the test (as the PBXs have it) */
 	void SetUp() override
 	{
 		dmodem_init();
-		if (getenv("DMODEM_DEBUG"))
-			dmodem_set_debug(atoi(getenv("DMODEM_DEBUG")));
+		if (getenv("BRIDGE_DEBUG"))
+			dmodem_set_debug(atoi(getenv("BRIDGE_DEBUG")));
 		signal(SIGPIPE, SIG_IGN);
 		std::lock_guard<std::mutex> l(log_mu);
 		log_lines.clear();
