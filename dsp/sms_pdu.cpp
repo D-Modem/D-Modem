@@ -497,7 +497,7 @@ static std::string decode(const u8 *p, s32 n)
 			return "";
 		u8 dcs = p[i + 1];
 		const u8 *t = p + i + 2;
-		char when[32];
+		char when[64];
 		s16 zone = bcd_get(t[6] & 0xF7);
 		snprintf(when, sizeof(when),
 			 "%02d/%02d/%02d,%02d:%02d:%02d%c%02d",
