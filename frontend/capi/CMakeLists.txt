@@ -14,7 +14,8 @@ dmodem_flags(dmodem_capi EXTRA)
 add_executable(dmodem-capid capid.cpp)
 target_link_libraries(dmodem-capid PRIVATE dmodem_capi)
 dmodem_flags(dmodem-capid EXTRA)
-install(TARGETS dmodem-capid RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS dmodem-capid RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+	COMPONENT dmodem-capid)
 
 if(DMODEM_TESTS)
 	# the controller on libdmodem's modems, and the server over TCP

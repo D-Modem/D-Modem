@@ -295,7 +295,7 @@ for your own Asterisk (refer to the top of this page):
 ```
 cmake -B build -DDMODEM_APP_DMODEM=ON   # in the top directory
 cmake --build build --target app_dmodem
-cmake --install build                   # the module, and dmodem.conf.sample
+cmake --install build --component asterisk   # the module, and dmodem.conf.sample
 asterisk -rx "module load app_dmodem.so"
 ```
 

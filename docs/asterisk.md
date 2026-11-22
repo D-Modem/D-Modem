@@ -100,7 +100,7 @@ the `asterisk-dev` package of your distribution):
 
     cmake -B build -DDMODEM_APP_DMODEM=ON
     cmake --build build --target app_dmodem
-    cmake --install build
+    sudo cmake --install build --component asterisk
     asterisk -rx "module load app_dmodem.so"
 
 Each call uses a few percent of one processor core. There is no other

@@ -32,6 +32,14 @@ For the generated files, the code and the tests, refer to
 3. Upload it in **Admin > Module Admin**. FreePBX gives a warning that it
    is unsigned. This is correct.
 
+   Alternatively, install the module from the command line on the FreePBX
+   machine. The `freepbx` component puts the module in
+   `/var/www/html/admin/modules`:
+
+       sudo cmake --install build --component freepbx
+       sudo fwconsole ma installlocal dmodem
+       sudo fwconsole reload
+
 ## Using it
 
 - **Profiles.** A profile tells where the data of a modem call goes: a BBS

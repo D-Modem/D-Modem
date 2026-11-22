@@ -60,6 +60,8 @@ target_compile_options(mod_dmodem PRIVATE -Wall -g -O2 -pthread
 target_link_libraries(mod_dmodem PRIVATE dmodem)
 target_link_options(mod_dmodem PRIVATE -Wl,--exclude-libs,ALL)
 
-install(TARGETS mod_dmodem LIBRARY DESTINATION ${FREESWITCH_MODULES_DIR})
+install(TARGETS mod_dmodem LIBRARY DESTINATION ${FREESWITCH_MODULES_DIR}
+	COMPONENT freeswitch)
 install(FILES dmodem.conf.xml
-	DESTINATION ${FREESWITCH_CONF_DIR}/autoload_configs)
+	DESTINATION ${FREESWITCH_CONF_DIR}/autoload_configs
+	COMPONENT freeswitch)

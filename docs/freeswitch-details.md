@@ -273,7 +273,7 @@ Windows).
 ```
 cmake -B build                      # in the top directory
 cmake --build build --target mod_dmodem
-cmake --install build               # the module, and dmodem.conf.xml in autoload_configs
+cmake --install build --component freeswitch   # the module, and dmodem.conf.xml in autoload_configs
 fs_cli -x "load mod_dmodem"
 ```
 
