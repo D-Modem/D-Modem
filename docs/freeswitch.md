@@ -95,7 +95,7 @@ You must have an installed FreeSWITCH that `pkg-config` can find:
 
     cmake -B build
     cmake --build build --target mod_dmodem
-    cmake --install build
+    sudo cmake --install build --component freeswitch
     fs_cli -x "load mod_dmodem"
 
 To load the module at start-up, add `<load module="mod_dmodem"/>` to `modules.conf.xml`.

@@ -20,8 +20,8 @@ For the generated files, the code and the tests, refer to
    unit:
 
        cmake -B build
-       cmake --build build
-       sudo cmake --install build
+       cmake --build build --target dmodem-ari
+       sudo cmake --install build --component dmodem-ari
        sudo systemctl daemon-reload
        sudo systemctl enable --now dmodem-ari
 2. Build the module package:
@@ -31,6 +31,14 @@ For the generated files, the code and the tests, refer to
    This makes `build/freepbx/dmodem-<version>.tgz`.
 3. Upload it in **Admin > Module Admin**. FreePBX gives a warning that it
    is unsigned. This is correct.
+
+   Alternatively, install the module from the command line on the FreePBX
+   machine. The `freepbx` component puts the module in
+   `/var/www/html/admin/modules`:
+
+       sudo cmake --install build --component freepbx
+       sudo fwconsole ma installlocal dmodem
+       sudo fwconsole reload
 
 ## Using it
 

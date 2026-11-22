@@ -47,6 +47,7 @@ What `cmake -B build -D<NAME>=<value>` takes, from the `option()`s and cache set
 | `DMODEM_INTEL_DIR` | `(depends on the system)` | path | 537core.lib and wwh_dflt.c of the Intel 537EP soft modem (interop tests) | `dsp/test/CMakeLists.txt` |
 | `DMODEM_SYSTEMD_UNIT_DIR` | `lib/systemd/system` | string | Where cmake --install puts dmodem-ari.service | `frontend/ari/CMakeLists.txt` |
 | `DMODEM_HOST_LINE_EXCHANGE` | `(depends on the system)` | filepath | a Linux build's line_exchange (Windows USB tests) | `frontend/dmodemd/CMakeLists.txt` |
+| `DMODEM_FREEPBX_MODULES_DIR` | `/var/www/html/admin/modules` | path | FreePBX's modules directory (cmake --install --component freepbx) | `frontend/freepbx/CMakeLists.txt` |
 | `DMODEM_WINNT` | `(depends on the system)` | string | _WIN32_WINNT: the oldest Windows to run on | `platforms/windows/clang-retro.cmake` |
 | `DMODEM_UMDF1_INCLUDE` | `(depends on the system)` | path | UMDF 1.9's headers (wudfddi.h's directory) | `platforms/windows/winmodem/CMakeLists.txt` |
 | `DMODEM_WDF_INCLUDE` | `(depends on the system)` | path | UMDF 2.15's headers (wdf.h's directory) | `platforms/windows/winmodem/CMakeLists.txt` |

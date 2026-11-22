@@ -19,6 +19,15 @@ add_custom_command(OUTPUT ${_tgz}
 	COMMENT "FreePBX module dmodem ${DMODEM_FREEPBX_VERSION}")
 add_custom_target(freepbx_module DEPENDS ${_tgz})
 
+# the freepbx component: dmodem/ in the modules directory of FreePBX, for
+# fwconsole ma installlocal.  It is not in a plain cmake --install (a
+# machine without FreePBX has no such directory):
+#   sudo cmake --install build --component freepbx
+set(DMODEM_FREEPBX_MODULES_DIR /var/www/html/admin/modules CACHE PATH
+	"FreePBX's modules directory (cmake --install --component freepbx)")
+install(DIRECTORY dmodem DESTINATION ${DMODEM_FREEPBX_MODULES_DIR}
+	COMPONENT freepbx EXCLUDE_FROM_ALL)
+
 if(DMODEM_TESTS)
 	find_program(DMODEM_PHP php)
 	if(DMODEM_PHP)

@@ -29,6 +29,25 @@ This procedure builds these items:
 
 `cmake --install build` installs these items.
 
+To install only one part, use `--component`. For example, after
+`cmake --build build --target dmodem-ari`, use
+`sudo cmake --install build --component dmodem-ari`. These are the
+components:
+
+| Component | Items |
+|---|---|
+| `dmodemd` | `dmodemd`, `hda-modem-setup` (Linux), `dmodem-hcf-probe` (with libusb) |
+| `libdmodem` | `libdmodem.a`, `dmodem.h` and `dmodem.hpp` |
+| `dmodem-ari` | `dmodem-ari` and its systemd unit `dmodem-ari.service` (Linux) |
+| `dmodem-capid` | `dmodem-capid` |
+| `asterisk` | The Asterisk modules that you built (`codec_clearmode.so`, `app_dmodem.so`), and `dmodem.conf.sample` |
+| `freeswitch` | `mod_dmodem.so` and `dmodem.conf.xml` |
+| `freepbx` | The FreePBX module, in `/var/www/html/admin/modules/dmodem` (`-DDMODEM_FREEPBX_MODULES_DIR=...` changes the directory) |
+| `driver` | The Windows driver files |
+
+A plain `cmake --install build` does not install the `freepbx` component.
+Use `--component freepbx` on the FreePBX machine only.
+
 The `Dockerfile` makes the same build on Alpine Linux (musl). It makes a small image with dmodemd, dmodem-ari and libdmodem. Use `docker build -t dmodem .`, then `docker run --rm -it --network host -e SIP_LOGIN=user:password@domain dmodem`. With `--build-arg TESTS=ON`, the build also builds the tests and runs the offline tests.
 
 The SIP of dmodemd is [libre](https://github.com/baresip/re) (the re of baresip, BSD-3-Clause). libre is not part of this repository. CMake uses an installed libre (`pkg-config libre`, 4.12 or later). If no libre is installed, CMake clones the pinned release (v4.12.0) one time and builds it in the build directory as a static library. These options change this behavior:

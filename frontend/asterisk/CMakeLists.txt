@@ -78,6 +78,10 @@ if(CMAKE_C_COMPILER_ID MATCHES "Clang")
 	target_compile_options(codec_clearmode PRIVATE -fblocks)
 endif()
 
+# the asterisk component: the modules that are built (OPTIONAL: after
+# --target app_dmodem alone, codec_clearmode is not), and the sample
+#   sudo cmake --install build --component asterisk
 install(TARGETS ${_dmodem_modules}
-	LIBRARY DESTINATION ${ASTERISK_MODULES_DIR})
-install(FILES dmodem.conf.sample DESTINATION ${ASTERISK_CONF_DIR})
+	LIBRARY DESTINATION ${ASTERISK_MODULES_DIR} COMPONENT asterisk OPTIONAL)
+install(FILES dmodem.conf.sample DESTINATION ${ASTERISK_CONF_DIR}
+	COMPONENT asterisk)

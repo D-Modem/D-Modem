@@ -66,17 +66,18 @@ if(DMODEM_DMODEMD)
 		target_link_libraries(dmodemd PRIVATE dmodem_sip winmm shell32
 			user32 gdi32)
 		install(TARGETS dmodemd RUNTIME
-			DESTINATION ${CMAKE_INSTALL_BINDIR})
+			DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT dmodemd)
 	else()
 		add_executable(dmodemd main.cpp)
 		target_link_libraries(dmodemd PRIVATE dmodem_sip)
 		install(TARGETS dmodemd RUNTIME
-			DESTINATION ${CMAKE_INSTALL_SBINDIR})
+			DESTINATION ${CMAKE_INSTALL_SBINDIR} COMPONENT dmodemd)
 		# HD-audio modem codecs outside snd-hda-codec-si3054's list
 		# for -a (docs/hardware.md): Linux's
 		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 			install(PROGRAMS hda-modem-setup
-				DESTINATION ${CMAKE_INSTALL_SBINDIR})
+				DESTINATION ${CMAKE_INSTALL_SBINDIR}
+				COMPONENT dmodemd)
 		endif()
 	endif()
 	dmodem_flags(dmodemd)
@@ -291,7 +292,7 @@ if(DMODEM_DMODEMD)
 		endif()
 		dmodem_flags(dmodem-hcf-probe EXTRA)
 		install(TARGETS dmodem-hcf-probe RUNTIME
-			DESTINATION ${CMAKE_INSTALL_BINDIR})
+			DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT dmodemd)
 		# test/hcf_probe_test.py: on a fake one (test/fake_hcf.cpp,
 		# LD_PRELOAD: Linux's)
 		if(DMODEM_TESTS AND LIBUSB_FOUND AND NOT APPLE)
@@ -669,5 +670,7 @@ if(WIN32)
 	# (the DTE's socket: Winsock)
 	target_link_libraries(dmodem PUBLIC ws2_32)
 endif()
-install(TARGETS dmodem ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-install(FILES dmodem.h dmodem.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(TARGETS dmodem ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+	COMPONENT libdmodem)
+install(FILES dmodem.h dmodem.hpp DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+	COMPONENT libdmodem)
