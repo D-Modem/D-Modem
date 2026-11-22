@@ -3076,15 +3076,18 @@ TEST(Core, PumpTable)
 		EXPECT_EQ(std::count(ids.begin(), ids.end(), d->id), 0) << d->id;
 		ids.push_back(d->id);
 		EXPECT_EQ(dp_driver(d->id), d);
-		if (d->flags & dcore::DPF_LOOP3)
+		if (d->flags & dcore::DPF_LOOP3) {
 			EXPECT_TRUE(d->flags & dcore::DPF_LEASED) << d->id;
+		}
 		if (!(d->flags & dcore::DPF_V59_OBJECT))
 			continue;
 		EXPECT_NE(d->v59_high, 0) << d->id;
 		EXPECT_NE(d->v59_name, nullptr) << d->id;
-		for (const DpDriver *e = d + 1; e->id; e++)
-			if (e->flags & dcore::DPF_V59_OBJECT)
+		for (const DpDriver *e = d + 1; e->id; e++) {
+			if (e->flags & dcore::DPF_V59_OBJECT) {
 				EXPECT_NE(e->v59_high, d->v59_high) << e->id;
+			}
+		}
 	}
 	EXPECT_EQ(dp_driver(0), nullptr);
 	EXPECT_EQ(dp_driver(9999), nullptr);

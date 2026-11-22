@@ -1,4 +1,7 @@
-# Every job but windows-msvc builds with Clang: the build takes it where it
+# gcc: the build job's compile with GCC and -Werror, no tests (GCC's
+# warnings are not all Clang's).
+#
+# Every job but gcc and windows-msvc builds with Clang: the build takes it where it
 # is installed (DMODEM_PREFER_CLANG), with GCC's C++ library (libstdc++;
 # g++ and g++-multilib stay for it); windows with clang-retro's Clang and
 # libc++.
@@ -207,6 +210,54 @@ jobs:
           name: dmodem-freepbx
           path: build/freepbx/dmodem-*.tgz
           retention-days: 30
+
+  # the same build with GCC, -Werror, compiled only: the build job uses
+  # Clang, so a warning that only GCC gives (-Wdangling-else,
+  # -Wunused-result) fails here; no tests run
+  gcc:
+    runs-on: ubuntu-24.04
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      CC: gcc
+      CXX: g++
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Packages
+        uses: ./.github/actions/apt
+        with:
+          packages: >-
+            cmake ninja-build pkg-config g++ libgtest-dev
+            libspandsp-dev asterisk-dev g++-multilib
+            libasound2-dev libusb-1.0-0-dev ccache libbcg729-dev
+
+      - name: libre cache
+        uses: actions/cache@v5
+        with:
+          path: build/_deps/libre-install
+          key: libre-v4.12.0-gcc-${{ runner.os }}-${{ hashFiles('cmake/libre.cmake', 'cmake/libre-mbedtls-aes.patch') }}
+
+      - name: ccache
+        uses: actions/cache/restore@v5
+        with:
+          path: /tmp/ccache
+          key: ccache-gcc-${{ github.sha }}
+          restore-keys: ccache-gcc-
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DDMODEM_WERROR=ON -DDMODEM_PREFER_CLANG=OFF
+
+      - name: Build
+        run: |
+          cmake --build build
+          ccache -s
+
+      - name: ccache save
+        uses: actions/cache/save@v5
+        with:
+          path: /tmp/ccache
+          key: ccache-gcc-${{ github.sha }}
 
   musl:
     runs-on: ubuntu-24.04

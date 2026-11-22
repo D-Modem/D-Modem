@@ -58,6 +58,15 @@ D-Modem for Asterisk. Asterisk does not load a part of D-Modem.
 
        dmodem-ari -c /etc/asterisk/dmodem.conf -v
 
+   On Linux, `cmake --install build` also installs a systemd unit,
+   `dmodem-ari.service`. The unit starts `dmodem-ari` as the `asterisk`
+   user with these options. To use the unit, do these steps:
+
+       systemctl daemon-reload
+       systemctl enable --now dmodem-ari
+
+   To change the options or the user, use `systemctl edit dmodem-ari`.
+
 If the connection to Asterisk drops, `dmodem-ari` connects again one second later.
 The calls that are in progress continue.
 

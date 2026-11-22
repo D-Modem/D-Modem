@@ -1,0 +1,23 @@
+# dmodem-ari: D-Modem beside Asterisk (docs/ari.md).
+# cmake --install puts this unit in <prefix>/lib/systemd/system.
+# Then: systemctl daemon-reload && systemctl enable --now dmodem-ari
+# After Apply Config in FreePBX: systemctl restart dmodem-ari
+# To change the options or the user: systemctl edit dmodem-ari
+[Unit]
+Description=D-Modem for Asterisk (dmodem-ari)
+Documentation=https://github.com/D-Modem/D-Modem/blob/main/docs/ari.md
+Wants=network-online.target
+After=network-online.target asterisk.service freepbx.service
+
+[Service]
+Type=simple
+User=asterisk
+Group=asterisk
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/dmodem-ari -c /etc/asterisk/dmodem.conf -v
+Restart=on-failure
+RestartSec=2
+# exit status 2: bad options, a restart does not help
+RestartPreventExitStatus=2
+
+[Install]
+WantedBy=multi-user.target

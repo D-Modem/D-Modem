@@ -16,7 +16,14 @@ For the generated files, the code and the tests, refer to
 ## Installing
 
 1. Install [dmodem-ari](ari.md) next to Asterisk. Add an ARI user in
-   **Settings > Asterisk REST Interface Users**.
+   **Settings > Asterisk REST Interface Users**. Then enable its systemd
+   unit:
+
+       cmake -B build
+       cmake --build build
+       sudo cmake --install build
+       sudo systemctl daemon-reload
+       sudo systemctl enable --now dmodem-ari
 2. Build the module package:
 
        cmake --build build --target freepbx_module
@@ -53,7 +60,8 @@ For the generated files, the code and the tests, refer to
   from the command line.
 
 After you change an item, click **Apply Config**. If you use dmodem-ari,
-restart it after this. It then reads the new settings.
+restart it after this (`sudo systemctl restart dmodem-ari`). It then
+reads the new settings.
 
 ## Getting good modem calls
 
