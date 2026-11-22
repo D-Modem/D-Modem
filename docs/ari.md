@@ -61,10 +61,10 @@ D-Modem for Asterisk. Asterisk does not load a part of D-Modem.
    On Linux, `cmake --install build` also installs a systemd unit,
    `dmodem-ari.service`. The unit starts `dmodem-ari` as the `asterisk`
    user with these options. To install only `dmodem-ari` and its unit, use
-   the `install-dmodem-ari` target:
+   the `dmodem-ari` component:
 
        cmake --build build --target dmodem-ari
-       sudo cmake --build build --target install-dmodem-ari
+       sudo cmake --install build --component dmodem-ari
 
    To use the unit, do these steps:
 

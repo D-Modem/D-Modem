@@ -27,13 +27,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 		DESTINATION ${DMODEM_SYSTEMD_UNIT_DIR} COMPONENT dmodem-ari)
 endif()
 
-# install-dmodem-ari: dmodem-ari and its unit alone (the dmodem-ari
-# component), not all of cmake --install:
+# the dmodem-ari component: dmodem-ari and its unit alone, not all of
+# cmake --install:
 #   cmake --build build --target dmodem-ari
-#   sudo cmake --build build --target install-dmodem-ari
-add_custom_target(install-dmodem-ari
-	COMMAND ${CMAKE_COMMAND} --install ${PROJECT_BINARY_DIR}
-		--component dmodem-ari --config $<CONFIG>
-	DEPENDS dmodem-ari
-	COMMENT "Installing dmodem-ari"
-	VERBATIM)
+#   sudo cmake --install build --component dmodem-ari
