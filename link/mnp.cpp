@@ -547,7 +547,8 @@ s16 Mnp::v42_lr(u8 *b, s16 n)
 	} else if (v42_comp_ || mnp5_) {
 		b[n++] = 9;
 		b[n++] = 1;
-		b[n++] = v42_comp_ ? short_bit(v42_n2_) : P9_MNP5;
+		b[n++] = v42_comp_ ? short_bit(v42_n2_)
+				   : static_cast<u8>(P9_MNP5);
 	}
 	return n;
 }

@@ -149,8 +149,9 @@ TEST(Zcrypt, CfbFrames)
 				p[i] = static_cast<u8>(i * 3 + n);
 			std::vector<u8> c = p;
 			tx.encrypt(c.data(), c.size());
-			if (n >= 8)
+			if (n >= 8) {
 				EXPECT_NE(c, p);
+			}
 			rx.decrypt(c.data(), c.size());
 			EXPECT_EQ(c, p) << n << (triple ? " triple" : "");
 		}

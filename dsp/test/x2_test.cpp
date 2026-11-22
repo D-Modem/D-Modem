@@ -222,9 +222,10 @@ TEST(X2Map, DecodesIModemOnes)
 				unsigned char b = static_cast<unsigned char>(
 					descramble(&dscr, SCR_GPC, line[i]));
 				/* (the descrambler from the first frame) */
-				if (f > 0)
+				if (f > 0) {
 					EXPECT_EQ(b, 1) << "frame " << f
 							<< " bit " << i;
+				}
 			}
 		}
 	}
@@ -282,9 +283,10 @@ TEST(X2Map, Pads)
 				v *= r->n[i];
 				ASSERT_NE(r->tx[i], nullptr);
 				for (int j = 0; j < r->n[i]; j++) {
-					if (j)
+					if (j) {
 						EXPECT_LT(r->lv[i][j - 1],
 							  r->lv[i][j]);
+					}
 					/* (14 bit linear values; below
 					   256 the steps are too coarse) */
 					double a = k56_value(x2_code(*r, i, j),
@@ -326,8 +328,9 @@ TEST(X2Train, Segments)
 	while (t.seg != X2_SYNC) {
 		s16 seg = t.seg;
 		unsigned char c = t.next();
-		if (seg == X2_TRN || seg == X2_JS)
+		if (seg == X2_TRN || seg == X2_JS) {
 			EXPECT_EQ(c | 0x80, k56_code(0xb1, 0) | 0x80);
+		}
 		n++;
 	}
 	EXPECT_EQ(n, 363 + 20004 + 1200 + 6000 + 1152);

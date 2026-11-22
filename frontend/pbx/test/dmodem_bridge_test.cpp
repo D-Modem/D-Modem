@@ -393,10 +393,12 @@ static void run_call(Call *k)
 		if (c.connecting >= 0 || (greeted && *k->ready < k->calls))
 			std::this_thread::sleep_for(std::chrono::milliseconds(2));
 		if (ponged && *k->ready >= k->calls && !hung_up) {
-			if (k->quit)
-				write(sa[1], "quit\r\n", 6);
-			else
+			if (k->quit) {
+				ssize_t w = write(sa[1], "quit\r\n", 6);
+				(void)w;
+			} else {
 				dmodem_hangup(a);
+			}
 			hung_up = true;
 		}
 	}
@@ -433,8 +435,9 @@ static void unix_profile(struct dmbridge_profile *p, const std::string &path,
 	ASSERT_TRUE(dmbridge_profile_option(&host, p, "test", "path", path.c_str()));
 	ASSERT_TRUE(dmbridge_profile_option(&host, p, "test", "header", "yes"));
 	ASSERT_TRUE(dmbridge_profile_option(&host, p, "test", "init", line_ms));
-	if (handoff)
+	if (handoff) {
 		ASSERT_TRUE(dmbridge_profile_option(&host, p, "test", "handoff", "yes"));
+	}
 	p->timeout = timeout;
 	ASSERT_EQ(dmbridge_profile_check(&host, p, "test"), 0);
 }
@@ -494,8 +497,9 @@ static void many_callers(bool handoff)
 	EXPECT_EQ((int)srv.callers.size(), calls) << "distinct headers";
 	EXPECT_EQ(srv.most, calls) << "calls on the server at once";
 	EXPECT_EQ(srv.fds, handoff ? calls : 0) << "modems' DTEs handed over";
-	if (handoff)
+	if (handoff) {
 		EXPECT_FALSE(logged("not sent at the hangup"));
+	}
 }
 
 /* eight callers at once on one server's unix socket: each a connection of

@@ -1169,9 +1169,10 @@ static UsrReport x2up_call(CourierFeatures &cf, UsrMode mode,
 		for (; seen < dst.rx.size(); seen++)
 			for (auto &a : cf.rx(dst.rx[seen]))
 				src.tx.push_back(a);
-		if (want == 2 && k == 0)
+		if (want == 2 && k == 0) {
 			CHECK(!p.la.usr_start(then, enable, disable),
 			      "a second exchange while one goes on");
+		}
 		if (want == 2 && p.da.usr.size() == 1 && !asked)
 			asked = p.la.usr_start(then, enable, disable);
 	}
