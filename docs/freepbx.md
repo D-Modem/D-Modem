@@ -20,8 +20,8 @@ For the generated files, the code and the tests, refer to
    unit:
 
        cmake -B build
-       cmake --build build
-       sudo cmake --install build
+       cmake --build build --target dmodem-ari
+       sudo cmake --build build --target install-dmodem-ari
        sudo systemctl daemon-reload
        sudo systemctl enable --now dmodem-ari
 2. Build the module package:

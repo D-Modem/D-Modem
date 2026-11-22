@@ -13,7 +13,8 @@ target_compile_options(dmodem-ari PRIVATE -Wall)
 find_package(Threads REQUIRED)
 target_link_libraries(dmodem-ari PRIVATE dmodem Threads::Threads)
 
-install(TARGETS dmodem-ari RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS dmodem-ari RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+	COMPONENT dmodem-ari)
 
 # the systemd unit (dmodem-ari.service.in), on Linux: in
 # <prefix>/lib/systemd/system, a directory that systemd reads for
@@ -23,5 +24,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 		"Where cmake --install puts dmodem-ari.service")
 	configure_file(dmodem-ari.service.in dmodem-ari.service @ONLY)
 	install(FILES ${CMAKE_CURRENT_BINARY_DIR}/dmodem-ari.service
-		DESTINATION ${DMODEM_SYSTEMD_UNIT_DIR})
+		DESTINATION ${DMODEM_SYSTEMD_UNIT_DIR} COMPONENT dmodem-ari)
 endif()
+
+# install-dmodem-ari: dmodem-ari and its unit alone (the dmodem-ari
+# component), not all of cmake --install:
+#   cmake --build build --target dmodem-ari
+#   sudo cmake --build build --target install-dmodem-ari
+add_custom_target(install-dmodem-ari
+	COMMAND ${CMAKE_COMMAND} --install ${PROJECT_BINARY_DIR}
+		--component dmodem-ari --config $<CONFIG>
+	DEPENDS dmodem-ari
+	COMMENT "Installing dmodem-ari"
+	VERBATIM)
