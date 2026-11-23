@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -51,6 +52,12 @@ struct Line final : public dcore::Host {
 	int fail_start = 0, fail_hook = 0;
 	int starts = 0, stops = 0, last_hook = -1, volume = -1;
 	int delay = 0, delay_change = 0;
+	/* +GSN's and +GOI's (serial_number(), object_id()); NULL: none */
+	const char *serial = nullptr, *oid = nullptr;
+	/* (see serial) */
+	const char *serial_number() override { return serial; }
+	/* (see oid) */
+	const char *object_id() override { return oid; }
 	/* counted; fail_start fails it */
 	s16 start(Modem &) override {
 		starts++;
@@ -286,6 +293,38 @@ TEST(Core, EbcdicCommands)
 	EXPECT_NE(cmd(m, l, "AT&V\r").find(" +DEBC=1,0,37\r\n"),
 		  std::string::npos);
 	delete m;
+}
+
+/* +GSN: the Host's serial number, else Options' serial, else the
+   device name, else the name; +GOI: the Host's identifier, else no
+   text; "=?" on them gives no text */
+TEST(Core, SerialAndObjectId)
+{
+	Line l;
+	dcore::Options o;
+	o.name = "modem7";
+	o.rate = 8000;
+	std::unique_ptr<Modem> m(new Modem(l, o));
+	cmd(m.get(), l, "ATE0\r");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN\r"), "\r\nmodem7\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GOI\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN=?\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GOI=?\r"), "\r\nOK\r\n");
+
+	o.dev_name = "ttyDM7";
+	m.reset(new Modem(l, o));
+	cmd(m.get(), l, "ATE0\r");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN\r"), "\r\nttyDM7\r\n\r\nOK\r\n");
+
+	o.serial = "DM-0001";
+	m.reset(new Modem(l, o));
+	cmd(m.get(), l, "ATE0\r");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN?\r"), "\r\nDM-0001\r\n\r\nOK\r\n");
+
+	l.serial = "USB1234";
+	l.oid = "1.3.6.1.4.1.99999";
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN;+GOI\r"),
+		  "\r\nUSB1234\r\n1.3.6.1.4.1.99999\r\n\r\nOK\r\n");
 }
 
 /* the country, ATI7, S-registers out of range, an idle modem */

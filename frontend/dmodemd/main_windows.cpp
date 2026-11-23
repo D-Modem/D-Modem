@@ -210,6 +210,7 @@ int main(int argc, char *argv[])
 	mo.dev_name = opt.name;
 	mo.rate = RATE;
 	mo.country = opt.country;
+	mo.serial = opt.serial;
 	/* the modem: on the USB line (the core on it alone), or on SIP */
 	std::unique_ptr<dmd::SipModem> sm;
 	dcore::Modem *m;

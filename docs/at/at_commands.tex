@@ -836,6 +836,7 @@ the terms that are less frequent.
 \cmdl[hashCLS]{\#CLS} & Data, fax or voice (Rockwell, US Robotics). & \cmdl[hashV]{\#V\ldots} & Voice, Rockwell's and US Robotics' commands. \\ \hline
 \cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10}. & \cmdl[mnp10]{)M, @M, *H, :T19} & \std{MNP~10}. \\ \hline
 \cmdl[plusMS]{+MS} & Modulation. & \cmdl[plusGMI]{+GMI, +GMM, +GMR} & Identification. \\ \hline
+\cmdl[plusGSN]{+GSN} & Serial number. & \cmdl[plusGOI]{+GOI} & Object identifier. \\ \hline
 \cmdl[plusGCAP]{+GCAP} & Capabilities. & \cmdl[plusGCI]{+GCI} & Country. \\ \hline
 \cmdl[plusES]{+ES} & Error control. & \cmdl[plusESA]{+ESA} & \std{V.80} synchronous access. \\ \hline
 \cmdl[plusITF]{+ITF} & \std{V.80} transmit buffer. & \cmdl[plusDS]{+DS} & \std{V.42bis}. \\ \hline
@@ -1474,7 +1475,32 @@ these two lines are not there.  The analogue modem (\texttt{dmodemd -a},
 These commands give the manufacturer (\rc{D-Modem project}), the model
 (\cmd{D-Modem}) and the revision (\rc{1.0.0}, the version of the build).
 With \cmdr{?} after them (\cmdl[plusGMI]{AT+GMI?}), they give the same
-data.
+data.  With \cmdr{=?} after them (\cmdl[plusGMI]{AT+GMI=?}), they give
+no data.
+\begin{results}
+\res{\rc{OK}}{Always.}
+\end{results}
+\end{command}
+
+\begin{command}{plusGSN}{+GSN}{Serial Number}
+This command gives the serial number of the modem.  The modem uses the
+first value that it has, in this sequence:
+\begin{enumerate}
+\item The serial number that the line gives.
+\item The \texttt{--serial} option of \texttt{dmodemd}.
+\item The name of the modem (for example, \rc{dmodem0}).
+\end{enumerate}
+With \cmdr{?} after it, it gives the same data.  With \cmdr{=?} after
+it, it gives no data.
+\begin{results}
+\res{\rc{OK}}{Always.}
+\end{results}
+\end{command}
+
+\begin{command}{plusGOI}{+GOI}{Global Object Identifier}
+This command gives the global object identifier (ITU-T X.208) of the
+modem, if the line gives one.  D-Modem does not have an identifier of
+its own.  Thus, usually the command gives no data.
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}
@@ -1482,7 +1508,7 @@ data.
 
 \begin{command}{plusGCAP}{+GCAP}{Capabilities}
 This command lists the command sets of the modem: \rc{+GCAP:
-+FCLASS,+MS}.
++FCLASS,+MS}.  With \cmdr{=?} after it, it gives no data.
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}
@@ -4947,7 +4973,7 @@ These commands are \rc{ERROR}: \cmdl[ampV]{\&V2} and higher, \cmdr{\&Z}
 \cmdl[I]{ATI10}, \cmdl[I]{ATI13} and higher, \cmd{-V90}
 (\cmdl[plusMS]{+MS} selects the modulation), \cmdr{+MA}, \cmdr{+MSC},
 \cmdr{+EB}, \cmdr{+ESR}, \cmdr{+ETBM}, \cmdr{+EWIND}, \cmdr{+EFRAM},
-\cmdr{+A8M}, \cmdr{+A8T}, \cmdr{+PMHF}, \cmdr{+GSN} and \cmdr{+GOI}.  The
+\cmdr{+A8M}, \cmdr{+A8T} and \cmdr{+PMHF}.  The
 names of \cmdl[plusMS]{+MS} for modulations that the modem does not have
 (\cmd{V23S}, \cmd{V27} \ldots) are also \rc{ERROR}.
 

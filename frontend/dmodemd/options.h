@@ -20,6 +20,7 @@ namespace dmd {
 struct Options {
 	const char *name = nullptr;      /* the modem's (dmodem0) */
 	const char *country = nullptr;   /* -c */
+	const char *serial = nullptr;    /* --serial: AT+GSN's */
 	const char *group = "dialout";   /* -g: the pty's group */
 	mode_t perm = 0660;              /* -p: and its permissions */
 	bool realtime = true;            /* -n: not */

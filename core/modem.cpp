@@ -364,6 +364,7 @@ struct LinkOwner final : public dlink::Owner {
 Modem::Modem(Host &host, const Options &opt)
 	: host_(host), handle_(new struct modem()),
 	  name_(opt.name ? opt.name : "modem"), dev_name_(opt.dev_name),
+	  serial_(opt.serial),
 	  srate_(opt.rate), frag_(opt.rate / 200 > 0 ? opt.rate / 200 : 1),
 	  min_rate_(MODEM_MIN_RATE), max_rate_(MODEM_MAX_RATE)
 {
