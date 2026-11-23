@@ -383,10 +383,21 @@ void dmodem_embed_config_init(dmodem_embed_config *cfg)
 	cfg->misdn_flip = 1;
 }
 
-/* see dmodem_embed.h */
+/* see dmodem_embed.h (Windows: Winsock 2 started for the modem's
+   sockets, whatever the program has started) */
 dmodem_embed *dmodem_embed_new(void)
 {
-	return new (std::nothrow) dmodem_embed;
+#ifdef _WIN32
+	WSADATA wsa;
+	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
+		return nullptr;
+#endif
+	dmodem_embed *e = new (std::nothrow) dmodem_embed;
+#ifdef _WIN32
+	if (!e)
+		WSACleanup();
+#endif
+	return e;
 }
 
 /* see dmodem_embed.h */
@@ -396,6 +407,9 @@ void dmodem_embed_free(dmodem_embed *e)
 		return;
 	dmodem_embed_stop(e);
 	delete e;
+#ifdef _WIN32
+	WSACleanup();
+#endif
 }
 
 /* see dmodem_embed.h */
