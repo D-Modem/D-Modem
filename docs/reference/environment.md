@@ -2,7 +2,7 @@
 
 # Environment variables
 
-The variables D-Modem's programs read, and those its PBX modules set for the programs they run, as the source has them. Each links the pages that describe it.
+The `SIP_` and `DMODEM_` variables that D-Modem's programs read, and the variables that its PBX modules set for the programs that they run, as the source has them. Each row links the pages that describe the variable. The `DSP_` switches of the data pumps are not in this table. The page of each data pump ([The data pumps](../dsp/README.md)) gives its switches.
 
 | variable | | described in | in the code |
 |---|---|---|---|

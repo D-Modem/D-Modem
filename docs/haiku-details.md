@@ -10,7 +10,7 @@ It is the same modem as on Linux. It has these parts:
 - T.38 fax over IP.
 - A pty (pseudo-terminal) as its DTE. This is the serial device to which programs send AT commands.
 
-The USB modems (`--usb`) are also built in: the SmartUSB56 of Smart Link, the pico-serial Line and WB sticks, and the USB 2.0 soft modem of Agere. dmodemd connects to them through the libusb of HaikuPorts.
+The USB modems (`--usb`) are also built in: the SmartUSB56 of Smart Link, the pico-serial Line and WB sticks, the USB 2.0 soft modem of Agere, the Apple USB Modem and the Conexant USB HSF modems. dmodemd connects to them through the libusb of HaikuPorts.
 
 These items also build for Haiku:
 - libdmodem (`frontend/dmodemd/dmodem.h`).
@@ -24,11 +24,11 @@ These items do not build for Haiku:
 
 ## Status
 
-A Linux job does a check of the build. The `haiku` job of the CI (`.github/workflows/ci.yml`) cross-builds it with Clang, with warnings as errors. It keeps `dmodemd` as an artifact (`dmodemd-haiku-x86_64`).
+A Linux job does a check of the build. The `haiku` job of the CI (`.github/workflows/ci.yml`) builds it on Linux for Haiku with Clang, with warnings as errors. It keeps `dmodemd` as an artifact (`dmodemd-haiku-x86_64`).
 
 Nothing has run on Haiku: no tests and no calls.
 
-## Building on Haiku
+## Build on Haiku
 
 Haiku already has GCC and its headers (`haiku_devel`). The other items come from HaikuPorts:
 
@@ -41,7 +41,7 @@ The configure step downloads and builds libre (the SIP library) and Mbed TLS (it
 
 `cmake --install build` puts the programs in `/boot/system/non-packaged/bin`, which is on the `PATH`. `/boot/system` is part of the packages of Haiku and is read-only.
 
-## Building on Linux
+## Build on Linux for Haiku
 
 Clang and lld (version 17 or later) can build for Haiku with a sysroot that contains the packages of Haiku. `platforms/haiku/haiku_sysroot.py` makes a sysroot:
 1. It downloads the packages from the repositories of Haiku and HaikuPorts, one time, into a cache (by default `haiku-packages` next to the sysroot).
@@ -63,11 +63,11 @@ The sysroot is about 500 MB. It contains:
 
 The build makes the tests, but does not register them with ctest (`cmake/test_logs.cmake`). The reason is that Linux cannot run the programs of Haiku. To run the tests, copy the build to Haiku.
 
-## Running
+## Start dmodemd
 
 dmodemd has the same options as on Linux (refer to [Using dmodemd](usage.md)). These are the differences.
 
-**No users.** On Haiku, all processes have uid 0, and there is no other user to run as. Thus, dmodemd does not give up the rights of root after start-up (`started_as_root()` in `frontend/dmodemd/main.cpp` is always false there). It also does not fork a keeper process for the link of the pty.
+**No users.** On Haiku, all processes have uid 0, and there is no other user to run as. Thus, dmodemd does not give up the rights of root after start-up (`started_as_root()` in `frontend/dmodemd/main.cpp` is always false there). It also does not start a separate process to keep the link of the pty.
 
 **The pty.** The pty is a pty of Haiku (`/dev/pt/<n>`, with its slave at `/dev/tt/<n>`).
 - dmodemd also tries to make the link `/dev/ttyDM<n>` to it.
@@ -82,12 +82,12 @@ dmodemd has the same options as on Linux (refer to [Using dmodemd](usage.md)). T
     mkdir -p /var/lib/dmodem
 
 **USB.** libusb operates a USB modem through the `usb_raw` driver of Haiku.
-- The four modems send their samples through isochronous endpoints: the SmartUSB56, the pico-serial Line and WB (the same transfers as the SmartUSB56) and the Agere modem.
+- The SmartUSB56, the pico-serial Line and WB (the same transfers as the SmartUSB56), the Agere modem and the Apple USB Modem send their samples through isochronous endpoints. The Conexant USB HSF modems use bulk endpoints.
 - Nobody has tried them on Haiku.
 
-## What the port changed
+## Changes for Haiku
 
-Most of the tree was already POSIX, and it builds with no changes. For Haiku, these items changed:
+Most of the tree was already POSIX, and it builds with no changes. For Haiku, we changed these items:
 
 - **Executables are shared objects.** The linkers of Haiku make all executables shared objects (`-shared`). Thus, the `-fPIE` of CMake for position-independent executables changes to `-fPIC` (`cmake/rules.cmake`, which the build of libre also uses).
 - **The sockets come from libnetwork**, not from the C library. Thus, all programs link `-lnetwork`.

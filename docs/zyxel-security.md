@@ -14,7 +14,7 @@ modems. The user does not see it.
 The design comes from the U-1496S 5.06B firmware. The trace notes have
 the addresses.
 
-## How to use
+## How to use it
 
 On the modem that answers:
 
@@ -76,7 +76,7 @@ a call back that is due.
 | Time to the call back | From an internal setting (`$A1B` - 1), not known | 2 seconds |
 | `*Hn` | Asks for the password on the DTE (`PassWord:`, `Verify :`) | `*Hn=pw` on the command line |
 | Storage | NVRAM | The init string |
-| Type 1 | ZyXEL to ZyXEL, in an HDLC message | Not made: the frame format is not known |
+| Type 1 | ZyXEL to ZyXEL, in an HDLC message | Not done: the frame format is not known |
 
 ## Type 1
 

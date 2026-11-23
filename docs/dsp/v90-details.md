@@ -1,6 +1,6 @@
 # V.90 digital modem: technical details
 
-This page gives the technical details for [V.90: the digital modem](v90.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [V.90: the digital modem](v90.md). Read that overview first. This page gives the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 ## Overview
 
@@ -91,9 +91,9 @@ the predictor finds a gain of 3 to 6 dB in it.
 
 Each MP of the exchange asks for the same coefficients, and the data mode
 receiver uses those coefficients. This is important because the HSF modem
-keeps the coefficients of the first request. Before, our receiver
-calculated its own coefficients at the start of the data mode. Then its
-mse was 0.66, not 0.14.
+keeps the coefficients of the first request. When our receiver
+calculated its own coefficients at the start of the data mode, its mse
+was 0.66, not 0.14.
 
 ### Against the HSF modem with echo
 
@@ -101,7 +101,8 @@ The test `hsf_v90_echo` puts the hybrid echo of the HSF modem 20 dB down
 and 50 ms late (`NET_ECHO=-20:50`):
 
 - The canceller removes about 30 dB (the test accepts 20 to 39 dB).
-- The call connects at 52000/33600, sometimes after a retrain.
+- The call connects at 52000/33600, sometimes after a retrain. (The test
+  accepts any downstream rate from 50000 bit/s.)
 - With the echo 10 dB down, it also connects, with a data mode mse of
   0.18. Without echo, the mse is 0.14. The cause of the difference is the
   G.711 quantisation of the echo together with the upstream signal.
@@ -171,8 +172,8 @@ digital pad that it finds and the reason for a retrain.
 The Agere modem as the analogue modem (`ctest -R agere_v90`) connects at
 46666 bit/s downstream. It trains on TRN1d for 0.6 s. Then it makes
 decisions on it for 0.9 s more before it looks for Jd. This is why TRN1d
-is 1 s long. Before, it was 300 ms, which was sufficient only for the
-original library.
+is 1 s long. A TRN1d of 300 ms is sufficient only for the original
+library.
 
 ### Over SIP
 
@@ -189,7 +190,7 @@ recovers its timing.) dmodemd now operates at the 8000 Hz of the call.
 Rate renegotiation (9.6/V.90) changes the rates during a call without a
 full retrain.
 
-### The analogue modem's
+### The renegotiation of the analogue modem
 
 The analogue modem sends S, S-bar, SCR and CP with the downstream rate
 that it wants. We answer its S-bar with these items:
@@ -203,7 +204,7 @@ that it wants. We answer its S-bar with these items:
 
 The encoder uses the constellations of CPt until B1d.
 
-### Ours
+### Our renegotiation
 
 Our renegotiations start from the upstream mse, as in V.34, with Rd
 first. `DSP_V34_RENEG=<ms>:<N>[a|c]` starts one in a test: `<ms>` into
@@ -234,7 +235,7 @@ If no E arrives in 5 s after Rd (plus the round trips), we retrain.
 
 The original library renegotiates automatically when the downstream
 becomes worse, always with the silent period. If the noise is still
-there, it sometimes selects 56000 again, and then its data has errors.
+there, it can select 56000 again, and then its data has errors.
 Thus, the test stops the noise of netsim during our silence
 (`NET_NOISE_QUIET`).
 

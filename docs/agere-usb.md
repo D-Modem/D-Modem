@@ -14,7 +14,7 @@ Windows and Linux drivers of Agere. For all of these data, refer to
 > **Status:** It does not operate reliably on a real device now. At
 > first, the device that we tried did not send usable sound. Then we
 > changed the driver to operate as the Windows driver of Agere does.
-> After this change, calls on the device got to the far end, but the far
+> After this change, calls on the device reached the far end, but the far
 > end heard them badly. We tested the latest version only on a simulated
 > device.
 

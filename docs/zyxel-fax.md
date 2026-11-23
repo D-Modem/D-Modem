@@ -14,7 +14,7 @@ T.4 data, with no `+F` commands.
 The design comes from the U-1496S 5.06B firmware and from the Elite 2864
 user's guide (chapter 15). The trace notes have the addresses.
 
-## How to use
+## How to use it
 
 ```
 AT+FCLASS=6#P5551111
@@ -25,8 +25,8 @@ ATD5552222
 |---|---|
 | `AT+FCLASS=6` | ZyXEL fax mode. `AT+FCLASS?` gives `6`. |
 | `AT#F`, `AT&N32` | A V.17 fax call on the ZyXEL modems. In class 6 all calls are fax calls, thus D-Modem accepts them with no effect. |
-| `AT#B0` | Receiving: the pages go to the DTE after `CONNECT FAX/...` (the default). |
-| `AT#B1` | Receiving for a BBS: `CONNECT FAX` and `ZyXEL`, then the parameters and each page after a DC2 from the DTE. |
+| `AT#B0` | Reception: the pages go to the DTE after `CONNECT FAX/...` (the default). |
+| `AT#B1` | Reception for a BBS: `CONNECT FAX` and `ZyXEL`, then the parameters and each page after a DC2 from the DTE. |
 | `AT#B2` | Polling: the next call receives the document of the remote. Refer to [Polling](#polling-b2). |
 | `AT#B3` | Measures the ring cadence until a key. Refer to [Ring cadence](#ring-cadence-b3). |
 | `AT#V0`, `AT#V1` | Normal or fine resolution (fine is the default). |
@@ -35,7 +35,7 @@ ATD5552222
 
 The settings are not stored in the modem. Put them in the init string.
 
-## Sending
+## Send a fax
 
 1. `ATD` dials. When the DIS comes, the modem sends the DCS at once: V.17
    at 14400 bps at most, no error correction mode, fine resolution if
@@ -57,7 +57,7 @@ If the call ends before `CONNECT FAX`, the modem gives `NO CARRIER`. If
 the DTE sends no data for 30 seconds after `CONNECT FAX`, the modem ends
 the call (`DISCONNECT1`).
 
-## Receiving
+## Receive a fax
 
 `ATA` (or S0) answers. The modem answers as a data modem first, as the
 ZyXEL modems do. A data caller gets a data call (`CONNECT <rate>`, with
@@ -89,7 +89,7 @@ DISCONNECT0P5551111
 The modem sends each page when it is complete. With `#B1`, the
 parameter line has 35 characters, thus only 18 characters of the
 identity. The firmware does the same (it copies 35 bytes). If the call
-is over and the DTE sends no DC2 for 60 seconds, the modem stops the
+has ended and the DTE sends no DC2 for 60 seconds, the modem stops the
 remaining pages and gives `DISCONNECT`.
 
 `ATV0` and `ATQ1` have no effect on `CONNECT FAX` and `DISCONNECT`.

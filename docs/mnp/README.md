@@ -31,7 +31,6 @@ In these pages, a bit of an LR parameter has the name of its mask. For
 example, "the 0x10 bit" is the bit that V.42 calls bit 5. This prevents
 confusion between the numbers from 0 and the numbers from 1.
 
-
 The classes are not separate protocols on the line. All classes from 2
 to 10 use the same LR frame, and the LR parameters tell which class the
 call uses. The DeskPorte firmware calculates the class number for its

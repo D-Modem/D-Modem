@@ -58,7 +58,7 @@ This is D-Modem as an ARI (Asterisk REST Interface) application next to
 Asterisk. It uses the same profiles, through `Stasis(dmodem,bbs)` and
 `Stasis(dmodem,receivefax,<file>)`, and does not need a module in
 Asterisk. Its faxes use T.38 in the same way as the faxes of the module
-([ari.md](ari-details.md#t38)).
+([ari-details.md](ari-details.md#t38)).
 
 ### Profile options
 
@@ -76,15 +76,18 @@ Asterisk. Its faxes use T.38 in the same way as the faxes of the module
 | `clear` | `auto` | ISDN data calls as a clear 64 kbit/s channel: `auto`, `yes` or `no` (refer to [The channel](#the-channel)). |
 | `timeout` | `60` | The seconds that the modems have to connect. Then (`tcp`, `unix`) the seconds that the server has to accept the call. If not, the call ends with `ERROR`. |
 | `fax` | `yes` | Receive a calling fax machine as a fax (refer to [Fax](#fax)). |
+| `voice` | empty | `exten@context`: a person who calls goes to this extension ([asterisk.md](asterisk.md#people-and-modems-on-one-number)). The modem answers when the leg of the extension ends, or when the modem of the caller sends its calling tone. |
+| `voice_listen` | `3` | The seconds that the modem listens before it answers, to find a person. `0` disables this. A value less than 0 or more than 30 gives 3. |
+| `voice_dsvd` | `no` | V.70 DSVD or V.61 ASVD: `yes` sends the voice channel of the modem to the `voice` extension when the caller opens it. `open` makes our modem open it immediately. |
 
 Option names are not case-sensitive, and `_` and `-` are the same
 (`fax_dir` and `fax-dir` are both correct). If a profile does not have
 the fields that its mode needs, the module refuses it, and `DModem()`
 ends with `DMODEMSTATUS` `ERROR`.
 
-### Answering and calling
+### The answer and the call
 
-First, the module sets up the modem with `ATE0Q1S0=0S2=255X3` (no echo,
+First, the module configures the modem with `ATE0Q1S0=0S2=255X3` (no echo,
 no result codes, no auto-answer, no `+++` escape, no wait for a dial
 tone), and then with the `init` of the profile.
 
@@ -138,7 +141,7 @@ You can use it in three ways:
   `<fax_dir>/<date>-<time>-<caller>-<uniqueid>.tif`. The date and time
   are `YYYYMMDD-HHMMSS`, and the caller is the digits and `+` of the
   caller ID (or `unknown`). Then `DMODEMSTATUS` is `FAX`. Set `fax = no`
-  in the profile to turn this off. This applies only to answering, not
+  in the profile to disable this. This applies only to answering, not
   to the `o` option.
 - **`DModemReceiveFax(file[,ident])`** answers as a fax machine and
   receives into the file. If no page came, it writes no file.
@@ -195,7 +198,7 @@ In error correction mode (T.30 Annex A), a page goes in blocks of HDLC
 frames. The receiving machine asks again for each frame that a line hit
 damaged. Thus the page arrives exactly as it was sent. Without ECM, the
 rows that a hit damaged arrive damaged. The two machines must offer ECM.
-`fax_ecm = no` turns it off.
+`fax_ecm = no` disables it.
 
 ### T.38
 
@@ -395,13 +398,13 @@ the modem on a pty and gives the terminal of the pty to the server. It
 does not copy bytes to the server. The header goes on the connection
 with the descriptor attached (`SCM_RIGHTS`). From then on, the server,
 and all that it runs on that terminal (a login session, a shell, pppd),
-is directly on the line of the modem, as on a serial port. The connection carries no more data. It stays open
-while the session continues. When the server closes it, the module
+is directly on the line of the modem, as on a serial port. The connection
+carries no more data. It stays open while the session continues. When the server closes it, the module
 waits until the last data from the server goes out, then hangs up
 (`LOCAL`). When the remote modem goes, the server sees that its end of
 the line closes. The server must expect the descriptor
-(`dmodem-login -serve` and the `handoff` listeners of the BBS do). A server that does
-not expect it gets the header and nothing after it.
+(`dmodem-login -serve` and the `handoff` listeners of the BBS do). A
+server that does not expect it gets the header and nothing after it.
 
 When it returns, `DModem()` sets:
 
@@ -431,7 +434,7 @@ channel:
 - The calling one (`DModem(term,o)`) sends its data to a script that
   acts as the user.
 - The user reads the banner, sends 20 lines, checks their echoes and
-  logs off. Then the BBS closes, and this hangs up the call.
+  logs out. Then the BBS closes, and this hangs up the call.
 
 ```
 test/run.sh                       # V.34
@@ -449,12 +452,13 @@ is a regular expression. A line of the Asterisk console must match it,
 or the test fails.
 
 A Local channel has no clock. Thus the two modems run sample by sample,
-faster than real time. This causes no problem for them.
+faster than real time. This does not cause problems for the modems.
 
 ### fax.sh and fax_spandsp.sh: faxes on the audio
 
-`test/fax.sh` sends a two-page fax (the test document of
-`dsp/test/fax_doc`) from `DModemSendFax`:
+`test/fax.sh` sends a two-page fax from `DModemSendFax`. The document is
+the test document that the `fax_doc` program writes. CMake builds this
+program from `dsp/test/fax_doc.cpp` into `build/dsp/test/fax_doc`. The fax goes:
 
 1. to `DModem()`, which must identify the fax machine automatically;
 2. to `DModemReceiveFax`.
@@ -498,7 +502,7 @@ document. Variables: `CASES`, `DMODEM_DEBUG=3`, `SIP_LOG=1` (the SIP
 messages in the console) and `FAX_DEBUG=1` (the debug output of
 spandsp).
 
-Before the two gateway cases, `t38.sh` tries the gateway of Asterisk
+Before the two gateway cases, `t38.sh` tests the gateway of Asterisk
 alone (`SendFAX` on the audio through it to `ReceiveFAX` through T.38).
 Asterisk 20.6 of Ubuntu 24.04 sends no fax there. Thus on it, the script
 skips cases 6 and 7, and tells you (`GATEWAY=yes` runs them). CI builds
@@ -582,6 +586,8 @@ modem core, 3 the data pumps also; the lines of libdmodem show at
 verbose level 5, the progress of the call at level 4 and higher). The
 same modem also runs outside Asterisk:
 
-- in `dsp/test/dmodem_test` (two modems of the library back to back);
-- with the original binary library of Smart Link in
-  `dsp/test/smartlink_test` (`interop_call`).
+- in the `dmodem_test` test program (two modems of the library back to
+  back, from `dsp/test/dmodem_test.cpp`);
+- against the original binary library of Smart Link, in the
+  `smartlink_test` test program (from `dsp/test/interop_test.cpp`) or
+  with `interop_call` ([testing-details.md](testing-details.md#interop_call)).

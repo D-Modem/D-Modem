@@ -7,7 +7,7 @@ ST7554 USB modem. Creative supplied these drivers for the **Modem Blaster
 V.92 USB (DE5671)**: driver 3.00.04 (October/November 2002) for Windows
 98, ME, 2000 and XP. We read the binaries with REA and objdump (refer to
 [Method](#method)). We did not run any file in the package. The hardware
-is the hardware that `dmodemd --usb` operates ([hardware.md](hardware-details.md#smart-link-smartusb56)),
+is the hardware that `dmodemd --usb` operates ([hardware-details.md](hardware-details.md#smart-link-smartusb56)),
 from the Linux driver of Smart Link (`st7554.c` of slmodem 2.9.11). This
 page is almost all about what Windows does and Linux does not do.
 
@@ -190,7 +190,7 @@ are the names in st7554.c [seen; electrical meanings inferred]:
 | Bit | Name | Dir | Use |
 |---|---|---|---|
 | 0x0001 | RING1 | in | ring detector; its interrupt is on while the modem must detect rings |
-| 0x0002 | – | in | read at codec start-up; sent up as "HW_Restriction_LOCK" (property 0x7B) |
+| 0x0002 | – | in | read at codec start-up; given to the layer above as "HW_Restriction_LOCK" (property 0x7B) |
 | 0x0004 | HANDSET | in | its interrupt is on from start-up, but the driver does not use the event |
 | 0x0008 | HOOK1 | out | hook relay, 1 = off hook |
 | 0x0020 | CID1 | out | **caller ID**: on-hook line monitor |
@@ -221,7 +221,7 @@ off.
   ("ST7550" or "ST75951"), with `Version.HW`.
 
 The **ST75951 is supported** [seen]. The Linux driver refuses it.
-dmodemd now starts it up in the same way as Windows ([below](#what-this-means-for-dmodemd)).
+dmodemd starts it in the same way as Windows ([below](#what-this-means-for-dmodemd)).
 Its control word (register 0x17) addresses four 12-bit registers:
 
 | | STLC7550 | ST75951 |
@@ -338,8 +338,8 @@ when it goes on hook and then off hook [inferred].
 
 **Ring** [seen]:
 - Property 1 only sets or clears bit 0 of GPIO_MASK.
-- The driver sends up one ring event for each interrupt report with
-  GPIO bit 0 set. mtlstrm, above, examines the cadence with the ring
+- The driver sends one ring event to the layer above for each interrupt
+  report with GPIO bit 0 set. mtlstrm, above, examines the cadence with the ring
   parameters of the country. dmodemd does the same.
 - When wake is armed and rings are enabled, suspend keeps the ring
   interrupt and remote wakeup on. Thus, **a ring wakes the PC**.
@@ -354,8 +354,7 @@ when it goes on hook and then off hook [inferred].
   call-waiting caller ID during modem-on-hold (`AT#CID=1`) [seen in
   mtlstrm/mtlmnt5].
 - The st7554.c file of Linux defines GPIO_CID1 but does not use it.
-  **Thus, the SmartUSB56 hardware can do caller ID**. Before, the
-  hardware notes of D-Modem said that it could not.
+  **Thus, the SmartUSB56 hardware can do caller ID**.
 
 **Pulse dialling** [seen]:
 - The USB driver has no make/break timing. The soft modem pulses the
@@ -453,7 +452,7 @@ mtlstrm and mtlmnt5 are the modem of Smart Link. They have the same
 design as the slmodem library, which D-Modem comes from [seen]:
 - **Versions**: V90Modem 2.93 (12 September 2002), V92Modem 1.1
   (9 April 2001), V8 of 3 May 2002, with floating-point/MMX pumps.
-  slmodem 2.9.x is approximately 1.5 years newer (V90 2.98, fixed
+  slmodem 2.9.x is about 1.5 years newer (V90 2.98, fixed
   point).
 - **Modulations**: V.21, V.22/V.22bis, V.23, V.32/V.32bis, V.34,
   K56flex, V.90, V.92 (quick connect, modem-on-hold, PCM upstream),
@@ -461,7 +460,7 @@ design as the slmodem library, which D-Modem comes from [seen]:
 - **Error control and compression**: V.42, MNP 2–5, V.42bis, V.44.
 - **Fax**: class 1, to V.17 14400.
 - **Voice**: `#VSR` 7200/8000/11025 Hz, 4-bit Rockwell ADPCM or 8-bit
-  PCM (`#VBS`), approximately 30 `#` commands (`#CLS`, `#VLS`, `#SPK`,
+  PCM (`#VBS`), about 30 `#` commands (`#CLS`, `#VLS`, `#SPK`,
   `#VTX`, `#VRX`, `#VTS`, `#CID`, …).
 - **Other commands**: `#UD` diagnostics, `*B` blacklist, `ATI0`–`7`.
   `ATI2000` gives the answer `SLHAMR56`.
@@ -612,7 +611,7 @@ Windows:
    It clears the GPIO before the hook changes (`UsbLine::set_hook`).
    We tested this on the fake device, but not yet on hardware.
 2. **The ST75951 silicon DAA: done.** dmodemd finds it from
-   GPIO_STATUS bit 0x4000 and starts it up in the same way as Windows
+   GPIO_STATUS bit 0x4000 and starts it in the same way as Windows
    (`UsbLine::start_st75951`): power 3, codec register 3 = 0x050,
    register 0 = 0x3C0, power 2, then power 3 and the control word of
    the rate. It sets the power down to 2. Hook, ring and caller ID use
@@ -636,7 +635,7 @@ Windows:
    option.
 7. **Wake on ring: done, behind `--usb-wake`.** dmodemd arms the remote
    wakeup at the start (Windows arms it when the PC goes to sleep). The
-   suspend does not stop dmodemd: it sets up the device again after a
+   suspend does not stop dmodemd: it configures the device again after a
    resume, as Windows does.
 8. **The handset detector: done, behind `--usb-handset`.** Windows
    enables the interrupt of GPIO 2 but ignores its events. dmodemd reads
@@ -667,9 +666,10 @@ Windows:
 13. **Rates**: dmodemd has the three control words of Windows, for
    8000, 9600 and 16000 Hz (`cword()` in `frontend/dmodemd/usb_line.cpp`).
    It does not have the 24000 Hz word of Linux (0x3E8). Its `-r` option
-   accepts only 8000 or 9600 for this modem (`line_rate_ok()` in
-   `frontend/dmodemd/options.h`). Thus, you cannot select 16000 Hz from
-   the command line.
+   accepts 8000, 9600 and the wideband rates 48000, 96000 and 192000
+   (`line_rate_ok()` in `frontend/dmodemd/options.h`). The SmartUSB56
+   refuses the wideband rates. Thus, you cannot select 16000 Hz from the
+   command line.
 
 ## Open questions
 
@@ -680,7 +680,7 @@ Windows:
 - What "RHOM" means, and what bit 15 of FIFO_CTRL2 does.
 - How the soft modem makes the caller ID labels (DATE/NMBR/NAME):
   they are not plain strings in a driver.
-- Approximately 40 country-record bytes that no named code reads.
+- About 40 country-record bytes that no named code reads.
 - How Windows uses the frame-length adjustment in usual operation, if
   it uses it.
 

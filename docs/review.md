@@ -38,7 +38,7 @@ problem, and the test that now checks it.
   - The modem read a SIP password that contains `@` incorrectly.
   - Memory and file handles leaked from one call to the next.
   - The modem opened files that must have root access too late.
-  - A slow server could cause the call to drop while the modem waited for the server.
+  - A slow server could stop the call while the modem waited for the server.
 - **The tests themselves.**
   - Some tests passed when they must fail.
   - Some tests failed at random times for reasons that were not related to

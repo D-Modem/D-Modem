@@ -5,29 +5,28 @@ This page gives the technical details for [Code review (October 2026)](review.md
 The review covered all of the tree:
 
 - each function of our own code got a comment that tells what it does;
-- we made small fixes that were clearly correct, with a test where a test could
-  find the bug;
-- we listed all other items here, under [Open](#open).
+- we made small fixes that were clearly correct, with a test where a test
+  could find the bug;
+- we listed all other items under [Open](#open). They are all fixed now.
 
-We did not change `dsp/test/legacy` (the old slmodemd core, which we kept at that time for `core_equiv` and
-for the original library). It is now removed from the
-tree.
+This page is a record of the fixes at that time. It uses the current file
+names. At the time of the review:
 
-This page is a record of the fixes at that time. The file names are
-the current names:
-
-- the daemon `slmodemd/` is now `frontend/dmodemd/` (its ctest `slmodemd_root` is
-  now `dmodemd_root`);
-- the test harnesses `dsp/test/half_*.c` are now `half_*.cpp`, and the
+- `frontend/dmodemd/` was `slmodemd/` (its ctest `dmodemd_root` was
+  `slmodemd_root`);
+- the test harnesses `dsp/test/half_*.cpp` were `half_*.c`, and the
   helpers that they shared (`half_dte.h`, `half_stack.h`) are now part of
   `dsp/test/modem_half.hpp`;
-- the emulated hardware is in `dsp/test/hw/`.
+- the old core of slmodemd was in the tree (`dsp/test/legacy`), for
+  `core_equiv` and the original library. The review did not change it, and
+  the tree no longer contains it.
 
-Where the code has changed again after the review, a note tells this. "slmodemd"
-alone still means the original daemon of Smart Link, from which D-Modem started.
+Where the code has changed again after the review, a note tells this.
+"slmodemd" alone means the original daemon of Smart Link, from which
+D-Modem started.
 
-Each entry below gives the file, the problem, the fix, and
-the test that now checks it, where there is one.
+Each entry below gives the file, the problem, the fix, and the test that
+checks it, where there is one.
 
 ## Fixed
 
@@ -239,7 +238,7 @@ At that time, the name of the daemon was still slmodemd.
   `pjsua_call_make_call()` returned. An INVITE that arrived in that time (with
   `-L`) took the line and continued to ring. Also, the
   DISCONNECTED of the call itself that arrived in that time was not recognised as ours. Thus,
-  nothing cleaned up. Fixes:
+  nothing released the call. Fixes:
   - the line is busy (DIALING) while the call is made, and the call is
     known by its user data until its id is known;
   - `audio_attach()` does not clear a hangup that came after the
@@ -358,8 +357,8 @@ At that time, the name of the daemon was still slmodemd.
   and the spandsp harness removed the data that did not fit the queue of its line.
   `half_dte.h` (now the `Pty` buffering in `modem_half.hpp`) keeps the two
   until they are accepted.
-- **`frontend/dmodemd/pipe_modem.cpp`, `dsp/test/legacy/modem_half.cpp`** (the
-  second file is now removed with `dsp/test/legacy`): with `PIPE_SYNC`, the line
+- **`frontend/dmodemd/pipe_modem.cpp`**, and the `modem_half.cpp` of the
+  old core (no longer in the tree): with `PIPE_SYNC`, the line
   of `half_open` and `half_smartlink` did not move until the first ATD or
   ATA, when its lead silence was written. While it did not move, the commands
   were accepted as they came, and the call started at the positions where the scheduler
@@ -458,27 +457,8 @@ At that time, the name of the daemon was still slmodemd.
 
 ## Open
 
-We did not fix these items at that time, because they needed a design decision,
-more than a local change, or a peer for tests. The review gave
-each item a severity: *bug*, *likely bug*, *risk* (a failure must have unusual
-input or timing) or *cleanup*.
-
-### V.34, V.90, V.92
-
-None left.
-
-### Fax
-
-None left.
-
-### Data link and core
-
-None left.
-
-### dmodemd and the PBX modules
-
-None left.
-
-### Tests
-
-None left.
+We did not fix these items at that time, because they needed a design
+decision, more than a local change, or a peer for tests. The review gave
+each item a severity: *bug*, *likely bug*, *risk* (a failure must have
+unusual input or timing) or *cleanup*. All of these items are fixed now,
+and no item stays open.

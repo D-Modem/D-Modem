@@ -158,7 +158,7 @@ The change starts after the LR exchange (offsets 0x66C2 and 0x675E):
    from the data pump. If the event does not come, the modem stays at
    2400 bit/s.
 4. Each modem waits 25 ms (2 ticks). Then it selects the rate: 9600
-   bit/s if the map has 0x01, 7200 bit/s if the map has 0x02, else 4800
+   bit/s if the map has 0x01, 7200 bit/s if the map has 0x02, if not 4800
    bit/s.
 5. The serial controller (a Z80 SIO) changes to HDLC: flag 0x7E, CRC on.
    The frames are MNP framing mode 3 frames (MNP 3).
@@ -227,7 +227,7 @@ the firmware at the state handlers. For example, state 3 uses B = 26,
 and state 4 uses C = 40 (9600 bit/s) or C = 120.
 
 A receive burst can be long. After 3 s of carrier, the modem gives
-1 s more, 11 times. Thus, after approximately 14 s of carrier, the modem
+1 s more, 11 times. Thus, after about 14 s of carrier, the modem
 stops the link.
 
 Each modem has a counter of failed turns. It starts at 30. A failed
@@ -244,7 +244,7 @@ If no carrier comes in state 9:
    TONE (the default), the modem sends 2100 Hz for 400 ms. This tone
    disables the echo suppressors of the line. Then it listens again
    (state 8).
-3. Else, the modem takes the turn and sends (state 11). Thus, a lost
+3. If not, the modem takes the turn and sends (state 11). Thus, a lost
    burst does not stop the link.
 
 ### The contents of a turn
@@ -280,9 +280,9 @@ The error average E changes at each turn (offset 0x5DA6):
 
 - F = E − E/16 (integer division). If F is not 0, subtract 1 from F.
 - E = F + X. X is 16 if the turn before had an error (a retransmission
-  or a timeout). Else, X is 0.
+  or a timeout). If not, X is 0.
 
-Thus, on a good line N is 8, and on a bad line N goes down to 1.
+Thus, on a good line N is 8, and on a bad line N decreases to 1.
 
 ### Rate shift
 
@@ -339,7 +339,7 @@ go-back-N procedure sends it again. This sequence comes from the code.
 We did not see it on a line.
 
 During a rate shift, about 10 turns have no data. Each turn has a full
-V.29 training. Thus, a fallback stops the data for approximately 5 s.
+V.29 training. Thus, a fallback stops the data for about 5 s.
 
 The firmware has code for a fall forward (after 255 turns with no
 error), but no code jumps to it (offset 0x5E1B). Thus, this ROM only

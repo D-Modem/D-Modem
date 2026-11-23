@@ -56,8 +56,8 @@ These rules also apply:
 
 ### 3.1 When not to compress
 
-The sender should not compress a file that is compressed now. The D-Modem
-programs use two tests:
+It is not necessary to compress a file that is already compressed. The
+D-Modem programs use two tests to find these files:
 
 1. The extension of the name. For example: `.zip`, `.gz`, `.zst`,
    `.7z`, `.rar`, `.arj`, `.arc`, `.lzh`, `.zoo`, `.jpg`, `.png`,
@@ -68,7 +68,7 @@ programs use two tests:
 
 ## 4. Frames
 
-The sender cuts the file into chunks. It compresses each chunk as one
+The sender divides the file into chunks. It compresses each chunk as one
 zstd frame. Each frame must obey these rules:
 
 - The frame is a zstd frame as RFC 8878 section 3.1.1 specifies. It is

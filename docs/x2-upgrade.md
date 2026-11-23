@@ -1,7 +1,5 @@
 # The x2 upgrade host
 
-Written in ASD-STE100 Simplified Technical English.
-
 ## What it does
 
 In 1997, x2 was an option at extra cost on a U.S. Robotics Courier
@@ -27,11 +25,11 @@ On the Courier:
 - The x2 code. The supervisor must be 7.0.0 or later. Use `ATI7` to
   see the supervisor revision.
 - V.42 error control (LAPM). The factory settings (`AT&F1`) enable it.
-- Supervisor builds after 7.1.4 also need `ATS30=1`. This bit is
+- Supervisor builds after 7.1.4 also must have `ATS30=1`. This bit is
   "Enable feature upgrades". Without it, the modem does not keep the
   change. Supervisor 7.1.4 does not examine this bit.
 
-Which Couriers need the host:
+The Couriers that must have the host:
 
 | Supervisor | Date | Result of the host call |
 | --- | --- | --- |
@@ -39,7 +37,8 @@ Which Couriers need the host:
 | 7.1.4 to 7.3.x | 1997 to 03/98 | x2 (and V.90 in 7.3.x) operates after the next power on. |
 | 7.4.16 and later | 04/98 and later | No effect on the modem. These builds always enable x2 and V.90. The host changes only the record. |
 
-The audit of the firmware is in courier-emu's
+The audit of the firmware is in
+[courier-emu](https://github.com/D-Modem/courier-emu)'s
 `docs/feature-bits-audit.md`.
 
 On the host:
@@ -55,7 +54,7 @@ On the host:
       build, and no other packages. It is one file that has no
       dependencies when it runs.
 
-## Set up the host
+## Configure the host
 
 Make a profile for the host in `dmodem.conf`:
 
@@ -103,7 +102,7 @@ The options of the program:
         Type A to apply the changes. Type Q to stop with no change.
         >
 
-3. The caller pushes 1, 2 or 3 to switch a feature on or off. Then the
+3. The caller pushes 1, 2 or 3 to enable or disable a feature. Then the
    caller pushes A.
 4. The program sends `X2UP=2,<enable>,<disable>` on its control channel
    (`DMODEM_CONTROL`, file descriptor 3). The modem does the change, and
@@ -112,7 +111,7 @@ The options of the program:
    stops, and the call ends.
 
 The control channel is available only in `mode = exec` profiles of
-app_dmodem, dmodem-ari and mod_dmodem. See
+app_dmodem, dmodem-ari and mod_dmodem. Refer to
 [the technical details of app_dmodem](asterisk-details.md).
 
 ### A host with no menu
@@ -190,7 +189,7 @@ The features are the value that the Courier shows in the fifth field of
 1. Set the modem to its factory settings: `AT&F1`.
 2. If the supervisor is later than 7.1.4, type `ATS30=1`.
 3. Dial the host. Wait for the menu.
-4. Push 1, 2 or 3 to switch Terbo, V.FC or x2 on or off. Then push A.
+4. Push 1, 2 or 3 to enable or disable Terbo, V.FC or x2. Then push A.
    Wait for the result. The host then hangs up.
 5. Type `AT&F1S0=0&W`.
 6. Set the power switch of the modem to OFF, then to ON.
@@ -207,4 +206,4 @@ records only when it starts.
 - In supervisor 7.4.16 and later, the x2 bit has no effect. The firmware
   enables x2 and V.90 at each start.
 - The tests used emulated Couriers (courier-emu), not a physical
-  modem. See [the technical details](x2-upgrade-details.md#6-tests).
+  modem. Refer to [the technical details](x2-upgrade-details.md#6-tests).

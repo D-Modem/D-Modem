@@ -32,9 +32,9 @@ the timing tones and the order of the start-up. They also show the answer
 tone before PEP and the short turns of an idle line (refer to
 [the technical details](pep-details.md#what-the-t2000-recordings-show)).
 But we could not decode a turn of them to bits. The firmware of a T3000
-later gave the constellations of Telebit, the carriers of its micro
-packets and the steps of its start-up, and D-Modem now uses the first two
-(refer to [what the firmware shows](pep-details.md#what-the-t3000s-firmware-shows)).
+gave the constellations of Telebit, the carriers of its micro packets and
+the steps of its start-up. D-Modem uses the first two (refer to
+[what the firmware shows](pep-details.md#what-the-t3000s-firmware-shows)).
 The firmware does not give the packets. Thus, the packets of a real
 Telebit are still unknown.
 
@@ -61,7 +61,8 @@ unless `+MS` disabled it, as Telebit's S50=0 does.
   - A V.8 answer tone (ANSam, 2100 Hz with its 15 Hz AM) sends the call
     to V.34 and V.8.
   - A plain 2100 Hz tone, or the signal of a different modulation after
-    it, sends the call to V.32bis and its automode (V.32, V.22bis, ...).
+    it, sends the call to V.32bis and its automode (V.32, V.22bis and
+    older modulations).
   - The 2225 Hz tone of Bell sends the call to Bell 212A.
   - If no PEP tones come in 1.5 s after the end of the answer tone (or in
     3 s without an answer tone), the call also goes to V.32bis.

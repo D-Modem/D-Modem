@@ -10,7 +10,7 @@ It is the same modem as on Linux. It has these parts:
 - T.38 fax over IP.
 - A pty (pseudo-terminal) as its DTE. This is the serial device to which programs send AT commands.
 
-The USB modems (`--usb`) also operate: the SmartUSB56 of Smart Link, the pico-serial Line and WB sticks, and the USB 2.0 soft modem of Agere. dmodemd connects to them through the IOKit backend of libusb, which builds together with dmodemd.
+The USB modems (`--usb`) also operate: the SmartUSB56 of Smart Link, the pico-serial Line and WB sticks, the USB 2.0 soft modem of Agere, the Apple USB Modem and the Conexant USB HSF modems. dmodemd connects to them through the IOKit backend of libusb, which builds together with dmodemd.
 
 These items also build on macOS:
 - libdmodem (`frontend/dmodemd/dmodem.h`).
@@ -32,17 +32,17 @@ The build has run on the macOS runners of GitHub. The `macos` job of the CI (`.g
 1. It makes a universal build (arm64 and x86_64) with warnings as errors.
 2. It does a check with `lipo` that `dmodemd` contains the two architectures.
 3. It runs the offline tests (`ctest -L quick`).
-4. It runs the calls of the USB modems against the fake modems (`dmodemd_usb`, `dmodemd_pico_line`, `dmodemd_pico_wb`, `dmodemd_agere`). If a call fails, the job tries it one more time.
+4. It runs the calls of four USB modems against the fake modems (`dmodemd_usb`, `dmodemd_pico_line`, `dmodemd_pico_wb`, `dmodemd_agere`). If a call fails, the job tries it one more time. The job does not run `dmodemd_apple` and `dmodemd_cadmus2`.
 5. It keeps `dmodemd` as an artifact (`dmodemd-macos-universal`).
 
-The commit history shows that this job ran, and that we repaired its failures. Examples are the link of libre with libresolv, the set-up of the pty through its slave, real-time scheduling for the USB tests, and the 8 KiB socket buffer of the voice test. The repository does not record the result of its latest run. Refer to the page of the job on GitHub.
+The commit history shows that this job ran, and that we repaired its failures. Examples are the link of libre with libresolv, the configuration of the pty through its slave, real-time scheduling for the USB tests, and the 8 KiB socket buffer of the voice test. The repository does not record the result of its latest run. Refer to the page of the job on GitHub.
 
 Before the CI job ran, we did these checks on Linux:
 - The code paths that macOS uses where it does not have the system calls of Linux. A Linux build with `-DDMODEM_PORTABLE_FALLBACKS` passes the offline tests and the USB calls.
 - The USB calls with the fake modems linked into dmodemd, as on macOS. On Linux, `-DDMODEM_TEST_BUILTIN_FAKES=ON` adds the `dmodemd_*_builtin` tests.
 - The test scripts with the `date` and `head` of BSD, and with no `nproc`.
 
-## Building
+## Build
 
 You must have the command line tools of Apple (`xcode-select --install`) and CMake. Ninja is optional. With Homebrew:
 
@@ -71,7 +71,7 @@ The GoogleTest of Homebrew is built for only one architecture. If you disable it
 
 `cmake --install build` puts dmodemd in `/usr/local/sbin`.
 
-## Running
+## Start dmodemd
 
 dmodemd has the same options as on Linux (refer to [Using dmodemd](usage.md)). These are the differences.
 
@@ -88,8 +88,10 @@ dmodemd has the same options as on Linux (refer to [Using dmodemd](usage.md)). T
 
     sudo mkdir -p /var/lib/dmodem
 
-**USB.** libusb operates a USB modem through IOKit, with no kernel extension. None of the four modems has a macOS driver that can claim it.
-- The four modems send their samples through isochronous endpoints: the SmartUSB56, the pico-serial Line and WB (the same transfers as the SmartUSB56) and the Agere modem.
+**USB.** libusb operates a USB modem through IOKit, with no kernel extension.
+- The SmartUSB56, the pico-serial Line and WB and the Agere modem have no macOS driver that can claim them.
+- The audio driver of macOS can possibly claim the audio interfaces of the Apple USB Modem. We did not try this.
+- The SmartUSB56, the pico-serial Line and WB (the same transfers as the SmartUSB56), the Agere modem and the Apple USB Modem send their samples through isochronous endpoints. The Conexant USB HSF modems use bulk endpoints.
 - Nobody has tried them on a Mac.
 
 ## The tests
@@ -97,15 +99,15 @@ dmodemd has the same options as on Linux (refer to [Using dmodemd](usage.md)). T
 The offline tests (`ctest -L quick`) run as on Linux.
 
 On macOS, the calls of the USB modems do not use `LD_PRELOAD`:
-- Each fake modem (`frontend/dmodemd/test/fake_*.cpp`) is linked into its own dmodemd in place of libusb: `dmodemd_fake_st7554`, `dmodemd_fake_pico_line`, `dmodemd_fake_pico_wb` and `dmodemd_fake_agere`. The tests on Windows do the same.
-- On macOS, these tests keep their Linux names: `dmodemd_usb`, `dmodemd_pico_line`, `dmodemd_pico_wb` and `dmodemd_agere`.
+- Each fake modem (`frontend/dmodemd/test/fake_*.cpp`) is linked into its own dmodemd in place of libusb: `dmodemd_fake_st7554`, `dmodemd_fake_pico_line`, `dmodemd_fake_pico_wb`, `dmodemd_fake_agere`, `dmodemd_fake_apple` and `dmodemd_fake_cadmus2`. The tests on Windows do the same.
+- On macOS, these tests keep their Linux names: `dmodemd_usb`, `dmodemd_pico_line`, `dmodemd_pico_wb`, `dmodemd_agere`, `dmodemd_apple` and `dmodemd_cadmus2`.
 - On macOS, they run dmodemd without `-n` (`frontend/dmodemd/test/usb_dte.py`). Without real-time scheduling, the CI runner started the loop of the line tens of milliseconds late, and the calls failed.
 - The line programs of the test (`line_exchange`, `wb_pair`) ask for the same time constraint policy (`frontend/dmodemd/test/mac_realtime.h`).
 - The `power/wakeup` check of the kernel is only for Linux, because only Linux has it.
 
 The test of the ALSA line is only for Linux.
 
-## What the port changed
+## Changes for macOS
 
 Most of the tree was already POSIX. `frontend/dmodemd/portable.h` already had the macOS methods for four functions that Linux does in its own way:
 - Close descriptors on exec.
@@ -113,7 +115,7 @@ Most of the tree was already POSIX. `frontend/dmodemd/portable.h` already had th
 - Sleep until a monotonic time.
 - Find the hang-up of a peer without a read.
 
-For macOS, the port added these items:
+For macOS, we added these items:
 - **The IOKit backend of libusb** (`cmake/libusb.cmake`): the `Xcode/config.h` of the release, linked with IOKit, CoreFoundation, Security and the Objective-C runtime, as the configure step of libusb does.
 - **The system libraries of libre** (`cmake/libre.cmake`): SystemConfiguration and CoreFoundation for its DNS servers, and libresolv for `res_ninit()`. The builds of libre and Mbed TLS get the architectures of the build, as one argument.
 - **Mbed TLS** as the default crypto (`DMODEM_CRYPTO`), and macOS 11 as the default oldest macOS (`CMAKE_OSX_DEPLOYMENT_TARGET`).
