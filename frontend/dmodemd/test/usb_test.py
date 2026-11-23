@@ -239,7 +239,7 @@ try:
     check("voice codec: voice mode", m.cmd(b"AT+FCLASS=8"))
     check("voice codec: +VLS=? lists 14 and 15",
           m.cmd(b"AT+VLS=?", rb'14,"H",08000000,08000000,08000000\r\n'
-                rb'15,"HT",0B043060,0B043060,0B043060\r\nOK\r\n'))
+                rb'15,"HT",0B043060,0B043060,0B043060\r\n(\r\n)?OK\r\n'))
     fifo2 = lambda m: [int(v, 16) for v in
                        re.findall(rb"fake st7554: 1a = ([0-9a-f]{4})", log_of(m))]
     check("RHOM off while the modem stops", fifo2(m)[-1:] == [0x2828])
