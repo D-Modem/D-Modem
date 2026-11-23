@@ -12,7 +12,12 @@ target_include_directories(dmodem_embed PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(dmodem_embed PRIVATE ${_dmd}
 	${PROJECT_SOURCE_DIR}/dsp)
 target_link_libraries(dmodem_embed PUBLIC dmodem_sip)
-dmodem_flags(dmodem_embed EXTRA)
+# (dmodemd's warnings for its lines' sources, -Wextra for ours)
+dmodem_flags(dmodem_embed)
+if(NOT MSVC)
+	set_source_files_properties(dmodem_embed.cpp PROPERTIES
+		COMPILE_OPTIONS -Wextra)
+endif()
 set_target_properties(dmodem_embed PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # the USB line: as dmodemd's (libusb fetched on Windows and macOS, the

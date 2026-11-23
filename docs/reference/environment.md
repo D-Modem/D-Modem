@@ -30,7 +30,7 @@ The variables D-Modem's programs read, and those its PBX modules set for the pro
 | `SIP_CLEARMODE` | read | [ISDN: the clear 64 kbit/s channel: technical details](../isdn-details.md), [ISDN: the clear 64 kbit/s channel](../isdn.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_DNS` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_JITTER` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
-| `SIP_LOGIN` | read | [Building](../building.md), [Softmodem hardware: dmodemd on ALSA and USB: technical details](../hardware-details.md), [Code review (October 2026): technical details](../review-details.md), [Using dmodemd](../usage.md), [D-Modem on Windows: technical details](../windows-details.md), [D-Modem on Windows](../windows.md) | `frontend/dmodemd/sip.cpp` |
+| `SIP_LOGIN` | read | [Building](../building.md), [dmodemd as a library (libdmodem_embed)](../embed.md), [Softmodem hardware: dmodemd on ALSA and USB: technical details](../hardware-details.md), [Code review (October 2026): technical details](../review-details.md), [Using dmodemd](../usage.md), [D-Modem on Windows: technical details](../windows-details.md), [D-Modem on Windows](../windows.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_LOG_LEVEL` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_PORT` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |
 | `SIP_RED` | read | [Using dmodemd](../usage.md) | `frontend/dmodemd/sip.cpp` |

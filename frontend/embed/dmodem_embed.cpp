@@ -208,8 +208,8 @@ void run(dmodem_embed *e, EmbedConfig cfg, int dte_fd)
 			data->save(&m.dsp_info());
 	};
 	/* (dmodemd's -r: 9600 when not given) */
-	u32 rate = cfg.rate ? cfg.rate : 9600;
-	bool rate_given = cfg.rate != 0;
+	[[maybe_unused]] u32 rate = cfg.rate ? cfg.rate : 9600;
+	[[maybe_unused]] bool rate_given = cfg.rate != 0;
 
 	{
 		dmd::FdDte dte(dte_fd);
