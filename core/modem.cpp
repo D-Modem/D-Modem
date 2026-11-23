@@ -1891,7 +1891,6 @@ void Modem::sync_command(dlink::SyncCommand c, u8 tx, u8 rx)
 			break;
 		link_->sync_indicate(dlink::v80::ECS);
 		set_state(COMMAND_ONLINE);
-		crlf();
 		report(Result::Ok);
 		command_ = true;
 		commands_due_ = xmit_count_ > 0;
@@ -2030,16 +2029,32 @@ const ebcdic::CodePage &Modem::ebcdic_page()
 	return ebc_page_;
 }
 
-/* a string to the DTE */
+/* a string to the DTE, after the information text's header if it is
+   due */
 void Modem::puts(const char *s)
 {
+	text_head();
 	put_text(s, static_cast<s32>(strlen(s)));
 }
 
-/* the end of a line to the DTE: S3, S4 */
+/* the end of a line to the DTE: S3, S4 (after the information text's
+   header if it is due) */
 void Modem::crlf()
 {
+	text_head();
 	put_text(reinterpret_cast<const char *>(&sregs_[SREG_CR_CHAR]), 2);
+}
+
+/* V.250 6.2.6: with ATV1, information text starts with S3 S4; with
+   ATV0 it does not.  Once for each command line */
+void Modem::text_head()
+{
+	if (!text_head_)
+		return;
+	text_head_ = false;
+	if (sregs_[SREG_VERBOSE])
+		put_text(reinterpret_cast<const char *>(&sregs_[SREG_CR_CHAR]),
+			 2);
 }
 
 /* the escape (+++): this input (online) after the last one's, as the
@@ -3019,11 +3034,17 @@ void Modem::vcvm_refresh()
 
 /* result r to the DTE (unless ATQ1), in words (ATV1) or as a number; a
    CONNECT after the lines AT&A asks for, with the receive rate in data
-   mode (unless ATX0) and AT\V's protocol */
+   mode (unless ATX0) and AT\V's protocol.  V.250 6.2.6: in words,
+   <CR><LF> before the result and after it (S3 S4); as a number, the
+   number and S3 only */
 void Modem::report(Result r)
 {
 	bool verbose = sregs_[SREG_VERBOSE] != 0;
 	std::string line;
+
+	/* (the result has its own header: the information text's is not
+	   due now) */
+	text_head_ = false;
 
 	/* (a configurator on the DTE's screen ends first: a RING) */
 	conf_close();
@@ -3036,6 +3057,8 @@ void Modem::report(Result r)
 	logf("result: %s\n", result_text[static_cast<s16>(r)]);
 	if (sregs_[SREG_QUIET])
 		return;
+	if (verbose)
+		crlf();
 	if (r == Result::Connect) {
 		u16 a = sregs_[SREG_CONNNECT_MSG_FORMAT];
 		s16 m = modulation(dp_stats_, dp_);
@@ -3119,7 +3142,11 @@ void Modem::report(Result r)
 			   r == Result::Vcon ? 90 : static_cast<s16>(r));
 	}
 	puts(line);
-	crlf();
+	if (verbose)
+		crlf();
+	else
+		put_text(reinterpret_cast<const char *>(
+				 &sregs_[SREG_CR_CHAR]), 1);
 }
 
 /* ATI11: the last call's statistics (or this one's), a row each: its
@@ -3887,8 +3914,6 @@ void Modem::events(u16 ev)
 		} else {
 			ring_count_ = 0;
 			sregs_[SREG_RING_COUNTER]++;
-			if (sregs_[SREG_RING_COUNTER] == 1)
-				crlf();
 			report(Result::Ring);
 			if (sregs_[SREG_RINGS_TO_AUTO_ANSWER] && !started_ &&
 			    sregs_[SREG_RING_COUNTER] >=
@@ -3909,7 +3934,6 @@ void Modem::events(u16 ev)
 			char c;
 			while (get_chars(&c, 1) == 1)
 				esc_held_ += c;
-			crlf();
 			report(Result::Ok);
 			command_ = true;
 		}
@@ -4062,8 +4086,6 @@ void Modem::ring_signal(bool on)
 	if (state_ != IDLE || started_)
 		return;
 	sregs_[SREG_RING_COUNTER]++;
-	if (sregs_[SREG_RING_COUNTER] == 1)
-		crlf();
 	report(Result::Ring);
 	if (!cid_msg_.empty()) {
 		/* voice mode's report is a packet, as on the line */

@@ -6,8 +6,10 @@
       0 B: OK\r\n
       0 B< ATA\r
       0 A< ATD\r
+   9440 A: \r\n
    9440 A: CONNECT 14400\r\n
    9440 until A 'CONNECT': yes
+   9480 B: \r\n
    9480 B: CONNECT 14400\r\n
    9480 until B 'CONNECT': yes
    9640 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
@@ -94,6 +96,7 @@
   13980 B: A0048 The quick brown fo\r\n
   13980 B: OK\r\n
   14480 B< ATI11\r
+  14480 B: \r\n
   14480 B: Description                         Status\r\n
   14480 B: -----------                         ------\r\n
   14480 B: Last Connection                     V32bis\r\n
@@ -122,14 +125,19 @@
   14480 B: Rate Renegotiation by Local Modem   0\r\n
   14480 B: Rate Renegotiation by Remote Modem  0\r\n
   14480 B: Call Duration                       0:00:05\r\n
+  14480 B: \r\n
   14480 B: OK\r\n
   14480 B< ATH\r
+  14480 B: \r\n
   14480 B: OK\r\n
+  14500 B: \r\n
   14500 B: NO CARRIER\r\n
-  15360 A: B0032 The quick +++NO CARRIER\r\n
+  15360 A: B0032 The quick +++\r\n
+  15360 A: NO CARRIER\r\n
   15360 until A 'NO CARRIER': yes
   15360 until B 'OK': yes
   15860 A< ATI11\r
+  15860 A: \r\n
   15860 A: Description                         Status\r\n
   15860 A: -----------                         ------\r\n
   15860 A: Last Connection                     V32bis\r\n
@@ -159,4 +167,5 @@
   15860 A: Rate Renegotiation by Remote Modem  0\r\n
   15860 A: Call Duration                       0:00:05\r\n
   15860 A: Call Termination Cause              Carrier lost\r\n
+  15860 A: \r\n
   15860 A: OK\r\n

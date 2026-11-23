@@ -979,8 +979,9 @@ the two forms.
 \end{results}
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{V\p{n} Commands}
   {\thd{Command} & \thd{Function}}
-V0 & Numbers, each on a separate line. \\ \hline
-V1 & Words (\emph{default}). \\ \hline
+V0 & Numbers.  A carriage return goes after each number. \\ \hline
+V1 & Words (\emph{default}).  A carriage return and a line feed go
+  before each word and after it. \\ \hline
 \end{vtable}
 \end{command}
 
@@ -3305,6 +3306,19 @@ identify the two types of call.  \cmdl[ampV]{\&V} lists the setting.
 The modem answers each command line with a result code, as a word
 (\cmdl[V]{V1}) or a number (\cmdl[V]{V0}).  Each result code is on a
 separate line.  \cmdl[Q]{Q1} sets the result codes off.
+
+The modem uses the line format of ITU-T V.250.  This format does not
+change when echo is off (\cmdl[E]{E0}):
+\begin{itemize}
+\item \cmdl[V]{V1}: a carriage return and a line feed (\sreg{3} and
+  \sreg{4}) go before each word result code and after it.  The same
+  pair goes before the first line of a response and after each line of
+  it.  Thus, \cmdr{ATE0} and then \cmdr{AT} give
+  \texttt{<CR><LF>OK<CR><LF>}.
+\item \cmdl[V]{V0}: a carriage return (\sreg{3}) goes after each
+  number.  Thus, \cmdr{AT} gives \texttt{0<CR>}.  Each line of a
+  response ends with a carriage return and a line feed.
+\end{itemize}
 
 \begin{vtable}{3}{|L{0.26\textwidth}|C{0.1\textwidth}|L{0.48\textwidth}|}{Result Codes}
   {\thd{Result code} & \thd{Number} & \thd{Description}}
