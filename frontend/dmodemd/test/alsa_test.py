@@ -260,7 +260,7 @@ try:
     check("1002 caller ID packet with 1001",
           cid and b"NMBR = 1001\r\n" in cid.group(1))
     check("1002 answers: +VLS=1", b.cmd(b"AT+VLS=1", t=5))
-    m = a.expect(rb"(\x10r)?(OK|BUSY|NO ANSWER|ERROR)\r\n", 30)
+    m = a.expect(rb"(\x10r)?(?:\r\n)?(OK|BUSY|NO ANSWER|ERROR)\r\n", 30)
     print("1001 voice dial: %s in %.1f s" % (m and m.group(2).decode(), time.time() - t))
     check("1001 heard the ringing tone and OK", m and m.group(1) and m.group(2) == b"OK")
     check("1001 +VTS=5", a.cmd(b"AT+VTS=5"))

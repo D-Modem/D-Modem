@@ -4,14 +4,17 @@
       0 A< AT+VRA?\r
       0 A: AT+VRA?\r\r\n
       0 A: +VRA=50\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VRN?\r
       0 A: AT+VRN?\r\r\n
       0 A: +VRN=10\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VRN=?\r
       0 A: AT+VRN=?\r\r\n
       0 A: +VRN=0-255\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VRN=256\r
       0 A: AT+VRN=256\r\r\n
@@ -20,17 +23,18 @@
       0 A: AT+VRN=1\r\r\n
       0 A: OK\r\n
       0 A< ATD5551000\r
-      0 A: ATD5551000\r\r\n
+   1000 A: ATD5551000\r\r\n
    1000 A: OK\r\n
    1500 A< AT+VLS?\r
    1500 A: AT+VLS?\r\r\n
    1500 A: +VLS=1\r\n
+   1500 A: \r\n
    1500 A: OK\r\n
    1500 A< ATS11=50\r
    1500 A: ATS11=50\r\r\n
    1500 A: OK\r\n
    1500 A< ATD12\r
-   1500 A: ATD12\r\r\n
+   1680 A: ATD12\r\r\n
    1680 A: OK\r\n
    1900 A< ATH\r
    1900 A: ATH\r\r\n
@@ -38,6 +42,7 @@
    1900 A< AT+FCLASS?\r
    1900 A: AT+FCLASS?\r\r\n
    1900 A: 0\r\n
+   1900 A: \r\n
    1900 A: OK\r\n
    1900 A< AT+FCLASS=8\r
    1900 A: AT+FCLASS=8\r\r\n
@@ -49,11 +54,12 @@
    1900 A: AT+VRN=5\r\r\n
    1900 A: OK\r\n
    1900 A< ATD5551000\r
-   1900 A: ATD5551000\r\r\n
+   3900 A: ATD5551000\r\r\n
    3900 A: NO ANSWER\r\n
    4400 A< AT+VLS?\r
    4400 A: AT+VLS?\r\r\n
    4400 A: +VLS=0\r\n
+   4400 A: \r\n
    4400 A: OK\r\n
    4400 A< AT+VRN=0\r
    4400 A: AT+VRN=0\r\r\n
@@ -61,6 +67,7 @@
    4400 A< ATDL\r
    4400 A: ATDL\r\r\n
    4400 A: Dialing 5551000...\r\n
+   4420 A: \r\n
    4420 A: OK\r\n
    4600 A< AT+VLS=0\r
    4600 A: AT+VLS=0\r\r\n
@@ -75,8 +82,8 @@
    4600 A: ATS7=60\r\r\n
    4600 A: OK\r\n
    4600 A< ATD5551000\r
-   4600 A: ATD5551000\r\r\n
-  17620 A: \x10r\x10rOK\r\n
+  17620 A: ATD5551000\r\x10r\x10r\r\n
+  17620 A: OK\r\n
   18600 A< AT+VLS=0\r
   18600 A: AT+VLS=0\r\r\n
   18600 A: OK\r\n
@@ -84,8 +91,8 @@
   18600 A: AT+VRA=30\r\r\n
   18600 A: OK\r\n
   18600 A< ATD5551000\r
-  18600 A: ATD5551000\r\r\n
-  23620 A: \x10rOK\r\n
+  23620 A: ATD5551000\r\x10r\r\n
+  23620 A: OK\r\n
   24600 A< AT+VLS=0\r
   24600 A: AT+VLS=0\r\r\n
   24600 A: OK\r\n
@@ -93,8 +100,8 @@
   24600 A: AT+VRA=0\r\r\n
   24600 A: OK\r\n
   24600 A< ATD5551000\r
-  24600 A: ATD5551000\r\r\n
-  25920 A: \x10rOK\r\n
+  25920 A: ATD5551000\r\x10r\r\n
+  25920 A: OK\r\n
   26600 A< AT+VLS=0\r
   26600 A: AT+VLS=0\r\r\n
   26600 A: OK\r\n
@@ -105,27 +112,28 @@
   26600 A: ATS7=8\r\r\n
   26600 A: OK\r\n
   26600 A< ATD5551000\r
-  26600 A: ATD5551000\r\r\n
-  34600 A: \x10r\x10rNO ANSWER\r\n
+  34600 A: ATD5551000\r\x10r\x10r\r\n
+  34600 A: NO ANSWER\r\n
   35600 A< AT+VRN=10\r
   35600 A: AT+VRN=10\r\r\n
   35600 A: OK\r\n
   35600 A< ATD5551000\r
-  35600 A: ATD5551000\r\r\n
-  39140 A: \x10bBUSY\r\n
+  39140 A: ATD5551000\r\x10b\r\n
+  39140 A: BUSY\r\n
   40600 A< AT+VLS?\r
   40600 A: AT+VLS?\r\r\n
   40600 A: +VLS=0\r\n
+  40600 A: \r\n
   40600 A: OK\r\n
   40600 A< ATD5551000\r
-  40600 A: ATD5551000\r\r\n
-  40920 A: \x10aOK\r\n
+  40920 A: ATD5551000\r\x10a\r\n
+  40920 A: OK\r\n
   41600 A< AT+VLS=0\r
   41600 A: AT+VLS=0\r\r\n
   41600 A: OK\r\n
   41600 A< ATD5551000\r
-  41600 A: ATD5551000\r\r\n
-  41920 A: \x10fOK\r\n
+  41920 A: ATD5551000\r\x10f\r\n
+  41920 A: OK\r\n
   42600 A< AT+VLS=0\r
   42600 A: AT+VLS=0\r\r\n
   42600 A: OK\r\n

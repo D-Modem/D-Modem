@@ -6,7 +6,9 @@
       0 B: OK\r\n
       0 B< ATA\r
       0 A< ATD\r
+  10080 B: \r\n
   10080 B: CONNECT FAST\r\n
+  10540 A: \r\n
   10540 A: CONNECT FAST\r\n
   10540 until A 'CONNECT': yes
   10540 until B 'CONNECT': yes
@@ -108,8 +110,10 @@
   11460 B: A0045 The quick brown fox jumps over the lazy dog 0123456789\r\n
   11460 B: A0046 The quick brown fox jumps over the lazy dog 0123456789\r\n
   11460 B: A0047 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  22560 A: B0048 The quick brown foNO CARRIER\r\n
-  26480 B: A0048 The quick brown foNO CARRIER\r\n
+  22560 A: B0048 The quick brown fo\r\n
+  22560 A: NO CARRIER\r\n
+  26480 B: A0048 The quick brown fo\r\n
+  26480 B: NO CARRIER\r\n
   26480 until B 'NO CARRIER': yes
   26980 A: state 0, tx 9500 rx 9500, idle
   26980 B: state 0, tx 9500 rx 9500, idle

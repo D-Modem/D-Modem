@@ -9,9 +9,12 @@
    4000 B: \r\n
    4000 B: RING\r\n
    7000 A< ATD\r
+   7000 B: \r\n
    7000 B: RING\r\n
+  16600 B: \r\n
   16600 B: CONNECT 14400\r\n
   16600 until B 'CONNECT': yes
+  16640 A: \r\n
   16640 A: CONNECT 14400\r\n
   16640 until A 'CONNECT': yes
   16640 A: state 2, tx 14400 rx 14400, started
@@ -20,39 +23,56 @@
   18140 B: \r\n
   18140 B: OK\r\n
   18640 B< ATH\r
+  18640 B: \r\n
   18640 B: OK\r\n
+  18660 B: \r\n
   18660 B: NO CARRIER\r\n
-  18700 A: +++NO CARRIER\r\n
+  18700 A: +++\r\n
+  18700 A: NO CARRIER\r\n
   18700 until A 'NO CARRIER': yes
   19700 B< ATS0=0\r
+  19700 B: \r\n
   19700 B: OK\r\n
   22220 B: \r\n
   22220 B: RING\r\n
+  27420 B: \r\n
   27420 B: RING\r\n
   30100 B< ATS1?\r
+  30100 B: \r\n
   30100 B: 2\r\n
+  30100 B: \r\n
   30100 B: OK\r\n
   38100 B< ATS1?\r
+  38100 B: \r\n
   38100 B: 0\r\n
+  38100 B: \r\n
   38100 B: OK\r\n
   40620 B: \r\n
   40620 B: RING\r\n
   48800 B< ATS1?\r
+  48800 B: \r\n
   48800 B: 0\r\n
+  48800 B: \r\n
   48800 B: OK\r\n
   48800 B< ATS0=2\r
+  48800 B: \r\n
   48800 B: OK\r\n
   51320 B: \r\n
   51320 B: RING\r\n
   54000 A< ATD\r
+  56520 B: \r\n
   56520 B: RING\r\n
+  66120 B: \r\n
   66120 B: CONNECT 14400\r\n
   66120 until B 'CONNECT': yes
+  66160 A: \r\n
   66160 A: CONNECT 14400\r\n
   66160 until A 'CONNECT': yes
   66160 A: state 2, tx 14400 rx 14400, started
   66160 B: state 2, tx 14400 rx 14400, started
+  66180 A: \r\n
   66180 A: NO CARRIER\r\n
+  66220 B: \r\n
   66220 B: NO CARRIER\r\n
   66220 until B 'NO CARRIER': yes
   66720 A: state 0, tx 14400 rx 14400, idle

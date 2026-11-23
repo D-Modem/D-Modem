@@ -7,21 +7,25 @@
       0 A< AT I0\r
       0 A: AT I0\r\r\n
       0 A: D-Modem\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATI1\r
       0 A: ATI1\r\r\n
       0 A: D-Modem, 1.0.0\r\n
       0 A: D-Modem project\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATI2\r
       0 A: ATI2\r\r\n
       0 A: D-Modem, 1.0.0\r\n
       0 A: D-Modem project\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATI3\r
       0 A: ATI3\r\r\n
       0 A: A\r\n
       0 A: core_script\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATI4\r
       0 A: ATI4\r\r\n
@@ -33,14 +37,17 @@
       0 A< ATI5\r
       0 A: ATI5\r\r\n
       0 A: Stored Profile 0:\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATI6\r
       0 A: ATI6\r\r\n
       0 A: No Previous Call\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATI7\r
       0 A: ATI7\r\r\n
       0 A: Country: USA\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATI8\r
       0 A: ATI8\r\r\n
@@ -50,6 +57,7 @@
       0 A: 0\r\n
       0 A: 0\r\n
       0 A: 43\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATS0=2\r
       0 A: ATS0=2\r\r\n
@@ -57,6 +65,7 @@
       0 A< ATS0?\r
       0 A: ATS0?\r\r\n
       0 A: 2\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATS300=1\r
       0 A: ATS300=1\r\r\n
@@ -64,11 +73,13 @@
       0 A< ATS7=45S7?\r
       0 A: ATS7=45S7?\r\r\n
       0 A: 45\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATS09=6S9?S010=7S10?\r
       0 A: ATS09=6S9?S010=7S10?\r\r\n
       0 A: 6\r\n
       0 A: 7\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATS\r
       0 A: ATS\r\r\n
@@ -76,10 +87,12 @@
       0 A< AT+MS=?\r
       0 A: AT+MS=?\r\r\n
       0 A: (21,22,23,26,126,226,27,29,229,122,32,132,232,234,168,128,61,33,34,103,18,45,110,118,121,123,203,5,12,212,201,202,208,56,57,90,91,92,150,200,255,64),(0,1),(300-56000),(300-56000)\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 92,1,300,56000\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MS=34\r
       0 A: AT+MS=34\r\r\n
@@ -87,6 +100,7 @@
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 34,1,300,56000\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MS=132,0,1200,14400\r
       0 A: AT+MS=132,0,1200,14400\r\r\n
@@ -94,6 +108,7 @@
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 132,0,1200,14400\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MS=,1\r
       0 A: AT+MS=,1\r\r\n
@@ -101,6 +116,7 @@
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 132,1,1200,14400\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MS=99\r
       0 A: AT+MS=99\r\r\n
@@ -120,6 +136,7 @@
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 56,1,1200,14400\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MS=VCVM\r
       0 A: AT+MS=VCVM\r\r\n
@@ -127,6 +144,7 @@
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 150,1,1200,14400\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MS=vcvm,0\r
       0 A: AT+MS=vcvm,0\r\r\n
@@ -137,14 +155,17 @@
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 150,0,1200,14400\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+CVM?\r
       0 A: AT+CVM?\r\r\n
       0 A: +CVM: 63,8000,0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+CVM=?\r
       0 A: AT+CVM=?\r\r\n
       0 A: +CVM: (0-63),(8000,16000),(0,1)\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+CVM=33,8000,1\r
       0 A: AT+CVM=33,8000,1\r\r\n
@@ -152,6 +173,7 @@
       0 A< AT+CVM?\r
       0 A: AT+CVM?\r\r\n
       0 A: +CVM: 33,8000,1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+CVM=64\r
       0 A: AT+CVM=64\r\r\n
@@ -163,6 +185,7 @@
       0 A: ATS44?S45?\r\r\n
       0 A: 0\r\n
       0 A: 0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATS44=3\r
       0 A: ATS44=3\r\r\n
@@ -179,10 +202,12 @@
       0 A< AT+GCI?\r
       0 A: AT+GCI?\r\r\n
       0 A: +GCI:b5\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+GCI=?\r
       0 A: AT+GCI=?\r\r\n
       0 A: +GCI:(2,7,9,a,c,f,16,1a,1b,20,25,26,100,2d,2e,31,36,101,3c,3d,42,46,50,51,52,53,54,57,58,59,0,5e,61,62,103,64,104,69,6c,70,73,77,7b,7e,82,83,84,88,89,8a,8b,8e,b8,98,9c,c5,c6,9f,107,a0,a1,a5,a6,108,a9,ad,ae,b3,b4,b7,b5,bc,)\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+GCI=B4\r
       0 A: AT+GCI=B4\r\r\n
@@ -190,10 +215,12 @@
       0 A< AT+GCI?\r
       0 A: AT+GCI?\r\r\n
       0 A: +GCI:b4\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATI7\r
       0 A: ATI7\r\r\n
       0 A: Country: UK\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+GCI=7777\r
       0 A: AT+GCI=7777\r\r\n
@@ -204,14 +231,17 @@
       0 A< AT+GMI\r
       0 A: AT+GMI\r\r\n
       0 A: D-Modem project\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+GMM\r
       0 A: AT+GMM\r\r\n
       0 A: D-Modem\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+GMR\r
       0 A: AT+GMR\r\r\n
       0 A: 1.0.0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+GMX\r
       0 A: AT+GMX\r\r\n
@@ -219,10 +249,12 @@
       0 A< AT+FCLASS=?\r
       0 A: AT+FCLASS=?\r\r\n
       0 A: 0,1,1.0,2,2.0,6,8\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FCLASS?\r
       0 A: AT+FCLASS?\r\r\n
       0 A: 0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FCLASS=1\r
       0 A: AT+FCLASS=1\r\r\n
@@ -230,49 +262,60 @@
       0 A< AT+FCLASS?\r
       0 A: AT+FCLASS?\r\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FTM=?\r
       0 A: AT+FTM=?\r\r\n
       0 A: 24,48,72,73,74,96,97,98,121,122,145,146\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FRM=?\r
       0 A: AT+FRM=?\r\r\n
       0 A: 24,48,72,73,74,96,97,98,121,122,145,146\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FTH=?\r
       0 A: AT+FTH=?\r\r\n
       0 A: 3\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FRH=?\r
       0 A: AT+FRH=?\r\r\n
       0 A: 3\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FCLASS=1.0;+FCLASS?;+F34?;+F34=?\r
       0 A: AT+FCLASS=1.0;+FCLASS?;+F34?;+F34=?\r\r\n
       0 A: 1.0\r\n
       0 A: 14,1,0,14,1\r\n
       0 A: (0-14),(0-14),(0-2),(0-14),(0-14)\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+F34=12,2,1;+F34?;+F34=15\r
       0 A: AT+F34=12,2,1;+F34?;+F34=15\r\r\n
       0 A: 12,2,1,14,1\r\n
+      0 A: \r\n
       0 A: ERROR\r\n
       0 A< AT+F34=,,,1,1;+F34?\r
       0 A: AT+F34=,,,1,1;+F34?\r\r\n
       0 A: 12,2,1,1,1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FCLASS=2.0;+FCLASS?\r
       0 A: AT+FCLASS=2.0;+FCLASS?\r\r\n
       0 A: 2.0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FLI="Fax ID with Spaces";+FLI?\r
       0 A: AT+FLI="Fax ID with Spaces";+FLI?\r\r\n
       0 A: "Fax ID with Spaces"\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FLI = "a;b" ; +FLI?;+FLI=?\r
       0 A: AT+FLI = "a;b" ; +FLI?;+FLI=?\r\r\n
       0 A: "a;b"\r\n
       0 A: (20)(32-127)\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FLI="123456789012345678901"\r
       0 A: AT+FLI="123456789012345678901"\r\r\n
@@ -282,17 +325,20 @@
       0 A: "Poller"\r\n
       0 A: 1\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: ERROR\r\n
       0 A< AT+FIS=?;+FIS?;+FIS=0,3;+FIS?\r
       0 A: AT+FIS=?;+FIS?;+FIS=0,3;+FIS?\r\r\n
       0 A: (0,1),(0-13),(0),(0-2),(0),(0-2),(0),(0-7)\r\n
       0 A: 1,5,0,2,0,0,0,0\r\n
       0 A: 0,3,0,2,0,0,0,0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FCC=1,4,0,2,0,2,0,0;+FIS?;+FCC?\r
       0 A: AT+FCC=1,4,0,2,0,2,0,0;+FIS?;+FCC?\r\r\n
       0 A: 1,4,0,2,0,2,0,0\r\n
       0 A: 1,4,0,2,0,2,0,0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FIS=1,14\r
       0 A: AT+FIS=1,14\r\r\n
@@ -300,6 +346,7 @@
       0 A< AT+FBO=1;+FBO?;+FBO=4\r
       0 A: AT+FBO=1;+FBO?;+FBO=4\r\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: ERROR\r\n
       0 A< AT+FCR?;+FPS?;+FHS?;+FCS?\r
       0 A: AT+FCR?;+FPS?;+FHS?;+FCS?\r\r\n
@@ -307,10 +354,12 @@
       0 A: 1\r\n
       0 A: 00\r\n
       0 A: 0,0,0,0,0,0,0,0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FNR=1,1,1,0;+FNR?;+FIE=0\r
       0 A: AT+FNR=1,1,1,0;+FNR?;+FIE=0\r\r\n
       0 A: 1,1,1,0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FDT\r
       0 A: AT+FDT\r\r\n
@@ -329,6 +378,7 @@
       0 A: D-Modem project\r\n
       0 A: D-Modem\r\n
       0 A: 1.0.0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FTH=3\r
       0 A: AT+FTH=3\r\r\n
@@ -343,11 +393,13 @@
       0 A: 1\r\n
       0 A: 0\r\n
       0 A: 2\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FCIG?;+FSPL?\r
       0 A: AT+FCIG?;+FSPL?\r\r\n
       0 A: "Poller"\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+FCLASS=0\r
       0 A: AT+FCLASS=0\r\r\n
@@ -358,6 +410,7 @@
       0 A< AT#CID=?\r
       0 A: AT#CID=?\r\r\n
       0 A: 0,1,2\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT#CID=1\r
       0 A: AT#CID=1\r\r\n
@@ -365,6 +418,7 @@
       0 A< AT#CID?\r
       0 A: AT#CID?\r\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT#CID=5\r
       0 A: AT#CID=5\r\r\n
@@ -386,6 +440,7 @@
       0 A: 1\r\n
       0 A: 2\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT\\V1\r
       0 A: AT\V1\r\r\n
@@ -406,10 +461,12 @@
       0 A: +X2UP=0,16,0 +CBST=0,0,0 +CRC=0 +PCW=2 +PIG=1 +FAA=0 +FPR=0 -SEC=0 +EF=5\r\n
       0 A: +CVM=63,8000,0 +DEBC=1,0,37\r\n
       0 A: STORED PROFILES: none\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT\\V2&V1\r
       0 A: AT\V2&V1\r\r\n
       0 A: No Previous Call\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT\\V3\r
       0 A: AT\V3\r\r\n
@@ -433,6 +490,7 @@
       0 A: +X2UP=0,16,0 +CBST=0,0,0 +CRC=0 +PCW=2 +PIG=1 +FAA=0 +FPR=0 -SEC=0 +EF=5\r\n
       0 A: +CVM=63,8000,0 +DEBC=1,0,37\r\n
       0 A: STORED PROFILES: none\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT&W\r
       0 A: AT&W\r\r\n
@@ -447,6 +505,7 @@
       0 A: ATS104?S39?\r\r\n
       0 A: 2\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT%X\r
       0 A: AT%X\r\r\n
@@ -458,6 +517,7 @@
       0 A: ATS103?S105?\r\r\n
       0 A: 3\r\n
       0 A: 2\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT\\N5\r
       0 A: AT\N5\r\r\n
@@ -465,6 +525,7 @@
       0 A< AT+ES?\r
       0 A: AT+ES?\r\r\n
       0 A: +ES: 4,4,6\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT\\N2;+ES?;\\N0;+ES?;\\N1;+ES?;\\N4;+ES?\r
       0 A: AT\N2;+ES?;\N0;+ES?;\N1;+ES?;\N4;+ES?\r\r\n
@@ -472,6 +533,7 @@
       0 A: +ES: 1,0,1\r\n
       0 A: +ES: 0,0,0\r\n
       0 A: +ES: 3,3,5\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+ES=3,0,2\r
       0 A: AT+ES=3,0,2\r\r\n
@@ -479,6 +541,7 @@
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
       0 A: 3\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+ES=4,0,2\r
       0 A: AT+ES=4,0,2\r\r\n
@@ -486,6 +549,7 @@
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
       0 A: 3\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+ES=,4,6\r
       0 A: AT+ES=,4,6\r\r\n
@@ -493,6 +557,7 @@
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
       0 A: 5\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATS103=0\r
       0 A: ATS103=0\r\r\n
@@ -500,6 +565,7 @@
       0 A< AT+ES?\r
       0 A: AT+ES?\r\r\n
       0 A: +ES: 1,0,1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATS103=6\r
       0 A: ATS103=6\r\r\n
@@ -513,6 +579,7 @@
       0 A< ATS104?\r
       0 A: ATS104?\r\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT&K2\r
       0 A: AT&K2\r\r\n
@@ -520,6 +587,7 @@
       0 A< ATS104?\r
       0 A: ATS104?\r\r\n
       0 A: 3\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATZ\r
       0 A: ATZ\r\r\n
@@ -529,10 +597,12 @@
       0 A: 3\r\n
       0 A: 3\r\n
       0 A: 3\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+ES?\r
       0 A: AT+ES?\r\r\n
       0 A: +ES: 3,0,2\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT\\Q\r
       0 A: AT\Q\r\r\n
@@ -558,11 +628,13 @@
       0 A< AT+MV18S=?\r
       0 A: AT+MV18S=?\r\r\n
       0 A: +MV18S: (0-7),(0-7),(0,1),(0,1),(0-2)\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MV18S=1;+MV18S?;+MS?\r
       0 A: AT+MV18S=1;+MV18S?;+MS?\r\r\n
       0 A: +MV18S: 1,0,0,0,1\r\n
       0 A: 18,1,300,56000\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MV18S=3\r
       0 A: AT+MV18S=3\r\r\n
@@ -570,25 +642,30 @@
       0 A< AT+MV18S=0;+MS?\r
       0 A: AT+MV18S=0;+MS?\r\r\n
       0 A: 92,1,300,56000\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MV18R=1;+MV18R?;+MV18P?;+MV18AM=?\r
       0 A: AT+MV18R=1;+MV18R?;+MV18P?;+MV18AM=?\r\r\n
       0 A: +MV18R: 1\r\n
       0 A: +MV18P: 2\r\n
       0 A: +MV18AM: (63)(32-126)\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MV18AM="GA, Text Here";+MV18AM?\r
       0 A: AT+MV18AM="GA, Text Here";+MV18AM?\r\r\n
       0 A: +MV18AM: "GA, Text Here"\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MBAUDOT=?;+MBAUDOT?\r
       0 A: AT+MBAUDOT=?;+MBAUDOT?\r\r\n
       0 A: +MBAUDOT: (45,50,75,100),(300-3400),(300-3400),(0,1)\r\n
       0 A: +MBAUDOT: 45,1400,1800,0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MBAUDOT=50,2125,2295,1;+MBAUDOT?\r
       0 A: AT+MBAUDOT=50,2125,2295,1;+MBAUDOT?\r\r\n
       0 A: +MBAUDOT: 50,2125,2295,1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+MBAUDOT=60\r
       0 A: AT+MBAUDOT=60\r\r\n
@@ -599,6 +676,7 @@
       0 A: 110,1,300,56000\r\n
       0 A: 5,1,300,56000\r\n
       0 A: 12,1,300,56000\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATZ\r
       0 A: ATZ\r\r\n
@@ -609,6 +687,7 @@
       0 A: +MV18S: 0,0,0,0,1\r\n
       0 A: +MV18AM: ""\r\n
       0 A: 92,1,300,56000\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATB\r
       0 A: ATB\r\r\n
@@ -616,6 +695,7 @@
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 22,0,1200,1200\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATL2M2N0\r
       0 A: ATL2M2N0\r\r\n
@@ -625,6 +705,7 @@
       0 A: 2\r\n
       0 A: 2\r\n
       0 A: 0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATL9\r
       0 A: ATL9\r\r\n
@@ -635,6 +716,7 @@
       0 A< ATS16?\r
       0 A: ATS16?\r\r\n
       0 A: 0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATT\r
       0 A: ATT\r\r\n
@@ -642,6 +724,7 @@
       0 A< ATS16?\r
       0 A: ATS16?\r\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATX3Y1\r
       0 A: ATX3Y1\r\r\n
@@ -650,6 +733,7 @@
       0 A: ATS56?S161?\r\r\n
       0 A: 3\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATX5\r
       0 A: ATX5\r\r\n
@@ -669,18 +753,22 @@
       0 A< AT+MS?\r
       0 A: AT+MS?\r\r\n
       0 A: 92,1,300,56000\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATS0?\r
       0 A: ATS0?\r\r\n
       0 A: 2\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATS0\x08\x08\x08\x08ATI0\r
       0 A: ATS0\x08 \x08\x08 \x08\x08 \x08\x08 \x08ATI0\r\r\n
       0 A: D-Modem\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< A/
       0 A: ATI0\r\r\n
       0 A: D-Modem\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< garbage\r
       0 A< ATQ0V1 E1 \r
@@ -689,9 +777,11 @@
       0 A< AT\x09I0\r
       0 A: AT\x09I0\r\r\n
       0 A: D-Modem\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII
       0 A: ATIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIIII\r\n
+      0 A: \r\n
       0 A: ERROR\r\n
       0 A< \r
       0 A< AT\n
@@ -702,23 +792,24 @@
       0 A: ATE0\r\r\n
       0 A: OK\r\n
       0 A< ATI0\r
+      0 A: \r\n
       0 A: D-Modem\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< ATV0\r
-      0 A: 0\r\n
       0 A< ATI0\r
-      0 A: D-Modem\r\n
-      0 A: 0\r\n
+      0 A: 0\rD-Modem\r\n
       0 A< ATX\r
-      0 A: 0\r\n
       0 A< ATQ1\r
       0 A< ATI0\r
-      0 A: D-Modem\r\n
+      0 A: 0\r0\rD-Modem\r\n
       0 A< ATQ0V1E1\r
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+X2UP=?\r
       0 A: AT+X2UP=?\r\r\n
       0 A: +X2UP: (0-2),(0,4,8,12,16,20,24,28),(0,4,8,12,16,20,24,28)\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+X2UP=2,12,16\r
       0 A: AT+X2UP=2,12,16\r\r\n
@@ -726,6 +817,7 @@
       0 A< AT+X2UP?\r
       0 A: AT+X2UP?\r\r\n
       0 A: +X2UP: 2,12,16\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+X2UP=1\r
       0 A: AT+X2UP=1\r\r\n
@@ -733,6 +825,7 @@
       0 A< AT+X2UP?\r
       0 A: AT+X2UP?\r\r\n
       0 A: +X2UP: 1,12,16\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+X2UP=2,16,16\r
       0 A: AT+X2UP=2,16,16\r\r\n
@@ -743,6 +836,7 @@
       0 A< AT+X2UP?\r
       0 A: AT+X2UP?\r\r\n
       0 A: +X2UP: 1,12,16\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+X2UP=0,16,0\r
       0 A: AT+X2UP=0,16,0\r\r\n
@@ -751,11 +845,12 @@
       0 A: ATS3=13S4=10S5=8S2=43\r\r\n
       0 A: OK\r\n
       0 A< ATS3=33\r
-      0 A: ATS3=33\r\r\n
+      0 A: ATS3=33\r!\n
       0 A: OK!\n
       0 A< ATI0!
       0 A: ATI0!!\n
       0 A: D-Modem!\n
+      0 A: !\n
       0 A: OK!\n
       0 A< ATS3=13\r
       0 A< ATS12=50S11=70S10=14S9=6S8=2S6=3\r
