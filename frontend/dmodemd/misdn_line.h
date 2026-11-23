@@ -33,7 +33,7 @@
 #include <dcore.h>
 
 #include "dm_types.h"
-#include "pty.h"
+#include "dte.h"
 #include "q931.h"
 #include "run_loop.h"
 
@@ -41,8 +41,9 @@ namespace dmd {
 
 class MisdnLine final : public dcore::Host, private Q931::User {
 public:
-	/* the line of pty's modem, not yet open */
-	explicit MisdnLine(Pty &pty) : pty_(pty), q931_(*this) {}
+	/* the line of the modem on dte (a pty's, or a socket's when the
+	   modem is in an app: dmodem_embed.h), not yet open */
+	explicit MisdnLine(Dte &dte) : dte_(dte), q931_(*this) {}
 	~MisdnLine();
 	MisdnLine(const MisdnLine &) = delete;
 	MisdnLine &operator=(const MisdnLine &) = delete;
@@ -71,9 +72,9 @@ public:
 	bool clear_line(dcore::Modem &) override { return udi_; }
 	/* for ATI3 */
 	const char *driver_name() override { return "mISDN"; }
-	/* the modem's characters to the pty: how many it took */
+	/* the modem's characters to the DTE: how many it took */
 	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
-		return pty_.write(buf, n);
+		return dte_.write(buf, n);
 	}
 	/* the clock: the monotonic one's ms */
 	u64 now_ms() override { return dcore::monotonic_ms(); }
@@ -103,7 +104,7 @@ private:
 	/* the call's B-channel closed */
 	void b_close();
 
-	Pty &pty_;
+	Dte &dte_;
 	Q931 q931_;
 	dcore::Modem *m_ = nullptr;     /* pump()'s */
 	u8 dev_ = 0;

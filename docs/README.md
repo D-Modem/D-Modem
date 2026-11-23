@@ -87,6 +87,11 @@ measurements, and test lists.
 - [FreeSWITCH: mod_dmodem](freeswitch.md): a modem module for
   FreeSWITCH
 
+## Programs that use the modem
+
+- [dmodemd as a library](embed.md): the modem in a thread of a program
+  (libdmodem_embed), for the D-Modem desktop app
+
 ## Hardware and operating systems
 
 - [Softmodem hardware](hardware.md): PC modem chips and USB modems on a

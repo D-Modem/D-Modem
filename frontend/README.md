@@ -7,6 +7,7 @@ and `link/`). Each one builds into `build/<its name>/`, for example
 | Directory | What it is |
 |-----------|------------|
 | `dmodemd/` | The modem as a program: SIP calls, softmodem hardware, USB modems and ISDN. Also the public header of libdmodem (`dmodem.h`) and `libdmodem_sip.a`. |
+| `embed/` | `libdmodem_embed`: `dmodemd` as a library, for the desktop app ([docs/embed.md](../docs/embed.md)) |
 | `asterisk/` | `app_dmodem` and `codec_clearmode`, modules for Asterisk |
 | `ari/` | `dmodem-ari`, the modem for Asterisk as an ARI application |
 | `freepbx/` | The FreePBX module (PHP) for `app_dmodem` or `dmodem-ari` |

@@ -16,6 +16,8 @@
 #                      it, linked statically: the default), or openssl
 #                      (the system's)
 #   DMODEM_DMODEMD     build dmodemd (its SIP on libre)
+#   DMODEM_EMBED       build libdmodem_embed: dmodemd as a library, for
+#                      the desktop app (needs DMODEM_DMODEMD)
 #   DMODEM_ASTERISK    build codec_clearmode when Asterisk's headers are found
 #   DMODEM_APP_DMODEM  also build app_dmodem (off: libdmodem, AGPL, inside
 #                      a GPLv2 Asterisk module; for your own Asterisk only,
@@ -242,6 +244,12 @@ add_subdirectory(core)
 # build/<its name>: build/dmodemd/dmodemd, build/asterisk/... (docs/layout.md)
 add_subdirectory(platforms/windows/winmodem winmodem)
 add_subdirectory(frontend/dmodemd dmodemd)
+# libdmodem_embed: dmodemd as a library (frontend/embed/dmodem_embed.h),
+# for the desktop app (D-Modem/gui)
+option(DMODEM_EMBED "Build libdmodem_embed (dmodemd as a library)" ON)
+if(DMODEM_DMODEMD AND DMODEM_EMBED)
+	add_subdirectory(frontend/embed embed)
+endif()
 # dmodem-capid: CAPI 2.0 on a D-Modem (POSIX)
 if(NOT WIN32)
 	add_subdirectory(frontend/capi capi)

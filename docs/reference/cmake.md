@@ -17,6 +17,7 @@ What `cmake -B build -D<NAME>=<value>` takes, from the `option()`s and cache set
 | `DMODEM_TESTS` | ON | Build the test programs (ctest) | `CMakeLists.txt` |
 | `DMODEM_USB` | ON | dmodemd's --usb on Windows and macOS (libusb, fetched) | `CMakeLists.txt` |
 | `DMODEM_WERROR` | OFF | Treat compiler warnings as errors (CI) | `CMakeLists.txt` |
+| `DMODEM_EMBED` | ON | Build libdmodem_embed (dmodemd as a library) | `CMakeLists.txt` |
 | `DMODEM_TEST_BUILTIN_FAKES` | OFF | Linux: also test dmodemd with the fake USB modems linked in | `frontend/dmodemd/CMakeLists.txt` |
 
 ## Settings
