@@ -6,10 +6,13 @@ give more information:
 - [Building](building.md): how to build D-Modem.
 - [Using dmodemd](usage.md): how to use it.
 - [What the modem does](features.md): all the standards that it implements.
+- [How it works](how-it-works.md): how a softmodem operates on a SIP call.
+- [Source layout](layout.md): what each folder has.
+- [Known issues](known-issues.md): the problems that are not fixed yet.
 
 This folder tells how each part operates.
 
-Each page uses plain English. It tells what the part does, how
+Each page uses ASD-STE100 Simplified Technical English ([STYLE.md](STYLE.md)). It tells what the part does, how
 to use it, and its current status. Each page has a link to a **technical
 details** page next to it (with the name `<page>-details.md`). That page has the full
 technical description: the names in the code, the clause numbers of the standards,
@@ -72,9 +75,12 @@ measurements, and test lists.
   answers the far modem itself, and sends the data as bytes over the internet
 - [Leased lines and dry pairs](leased.md): private circuits with no
   telephone exchange, and their line tests
+- ZyXEL compatibility: [encryption (S102, ATCK)](zyxel-des.md),
+  [fax mode (class 6)](zyxel-fax.md) and [security](zyxel-security.md)
 
 ## Phone systems
 
+- [The PBX modules and the login menu](modules.md): a summary of each module
 - [Asterisk: app_dmodem](asterisk.md): a modem module for Asterisk
 - [dmodem-ari](ari.md): the same, as a separate program together with Asterisk
 - [FreePBX](freepbx.md): configure D-Modem from the web interface of FreePBX
@@ -106,6 +112,7 @@ measurements, and test lists.
 
 ## References
 
+- [Acknowledgements](acknowledgements.md): where D-Modem comes from
 - [dmodemd's command line](reference/dmodemd.md), the
   [environment variables](reference/environment.md) and the
   [CMake options](reference/cmake.md): `tools/site_reference.py` makes them
