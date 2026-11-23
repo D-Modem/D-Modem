@@ -4,7 +4,7 @@
  *
  *    dmodem_bridge_test.cpp - the PBX modules' call (frontend/pbx/
  *    dmodem_bridge.c) answering several callers at once, every call
- *    connected to one server on a unix socket (as modemmenu -serve or the
+ *    connected to one server on a unix socket (as dmodem-login -serve or the
  *    BBS listen there): each call a connection of its own, its own
  *    header first, its bytes never another call's; and a server that
  *    takes no more connections costs a call its server, not the line
@@ -170,7 +170,7 @@ static int recv_fd(int fd, char *buf, size_t size, int *got)
 	return n;
 }
 
-/* the server: as modemmenu -serve, a connection for each call, served
+/* the server: as dmodem-login -serve, a connection for each call, served
    at once; its header read, then a greeting naming the call its header
    names, then each line back with that name in front, until a line
    "quit": "bye" then, and the session ends.  With handoff the modem's

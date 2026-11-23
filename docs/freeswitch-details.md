@@ -361,15 +361,15 @@ DMODEM_PEER=192.0.2.1
 
 ```
 
-[`modemmenu`](https://github.com/D-Modem/menu) uses these variables. It
+[`dmodem-login`](https://github.com/D-Modem/login) uses these variables. It
 gives a login (from a text file, LDAP, SQL or PAM) and a menu of a BBS,
 PPP and a shell. It starts each of these items with the credentials of the caller and these
 details of the call. It runs as a `mode` `exec` program for each
-call, or as one server for all calls (`modemmenu -serve`) behind a
+call, or as one server for all calls (`dmodem-login -serve`) behind a
 `mode` `unix` profile with `header` `true`.
 
 Each call is a separate connection to the server of the profile. Many
-callers at the same time on one `modemmenu -serve` (or a BBS) socket are many
+callers at the same time on one `dmodem-login -serve` (or a BBS) socket are many
 connections, each with its own header.
 
 With `handoff = yes` also (`unix` and `header` only), the module
@@ -381,7 +381,7 @@ on the line of the modem itself, as on a serial port. The connection carries not
 while the session continues. When the server closes it, the module
 waits for the last data that the server wrote to go out, then hangs up (`LOCAL`).
 When the remote modem goes, the server sees its end of the line close.
-The server must expect the descriptor (`modemmenu -serve` and the
+The server must expect the descriptor (`dmodem-login -serve` and the
 `handoff` listeners of the BBS do). A server that does not expect it gets the header and
 nothing after it.
 
