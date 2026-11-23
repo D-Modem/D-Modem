@@ -101,15 +101,15 @@ port = 2323
 mode = exec
 command = exec /usr/sbin/pppd nodetach noauth local lock passive 192.168.77.1:192.168.77.2 ms-dns 192.168.77.1
 
-; a login and a menu (BBS, PPP, shell) for the caller: modemmenu,
-; https://github.com/D-Modem/menu, a program for each call
+; a login and a menu (BBS, PPP, shell) for the caller: dmodem-login,
+; https://github.com/D-Modem/login, a program for each call
 ;[menu]
 ;mode = exec
-;command = exec /usr/local/bin/modemmenu -config /etc/asterisk/modemmenu.conf
-; or one modemmenu -serve for every call
+;command = exec /usr/local/bin/dmodem-login -config /etc/asterisk/dmodem-login.conf
+; or one dmodem-login -serve for every call
 ;[menu]
 ;mode = unix
-;path = /run/modemmenu/modemmenu.sock
+;path = /run/dmodem-login/dmodem-login.sock
 ;header = yes
 
 ; a login program on the pty

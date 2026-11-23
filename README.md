@@ -43,7 +43,7 @@ The documentation is also a website, [d-modem.github.io/D-Modem](https://d-modem
 - [Building](docs/building.md): Linux, Windows, macOS, Haiku, the tests
 - [Using dmodemd](docs/usage.md): the SIP account, dialing, answering, fax, voice, SRTP, hardware
 - [What the modem does](docs/features.md): all of the standards, in one location
-- [The PBX modules](docs/modules.md): Asterisk, dmodem-ari, FreePBX, FreeSWITCH and modemmenu
+- [The PBX modules](docs/modules.md): Asterisk, dmodem-ari, FreePBX, FreeSWITCH and dmodem-login
 - [docs/](docs/README.md): how each part operates, with a page of technical details next to each
 - [The AT command reference](docs/at_commands.pdf) (PDF)
 - [Source layout](docs/layout.md), [How it works](docs/how-it-works.md), [Known issues](docs/known-issues.md)
@@ -57,7 +57,7 @@ D-Modem started at Aon's Cyber Labs in 2021 ([acknowledgements](docs/acknowledge
 | [D-Modem](https://github.com/D-Modem/D-Modem) | The open V.92 softmodem: dmodemd, libdmodem and the Asterisk, FreeSWITCH and ARI modules |
 | [app](https://github.com/D-Modem/app) | The D-Modem app for Android and iOS: a dial-up modem on a SIP call |
 | [hardware](https://github.com/D-Modem/hardware) | pico-serial: RP2040 serial adapters and phone-line USB sticks |
-| [menu](https://github.com/D-Modem/menu) | modemmenu: the login and menu for dial-up callers |
+| [login](https://github.com/D-Modem/login) | dmodem-login: the login, menu and LDAP provider for dial-up callers |
 | [bbs](https://github.com/D-Modem/bbs) | A bulletin board for telnet, SSH, TN3270 and modem callers |
 | [go3270](https://github.com/D-Modem/go3270) | A Go library for 3270 terminal servers, used by bbs |
 | [brand](https://github.com/D-Modem/brand) | Logos, colours, type and the naming guide |

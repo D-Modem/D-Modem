@@ -82,7 +82,7 @@ $delete = $editing ? 'config.php?display=dmodem&action=delete&profile=' . urlenc
 	$row('header', _('Call details first'), $check('header', $p['header']),
 	     _('The server gets the call\'s details first: NAME=value lines and an empty line.'));
 	$row('handoff', _('Hand over the line'), $check('handoff', $p['handoff']),
-	     _('The server gets the modem\'s line itself, a terminal, passed with the call details over the socket, instead of the call\'s bytes copied to it; it gives the line back by closing the connection. Needs Call details first. For modemmenu -serve and the bbs with handoff = yes, so pppd and shells run on the line.'));
+	     _('The server gets the modem\'s line itself, a terminal, passed with the call details over the socket, instead of the call\'s bytes copied to it; it gives the line back by closing the connection. Needs Call details first. For dmodem-login -serve and the bbs with handoff = yes, so pppd and shells run on the line.'));
 	$row('law', _('G.711 law'),
 	     $select('law', $p['law'], [
 		     'auto' => _('The channel\'s (auto)'),

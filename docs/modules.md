@@ -37,4 +37,4 @@ Each module keeps the side of its PBX: the frames of the channel, its variables 
 
 ## Login menu (optional)
 
-[modemmenu](https://github.com/D-Modem/menu) is a login and menu for callers, in Go. First, it compares a user name and password with a text file, LDAP, an SQL database or PAM. Then it gives a BBS, PPP or a shell. It starts them with the credentials of the caller, the dialed number, the connect rate and the time of the call.  Each module can start it as a `mode = exec` profile. Or, the module can connect calls to one `modemmenu -serve` through a `mode = unix` profile with `header = yes`.
+[dmodem-login](https://github.com/D-Modem/login) is a login and menu for callers, in Go. First, it compares a user name and password with a text file, LDAP, an SQL database or PAM. Then it gives a BBS, PPP or a shell. It starts them with the credentials of the caller, the dialed number, the connect rate and the time of the call.  Each module can start it as a `mode = exec` profile. Or, the module can connect calls to one `dmodem-login -serve` through a `mode = unix` profile with `header = yes`.
