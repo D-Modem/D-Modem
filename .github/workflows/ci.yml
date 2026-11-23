@@ -333,9 +333,12 @@ jobs:
           - target: win98
             artifact: dmodemd-windows-98-x86
             tests: false
+          # (no test programs: GoogleTest expects msvcrt on Windows,
+          # and picolibc is not msvcrt)
           - target: win32-picolibc
             artifact: dmodemd-windows-95-x86
             tests: false
+            cmake_args: -DDMODEM_TESTS=OFF
     env:
       WINEDEBUG: -all
       CMAKE_C_COMPILER_LAUNCHER: ccache
@@ -373,7 +376,7 @@ jobs:
         run: |
           cmake -B build-win -G Ninja -DDMODEM_WERROR=ON \
             -DCMAKE_TOOLCHAIN_FILE=$PWD/platforms/windows/clang-retro.cmake \
-            -DCLANG_RETRO_CONFIG=${{ matrix.target }}
+            -DCLANG_RETRO_CONFIG=${{ matrix.target }} ${{ matrix.cmake_args }}
 
       - name: Build
         run: cmake --build build-win && ccache -s
