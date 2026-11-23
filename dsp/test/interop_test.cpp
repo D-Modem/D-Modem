@@ -391,6 +391,14 @@ std::vector<Call> calls()
 	      ".*k56rx: MP at.*K56flex connect [0-9]+/56000 \\(analogue "
 	      "modem\\)",
 	      "EXPECT_B=(?s)V.8bis MS: K56flex.*K56flex connect 56000/" });
+	/* the test setting for a louder MRe (issue #119): MRe 6 dB up,
+	   and the call is still K56flex */
+	add("open", "open_k56flex_mre_db", "open", "open8", "ATX3;AT+MS=56",
+	    { "NET=9600:8000:ulaw", "BULK=200000", "DSP_K56_MRE_DB=6",
+	      "EXPECT_A=(?s)V.8bis CL: K56flex.*K56flex connect "
+	      "[0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.8bis MRe \\+6.0 dB.*V.8bis MS: K56flex"
+	      ".*K56flex connect 56000/" });
 	/* a digital pad and robbed bits on the way down: TRN1B finds
 	   them (k56rx's means against SM56's models), our J's octet
 	   says them, and the digital modem codes for them; the rate the

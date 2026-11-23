@@ -36,6 +36,9 @@ struct V34K56 : HdlcTx<V34K56<P>, 64, HdlcK8>, HdlcRx<V34K56<P>, 64, HdlcK8> {
 	/* the V.8bis tones we send (MRe), and the remote's (CRd) */
 	Osc k8_o1, k8_o2;
 	float k8_a1, k8_a2;
+	/* the gain on our MRe (a test: DSP_K56_MRE_DB=<dB>, -12 to +12;
+	   issue #119) */
+	float k8_mre_gain;
 	Goertzel k8_g[3];       /* 1529, 2225, 1900 Hz */
 	s16 k8_dual;            /* CRd's dual tone blocks in a row */
 	s16 k8_crd;             /* its dual tone heard */
@@ -95,6 +98,7 @@ struct V34K56 : HdlcTx<V34K56<P>, 64, HdlcK8>, HdlcRx<V34K56<P>, 64, HdlcK8> {
 	s32 k8_ans;             /* ANSam's samples after V.8bis */
 
 	void k8_init();
+	void k8_mre_start();
 	s16 k56_start();
 	s16 k56_step(s32 c);
 	s16 k56_sample();
@@ -141,6 +145,7 @@ void V34K56<P>::k8_init()
 {
 	P &self = static_cast<P &>(*this);
 	k56_on = 0;
+	k8_mre_gain = 1;
 	k8_dual = k8_crd = 0;
 	k8_crd_end = 0;
 	if (self.caller) {
@@ -159,6 +164,27 @@ void V34K56<P>::k8_init()
 	this->hdlc_rx_reset();
 	k8_msg_n = 0;
 	k8_ev = 0;
+}
+
+/* the start of our MRe (the digital modem): segment 1's tones, at the
+   level of the SM56 tests (about -20.6 dBm0, the two tones together).
+   DSP_K56_MRE_DB=<dB> changes the level of the two segments, for a
+   test with a caller that does not hear MRe (issue #119) */
+template <class P>
+void V34K56<P>::k8_mre_start()
+{
+	P &self = static_cast<P &>(*this);
+	double db = env_double("DSP_K56_MRE_DB", 0);
+	if (db < -12)
+		db = -12;
+	if (db > 12)
+		db = 12;
+	k8_mre_gain = static_cast<float>(std::pow(10.0, db / 20));
+	k8_o1.set_freq(1375, self.srate);
+	k8_o2.set_freq(2002, self.srate);
+	k8_a1 = k8_a2 = V34_TONE_AMP / 2 * k8_mre_gain;
+	if (db != 0)
+		DSP_DBG("v34: V.8bis MRe %+.1f dB\n", db);
 }
 
 /* an HDLC frame of n octets into q (7.1/V.8bis): ones, three flags,
@@ -292,7 +318,7 @@ s16 V34K56<P>::k8_step(s32 c)
 		/* MRe (8.2/V.8bis): 1375 + 2002 Hz 400 ms, 650 Hz 100 ms */
 		if (c == ms2samples(400, self.srate)) {
 			k8_o1.set_freq(650, self.srate);
-			k8_a1 = V34_TONE_AMP;
+			k8_a1 = V34_TONE_AMP * k8_mre_gain;
 			k8_a2 = 0;
 		}
 		if (c >= ms2samples(500, self.srate)) {

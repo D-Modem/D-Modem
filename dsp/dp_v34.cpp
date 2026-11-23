@@ -4702,9 +4702,7 @@ s16 V34V8<P>::v8_step(s32 c)
 		    !self.k8_tried) {
 			/* K56flex: V.8bis first, MRe */
 			self.k8_tried = 1;
-			self.k8_o1.set_freq(1375, self.srate);
-			self.k8_o2.set_freq(2002, self.srate);
-			self.k8_a1 = self.k8_a2 = V34_TONE_AMP / 2;
+			self.k8_mre_start();
 			self.txm = TXM_K8;
 			self.set_state(K8_MRE);
 			DSP_DBG("v34: V.8bis MRe\n");

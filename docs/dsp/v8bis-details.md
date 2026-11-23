@@ -79,8 +79,10 @@ permitted level is -9 to -10 dBm0 (V.2). Thus, the correct range is
 -21 to -25 dBm0. Before, MRe was 12 dB below the level of the messages,
 at -26.5 dBm0. That is below the range, and a line with loss can make
 it too weak for a caller. The K56flex server (`dsp/v34_k56.h`) sends
-its MRe at the level of the SM56 tests (approximately -17.5 dBm0), and
-this change does not touch it.
+its MRe at the level of the SM56 tests (-20.6 dBm0 for segment 1,
+-17.5 dBm0 for segment 2). This change does not touch it.
+`DSP_K56_MRE_DB` changes it for a test (refer to the subsequent
+sections).
 
 ## Against other modems
 
@@ -89,7 +91,7 @@ this change does not touch it.
 | D-Modem | CRd, then transaction 10 |
 | SM56 (Motorola), as a K56flex client | CRd, then transaction 10 ([k56flex-details.md](k56flex-details.md)) |
 | Conexant HSF (hsfmodem 7.80), V.90 or V.92 | No answer. Its controller has no V.8 bis |
-| Conexant HCF (Sitecom DC009), K56flex, issue #119 | No answer (report of a user). The cause is not known |
+| Conexant HCF (Sitecom DC009), K56flex, issue #119 | No answer (log and recording of a user). Our MRe is correct. The cause is not known |
 
 **Conexant HSF.** The HSF modem of Conexant (`hsfengine.o` of hsfmodem
 7.80.02.06oem) does not answer MRe, MRd, CRe or CRd. It is silent until
@@ -142,15 +144,32 @@ SM56 first failed. The cause was not the block, but the start of our
 TRN2A: refer to [k56flex-details.md](k56flex-details.md#the-second-sync-of-the-client).)
 This item is important only after the HCF modem answers with CRd.
 
-**Data that we need.** To find the cause of issue #119, we need these
-items from a call of the HCF modem to D-Modem:
+**The log and the recording of issue #119.** The user sent a log of
+dmodemd and a recording of the RTP streams (G.711 mu-law) of a call from
+the HCF modem to D-Modem (`+MS=K56`). These are the results:
 
-- The log of dmodemd with the DSP messages (`v8bis: MRe out`, `v8bis: no
-  answer to MRe`), and the `+MS` and `+A8E` settings of D-Modem.
-- A recording of the line (`DMODEM_REC=<base>`). It shows the level
-  of our MRe at the modem, and if the modem sends a signal.
-- The connection between the modem and D-Modem (for example, the
-  analogue telephone adapter and its codec).
+- Our MRe is correct. Segment 1 is 1375.0 Hz and 2002.0 Hz for 400 ms,
+  with the two tones at the same level, -20.6 dBm0 together. Segment 2
+  is 650.0 Hz for 100 ms at -17.5 dBm0. There are no gaps and no lost
+  packets.
+- The HCF modem sends no signal in the 1.7 s after MRe: no CRd, and no
+  part of CRd.
+- After our ANSam, the HCF modem sends CM, and the call continues with
+  V.90.
+
+Thus, the HCF modem does not detect our MRe, or its Windows 98 driver
+(9.5.2.165.100) does not enable V.8 bis on the call. A possible cause is
+the level at the modem. The CM of the modem arrives at -21.8 dBm0. If the
+modem transmits at approximately -11 dBm, the loss in each direction is
+approximately 10 dB. Then each tone of MRe arrives at approximately
+-34 dBm. This is an estimate.
+
+**The next test.** `DSP_K56_MRE_DB=<dB>` (-12 to +12) makes the MRe of
+the K56flex server louder or quieter. Make a call from the HCF modem with
+`DSP_K56_MRE_DB=6` and then with `DSP_K56_MRE_DB=10`. If the modem then
+sends CRd, the cause is the level. We also need the model and the gain
+settings of the analogue telephone adapter, and the country setting of the
+modem (`AT+GCI?`).
 
 ## `+A8E`
 
