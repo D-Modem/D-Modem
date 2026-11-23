@@ -5,7 +5,9 @@
  *    dmodem_retro.h - what of POSIX the sources take from the C library
  *                     and clang-retro's mingw-w64 sysroots (msvcrt.dll,
  *                     without winpthreads) lack: clock_gettime() on
- *                     CLOCK_MONOTONIC and CLOCK_REALTIME; and before
+ *                     CLOCK_MONOTONIC and CLOCK_REALTIME (also with
+ *                     picolibc, win32-picolibc); with picolibc, the
+ *                     names of msvcrt that the sources use; and before
  *                     Windows XP, random numbers for std::random_device's
  *                     place (dmodem_retro_random()).  Included
  *                     before each source of a clang-retro build
@@ -26,10 +28,15 @@
 extern "C" {
 #endif
 
+#if !defined(CLOCK_REALTIME) || defined(__PICOLIBC__)
 #ifndef CLOCK_REALTIME
 #define CLOCK_REALTIME 0
 #define CLOCK_MONOTONIC 1
 typedef int clockid_t;
+#elif !defined(CLOCK_MONOTONIC)
+/* (picolibc's value, which it shows only to POSIX and GNU sources) */
+#define CLOCK_MONOTONIC (4)
+#endif
 
 /* (kernel32's, without windows.h here) */
 __declspec(dllimport) int __stdcall QueryPerformanceCounter(
@@ -41,7 +48,8 @@ __declspec(dllimport) void __stdcall GetSystemTimeAsFileTime(
 
 /* CLOCK_MONOTONIC: the performance counter; CLOCK_REALTIME: the system
    time (100 ns units from 1601) from 1970 */
-static __inline int clock_gettime(clockid_t id, struct timespec *ts)
+static __inline int dmodem_retro_clock_gettime(clockid_t id,
+					       struct timespec *ts)
 {
 	if (id == CLOCK_MONOTONIC) {
 		static int64_t freq;
@@ -61,6 +69,30 @@ static __inline int clock_gettime(clockid_t id, struct timespec *ts)
 		return 0;
 	}
 }
+#define clock_gettime dmodem_retro_clock_gettime
+#endif
+
+#ifdef __PICOLIBC__
+/* picolibc (win32-picolibc: Windows 95 and NT 4.0 and later) is a POSIX
+   C library, not msvcrt: the names of msvcrt that the Windows sources
+   use, as its POSIX functions */
+#include <string.h>
+#include <strings.h>
+#define _stricmp strcasecmp
+#define _strnicmp strncasecmp
+
+/* msvcrt's localtime_s(): the local time of t in tm, 0 on success */
+static __inline int dmodem_retro_localtime_s(struct tm *tm, const time_t *t)
+{
+	return localtime_r(t, tm) ? 0 : -1;
+}
+/* msvcrt's gmtime_s(): the UTC time of t in tm, 0 on success */
+static __inline int dmodem_retro_gmtime_s(struct tm *tm, const time_t *t)
+{
+	return gmtime_r(t, tm) ? 0 : -1;
+}
+#define localtime_s dmodem_retro_localtime_s
+#define gmtime_s dmodem_retro_gmtime_s
 #endif
 
 #if _WIN32_WINNT < 0x0501

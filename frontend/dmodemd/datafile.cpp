@@ -28,22 +28,28 @@
 
 #ifdef _WIN32
 /* (Windows: the file binary, not inherited; positioned reads and writes
-   by a seek first, the descriptor being this object's alone) */
+   by a seek first, the descriptor being this object's alone. picolibc,
+   win32-picolibc, has O_CLOEXEC, and declares pread() and pwrite() but
+   does not have them) */
+#ifndef __PICOLIBC__
 #define O_CLOEXEC (O_BINARY | O_NOINHERIT)
+#endif
 /* pread() by a seek and a read */
-static ssize_t pread(int fd, void *buf, size_t n, off_t at)
+static ssize_t dm_pread(int fd, void *buf, size_t n, off_t at)
 {
 	if (lseek(fd, at, SEEK_SET) < 0)
 		return -1;
 	return read(fd, buf, (unsigned)n);
 }
 /* pwrite() by a seek and a write */
-static ssize_t pwrite(int fd, const void *buf, size_t n, off_t at)
+static ssize_t dm_pwrite(int fd, const void *buf, size_t n, off_t at)
 {
 	if (lseek(fd, at, SEEK_SET) < 0)
 		return -1;
 	return write(fd, buf, (unsigned)n);
 }
+#define pread dm_pread
+#define pwrite dm_pwrite
 #endif
 
 namespace dmd {

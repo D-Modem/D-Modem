@@ -17,8 +17,10 @@
 # windows: the Windows builds with clang-retro's toolchain (cross from
 # Linux, platforms/windows/clang-retro.cmake), one for each target (the
 # matrix): win7-x64 (Windows 7 and later) with its offline tests under
-# Wine, and win98 (Windows 98 SE and later, 32 bit) with its imports
-# checked against Windows 9x and NT 4.0; each dmodemd.exe kept as an
+# Wine, win98 (Windows 98 SE and later, 32 bit) with its imports
+# checked against Windows 9x and NT 4.0, and win32-picolibc (Windows 95
+# and NT 4.0 and later: picolibc and libc++, no C runtime DLL) with its
+# imports checked against the same; each dmodemd.exe kept as an
 # artifact.
 #
 # windows-msvc: the same with Microsoft's compiler (cl.exe, Ninja) on a
@@ -331,6 +333,9 @@ jobs:
           - target: win98
             artifact: dmodemd-windows-98-x86
             tests: false
+          - target: win32-picolibc
+            artifact: dmodemd-windows-95-x86
+            tests: false
     env:
       WINEDEBUG: -all
       CMAKE_C_COMPILER_LAUNCHER: ccache
@@ -355,7 +360,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: build-win/_deps/libre-install
-          key: libre-v4.12.0-clang-retro-${{ matrix.target }}-${{ steps.clang-dos.outputs.sources }}-${{ hashFiles('cmake/libre.cmake', 'cmake/libre-mbedtls-aes.patch', 'cmake/libre-win32-legacy.patch', 'cmake/mbedtls-win32-legacy.h', 'platforms/windows/clang-retro.cmake') }}
+          key: libre-v4.12.0-clang-retro-${{ matrix.target }}-${{ steps.clang-dos.outputs.sources }}-${{ hashFiles('cmake/libre.cmake', 'cmake/libre-mbedtls-aes.patch', 'cmake/libre-win32-legacy.patch', 'cmake/libre-picolibc.patch', 'cmake/libre-picolibc/*', 'cmake/mbedtls-win32-legacy.h', 'platforms/windows/clang-retro.cmake') }}
 
       - name: ccache
         uses: actions/cache/restore@v5
@@ -390,6 +395,19 @@ jobs:
           out=$(python3 $check --nt 4.0 build-win/dmodemd/dmodemd.exe || true)
           echo "$out"
           if echo "$out" | grep "error:" | grep -v "subsystem version"; then
+            exit 1
+          fi
+
+      # (Windows 95 and NT 4.0: picolibc, no msvcrt.dll; and no
+      # iphlpapi.dll, which 95 does not have)
+      - name: Imports (95, NT 4.0)
+        if: matrix.target == 'win32-picolibc'
+        run: |
+          check=$CLANG_DOS/share/clang-dos/check-imports.py
+          python3 $check build-win/dmodemd/dmodemd.exe
+          python3 $check --nt 4.0 build-win/dmodemd/dmodemd.exe
+          if $CLANG_DOS/bin/llvm-objdump -p build-win/dmodemd/dmodemd.exe |
+              grep -i "DLL Name: \(msvcrt\|iphlpapi\)"; then
             exit 1
           fi
 

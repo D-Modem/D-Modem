@@ -213,6 +213,16 @@ endif()
 if(MSVC)
 	string(APPEND _re_cflags " -DDISABLE_RE_ARG")
 endif()
+# (picolibc, clang-retro's win32-picolibc: cmake/libre-picolibc, the
+# names of Microsoft's C library that libre uses on Windows)
+if(WIN32 AND CLANG_RETRO_CONFIG MATCHES "picolibc")
+	string(APPEND _re_cflags
+		" -include ${CMAKE_CURRENT_LIST_DIR}/libre-picolibc/compat.h"
+		" -I${CMAKE_CURRENT_LIST_DIR}/libre-picolibc")
+	file(MD5 ${CMAKE_CURRENT_LIST_DIR}/libre-picolibc/compat.h _sum)
+	string(SUBSTRING ${_sum} 0 8 _sum)
+	set(_re_stamp ${_re_stamp}-picolibc-${_sum})
+endif()
 # (Haiku: platforms/haiku/libre-haiku.patch, for its interface ioctls
 # and its lack of a routing table listing)
 # (Mbed TLS: cmake/libre-mbedtls-aes.patch, its AES for SRTP)
@@ -232,6 +242,12 @@ if(WIN32)
 	list(APPEND libre_PATCHES ${CMAKE_CURRENT_LIST_DIR}/libre-win32-legacy.patch)
 	set(_re_winnt -DRE_WIN32_WINNT=${DMODEM_WINNT})
 	set(_re_stamp ${_re_stamp}-${DMODEM_WINNT})
+endif()
+# (picolibc, the Windows 95 build: cmake/libre-picolibc.patch,
+# GetAdaptersInfo() found at run time, because Windows 95 has no
+# iphlpapi.dll)
+if(WIN32 AND CLANG_RETRO_CONFIG MATCHES "picolibc")
+	list(APPEND libre_PATCHES ${CMAKE_CURRENT_LIST_DIR}/libre-picolibc.patch)
 endif()
 foreach(_patch ${libre_PATCHES})
 	file(MD5 ${_patch} _sum)
