@@ -62,6 +62,8 @@ nav:
     - dmodem-ari: ari.md
     - FreePBX: freepbx.md
     - "FreeSWITCH: mod_dmodem": freeswitch.md
+  - Programs that use the modem:
+    - dmodemd as a library: embed.md
   - Hardware and systems:
     - Softmodem hardware: hardware.md
     - The Agere USB 2.0 soft modem: agere-usb.md

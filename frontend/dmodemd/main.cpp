@@ -264,7 +264,7 @@ int main(int argc, char *argv[])
 	const char *name, *slash;
 	s16 ret;
 #ifdef DMODEM_ALSA
-	dmd::AlsaLine alsa(pty);
+	dmd::AlsaLine alsa(dte);
 	std::unique_ptr<dcore::Modem> am;
 #endif
 #ifdef DMODEM_USB
@@ -272,7 +272,7 @@ int main(int argc, char *argv[])
 	std::unique_ptr<dcore::Modem> um;
 #endif
 #ifdef DMODEM_MISDN
-	dmd::MisdnLine misdn(pty);
+	dmd::MisdnLine misdn(dte);
 	std::unique_ptr<dcore::Modem> mm;
 #endif
 
