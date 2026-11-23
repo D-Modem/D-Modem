@@ -1,6 +1,6 @@
 # The modem core: technical details
 
-This page gives the technical details for [The modem core](core.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [The modem core](core.md), the overview in plain English. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 `core/` is the part of the modem between the DTE and the data pumps.
 (The DTE, data terminal equipment, is the program on the other side of
@@ -132,8 +132,8 @@ because this would scroll some terminals. It keeps the changes until F2
 as one `+MS`. If the modem refuses a value, a red message box shows it.
 
 **`AT!CT`** parses each line against the words that its mode accepts
-(exec, configuration). You can cut a word short where only one word
-starts with those characters. It gives the errors of IOS
+(exec, configuration). You can type only the first characters of a word
+when only one word starts with those characters. It gives the errors of IOS
 (`% Invalid input detected at '^' marker.`, `% Ambiguous
 command`, `% Incomplete command.`), and it has `?` and Tab. A setting
 changes immediately.
@@ -227,7 +227,7 @@ in fax mode, until the call is identified as one of these:
     stage of the chain, Bell 103, reports `DPSTAT_FAX` after 3 s.
 
   Then the modem gives FAX and continues in class 1. The CED of the fax
-  engine is cut short, because the answer tone was already sent
+  engine is shorter, because the answer tone was already sent
   (`FAX_answer_tone()`).
 - **A data call**, identified by the CONNECT of its pump: DATA, then its
   CONNECT.
@@ -345,7 +345,7 @@ sufficient:
   (`V92`).
 - **Dial string modifiers.** `;` (back to command state), `W` (wait for a
   dial tone) and `@` (wait for quiet after the ring signal) do what V.250
-  tells. The old core skipped `;` and `@`, and paused 2 s for `W`.
+  tells. The old core ignored `;` and `@`, and paused 2 s for `W`.
   `S=<n>` (a stored number; there are none) gives ERROR.
 - **`+FAA=1`** answers adaptively: FAX or DATA, then the call continues
   as a fax or a data call. The old core accepted only `+FAA=0`.
@@ -354,8 +354,8 @@ sufficient:
   V.8. Thus, a Courier that answers on V.32bis and a 3Com TC110 that
   answers on V.34 use V.42 (the TC110 sends marks and disconnects when
   it gets no ODPs). The old core went to LAPM immediately. Those calls
-  now connect about 120 ms later. On a leased line, on a clear channel
-  and on PEP, it still goes immediately to LAPM.
+  connect about 120 ms later. On a leased line, on a clear channel and on
+  PEP, the core goes immediately to LAPM.
 
 ## Tests
 
@@ -376,17 +376,22 @@ gave the same transcripts). Where this core is intentionally different
 | Script | What it covers |
 |---|---|
 | `call_v32bis`, `call_v22`, `call_v34` | calls with data both ways, the escape and `ATO`. `call_v22` also has V.21 and numeric CONNECTs; `call_v34` has V.34/V.90 (`&A7`) and `&A`'s modulation (V.91) |
-| `misc` | a call nobody answers, a key that aborts dialling, `ATDL`, S7 running out, hangups from either side and while connecting |
-| `rings` | a SIP call that rings and goes away, auto answer at the second ring, ring signals with their cadence |
+| `misc` | a call that nobody answers, a key that stops the dial, `ATDL`, the end of S7, hangups from each side and before CONNECT |
+| `rings` | a SIP call that rings and then stops, auto answer at the second ring, ring signals with their cadence |
 | `fax` | class 1 fax: V.21 frames, a TCF at 9600 |
 | `fax_dte` | frames and commands around `<DLE><ETX>` |
 | `voice`, `voice_dial` | the voice commands; `+VLS=1`, whose OK the voice engine gives, and a tone after it; `ATD` in voice mode (`+VRA`, `+VRN`) |
 | `at` | all the AT commands |
 | `setup` | other modems' setup strings |
-| `data_drop` | a call that ends with data waiting |
+| `data_drop` | a call that ends while data waits |
 | `dial` | the dial string's `;`, `W` and `@`, the call-back, numeric `&A` lines and `\V1` |
 | `stats` | `ATI11`, `AT&V1`, `ATI6` and `AT#UD` before, during and after calls: V.34 with echoes, V.32bis with MNP and without error correction, and one with no answer |
 | `adaptive` | `+FAA=1`: fax and data callers into data and fax mode, FAX or DATA, `+FCLASS` after each call |
+| `call_mnp_v42bis` | V.32bis with MNP (`\N5`) and V.42bis in the LRs (`%C3`, `S114=1`); `ATI11` gives MNP and V42bis |
+| `call_pep`, `call_pep_auto`, `call_pep_comp` | PEP of Telebit (`+MS=PEP`) with V.42; PEP in automode against V.34 and V.32bis; PEP with V.42bis and the PEP counts in `ATI11` |
+| `security` | the type 2 security of ZyXEL (`AT*G3` to `AT*G5`) and the call back |
+| `v59` | `AT+TMO`: the objects of V.59 before a call, during a V.34 call and after it |
+| `zfax` | the fax mode of ZyXEL (`+FCLASS=6`) and its `#` settings |
 
 The scripts whose `.expect` is the transcript of this core are `at`,
 `setup`, `fax_dte`, `data_drop`, `call_v22`, `call_v32bis`, `dial`,
@@ -412,15 +417,21 @@ script. `CoreScript.FaxDteUntilsCome` does a check that each `until` of
 ### core_test
 
 `core_test` (`Core`, `CoreCall`, `CoreFax2`, `CoreText`,
-`CoreContactId`) tests this core alone:
+`CoreContactId`, `CoreSms`, `CoreRelay`, `CoreZfax`, `Link/V34Cleardown`)
+tests this core alone:
 
 | Area | Tests |
 |---|---|
-| The host and options | `Options` (the country, `ATI7`, S-registers out of range), `Countries`, `FailingLine` (a line that cannot start or go off hook), `LineDelay`, `Log` |
-| Data calls | `CoreCall.DataBothWaysAndHangup` at V.32bis, V.34 and V.22, byte for byte; `EscapeKeepsData`; `RetrainOnRequest` (`ATO1`, `ATO3`); `V34MaxRate`; `ModemOnHold` |
+| The host and options | `Options` (the country, `ATI7`, S-registers out of range), `Countries`, `FailingLine` (a line that cannot start or go off hook), `LineDelay`, `Log`, `PumpTable` |
+| Configurators | `ModelListing` (`AT!M`), `InitString` (`AT!R`), `ConfigCli` (`AT!CT`), `ConfigAuto` (`AT!C`) |
+| Data calls | `CoreCall.DataBothWaysAndHangup` at V.32bis, V.34 and V.22, byte for byte; `EscapeKeepsData`; `RetrainOnRequest` (`ATO1`, `ATO3`); `V34MaxRate`; `ModemOnHold`; `V34Cleardown.EndsTheCall` (the cleardown of V.34, with and without LAPM); `Mnp10Climbs`; `EbcdicCodePages`, `EbcdicCommands`, `EbcdicCall` ([ebcdic.md](ebcdic.md)) |
+| V.8 bis, V.70 and V.61 | `A8e`, `V8bisBoth`, `V8bisAnswererAlone`, `V8bisCallerAlone`, `DsvdBoth`, `DsvdVoice`, `DsvdCallerAlone`, `AsvdDataAlone`, `AsvdCallerAlone`, `AsvdAndDsvdPicksDsvd`, `AsvdVoice` |
+| V.150.1 relay | `CoreRelay.DataBothWays`, `CoreRelay.RelayOver` |
+| ETC | `EtcFilter`, `EtcSettings`, `EtcCall`, `EtcToneDetector`, `EtcLandPlainCaller` ([link-details.md](link-details.md#etc-enhanced-throughput-cellular)) |
+| ZyXEL | `ZyxelSecurity`, `ZyxelAtck`, `ZfaxCommands`, `ZfaxRingCadence`, `ZfaxPoll`, `CoreZfax.TwoPages` |
 | V.80 | `V80`, `V80Retrain` |
 | Dialling and caller ID | `PulseDialling`, `CallerIdBeforeRing`, `CallerIdAfterLineReversal`, `CallerIdOnTheCall`, `CallerIdFromLine` |
 | Answering | `AdaptiveAnswer`, `VoiceFaxCall`, `VoiceDataCallingTone` |
-| Voice | `VoiceLineGone`, `LocalPhone`, `VoiceHandset`, `VoiceEvents` |
-| Class 2 fax | `CoreFax2.TwoPages`, `Fax2Abort`, `Fax2Poll` |
-| Text telephones and alarms | `CoreText.LineEachWay` (V.18's modes), `CoreContactId` (Contact ID messages kissed off, a bad checksum NAKed), `CoreSms` (fixed-line SMS: submissions, a delivery, a call with nothing to send) |
+| Voice | `VoiceLineGone`, `VoiceHashDialect`, `LocalPhone`, `VoiceHandset`, `VoiceEvents` |
+| Class 2 fax | `CoreFax2.TwoPages`, `Fax2Abort`, `Fax2Poll`, `Fax2PollV34` |
+| Text telephones and alarms | `CoreText.LineEachWay` (V.18's modes), `CoreContactId` (the kissoff of Contact ID messages, a NAK for a bad checksum), `CoreSms` (fixed-line SMS: submissions, a delivery, a call with nothing to send) |

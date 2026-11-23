@@ -1,6 +1,6 @@
 # Leased lines and dry pairs: technical details
 
-This page gives the technical details for [Leased lines and dry pairs](leased.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [Leased lines and dry pairs](leased.md), the overview in plain English. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 A leased line (a private circuit, or your own dry copper pair) has no
 exchange: no dial tone, no ring signal and no hook. D-Modem operates on
@@ -99,7 +99,7 @@ are names of D-Modem. The other modulations operate on `AT&L2` as on
   If an end sends faster than the far end, it decreases to the rate of
   the far end. For V.33, this is the rule of the Recommendation (9/V.33).
   For V.29 and V.27ter, it is a rule of D-Modem.
-- **Resynchronizing.** A receiver can lose the signal of the far end or
+- **Resynchronization.** A receiver can lose the signal of the far end or
   its equalization (its error above the limit of the rate for 0.3 s).
   Then it sends its own synchronizing signal, and the far end answers
   with its own. During this time, the data of the DTE waits, and the
@@ -194,7 +194,7 @@ on the data that comes back (32 bits in a row that follow the pattern).
 It counts the bits in error. After a slip (64 errors in 256 bits), it
 synchronises again.
 
-### Recognising the patterns
+### Recognition of the patterns
 
 V.54 5.1 lets the DCE set the recognition criteria. In D-Modem, a pattern
 is present in a 256-bit block when:
@@ -218,7 +218,7 @@ same loops (`core/v58.cpp`):
 |---|---|
 | `AT+TERDL=1` / `0` | as `&T4` / `&T5` |
 | `AT+TLDL=1` / `0` | loop 2 here (as `&T3`), and its end |
-| `AT+TRDL=1` / `0` | loop 2 at the far end (as `&T6`), but OK when the far end loops, staying in online command state; `0` sends the TERM (OK after it) |
+| `AT+TRDL=1` / `0` | loop 2 at the far end (as `&T6`), but OK when the far end loops, and the modem stays in online command state; `0` sends the TERM (OK after it) |
 | `AT+TAL=1[,band]` / `0` | loop 3 (as `&T1`), but OK in online command state; `0` ends it |
 | `AT+TTER=type,len,blocks,1` | the error rate test on the loop that runs (loop 2 at the far end, or loop 3), from online command state: V.52's pattern for `blocks` blocks of `len` bits, then the DTE's data again; `AT+TTER=0` stops it |
 | `AT+TNUM?` | its bit errors and errored blocks (`+TNUM: bits,blocks`; V.250's text prints `+TTER:` here, a slip) |
@@ -267,15 +267,16 @@ each end through its hybrid.
 |---|---|
 | `TwoWire.Connects` | each voice band modulation on `AT&L1`: CONNECT and data both ways through V.42 |
 | `FourWire.Connects` | V.29, V.33, V.27ter, V.26 and Bell 201, 202 and 208 on `AT&L2`, with their rates each way |
-| `FourWirePlain.IdleZerosAndOnes` | V.26's, Bell 201's and Bell 202's unscrambled data idle and in long runs of zeros and ones, with no resynchronizing |
-| `FourWireRates.FasterEndComesDown` | the faster end coming down to the far end's rate |
-| `FourWireResync.DropoutUnderLapm` | a dropout the pumps resynchronize through |
-| `FourWireResync.NoiseBringsV33Down` | noise that brings V.33 down to 12000 |
-| `FourWireResync.LateAnswerer` | an answerer that comes up late |
+| `FourWirePlain.IdleZerosAndOnes` | V.26's, Bell 201's and Bell 202's unscrambled data idle and in long runs of zeros and ones, with no resynchronization |
+| `FourWireRates.FasterEndComesDown` | the faster end decreases to the rate of the far end |
+| `FourWireResync.DropoutUnderLapm` | a dropout, after which the pumps resynchronize |
+| `FourWireResync.NoiseBringsV33Down` | noise that decreases V.33 to 12000 |
+| `FourWireResync.LateAnswerer` | an answerer that starts late |
 | `FourWireResync.CallsAgainAfterACut` | a long cut, and the call again by itself |
-| `TwoWireRetrain.AfterAReroute` | a reroute that V.34 and V.32bis retrain through |
+| `TwoWireRetrain.AfterAReroute` | a reroute, after which V.34 and V.32bis retrain |
 | `TwoWireNoise.V32bisThroughABurst` | a burst of noise |
 | `RemoteLoop.SelfTest`, `RemoteLoopData.*` | loop 2 with the self-test, the DTE's data echoed, a refused loop, `&T3` |
+| `V250Test.*` | the test commands of V.250: the error rate test on loop 2 (with errors counted), a refused loop, `+TLDL`, `+TAL`, the self-test (`+TSELF`, `+TRES`) and the parameters that are 0 only |
 | `LocalLoop.SelfTestAndData`, `LocalLoop.TestTimer` | loop 3 with the self-test and with data; S18 |
 | `SimulatedCarrier.BurstsAndIdle` | V.13's bursts and idle |
 
@@ -287,6 +288,6 @@ V.91 operates on a digital circuit (G.711 octets in each direction at
 | `FourWireV91.Symmetric` | both laws at 62667 both ways |
 | `FourWireV91Line.RobbedBits` | robbed bits |
 | `FourWireV91Line.LateAnswerer` | a late answerer |
-| `FourWireV91Line.Cuts` | a short cut it retrains through, and a long one it calls again after |
+| `FourWireV91Line.Cuts` | a short cut, after which it retrains, and a long cut, after which it calls again |
 
 For how to run them, refer to [testing.md](testing.md).

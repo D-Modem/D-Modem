@@ -14,9 +14,9 @@ MNP 5 has two parts. The transmitter applies them in this sequence:
    250). At 250, a new run starts.
 2. **Adaptive frequency coding.** The transmitter keeps a table of the
    256 characters, in the sequence of how frequently they occur. A
-   character moves up the table past the characters that occurred
-   fewer times. When the count of the top character gets to 255, all
-   counts are divided by 2.
+   character goes above the characters that occurred fewer times. When
+   the count of the top character becomes 255, all counts are divided
+   by 2.
 
 Each character is sent as the code of its position (rank) in the table:
 
@@ -124,7 +124,7 @@ As responders:
 
 - The PCTel modem does not answer an LR in which parameter 9 has the
   short form and no parameter 14.
-- The ESS modem agrees on MNP 5. It retrains approximately 0.2 s into
+- The ESS modem agrees on MNP 5. It retrains about 0.2 s after the start of
   the call, and then it waits for a new LR. Our caller sends its LR
   again, and the call completes. Refer to
   [interop-details.md](../interop-details.md#mnp).
@@ -142,9 +142,9 @@ D-Modem uses V.42bis on an MNP link. The code is in `link/mnp.cpp`
 - **As responder**, D-Modem always accepts V.42bis in the two forms. It
   uses V.42bis in place of MNP 5 when the initiator offers the two.
 - **As initiator**, D-Modem offers V.42bis only when `S114` = 1. The
-  default is 0, because the ESS modem does not complete a call with
-  that LR. With `S114` = 1, the LR has the two forms: parameter 9 with
-  the short form, and parameter 14 with P2 = 32.
+  default is 0. With `S114` = 1, the LR has the two forms: parameter 9
+  with the short form, and parameter 14 with P2 = 32. The ESS modem
+  answers this LR with MNP 5 (`ess_mnp_v42bis_open_calls`).
 - D-Modem refuses (with an LD) a response that has a P1 or a P2 that is
   more than its offer, or directions that it did not offer.
 - `ATI11` shows `Protocol Negotiation Result MNP` and
@@ -153,4 +153,5 @@ D-Modem uses V.42bis on an MNP link. The code is in `link/mnp.cpp`
   `Link.MnpV42bis` and `Link.MnpV42bisRefused` in
   `link/test/link_test.cpp`, the script `call_mnp_v42bis`, and the
   interop calls `sm56_mnp5_sm56_calls`, `hsf_mnp5_hsf_calls`,
-  `sm56_mnp_v42bis_open_calls` and `hsf_mnp_v42bis_open_calls`.
+  `sm56_mnp_v42bis_open_calls`, `hsf_mnp_v42bis_open_calls` and
+  `ess_mnp_v42bis_open_calls`.

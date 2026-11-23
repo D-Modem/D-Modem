@@ -4,9 +4,9 @@ The ZyXEL Elite 2864I can encrypt the data of an ISDN call with DES or
 triple DES. D-Modem does this encryption on X.75 and V.120 calls
 (`AT+MS=CLEAR`, `AT+B2=0` or `AT+B2=9`). The data comes from a trace of
 the Elite 2864I 1.11 firmware (`zyxel/firmware-trace.md`, section 8, in
-the project files). No test with a real Elite was done. Thus the
-procedure is correct D-Modem to D-Modem, and probably correct with an
-Elite.
+the project files). We did not test it with a real Elite. Thus the
+procedure is correct from D-Modem to D-Modem, and probably correct with
+an Elite.
 
 ## Commands
 
@@ -21,7 +21,7 @@ bundle of two B channels, `&J1`). D-Modem does not use these bits.
 Examples:
 
 - `ATS102=1` on the two modems: single DES with a key from the key
-  exchange (PKDS). You do not need a key.
+  exchange (PKDS). A key is not necessary.
 - `ATS102=7CK<my key>` on the two modems: triple DES with the ATCK key.
   The two keys must be the same.
 
@@ -30,7 +30,7 @@ have spaces.
 
 ## The procedure
 
-1. The link (X.75 or V.120) comes up as usual (SABM or SABME, then UA).
+1. The link (X.75 or V.120) starts as usual (SABM or SABME, then UA).
 2. Each modem sends an XID command. The XID has the group 0xF0 (the name
    of the protocol, "X75" or "V120", and the Elite's parameters 1 to 3)
    and the ZyXEL group 0xFF:
@@ -46,7 +46,7 @@ have spaces.
    - Encryption: the remote has bit 0.
    - Triple DES: the two modems have bit 1.
    - The PKDS key: the two modems have bit 2 = 0, and the remote sent its
-     value. Else the ATCK key.
+     value. If not, the ATCK key.
 5. The I frames wait until the decision. If no XID response comes after
    4 tries (T1 each), the modem continues without encryption. With bit
    3, the modem disconnects.

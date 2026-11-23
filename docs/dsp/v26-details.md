@@ -2,8 +2,9 @@
 
 This page gives the technical details for [V.26 ter and V.26 bis](v26.md).
 The code of V.26 ter is `dsp/dp_v26.cpp` (`V26Pump`, `DP_V26TER`, 126).
-V.26 bis has [its own section](#v26-bis) at the end. Up to that section, the clause numbers
-are the clause numbers of V.26 ter (1988, the Blue Book).
+V.26 bis has [its own section](#v26-bis) at the end. Up to that section,
+the clause numbers are the clause numbers of V.26 ter (1988, the Blue
+Book).
 
 ## The signal
 
@@ -17,12 +18,12 @@ are the clause numbers of V.26 ter (1988, the Blue Book).
 | Scrambler | self-synchronizing, 1 + x^-18 + x^-23 (GPC) at the caller, 1 + x^-5 + x^-23 (GPA) at the answerer (5, 6.1.1): `scramble()` in `bits.h`, the scrambler of V.32 |
 | Points | (+-1, +-1); the phase changes are counted in quarter turns between the decided points |
 
-The synchronizing signal (2.7) is 32 symbols of phase reversals, then
-scrambled ones. There are 64 bits at the two rates, from the register that Appendix I
-gives. Thus, its phase changes are the phase changes of Table 3 (0, 180, 180, 180, 180,
-0, ...). Appendix I gives the register one step before the first bit
-of its pattern. The code loads it and scrambles one bit before
-segment 2. `0x4FFF83` (GPC) and `0x307070` (GPA) are those registers,
+The synchronizing signal (2.7) is 32 symbols of phase reversals, then 64
+bits of scrambled ones at the two rates, from the register that
+Appendix I gives. Thus, its phase changes are the phase changes of
+Table 3 (0, 180, 180, 180, 180, 0 and the subsequent changes). Appendix I
+gives the register one step before the first bit of its pattern. The
+code loads it and scrambles one bit before segment 2. `0x4FFF83` (GPC) and `0x307070` (GPA) are those registers,
 with the newest bit in bit 0, as `bits.h` keeps them.
 
 ## The start-up
@@ -41,7 +42,8 @@ with the newest bit in bit 0, as `bits.h` keeps them.
 The rate pattern (6.1.3) is an octet sent 32 times, least significant
 bit first, scrambled. The receiver accepts a pattern when the last 32
 descrambled bits repeat each 8 bits and the octet is a rotation of one of
-the octets of Table 7 (6.1.3 lets the receiver do this). The rates of `+MS` set our pattern:
+the octets of Table 7 (6.1.3 lets the receiver do this). The rates of
+`+MS` set our pattern:
 
 | Octet | Rates | Sent by D-Modem |
 |---|---|---|
@@ -52,25 +54,27 @@ the octets of Table 7 (6.1.3 lets the receiver do this). The rates of `+MS` set 
 
 Where the Recommendation lets the modem select, D-Modem selects these items:
 
-- **Lengths.** The echo cancelling sequence is 1 s (note 3 asks for a minimum of 650
-  ms where the network has its own echo cancellers). The
+- **Lengths.** The echo cancelling sequence is 1 s (note 3 asks for a
+  minimum of 650 ms where the network has its own echo cancellers). The
   answerer sends a minimum of 256 zeros in its second burst. Thus, the
   caller finds 64 of them after its synchronizing signal.
 - **Ones before data.** The answerer sends 64 ones before its data. The
   receiver of the caller sends data to the link only after 16 ones in
-  sequence, because the zeros of the start-up would go to an asynchronous DTE as a
-  break.
-- **Gaps.** After the receiver has heard 100 symbols, it keeps its gain, equalizer and phase
-  through a gap in the signal of the far end (when the power of its symbols is less than a fifth of the
-  power of the points), for up to 200 symbols. The 25
-  ms of silence in sequence C is too short for the carrier detector to
-  find. Also, a gain learned on silence would overdrive the subsequent signal.
+  sequence. The reason is that the zeros of the start-up would go to an
+  asynchronous DTE as a break.
+- **Gaps.** After the receiver has heard 100 symbols, it keeps its gain,
+  equalizer and phase through a gap in the signal of the far end, for up
+  to 200 symbols. (A gap is when the power of its symbols is less than a
+  fifth of the power of the points.) The 25 ms of silence in sequence C
+  is too short for the carrier detector to find. Also, a gain learned on
+  silence would overdrive the subsequent signal.
 
 ## The receiver
 
-`QamRx` (`qam.h`) has these parts: down conversion, matched filter, AGC, Gardner timing
-recovery, a 16 tap T/2 equalizer and the carrier loop. These are decision directed
-on the four points from the first symbol. (V.26 ter has no training
+`QamRx` (`qam.h`) has these parts: down conversion, matched filter, AGC,
+Gardner timing recovery, a 16 tap T/2 equalizer and the carrier loop.
+These parts are decision directed on the four points from the first
+symbol. (V.26 ter has no training
 sequence. 2.3 asks for an equalizer that converges on data.) The echo
 canceller is `EchoCanceller` (128 taps, NLMS). It trains only during the
 echo cancelling sequence of the modem, and then it is fixed. If it
@@ -78,8 +82,8 @@ removed less than 6 dB (no echo to cancel), it is disabled.
 
 The statistics of the call (ATI11, `+TMO`, V.59) get the SNR from the
 decision error, the symbol rate and carrier, and the frequency and
-timing offsets. V.59 gives V.26 ter in the list of the modulations that have no object
-(`V.26ter` in 0x0101).
+timing offsets. V.59 gives V.26 ter in the list of the modulations that
+have no object (`V.26ter` in 0x0101).
 
 ## Not done
 
@@ -95,13 +99,14 @@ timing offsets. V.59 gives V.26 ter in the list of the modulations that have no 
 | Test | What it covers |
 |---|---|
 | `Line/PumpLoopback.DataBothWays/v26ter*` (`dsp/test/pump_test.cpp`) | Two pumps back to back: a clean line, 15 dB of SNR, 8000 Hz, a gain of 2 with -300 ppm, the echo of each modem at -6 dB. Each connects at 2400 bit/s and carries its data at a maximum bit error rate of 1e-3 (none in these runs) |
-| `Modulations/DmodemPair.DataBothWays/v26ter`, `v26ter_1200` (`dsp/test/dmodem_test.cpp`) | Two libdmodem modems with `AT+MS=V26T`: dialling, the answer tone, the start-up, text in the two directions; with `AT+MS=V26T,0,1200,1200` at 1200 bit/s |
+| `Modulations/DmodemPair.DataBothWays/v26ter`, `v26ter_1200` (`dsp/test/dmodem_test.cpp`) | Two libdmodem modems with `AT+MS=V26T`: the dial, the answer tone, the start-up, text in the two directions; with `AT+MS=V26T,0,1200,1200` at 1200 bit/s |
 | `Scripts/CoreEquiv.SameTranscript/at`, `v59` | `+MS=?` gives 126; 0x0101 of V.59 gives V.26ter |
 
 ## V.26 bis
 
 The code is `dsp/dp_v26bis.cpp` (`V26bisPump`, `DP_V26BIS`, 226).
-In this section, the clause numbers are the clause numbers of V.26 bis (1984, the Blue Book).
+In this section, the clause numbers are the clause numbers of V.26 bis
+(1984, the Blue Book).
 
 ### The signal
 
@@ -119,9 +124,10 @@ In this section, the clause numbers are the clause numbers of V.26 bis (1984, th
 ### The call
 
 Table 2/V.26 bis permits a one-way forward channel with or without the
-backward channel, or a forward channel that can go in the two directions (half duplex). D-Modem
-uses the one-way system with the backward channel. The two channels are on for
-all of the call, as in its V.23:
+backward channel. It also permits a forward channel that can go in the
+two directions (half duplex). D-Modem uses the one-way system with the
+backward channel. The two channels are on for all of the call, as in its
+V.23:
 
 | Step | Answerer (forward channel) | Caller (backward channel) |
 |---|---|---|
@@ -136,21 +142,22 @@ bit/s in operation.
 
 ### The receivers
 
-The receiver of the forward channel is `QamRx` (`qam.h`), with no training sequence.
-Its carrier loop operates on the synchronizing signal (decisions on the 8
-points), and its equalizer adapts on the data, decision directed. The
-synchronizing signal is a single tone (a constant phase change). An equalizer cannot learn the line
-from it, and adaptation on it makes the
-equalizer bad for the data. The modem calculates the phase change from the symbol and
-the symbol before it (the angle of z multiplied by the conjugate of the last z),
-in quadrants at 2400 and halves at 1200.
+The receiver of the forward channel is `QamRx` (`qam.h`), with no
+training sequence. Its carrier loop operates on the synchronizing signal
+(decisions on the 8 points). Its equalizer adapts on the data, decision
+directed. The synchronizing signal is a single tone (a constant phase
+change). An equalizer cannot learn the line from it, and adaptation on it
+makes the equalizer bad for the data. The modem calculates the phase
+change from the symbol and the symbol before it (the angle of z
+multiplied by the conjugate of the last z). It uses quadrants at 2400 and
+halves at 1200.
 
 The receiver of the backward channel is `FskDemod`, the receiver of V.23.
 
 ### Not done
 
-- The half-duplex (two-direction) system, with its turnarounds and the timings
-  of circuits 105, 106 and 109 (Table 3).
+- The half-duplex (two-direction) system, with its turnarounds and the
+  timings of circuits 105, 106 and 109 (Table 3).
 - The forward channel from the caller.
 - Interop with a V.26 bis modem from a different manufacturer.
 

@@ -1,16 +1,16 @@
 # V.61 (ASVD): technical details
 
-The plain-English overview is [v61.md](v61.md). The references are to
+The overview is [V.61](v61.md). The references are to
 ITU-T V.61 (08/96) and V.8 bis (11/2000).
 
 ## The parts
 
 | Part | Where | What it does |
 |---|---|---|
-| `V61Pump` (`DP_V61`, 61) | `dsp/dp_v61.cpp` | The data pump: start-up, data alone, speech with data, retrain. 61 is the own number of D-Modem for it (`+MS=V61`) |
+| `V61Pump` (`DP_V61`, 61) | `dsp/dp_v61.cpp` | The data pump: start-up, data alone, speech with data, retrain. 61 is the number that D-Modem gives it (`+MS=V61`) |
 | `V61AudioTx`, `V61AudioRx` | `dsp/v61_audio.h`, `dsp/v61_audio.cpp` | The speech (8000 Hz) to complex samples at the symbol rate and back (5.5.1, 5.5.2.1 to 5.5.2.2) |
 | `ToneTrk` | `dsp/qam.h`, `dsp/qam.cpp` | The tone trackers of the tones of the start-up and their phase reversals, shared with V.32 |
-| `+ASVD`, `Modem::asvd_offered()` | `core/at.cpp`, `core/modem.cpp` | The own command of D-Modem `+ASVD=<on>` (0, 1). With V.8 bis enabled (`<v8b>` of `+A8E` is 1), the modem offers and selects ASVD |
+| `+ASVD`, `Modem::asvd_offered()` | `core/at.cpp`, `core/modem.cpp` | The command `+ASVD=<on>` (0, 1) of D-Modem. With V.8 bis enabled (`<v8b>` of `+A8E` is 1), the modem offers and selects ASVD |
 | `MDMPRM_V8BIS` (76) | `dsp/modem_param.h`, `core/interface.cpp` | Bit 2: ASVD offered. `DP_V8BIS` sets it to 3 when it selected ASVD |
 | `MDMPRM_VOICE` (77), `struct dp_voice` | `dsp/modem_param.h`, `dsp/modem_defs.h`, `core/interface.cpp` | The voice path for the pump: `state()`, `mic()`, `ear()`, to the hooks of `Host::dsvd_voice()` or the `VoicePath` of `Options::dsvd`. This is the same path as that of V.70. 0 if there is no voice path |
 | The SVD mode of V.8 bis with V.61 | `dsp/dp_v8bis.cpp` | Refer to the subsequent section |
@@ -50,9 +50,9 @@ the ACK(1) was lost. Then the V.61 answerer starts with its own ANS.
 The two symbol rates have 2400 data symbols each second. Thus, the rates
 are the same at the two symbol rates: 2 to 6 bits each symbol for 4800 to
 14400 bit/s. The transmit pulse is a square root raised cosine with a
-roll off of 0.12 (Figure 7), over 16 symbols on each side. At 6 symbols,
-its truncation caused inter-symbol interference at about -30 dB. This is
-too much for 64 points.
+roll off of 0.12 (Figure 7), over 16 symbols on each side. (A pulse cut
+at 6 symbols caused inter-symbol interference at about -30 dB. This is
+too much for 64 points.)
 
 Data alone is uncoded QAM, with the 4, 8, 16, 32 and 64 points of Figures
 1 to 5. We read these points from the figures of the PDF with
@@ -64,21 +64,21 @@ With speech (QADM, 5.5), a frame has the 4 points of Figure 6, at 2.5 dB
 below the level of the 4 points of data alone, with 2 bits each symbol
 (4800 bit/s). The speech is added around these points:
 
-1. The speech is moved down by the audio carrier, low pass filtered and
-   sampled at each symbol (`V61AudioTx`: a Kaiser windowed sinc, 88 taps
+1. The modem moves the speech down by the audio carrier, filters it with
+   a low pass filter and samples it at each symbol (`V61AudioTx`: a Kaiser windowed sinc, 88 taps
    on each side at 8000 Hz, calculated directly at the symbol instants,
    as the note to 5.5.1.2 allows).
 2. The gain of the frame (5.5.2.3): steps of 2^(1/4), 0 to 31 for the
    smaller of the inphase and quadrature (the base), and up to 3 more for
    the other. The modem selects it from the peaks of the frame before it
    sends the frame.
-3. Each second symbol is inverted (5.5.2.4).
-4. Each part is scaled asymmetrically (5.5.2.5). The negative half goes
+3. The modem inverts each second symbol (5.5.2.4).
+4. The modem scales each part asymmetrically (5.5.2.5). The negative half goes
    0.7 of the distance to the edge of the quadrant (0.7 * sqrt 5 times
    the scale of the points). The positive half goes two times that
    distance.
-5. The result is turned by the angle of the data point minus 45 degrees
-   (Table 5). Thus, the negative half points to the edges of the
+5. The modem turns the result by the angle of the data point minus 45
+   degrees (Table 5). Thus, the negative half points to the edges of the
    quadrant.
 
 The receiver selects the quadrant (the data point that is nearest in
@@ -164,7 +164,7 @@ The equalizer (48 taps at T/2) adapts in these conditions:
   while it is set. The carrier loop follows at all times.
 
 With a smaller step in data (0.004), the error stayed at -24 dB for
-seconds after the start. This is too high for 64 points.
+some seconds after the start. This is too high for 64 points.
 
 ## Retrain
 

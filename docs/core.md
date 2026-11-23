@@ -25,7 +25,7 @@ The code is in `core/`. For the full technical description, refer to
   - The result codes (`OK`, `CONNECT`, `NO CARRIER`).
   - The telephone line settings of each country.
 - **Has built-in configurators.** These configurators operate when the modem is idle and on hook:
-  - `AT!CF` opens a full-screen setup screen in the style of the Turbo Vision of Borland.
+  - `AT!CF` opens a full-screen configuration screen in the style of the Turbo Vision of Borland.
   - `AT!CT` opens a command line in the style of the IOS of Cisco
     (`show running-config`, `configure terminal`).
   - `AT!C` selects the configurator that your terminal can show.
@@ -66,13 +66,12 @@ The new core also corrects many errors of the old core. For example:
 
 - It gives its settings with `AT&V`.
 - It gives correct numeric results with `ATV0`.
-- It reads S-register numbers correctly (before, `ATS09?` failed).
+- It reads S-register numbers correctly (`ATS09?` gave ERROR in the old core).
 - It uses the `;`, `W` and `@` of the dial string as the standard tells.
 
-The [technical details](core-details.md)
-give each change.
+The [technical details](core-details.md) give each change.
 
-## Testing it
+## Tests
 
     ctest --test-dir build -R Core
 

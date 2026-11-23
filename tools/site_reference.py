@@ -221,9 +221,12 @@ def page_environment(problems):
     found = env_vars()
     pages = doc_pages()
     b = [HEAD, "# Environment variables\n\n",
-         "The variables D-Modem's programs read, and those its PBX modules "
-         "set for the programs they run, as the source has them. Each "
-         "links the pages that describe it.\n\n",
+         "The `SIP_` and `DMODEM_` variables that D-Modem's programs read, "
+         "and the variables that its PBX modules set for the programs that "
+         "they run, as the source has them. Each row links the pages that "
+         "describe the variable. The `DSP_` switches of the data pumps are "
+         "not in this table. The page of each data pump "
+         "([The data pumps](../dsp/README.md)) gives its switches.\n\n",
          "| variable | | described in | in the code |\n|---|---|---|---|\n"]
     for name in sorted(found):
         v = found[name]

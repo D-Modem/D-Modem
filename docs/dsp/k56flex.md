@@ -14,7 +14,7 @@ specification.
   first signal of K56flex. It calls with V.90 when the server answers as a V.90
   server.
 
-We learned about K56flex from the one K56flex modem
+We got our data about K56flex from the one K56flex modem
 that was available, the SM56 soft modem of Motorola. We read its code and we monitored
 its calls with D-Modem. For the details, refer to
 [the technical details](k56flex-details.md).
@@ -32,7 +32,7 @@ K56flex has a digital end (the server) and an analogue end
 4. They exchange their settings.
 5. In data mode, the server sends the data in frames of 8 digital values.
    Most of the bits of each frame select 8 "rings" of values together.
-   This keeps the average power low. The remaining bits select a value in each ring
+   This keeps the mean power low. The remaining bits select a value in each ring
    and its sign. At intervals of some values, one sign keeps the signal
    balanced around zero, and does not carry data.
 
@@ -47,7 +47,7 @@ digital line. They connect at 44000 bit/s down and 31200 bit/s up, with
 V.42 error correction. They send data in the two directions.
 
 The modem of the customer of D-Modem calls the server of D-Modem over a
-simulated phone network. They connect at 56000 bit/s down and 31200
+simulated telephone network. They connect at 56000 bit/s down and 31200
 bit/s up. They send 200000 bytes in each direction without an error. The same call
 also operates in these conditions:
 
@@ -63,8 +63,7 @@ training and tells the server. Then the server uses only the values that
 the modem of the customer can still identify. The tests send data with these conditions:
 
 - A 3 dB pad (54000 bit/s).
-- A 6 dB pad (56000 bit/s).
-- Robbed bits (54000 bit/s).
+- Robbed bits (50000 bit/s or more).
 - A 6 dB pad with robbed bits (46000 bit/s).
 
 The SM56 modem also receives our data correctly when there are robbed bits on its

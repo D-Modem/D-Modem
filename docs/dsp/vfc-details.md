@@ -1,34 +1,37 @@
 # V.FC: technical details
 
-Nobody published the specification of V.FC. This page records the sources of the
-version of D-Modem (`dsp/vfc_data.cpp`, `dsp/dp_vfc.cpp`). For an overview, refer to
-[V.FC](vfc.md).
+Rockwell did not publish the specification of V.FC. This page records the
+sources of the V.FC of D-Modem (`dsp/vfc_data.cpp`, `dsp/dp_vfc.cpp`).
+For an overview, refer to [V.FC](vfc.md).
 
 ## Where it comes from
 
-The DSP of the Courier V.Everything (a TMS320C5x) runs V.FC from overlay 7 of
-its firmware image IDSDL302 (flash offset 0x3c2f0, loaded at program
-0xb000). The [courier-emu](https://github.com/Kitsok/courier-emu)
+The DSP of the Courier V.Everything (a TMS320C5x) runs V.FC from overlay 7
+of its firmware image IDSDL302 (flash offset 0x3c2f0, loaded at program
+0xb000). The [courier-emu](https://github.com/D-Modem/courier-emu)
 project (`docs/vfc.md`) found the overlay, the symbol rate table, the
-point table and the two trellis codes. Most of the files of courier-emu have no licence.
-Thus, D-Modem uses its findings as facts, and copies none
-of its code.
+point table and the two trellis codes. When D-Modem did this work, most of
+the files of courier-emu had no licence. Thus, D-Modem uses its findings
+as facts, and copies none of its code.
 
 For this work, we ran the overlay in a small C5x simulator of D-Modem.
-Known bits replaced the output of the scrambler. We wrote a model of
-the mapper and changed it until its points were the same as the points of the firmware:
-80 symbols at each of the 35 rates below with the 32 state code, and
-some with the 8 state code. `dsp/test/vfc_test.cpp` compares the
-encoder of D-Modem with 48 of the points of the Courier at five of these rates. All
+Known bits replaced the output of the scrambler. We wrote a model of the
+mapper and changed it until its points were the same as the points of the
+firmware. We compared 80 symbols at each of the 33 rates of
+[Rates](#rates) with the 32 state code, and some with the 8 state code.
+
+`dsp/test/vfc_test.cpp` (`Vfc.CourierPoints`) compares the encoder of
+D-Modem with 48 points of the Courier at five of these rates. All
 addresses below are program addresses in that overlay or in the resident
 code below it.
 
 ## Rates
 
 The rate index r (0 to 6) gives (r + 6) x 2400 bit/s, 14400 to 28800
-(0xb77c reads it from the rate word). The symbol rates are the six symbol rates of V.34.
-Above the speeds in the table in [V.FC](vfc.md), the points of a frame would
-go outside the point table. Thus, we think that these speeds are the limits.
+(0xb77c reads it from the rate word). The symbol rates are the six symbol
+rates of V.34. Above the speeds in the table in [V.FC](vfc.md), the points
+of a frame would go outside the point table. Thus, we think that these
+speeds are the limits (`vfc_max` in `dsp/vfc_data.cpp`).
 
 ## Frames
 
@@ -46,16 +49,18 @@ From b, with q = floor((b - 32) / 8) and k = b - 32 - 8q:
 | uncoded | q |
 | for the shell mapper | 2 or 3 |
 
-The 16 + k shell mapping bits of a frame select the rings of the 8 symbols with
-the shell mapping of V.34 (9.3/V.34). There are M rings, where M is the smallest number for which
-M^8 >= 2^(16 + k) (4 to 8). A 16-bit pattern for each k tells which symbols carry 3 bits and which
-carry 2 (0xcb66: `aaaa aaab aaaf aabf aaff abff afff
-bfff`, 2 bits for each symbol from the low end). A short frame takes one bit
-from the last symbol.
+The 16 + k shell mapping bits of a frame select the rings of the 8
+symbols with the shell mapping of V.34 (9.3/V.34). There are M rings,
+where M is the smallest number for which M^8 >= 2^(16 + k) (4 to 8). For
+each k, a 16-bit pattern tells which symbols carry 3 bits and which carry
+2 (0xcb66: `aaaa aaab aaaf aabf aaff abff afff bfff`, 2 bits for each
+symbol from the low end). A short frame takes one bit from the last
+symbol.
 
-The bits are taken in sequence, least significant first. For each symbol, there are
-its 2 + q bits (the low 2 are the quadrant change), then its shell mapping
-bits. These bits go into the number of the shell mapper at the next higher bits.
+The mapper takes the bits in sequence, least significant first. For each
+symbol, it takes the 2 + q bits of the symbol (the low 2 are the quadrant
+change), then its shell mapping bits. These bits go into the number of the
+shell mapper at the next higher bits.
 
 ## Points and trellis codes
 
@@ -74,21 +79,22 @@ For each symbol:
 5. The next state of the encoder: each bit of state | z << 5 selects a tap
    word (seven taps). The taps are XORed into B, and the state is
    (B ^ ((B >> 5) & (B >> 7) & 3)) & 0x1f. One set of taps (0xcb5f) is
-   the 8 state code of V.32. The other set (0xcb58) is a 32 state code. The encoder
-   starts at state 0. The quadrant z does not start at 0: it continues
+   the 8 state code of V.32. The other set (0xcb58) is a 32 state code.
+   The encoder starts at state 0. The quadrant z does not start at 0: it continues
    from the last training point (0x3da).
 
-The scrambler is the scrambler of V.32. The caller sends with 1 + x^-18 + x^-23, and the
-answerer sends with 1 + x^-5 + x^-23. Bit 0 of data word 0x6f selects the
-scrambler of the transmitter, and bit 1 selects the scrambler of the receiver.
-The Courier scrambles 8 bits at a time (0x8cc2, descrambler 0x8cf3), least
-significant bit first. A model of the two routines gives the same bits as the
-bit-by-bit scrambler of V.34.
+The scrambler is the scrambler of V.32. The caller sends with
+1 + x^-18 + x^-23, and the answerer sends with 1 + x^-5 + x^-23. Bit 0 of
+data word 0x6f selects the scrambler of the transmitter. Bit 1 selects the
+scrambler of the receiver. The Courier scrambles 8 bits at a time (0x8cc2,
+descrambler 0x8cf3), least significant bit first. A model of the two
+routines gives the same bits as the bit-by-bit scrambler of V.34.
 
 The Courier also has a precoder (0xc9c5) and a non-linear encoder
-(0xc9f8), as V.34 has. The series of the non-linear encoder has one more term.
-In the calls that we examined, the taps of the precoder (data 0x856 to 0x85b) were
-0, and the non-linear encoder was off (bit 10 of 0x879). D-Modem uses neither of them.
+(0xc9f8), as V.34 has. The series of the non-linear encoder has one more
+term. In the calls that we examined, the taps of the precoder (data 0x856
+to 0x85b) were 0. The non-linear encoder was off (bit 10 of 0x879).
+D-Modem uses neither of them.
 
 ## Check against the Courier's data
 
@@ -107,8 +113,8 @@ the start value of the Courier:
 ## The start-up
 
 The start-up has four phases. The scripts of the Courier are tables of
-steps in the overlay. The pump of D-Modem (`dsp/dp_vfc.cpp`) sends the same
-steps.
+steps in the overlay. The pump of D-Modem (`dsp/dp_vfc.cpp`) sends the
+same steps.
 
 ### Phase 1: the tones
 
@@ -132,7 +138,8 @@ detection.
 
 The two modems send at the same time at 800 baud, differential QPSK. The
 carrier of the caller is 1025 Hz (1825 Hz and 1975 Hz in the first steps).
-The carrier of the answerer is 2400 Hz (1950 Hz for its probe). The steps are:
+The carrier of the answerer is 2400 Hz (1950 Hz for its probe). The steps
+are:
 
 | Step | Caller (0xa64b) | Answerer (0xa677) |
 |---|---|---|
@@ -172,7 +179,8 @@ Courier itself (about 4900), it receives them immediately.
 ### Phase 3: the trainings
 
 At the new symbol rate, the answerer trains the receiver of the caller.
-Then the caller trains the receiver of the answerer. The script (0xc576) is:
+Then the caller trains the receiver of the answerer. The script (0xc576)
+is:
 
 | Entry | Routine | Signal | Symbols |
 |---|---|---|---|
@@ -201,16 +209,17 @@ The two modems send at the same time (0xc58f):
    (0x0a0a, 0x0909, 0x0808, 0x0202, 0x0101, 0x0000; 4 symbols) and a
    zero word (8 symbols).
 3. Ones (4), the word 0xaaaa (4 symbols).
-4. The rate mask (0xc682), until it has the mask of the other modem: 0x8885
-   and a bit for each data rate that the sender accepts (0x0040 14400,
+4. The rate mask (0xc682), until it has the mask of the other modem.
+   This mask is 0x8885 and a bit for each data rate that the sender
+   accepts (0x0040 14400,
    0x0100 16800, 0x0200 19200, 0x0400 21600, 0x1000 24000, 0x2000 26400,
    0x4000 28800).
 5. The final word (0xc678, 32 symbols): 0x000a and the bit of the
    selected rate. This is the fastest rate in the two masks.
 6. The data (0xc5e6, then 0xc6bf).
 
-A word goes as 2 bits for each symbol, scrambled and differential. Symbol i of a
-step of C symbols carries the bits (w >> ((-2(C - i)) & 15)) & 3.
+A word goes as 2 bits for each symbol, scrambled and differential. Symbol i
+of a step of C symbols carries the bits (w >> ((-2(C - i)) & 15)) & 3.
 
 The Courier sends its table immediately when its receiver is trained.
 But it reads the other table only after it sends its own table. Thus,
@@ -238,19 +247,20 @@ The receiver of D-Modem for phases 3 and 4 and the data:
   known 2-phase training to 0.85. (At 0.6, the receiver accepted a
   partial match one symbol early, and then the training failed.)
 
-After training, the mean square error of the receiver is about 0.001 of the
-signal power (about 30 dB). In the data, it is about 0.0025. That is too
+After training, the mean square error of the receiver is about 0.001 of
+the signal power (about 30 dB). In the data, it is about 0.0025. That is too
 much for 28800 bit/s. Thus, D-Modem offers a maximum of 26400. At 26400
 and below, two D-Modems send data without errors.
 
 ## The emulator
 
-These fixes to the C5x emulator of D-Modem (`dsp/test/hw/tms320c5x.hpp`) were
-necessary for the V.FC of the Courier:
+For the V.FC of the Courier, we made these fixes to the C5x emulator of
+D-Modem (`dsp/test/hw/tms320c5x.hpp`):
 
 - XPL, OPL and APL set TC when the result is 0.
 - Program 0x2000 to 0x23ff is the single-access RAM of the C51. This RAM
-  is also data 0x0800 to 0x0bff. The V.FC receiver keeps its filter taps there.
+  is also data 0x0800 to 0x0bff. The V.FC receiver keeps its filter taps
+  there.
 - There is no interrupt between RPT and the instruction that it repeats.
 
 Two emulated Couriers still do not complete V.FC: they stop at the table.
@@ -260,7 +270,8 @@ Two emulated Couriers still do not complete V.FC: they stop at the table.
 - 28800 bit/s (the noise floor of the receiver).
 - Data from D-Modem to the Courier: the Courier decodes the first frames
   (about 260 bits at 24000 bit/s), and then it loses the data.
-- Calls from the Courier: the Courier does not reply to the answer tone of D-Modem.
+- Calls from the Courier: the Courier does not reply to the answer tone of
+  D-Modem.
 - The meaning of the phase 2 message types 1, 2, 3 and 5, and of the
   table.
 - The symbol rates other than 3429: their carriers are from the

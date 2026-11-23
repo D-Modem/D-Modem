@@ -1,6 +1,6 @@
 # Modem relay (V.150.1): technical details
 
-The plain-English overview is [v150.md](v150.md).
+The overview in plain English is [v150.md](v150.md).
 
 dmodemd on SIP is a V.150.1 modem-over-IP endpoint. It is the modem and
 its gateway in one unit (U-MR, `mr=1`). The far end is a V.150.1 gateway
@@ -108,7 +108,7 @@ data compression disconnect) and stops.
 - TC1 and TC2 are reliable. The endpoint acknowledges each payload that it
   receives. The acknowledgement goes in the next packet out, or in an
   acknowledgement-only packet on TC0 after TA01 (90 ms). If three
-  acknowledgements are waiting, it goes immediately. The endpoint holds
+  acknowledgements wait, it goes immediately. The endpoint holds
   packets that are out of order in the window and delivers them in
   order. It acknowledges copies and discards them. It sends packets
   without acknowledgement again after TR03 (500 ms).
@@ -127,7 +127,7 @@ data compression disconnect) and stops.
 
 | Test | What it covers |
 |---|---|
-| `V150.*` (`frontend/dmodemd/test/v150_test.cpp`, label `quick`) | The SSE and `CONNECT` codings. The header of SPRT, the acknowledgement timing and the BSN update. 5000 octets on TC1 with each third packet lost and a slow reader. Two sessions through the start (V.34 33600), an answerer with only V.22bis, no modulation in common (cleared down), 20000 octets in each direction with each fifth packet lost, a hang-up (`CLEARDOWN`), and a far end that is not D-TCX and compresses |
+| `V150.*` (`frontend/dmodemd/test/v150_test.cpp`, label `quick`) | The SSE and `CONNECT` codings. The header of SPRT, the time of the acknowledgements and the BSN update. 5000 octets on TC1 with each third packet lost and a slow reader. Two sessions through the start (V.34 33600), an answerer with only V.22bis, no modulation in common (cleared down), 20000 octets in each direction with each fifth packet lost, a hang-up (`CLEARDOWN`), and a far end that is not D-TCX and compresses |
 | `CoreRelay.*` (`core/test/core_test.cpp`, label `quick`) | Two modems on relayed lines, connected by the relay of the test. The answerer is in `DP_RELAY` immediately, and the caller after call progress hears 2100 Hz. `CONNECT 33600` at the two ends, 2000 and 1500 octets through a 64-octet window, and `NO CARRIER` at the two ends when the relay stops |
 | `dmodemd_v150` (`frontend/dmodemd/test/v150_test.py`, label `quick`) | dmodemd with `SIP_V150=yes` against the SIP peer and gateway of the script (SSE on RTP, SPRT with its acknowledgements). Calls out: the lines of the offer, ANSam events from the gateway, `SSE:M` CM, `INIT`, `JM_INFO`, `CONNECT`, a line in each direction, and the `CLEARDOWN` of the gateway that gives `NO CARRIER`. Answers: the ANSam events of dmodemd, `SSE:M` p', `INIT`, `JM_INFO`, `CONNECT`, a line in each direction |
 
@@ -141,4 +141,4 @@ data compression disconnect) and stops.
 - Modulations other than the four that the endpoint offers (V.17, V.23,
   V.90 and higher).
 - Retrains and rate renegotiations (`MR_EVENT`) do not change the rate.
-- Nobody has tried interoperation with a commercial gateway.
+- We did not try interoperation with a commercial gateway.

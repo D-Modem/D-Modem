@@ -29,13 +29,13 @@ Mobile networks send speech through low bit rate speech codecs:
 These codecs make a model of a voice. They do not keep the waveform. Thus,
 the usual V-series modems do not operate through them. Of V.21 to V.34, only
 V.21 (300 bit/s) and V.22 (1200 bit/s) get through AMR. Mobile networks do
-not supply a circuit-switched data bearer now. If a phone call is the only
+not supply a circuit-switched data bearer. If a phone call is the only
 path between two DCEs, the data must go through the codec.
 
 ## The solution
 
 The proposal uses the V series where the codec lets it operate. It replaces
-only the parts that the codec breaks:
+only the parts that the codec does not let through:
 
 1. **Start-up.** The call starts as a V.8 session. The DCEs show their
    V.cvm capabilities in CM and JM. If one DCE does not have V.cvm, the
@@ -112,5 +112,5 @@ again.
 - ITU-T must allocate a V.8 capability bit for V.cvm. Until then, the
   DCEs use the non-standard facilities field of V.8 (Annex A).
 - D-Modem implements most of the proposal, but not all of it. The
-  implementation page lists the parts that it does not do yet
+  implementation page lists the parts that it does not do
   ([V.cvm technical details](dsp/vcvm-details.md#not-implemented)).

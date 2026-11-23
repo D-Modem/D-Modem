@@ -65,17 +65,17 @@ These items had to be correct:
 
 ### Tests
 
-The `Pos/FastConnect` test of `pump_test` runs each modulation back to
-back with S49 set (and S49=3, S50=70). It uses these conditions:
+The `Pos/FastConnect.Connects/*` cases of `pump_test` run each modulation
+back to back with S49 set (and S49=3, S50=70). They use these conditions:
 
 - Clean lines.
-- 10 and 15 dB of SNR.
+- 10, 15, 20 and 25 dB of SNR.
 - 8000 Hz.
 - A gain of 0.05 or 2, and clock offsets of 300 ppm.
 - The echo of each modem 6 dB down.
 
 Each modem must connect with a bit error rate of 1e-3 or less, in 1 s
-after the start of the answerer (V.22bis 1.8 s). They connect at 0.8 to
+after the start of the answerer (V.22bis 1.8 s, S50=70 1.3 s). They connect at 0.8 to
 0.95 s (V.22bis 1.36 to 1.5 s). In these tests, the normal handshakes
 take 5.3 s (V.22) and 5.1 s (V.22bis).
 
@@ -107,12 +107,12 @@ Each side is in one of three turns:
 - `FP_LISTEN`: the receiver (the `FaxRx` of fax, for V.29) operates on
   the line.
   - A power meter (10 ms) with a noise floor tells if there is a signal.
-    The noise floor goes down immediately, and goes up by doubling in
-    about 0.7 s. The signal is on above 6 times the floor (and 80 in
+    The noise floor decreases immediately. It increases in steps that
+    double it, in about 0.7 s. The signal is on above 6 times the floor (and 80 in
     amplitude). It is off below 3 times (or 60).
   - The carrier detector of the receiver cannot do this on a noisy line.
-    Its threshold is absolute, and line noise 25 dB below the signal
-    keeps it on.
+    Its threshold is absolute. Line noise 25 dB below the signal keeps
+    it on.
   - When the signal stops, the receiver starts again for the next burst.
   - When the line is quiet for 25 ms, the pump takes the bits of the
     link at the rate of the line and examines them (`IdleWatch`). Marks
@@ -131,21 +131,22 @@ Each side is in one of three turns:
 
 The receiver sends the data bits of the far end to the link until 64
 ones come in a row. A burst ends with 32 idle bits and the shutdown ones
-of V.29. If the receiver did not stop, the signal that follows while the
-carrier decreases goes to the DTE as noise. In a burst, the link is never
+of V.29. If the receiver did not stop, the signal that follows when the
+carrier decreases would go to the DTE as noise. In a burst, the link is never
 idle for that long (the burst ends first).
 
 A collision (the two sides start at the same time) loses the two bursts.
 Then each side listens again, and the protocol of the DTEs (the poll and
 response of SDLC) tries again. In data, `carrier_tick(1)` keeps the call
-on, whatever the line does. A half duplex line is frequently quiet.
+connected, whatever the line does. A half duplex line is frequently
+quiet.
 
 ### Not done
 
 - The short training of Hypercom. AN93 tells that the modem selects "V29
   Long Train" or "V29 Short Train" automatically. Nobody published the
   short one. Each burst of D-Modem has the long training.
-- Fallback to V.22bis when the host answers with it.
+- A fallback to V.22bis when the host answers with it.
 - RTS as push-to-talk. The turn changes only on the data.
 
 ### Tests

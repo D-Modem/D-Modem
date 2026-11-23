@@ -87,7 +87,7 @@ line.
 - If the LR has no parameter 3, the code at offset 0x14F17 sets k to 1
   and the framing mode to 1. This occurs when the 0x18 bits of the
   flags at 0x8D42 are 0. We think that these bits mark the V.42
-  upgrade of MNP 10, but we did not make sure.
+  upgrade of MNP 10, but we did not confirm this.
 
 ## F4: constant parameter 1
 

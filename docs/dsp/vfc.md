@@ -55,7 +55,8 @@ start-up of V.FC and the data mode of V.FC:
   below the signal. This floor is too high for 28800. Thus, D-Modem
   offers a maximum of 26400.
 - Data from D-Modem to the Courier. The Courier decodes the first frames
-  of the data of D-Modem, and then it loses the data. The cause is not known.
+  of the data of D-Modem, and then it loses the data. We do not know the
+  cause.
 - Calls from the Courier.
 - A fallback to V.34. `+MS=VFC` is only V.FC.
 - The speeds below 14400 bit/s, precoding, the non-linear encoder and

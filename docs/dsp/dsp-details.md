@@ -1,6 +1,6 @@
 # Open data pumps for D-Modem: technical details
 
-This page gives the technical details for [The data pumps: D-Modem's signal processing](README.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [The data pumps: D-Modem's signal processing](README.md). Read that overview first. This page gives the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 ## What `dsp/` is
 
@@ -76,6 +76,10 @@ The DTE selects one with `AT+MS=` and the number or a name.
 | 126 | ITU V.26 ter, 2400 and 1200 bit/s DPSK, duplex on the switched network | `dp_v26.cpp`. 1200 baud on an 1800 Hz carrier in the two directions with an echo canceller; the rate patterns and the three start-up sequences of 6.3; no retrain (refer to [V.26 ter](v26-details.md)). A number of D-Modem |
 | 32 | ITU V.32, 4800 and 9600 bit/s | Uncoded 4800, trellis coded 9600, with an echo canceller |
 | 132 | ITU V.32bis, 4800 to 14400 bit/s | The pump selects the rate from the measured training quality. It retrains automatically when it loses its equalization. It falls back to V.22bis when the remote modem does not do V.32 |
+| 232 | V.32terbo, 16800 and 19200 bit/s | In the V.32 pump (`dp_v32.cpp`). The unpublished extension of V.32bis by AT&T (refer to [V.32terbo](v32terbo-details.md)). A number of D-Modem |
+| 234 | ZyXEL ZyX, 7200 to 19200 bit/s | In the V.32 pump (`dp_v32.cpp`), at 2742.857 baud. D-Modem to D-Modem only (`AT+MS=ZYX`; refer to [ZyXEL](zyxel-details.md)). A number of D-Modem |
+| 61 | ITU V.61, 4800 bit/s with speech, 14400 bit/s without | `dp_v61.cpp`. Analogue simultaneous voice and data (refer to [V.61](v61-details.md)) |
+| 255 | Telebit PEP, half duplex on many carriers | `dp_pep.cpp`, `pep.cpp` (refer to [PEP](pep-details.md)). A number of D-Modem |
 | 168 | USRobotics HST, 4800 to 16800 bit/s one way, 300 bit/s the other | `dp_hst.cpp`. The forward channel of the Courier (2400 baud, 1800 Hz, the constellations and trellis code of V.32bis, its own 256 points at 16800) and its 350 Hz 8-PSK back channel. The start-up and rate request are designs of D-Modem (refer to [HST](hst-details.md)). A number of D-Modem |
 | 128 | Rockwell's V.FC, 14400 to 28800 bit/s | `vfc_data.cpp`, in the pump of V.34. The start-up of V.34, then the data mode of V.FC (the frames, points and 8 or 32 state 2D trellis codes of the Courier) when the two MPs ask for it in bit 34. If not, the data mode of V.34 (refer to [V.FC](vfc-details.md)). A number of D-Modem |
 | 29 | ITU V.29, 4800 to 9600 bit/s, 4-wire leased line | `dp_4wire.cpp`. The fax modulators of `fax_modems.cpp` operate as a duplex pump on a continuous carrier (`AT&L2`): the synchronizing signal of each end, parallel receivers that find the rate of the far end, resynchronizing and fallback (refer to [leased lines](../leased.md)) |
@@ -92,6 +96,8 @@ The DTE selects one with `AT+MS=` and the number or a name.
 | `VCVM` (150) | V.cvm, data over mobile speech paths, 175 to 3500 bit/s | The proposed Recommendation in [docs/cellular](../cellular/v_cvm.tex). V.8 first (with V.22 and V.21 as the fallback), then probing, then a loaded comb or the parametric mode through AMR, AMR-WB or G.711 (refer to [V.cvm](vcvm.md)) |
 | 91 | ITU V.91, 28000 to 62667 bit/s both ways | Two digital modems on an 8000 Hz G.711 line. V.8 first, then V.34 if V.91 does not start (refer to [V.91](v91.md#v91-digital-to-digital)). The ids 90 and 92 also offer it |
 | `VWB` (200) | V.wb, D-Modem's wideband mode on a bare pair, up to 148656 bit/s each way | Discrete multitone (DMT) in frequency-division duplex at 48000, 96000 or 192000 Hz. It does not start below 48000 Hz. It is for the WB stick of pico-serial. The line operates as a leased line (no call progress; `AT&L1`). It has its own start-up, bit loading for each tone from the measured SNR, RS(255,239) and a loop-timed answerer (refer to [V.wb](vwb.md)) |
+| 56 | K56flex, 32000 to 56000 bit/s downstream | In the V.34 pump (`dsp/v34_k56.h`). The digital modem on an 8000 Hz line, or the analogue modem on a 9600 Hz line (refer to [K56flex](k56flex-details.md)) |
+| 57 | USRobotics x2, 32000 to 56000 bit/s downstream | In the V.34 pump (`dsp/v34_x2.h`). The server on an 8000 Hz line, or the client on a 9600 Hz line (`AT+MS=X2`; refer to [x2](x2-details.md)) |
 | 8, 34, 90, 92 | V.8 and ITU V.34, 2400 to 33600 bit/s; V.90 as the digital modem | V.8 negotiation, then V.34. When the other end offers no V.34, the pump gives control to the modulation on which V.8 agreed (V.32bis, V.22bis, V.23 or V.21). When the other end does not do V.8, the pump gives control to the V.32bis pump (with its V.22bis and V.22 fallback). With 90 or 92 on an 8000 Hz G.711 line, it is the digital modem of V.90, 28000 to 56000 bit/s downstream (refer to [V.90](v90-details.md)) |
 
 Two test pumps from slmodemd are also registered, but have no `AT+MS`
@@ -212,8 +218,8 @@ are almost pure tones and would de-tune them.
 The V.22bis receiver also distinguishes unscrambled ones from S1 by the
 phase step from one symbol to the next, not by its decisions. S1 is two
 points 90 degrees apart. While the carrier phase is near 45 degrees off,
-the two points fall in the same quadrant, where the error of the PLL
-averages out. The answerer has only the 100 ms of S1 of the caller in
+the two points fall in the same quadrant, where the mean error of the PLL
+is zero. The answerer has only the 100 ms of S1 of the caller in
 which to find it. Over SIP, this problem caused the answerer to identify a
 V.22bis caller (a caller that tried V.34 and V.32bis first) as a V.22
 caller at 1200 bit/s.
@@ -227,26 +233,27 @@ All of the code here is in `namespace dsp`, except the C entry points of
 
 All data pumps derive from `Pump` (`pump.h`):
 
-- `CallProgPump` (call progress), `FskPump` (V.21, V.23, Bell 103),
-  `TextPump` (V.18 and its text modes), `ContactIdPump`, `V22Pump`, `V26Pump`, `V26bisPump`,
-  `V32Pump`.
-- `V34Pump`, which is also V.8, V.90, V.91 and V.92.
-- `FourWirePump` (V.29, V.33, V.27ter), `ClearPump`, `VcvmPump`, and
-  `VwbPump` (with `VwbModem`, `vwb.h`, under it).
+- `CallProgPump` (call progress), `FskPump` (V.21, V.23, Bell 103,
+  Bell 202), `TextPump` (V.18 and its text modes), `ContactIdPump`,
+  `SmsPump`, `RelayPump` and `V8bisPump`.
+- `V22Pump`, `V26Pump`, `V26bisPump`, `V29fpPump`, `V32Pump` (also
+  V.32terbo and ZyXEL), `HstPump`, `VfcPump`, `V61Pump` and `PepPump`.
+- `V34Pump`, which is also V.8, V.90, V.91, V.92, K56flex and x2.
+- `FourWirePump` (V.29, V.33, V.27ter and the other 4-wire modems),
+  `ClearPump`, `VcvmPump`, and `VwbPump` (with `VwbModem`, `vwb.h`,
+  under it).
 - The test pumps `DummyPump` and `SinusPump`.
 
 A pump has:
 
 - A static `name`.
-- `start()`, which replaces the old create function. It returns 0, or -1
-  if the pump cannot operate.
+- `start()`. It returns 0, or -1 if the pump cannot operate.
 - `process()`.
 - As an option, `hangup()` and a destructor.
 
 `PumpOps<T>::ops` is the table that is registered with the modem core
 (`modem_dp_register`). The code allocates a pump with `new T()`. Thus,
-its members start at zero, as they did when the C pumps were allocated
-with `calloc`.
+its members start at zero.
 
 ### `PumpBase`
 
@@ -270,14 +277,14 @@ in `modem_defs.h`, through `MDMPRM_STATS`) also go through `PumpBase`:
 
 | Method | What it records |
 |---|---|
-| `stat_retrain()`, `stat_reneg()` | A retrain or a rate renegotiation, ours or the remote's |
-| `stat_dp()` | The modulation V.8's pump came up with: V.34, V.90, V.91 or V.92 |
-| `stat_snr()`, `stat_nmse()` | The receiver's SNR and mean squared error |
+| `stat_retrain()`, `stat_reneg()` | A retrain or a rate renegotiation, by us or by the remote modem |
+| `stat_dp()` | The modulation that the V.8 pump selected: V.34, V.90, V.91 or V.92 |
+| `stat_snr()`, `stat_nmse()` | The SNR and the mean squared error of the receiver |
 | `stat_carrier()` | Carrier lost and back during data |
 | `stat_rtd()` | The round trip delay |
-| `stat_line()` | Each direction's symbol rate and carrier |
-| `stat_coding()` | V.34's trellis code, non-linear encoder, precoding and shaping, each way |
-| `stat_freq_offset()`, `stat_timing_offset()` | The receiver's carrier offset, and the remote's clock against ours |
+| `stat_line()` | The symbol rate and the carrier of each direction |
+| `stat_coding()` | The trellis code, non-linear encoder, precoding and shaping of V.34, in each direction |
+| `stat_freq_offset()`, `stat_timing_offset()` | The carrier offset of the receiver, and the clock of the remote modem against ours |
 
 The pumps fill in these items:
 
@@ -337,7 +344,3 @@ their C entry points (`dcr_*`, `CID_*`, `VOICE_*`).
 `dp_dummy.cpp` (`DummyPump`) and `dp_sinus.cpp` (`SinusPump`) are the
 two test pumps of slmodemd (refer to [Data pumps](#data-pumps)). We wrote
 them again on `Pump` and `PumpOps`, as the other pumps.
-
-The conversion from C structs and functions to these classes kept the
-output identical to the byte. All quick tests gave the same debug log
-before and after.
