@@ -243,7 +243,7 @@ void run(dmodem_embed *e, EmbedConfig cfg, int dte_fd)
 				if (e->stopping)
 					sm.stop();
 			}
-			say("dmodem: the modem is ready on the SIP line%s\n", "");
+			say("dmodem: the modem starts on the SIP line%s\n", "");
 			serve(sm.modem(), [&sm, &sc] { return sm.run(sc); });
 			std::lock_guard<std::mutex> lk(e->mu);
 			e->sip = nullptr;
