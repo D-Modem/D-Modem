@@ -594,6 +594,26 @@ void Link::update_config(const Config &remote)
 		logf("hst: offered both ways, %" PRId32 " bit/s to start",
 		     hst_bps_);
 
+	/* the Hayes sets (hayes_xid.h): both sent HMP; without its
+	   compression flag, no compression at all */
+	cfg_.adc = false;
+	HayesAgreed hayes;
+	if (asked_.hayes)
+		hayes = hayes_agree(hayes_offer(asked_), remote.hayes_rx);
+	if (hayes.hayes) {
+		cfg_.aft_caps = hayes.aft_caps;
+		cfg_.aft_opts = hayes.aft_opts;
+		logf("hayes: HMP %02x, AFT %02x/%02x%s", hayes.hmp,
+		     hayes.aft_caps, hayes.aft_opts,
+		     hayes.comp ? "" : ", no compression");
+		if (!hayes.comp) {
+			cfg_.comp = 0;
+			cfg_.v44 = cfg_.zstd = false;
+			owner_->negotiated(cfg_);
+			return;
+		}
+	}
+
 	if (dir && cfg_.zstd && remote.zstd && start_zstd(dir, remote)) {
 		owner_->negotiated(cfg_);
 		return;
@@ -650,6 +670,16 @@ void Link::update_config(const Config &remote)
 		} else
 			logf("err: v42bis: setup failed (%" PRId32 "/%" PRId32
 			     ").", n2, n7);
+	}
+	/* with a Hayes modem: ADC when V.42bis is not agreed (FA 6.8.1),
+	   a new model each way */
+	if (hayes.hayes &&
+	    hayes_select(hayes, cfg_.comp != 0) == HayesComp::Adc) {
+		enc_adc_.init();
+		dec_adc_.init();
+		cfg_.comp = 3;
+		cfg_.adc = true;
+		logf("hayes: ADC both ways");
 	}
 	owner_->negotiated(cfg_);
 }
@@ -761,6 +791,8 @@ s16 Link::dte_write(const u8 *buf, s16 n)
 /* the call's encoder (zstd's, V.44's or V.42bis's) is set up */
 bool Link::enc_ready() const
 {
+	if (cfg_.adc)
+		return enc_adc_.ready();
 	return cfg_.zstd ? encz_.ready() : cfg_.v44 ? enc44_.ready() :
 		enc_.ready();
 }
@@ -768,6 +800,8 @@ bool Link::enc_ready() const
 /* the call's decoder is set up */
 bool Link::dec_ready() const
 {
+	if (cfg_.adc)
+		return dec_adc_.ready();
 	return cfg_.zstd ? decz_.ready() : cfg_.v44 ? dec44_.ready() :
 		dec_.ready();
 }
@@ -775,6 +809,8 @@ bool Link::dec_ready() const
 /* read_chars() through zstd's, V.44's or V.42bis's encoder */
 s16 Link::comp_read(u8 *buf, s16 n)
 {
+	if (cfg_.adc)
+		return comp_read_adc(buf, n);
 	if (cfg_.zstd)
 		return comp_read_with(encz_, buf, n);
 	return cfg_.v44 ? comp_read_with(enc44_, buf, n) :
@@ -784,6 +820,8 @@ s16 Link::comp_read(u8 *buf, s16 n)
 /* write_chars() through zstd's, V.44's or V.42bis's decoder */
 s16 Link::comp_write(const u8 *buf, s16 n)
 {
+	if (cfg_.adc)
+		return comp_write_with(dec_adc_, buf, n);
 	if (cfg_.zstd)
 		return comp_write_with(decz_, buf, n);
 	return cfg_.v44 ? comp_write_with(dec44_, buf, n) :
@@ -796,9 +834,25 @@ bool Link::comp_flush_output()
 	if (proto_ == Protocol::Mnp)
 		return cfg_.comp & 1 ? comp_flush_with(dec_) :
 			comp_flush_with(dec5_);
+	if (cfg_.adc)
+		return comp_flush_with(dec_adc_);
 	if (cfg_.zstd)
 		return comp_flush_with(decz_);
 	return cfg_.v44 ? comp_flush_with(dec44_) : comp_flush_with(dec_);
+}
+
+/* the DTE's characters through ADC's encoder for one I frame of n
+   octets: characters while the code of one more and the flush still
+   fit, then the flush, so that each frame ends on an octet boundary
+   as the Hayes firmware sends it (hayes_adc.h) */
+s16 Link::comp_read_adc(u8 *buf, s16 n)
+{
+	u8 ch;
+	while (enc_adc_.pending() + ADC_MAX_PER_CHAR + ADC_MAX_FLUSH <= n &&
+	       dte_read(&ch, 1) == 1)
+		enc_adc_.encode(ch);
+	enc_adc_.flush_encoder();
+	return enc_adc_.out(buf, n);
 }
 
 /* the DTE's characters through the encoder: as many as fit, then a

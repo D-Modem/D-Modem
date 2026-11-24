@@ -269,7 +269,7 @@ struct LinkOwner final : public dlink::Owner {
 	/* what XID or MNP's LRs agreed */
 	void negotiated(const dlink::Config &c) override {
 		m_.negotiated(c.comp, c.v44, c.zstd, c.dict_size,
-			      c.max_string, c.mnp5);
+			      c.max_string, c.mnp5, c.adc);
 	}
 	/* MNP 10's rate shifts (mnp.h) */
 	u32 mnp10_mods() override { return m_.mnp10_mods(); }
@@ -471,6 +471,7 @@ void Modem::sregs_init()
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
 		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 },
 		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 }, { SREG_ZYX_DES, 0 },
+		{ SREG_HAYES_PROTOCOL, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -1067,6 +1068,8 @@ s16 Modem::link_init()
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
 	c.hst = hst_offer();
+	/* S46: the Hayes private sets in XID, and ADC with them */
+	c.hayes = c.ec ? static_cast<u8>(sregs_[SREG_HAYES_PROTOCOL]) : 0;
 	/* +X2UP: the remote feature upgrade, with LAPM */
 	c.usr_feature = static_cast<dlink::UsrMode>(kept("+X2UP")[0]);
 	c.usr_enable = static_cast<u8>(kept("+X2UP")[1]);
@@ -1388,9 +1391,10 @@ void Modem::shift_end(bool ok)
 
 /* what XID or MNP's LRs agreed: the call's compression */
 void Modem::negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
-		       s32 max_string, bool mnp5)
+		       s32 max_string, bool mnp5, bool adc)
 {
 	cfg_.comp = comp;
+	cfg_.adc = adc;
 	cfg_.v44 = v44;
 	cfg_.zstd = zstd;
 	cfg_.dict_size = dict_size;
@@ -1398,7 +1402,8 @@ void Modem::negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
 	cfg_.mnp5 = mnp5;
 	logf("negotiated: compression %d%s, %" PRId32 " codewords, strings of %"
 	     PRId32 "%s\n",
-	     comp, zstd ? " (zstd)" : v44 ? " (V.44)" : "", dict_size,
+	     comp, adc ? " (ADC)" : zstd ? " (zstd)" : v44 ? " (V.44)" : "",
+	     dict_size,
 	     max_string,
 	     mnp5 ? ", MNP 5" : "");
 }
@@ -1427,7 +1432,8 @@ const char *Modem::compression_name() const
 	if (cfg_.mnp_on)
 		return cfg_.comp ? "V42bis" : cfg_.mnp5 ? "MNP5" : "NONE";
 	if (cfg_.ec && cfg_.comp)
-		return cfg_.zstd ? "ZSTD" : cfg_.v44 ? "V44" : "V42bis";
+		return cfg_.adc ? "ADC" : cfg_.zstd ? "ZSTD" :
+			cfg_.v44 ? "V44" : "V42bis";
 	return "NONE";
 }
 
@@ -3101,7 +3107,8 @@ void Modem::report(Result r)
 				line = "Compression: " + std::string(c);
 			else
 				line = dec(c == "MNP5" ? 66 : c == "V42bis" ? 67 :
-					   c == "V44" ? 68 : c == "ZSTD" ? 70 : 69);
+					   c == "V44" || c == "ADC" ? 68 :
+					   c == "ZSTD" ? 70 : 69);
 			puts(line);
 			crlf();
 		}

@@ -3436,6 +3436,7 @@ value, but it has no other effect.
 \hyperlink{sreg:39}{S39} & Line quality (kept). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:44}{S44} & \std{V.cvm}: tones loaded (read only). & 0--255 & tones & 0 \\ \hline
 \hyperlink{sreg:45}{S45} & \std{V.cvm}: renegotiations (read only). & 0--255 & -- & 0 \\ \hline
+\hyperlink{sreg:46}{S46} & Hayes sets and \std{ADC} in \std{V.42}. & 0--255 & -- & 0 \\ \hline
 \hyperlink{sreg:47}{S47} & Leased line (\cmdl[ampL]{\&L}). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:48}{S48} & \std{V.13} simulated carrier. & 0, 1 & -- & 0 \\ \hline
 \hyperlink{sreg:49}{S49} & Point of sale fast connect. & 0, 1, 3 & -- & 0 \\ \hline
@@ -3594,6 +3595,17 @@ last \std{V.cvm} call (\cmdl[plusCVM]{+CVM}).  Read only.
 
 \sregdef{45}{V.cvm Renegotiations}
 The number of renegotiations of the last \std{V.cvm} call.  Read only.
+\facts{0--255}{0}{none}
+
+\sregdef{46}{Hayes Protocol Selection}
+Not 0: the \std{XID} of a \std{V.42} call has the private sets of the Hayes
+V-series modems (\std{AFT} and \std{HMP}).  The value has the coding of the
+Hayes S46: 136 \std{LAP-M}, 138 \std{LAP-M} with compression (bit 1).  When
+the two modems agree on the compression and not on \std{V.42bis}, the call
+uses Hayes \std{ADC} in the two directions, and \rc{CONNECT} shows
+\rc{COMPRESSION: ADC} (68).  When the two modems send the sets and one of
+them does not agree on the compression, the call has no compression.
+0: no Hayes sets.
 \facts{0--255}{0}{none}
 
 \sregdef{47}{Leased Line}

@@ -130,6 +130,9 @@ private:
 	   remote's ADP (an older V.42 ignores an XID with the private
 	   set: the Courier) */
 	bool no_zstd_ = false;
+	/* the remote's XID had the Hayes HMP set (hayes_xid.h): our
+	   response has the Hayes sets too */
+	bool hayes_rx_ = false;
 	std::vector<u8> cmd_ud_, rsp_ud_;
 	u8 cmd_addr_ = 0, rsp_addr_ = 0;
 	u8 vs_ = 0, va_ = 0, vr_ = 0;

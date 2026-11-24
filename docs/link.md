@@ -56,6 +56,7 @@ For each MNP class (1 to 10 and 10EC), refer to
 | **V.42bis** | the older standard, which V.34 modems use |
 | **MNP 5** | the compression of Microcom, used with MNP 4 |
 | **zstd** | modern Zstandard compression, used only when the two ends are D-Modem |
+| **Hayes ADC** | the compression of the Hayes V-series modems, used only with `ATS46=138` (refer to [Hayes V-series protocols](hayes.md)) |
 
 The modems agree on the best protocol that the two modems have. Between
 two D-Modems, the modems use zstd. On bulk data, it compresses 14 to 65%

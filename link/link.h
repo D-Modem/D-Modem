@@ -38,6 +38,8 @@
 #endif
 
 #include "dm_types.h"
+#include "hayes_adc.h"
+#include "hayes_xid.h"
 #include "hdlc.h"
 #include "hst_link.h"
 #include "lapb.h"
@@ -141,6 +143,17 @@ struct Config {
 	   rates it offered.  Both offering it, LAPM goes no further at
 	   this pump's rate: the owner changes to HST (Owner::hst()) */
 	u8 hst = 0;
+	/* the Hayes private sets in XID (hayes_xid.h): the protocol
+	   selection in the coding of the Hayes S46 (0: the sets are not
+	   offered; bit 1: compression), the AFT capabilities and escape
+	   options; in the remote's XID, the sets it sent (hayes_rx).  After
+	   XID: Hayes ADC (hayes_adc.h) in the two directions, in place of
+	   V.42bis (adc), and the AFT results (aft_caps the AND, aft_opts
+	   the OR) */
+	u8 hayes = 0;
+	u8 aft_caps = 0, aft_opts = 0;
+	HayesSets hayes_rx;
+	bool adc = false;
 	/* V.80 Synchronous Access Mode (+ES=6, or 8 answering), with its
 	   settings, rather than any of the above */
 	bool sync = false;
@@ -159,6 +172,16 @@ struct Config {
 	u8 usr_enable = 1 << (USR_BIT_X2 - 1);
 	u8 usr_disable = 0;
 };
+
+/* the Hayes sets that a configuration offers: S46's compression bit
+   only when the configuration has compression in the two directions
+   (ADC has the two) */
+inline HayesSets hayes_offer(const Config &c)
+{
+	const u8 s46 = c.comp == 3 ? c.hayes :
+		static_cast<u8>(c.hayes & ~HAYES_HMP_COMP);
+	return hayes_local(s46, c.aft_caps, c.aft_opts);
+}
 
 /* the error correction a call has */
 enum class Protocol { None, Lapm, Mnp, X75, Ppp, V120, V76, Hst };
@@ -492,6 +515,7 @@ private:
 		return const_cast<Link *>(this)->active();
 	}
 	s16 comp_read(u8 *buf, s16 n);
+	s16 comp_read_adc(u8 *buf, s16 n);
 	s16 comp_write(const u8 *buf, s16 n);
 	bool comp_flush_output();
 	template <class E> s16 comp_read_with(E &enc, u8 *buf, s16 n);
@@ -534,6 +558,7 @@ private:
 	bool dec_ready() const;
 	bool start_zstd(s16 dir, const Config &remote);
 	Mnp5 enc5_, dec5_;
+	HayesAdc enc_adc_, dec_adc_;
 	SyncAccess sync_;
 	/* decoded characters the DTE has not taken yet */
 	u8 dec_out_[256];

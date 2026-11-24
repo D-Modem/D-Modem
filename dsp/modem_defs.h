@@ -140,6 +140,13 @@ enum S_REGISTER {
 						    the remote's (the
 						    answerer always listens
 						    for it, and logs it) */
+	SREG_HAYES_PROTOCOL               = 46,  /* the Hayes private sets
+						    in V.42's XID (0 none;
+						    the coding of the Hayes
+						    S46: 136 LAP-M, 138
+						    LAP-M with compression,
+						    ADC when V.42bis is not
+						    agreed) */
 	SREG_LEASED                       = 47,  /* AT&L: 1 a 2-wire leased
 						    line, 2 a 4-wire one (no
 						    dial tone or ringing: ATD
