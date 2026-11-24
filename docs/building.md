@@ -71,7 +71,7 @@ The library cross compiles. With a CMake toolchain file, the build downloads lib
 
 dmodemd also builds for Windows as one static `dmodemd.exe`. You can build it in these methods:
 
-- With the toolchain of [clang-retro](https://github.com/clang-retro/dos-sdk), from Linux or Windows (`-DCMAKE_TOOLCHAIN_FILE=platforms/windows/clang-retro.cmake`). This is the default method. `CLANG_RETRO_CONFIG` sets the oldest Windows: `win98` (Windows 98 SE and later, 32 bit) or `win7-x64` (Windows 7 and later, 64 bit), for example.
+- With the toolchain of [clang-retro](https://github.com/clang-retro/dos-sdk), from Linux or Windows (`-DCMAKE_TOOLCHAIN_FILE=platforms/windows/clang-retro.cmake`). This is the default method. `CLANG_RETRO_CONFIG` sets the oldest Windows: `win98` (Windows 98 SE and later, 32 bit), `win32-picolibc` (Windows 95, NT 4.0 and later, 32 bit) or `win7-x64` (Windows 7 and later, 64 bit), for example.
 - With MSVC on Windows (`cmake -G Ninja` in a Developer Command Prompt).
 - From Linux with MinGW-w64 (`-DCMAKE_TOOLCHAIN_FILE=platforms/windows/mingw-w64.cmake`).
 - From Linux with clang-cl and the libraries of MSVC (`platforms/windows/clang-cl.cmake`).

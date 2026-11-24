@@ -31,7 +31,6 @@
 #include <memory>
 #include <string>
 
-#include <direct.h>
 #include <dcore.h>
 #include <dsplibs.h>
 #include <log.h>
@@ -78,7 +77,9 @@ std::string data_path(const char *name)
 	if (!base || !*base)
 		return std::string("dmodem-data.") + name;
 	std::string dir = std::string(base) + "\\dmodem";
-	_mkdir(dir.c_str());
+	/* (the Windows function, not msvcrt's _mkdir(): picolibc, the
+	   win32-picolibc build, has no <direct.h>) */
+	CreateDirectoryA(dir.c_str(), nullptr);
 	return dir + "\\data." + name;
 }
 

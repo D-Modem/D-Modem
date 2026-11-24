@@ -1,0 +1,27 @@
+diff --git a/src/net/win32/wif.c b/src/net/win32/wif.c
+--- a/src/net/win32/wif.c
++++ b/src/net/win32/wif.c
+@@ -93,7 +93,23 @@
+ 	ULONG ulOutBufLen = sizeof(info);
+ 	DWORD ret;
+ 
++#if defined(__PICOLIBC__)
++	/* (Windows 95 has no iphlpapi.dll: GetAdaptersInfo() found at run
++	   time, so that a program with libre starts there) */
++	{
++		HMODULE lib = LoadLibraryA("iphlpapi.dll");
++		union {
++			FARPROC proc;
++			DWORD (WINAPI *fn)(PIP_ADAPTER_INFO, PULONG);
++		} u;
++
++		u.proc = lib ? GetProcAddress(lib, "GetAdaptersInfo") : NULL;
++		ret = u.proc ? u.fn(info, &ulOutBufLen) :
++			ERROR_NOT_SUPPORTED;
++	}
++#else
+ 	ret = GetAdaptersInfo(info, &ulOutBufLen);
++#endif
+ 	if (ret != ERROR_SUCCESS) {
+ 		DEBUG_WARNING("if_list: GetAdaptersInfo ret=%u\n", ret);
+ 		return ENODEV;

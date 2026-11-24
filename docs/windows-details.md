@@ -59,9 +59,10 @@ The usual build uses the toolchain of [clang-retro](https://github.com/clang-ret
 
 ### clang-retro
 
-**The target.** `CLANG_RETRO_CONFIG` is the name of a `.cfg` file in `$CLANG_DOS/bin` (default `win98`). The file gives the target triple, the sysroot and the linker. The toolchain file reads the Windows version from the triple and sets `DMODEM_WINNT` (`_WIN32_WINNT`) to it. Windows 98 SE is `0x0400`, as NT 4.0. The CI builds two targets:
+**The target.** `CLANG_RETRO_CONFIG` is the name of a `.cfg` file in `$CLANG_DOS/bin` (default `win98`). The file gives the target triple, the sysroot and the linker. The toolchain file reads the Windows version from the triple and sets `DMODEM_WINNT` (`_WIN32_WINNT`) to it. Windows 98 SE is `0x0400`, as NT 4.0. The CI builds three targets:
 - `win7-x64`: Windows 7 and later, 64 bit. The CI runs the tests under Wine on this build.
 - `win98`: Windows 98 SE, ME, 2000, XP and later, 32 bit (i486). The CI checks its imports with `check-imports.py` of clang-retro, against Windows 9x and against NT 4.0.
+- `win32-picolibc`: Windows 95, 98, ME, NT 4.0 and later, 32 bit. The C library is picolibc and the C++ library is libc++, both linked statically. Thus, the program does not use `msvcrt.dll`. The CI checks its imports against Windows 9x and against NT 4.0.
 
 The CI keeps the `dmodemd.exe` of each target as an artifact: `dmodemd-windows-x86_64` (`win7-x64`) and `dmodemd-windows-98-x86` (`win98`).
 
@@ -77,7 +78,16 @@ The CI keeps the `dmodemd.exe` of each target as an artifact: `dmodemd-windows-x
 
 `cmake/mbedtls-win32-legacy.h` builds Mbed TLS without `bcrypt.dll` and without `vsnprintf_s()`.
 
-**Windows 98 SE.** The 32-bit build needs `msvcrt.dll`, `ws2_32.dll` (Winsock 2) and `iphlpapi.dll`. Windows 98 SE has them. Windows 95 does not have them all.
+**picolibc.** picolibc is a POSIX C library. The Windows code of libre and of D-Modem expects the names of `msvcrt.dll`. These files give them:
+- `cmake/libre-picolibc/compat.h` (included in each source of libre): `_open()`, `_stricmp()`, `gmtime_s()`, `fopen_s()` and other names, as the POSIX functions. It also renames the `pipe()`, `once_flag` and `call_once()` of libre, which are different from those of picolibc.
+- `cmake/libre-picolibc/direct.h`: `_mkdir()`.
+- `cmake/libre-picolibc.patch`: libre finds `GetAdaptersInfo()` at run time, because Windows 95 does not have `iphlpapi.dll`.
+- `platforms/windows/clang-retro/dmodem_retro.h`: `_stricmp()`, `_strnicmp()`, `localtime_s()`, `gmtime_s()`, and `clock_gettime()` on `CLOCK_MONOTONIC`.
+- `cmake/mbedtls-win32-legacy.h`: the C11 `memset_s()` of picolibc, and no dates in Mbed TLS (picolibc has no `gmtime_s()`). libre does not use dates from Mbed TLS.
+
+**Windows 98 SE.** The `win98` build needs `msvcrt.dll`, `ws2_32.dll` (Winsock 2) and `iphlpapi.dll`. Windows 98 SE has them. Windows 95 does not have them all.
+
+**Windows 95 and NT 4.0.** The `win32-picolibc` build needs `ws2_32.dll` (Winsock 2) only. On Windows 95, install the Windows Socket 2 Update of Microsoft. NT 4.0 has Winsock 2. **Nobody has tried it on a real Windows 95 or NT 4.0 yet.**
 
 ### MinGW-w64
 

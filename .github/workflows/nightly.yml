@@ -88,6 +88,7 @@ jobs:
             dmodemd/dmodemd ari/dmodem-ari capi/dmodem-capid
           take dmodemd-windows-x86_64 dmodemd.exe dmodemd-win7-x64.exe
           take dmodemd-windows-98-x86 dmodemd.exe dmodemd-win98.exe
+          take dmodemd-windows-95-x86 dmodemd.exe dmodemd-win95.exe
           take dmodemd-windows-msvc-x86_64 dmodemd.exe dmodemd-windows-msvc-x64.exe
           pack dmodemd-macos-universal dmodemd-macos-universal dmodemd
           pack dmodemd-haiku-x86_64 dmodemd-haiku-x86_64 dmodemd
@@ -121,6 +122,7 @@ jobs:
             echo "| \`dmodem-linux-musl-x86_64.tar.gz\` | The same programs for Linux with musl libc, x86_64, built on Alpine 3.22 |"
             echo "| \`dmodemd-win7-x64.exe\` | \`dmodemd\` for Windows 7 and later, x86_64 (clang-retro) |"
             echo "| \`dmodemd-win98.exe\` | \`dmodemd\` for Windows 98 SE, ME, NT 4.0 and later, 32 bit (clang-retro) |"
+            echo "| \`dmodemd-win95.exe\` | \`dmodemd\` for Windows 95, 98, ME, NT 4.0 and later, 32 bit (clang-retro, picolibc: no C runtime DLL) |"
             echo "| \`dmodemd-windows-msvc-x64.exe\` | \`dmodemd\` for Windows, x86_64 (Microsoft's compiler) |"
             echo "| \`dmodem-driver-windows-x86_64-unsigned.zip\` | The virtual modem driver for Windows, x86_64: \`dmodemvm.dll\`, \`dmodem.inf\` and \`dmodem-driver.exe\`. It is not signed: [docs/windows.md](https://github.com/$GH_REPO/blob/main/docs/windows.md) tells how to use test signing |"
             echo "| \`dmodemd-macos-universal.tar.gz\` | \`dmodemd\` for macOS 11 and later, arm64 and x86_64 |"

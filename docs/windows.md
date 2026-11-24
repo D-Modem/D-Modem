@@ -1,11 +1,13 @@
 # D-Modem on Windows
 
 The daemon of D-Modem, `dmodemd`, runs on Windows as one file,
-`dmodemd.exe`. It does not need other installed items. There are two builds:
+`dmodemd.exe`. It does not need other installed items. There are three builds:
 
 - The 64-bit build runs on Windows 7 and later.
 - The 32-bit build of clang-retro (`win98`) runs on Windows 98 SE, ME,
   2000, XP and later.
+- The 32-bit build of clang-retro with picolibc (`win32-picolibc`) runs on
+  Windows 95, 98, ME, NT 4.0 and later. On Windows 95, it needs Winsock 2.
 
 It is the same modem as on Linux. It makes calls over SIP (internet
 telephony). It sends and receives data, fax and voice. It can also operate
@@ -18,8 +20,9 @@ the changes for Windows, refer to [the technical details](windows-details.md).
 > version under Wine on Linux and on Windows (the Windows Server 2022
 > machines of GitHub). Nobody ran it manually on a desktop Windows yet, or
 > with a real USB modem. The build servers only build the 32-bit
-> `win98` version and check its imports against Windows 98 and NT 4.0.
-> Nobody ran it on Windows 98 SE yet.
+> `win98` and `win32-picolibc` versions and check their imports against
+> Windows 95 or 98 and NT 4.0. Nobody ran them on Windows 95, 98 SE or
+> NT 4.0 yet.
 
 ## Build
 
@@ -38,7 +41,8 @@ Then build `dmodemd.exe` for Windows 7 and later (64 bit):
     cmake --build build-win
 
 `CLANG_RETRO_CONFIG` sets the oldest Windows that the program operates on.
-Use `win98` for Windows 98 SE, ME, 2000, XP and later (32 bit), or
+Use `win98` for Windows 98 SE, ME, 2000, XP and later (32 bit),
+`win32-picolibc` for Windows 95, NT 4.0 and later (32 bit), or
 `win10-x64` for Windows 10 and later (64 bit).
 
 You can also build it with MinGW-w64
