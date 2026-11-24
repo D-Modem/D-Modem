@@ -233,6 +233,53 @@
       0 A: D-Modem project\r\n
       0 A: \r\n
       0 A: OK\r\n
+      0 A< AT+GMI?\r
+      0 A: AT+GMI?\r\r\n
+      0 A: D-Modem project\r\n
+      0 A: \r\n
+      0 A: OK\r\n
+      0 A< AT+GMI=?\r
+      0 A: AT+GMI=?\r\r\n
+      0 A: OK\r\n
+      0 A< AT+GMM=?;+GMR=?\r
+      0 A: AT+GMM=?;+GMR=?\r\r\n
+      0 A: OK\r\n
+      0 A< AT+GCAP\r
+      0 A: AT+GCAP\r\r\n
+      0 A: +GCAP: +FCLASS,+MS\r\n
+      0 A: \r\n
+      0 A: OK\r\n
+      0 A< AT+GCAP=?\r
+      0 A: AT+GCAP=?\r\r\n
+      0 A: OK\r\n
+      0 A< AT+GSN\r
+      0 A: AT+GSN\r\r\n
+      0 A: A\r\n
+      0 A: \r\n
+      0 A: OK\r\n
+      0 A< AT+GSN?\r
+      0 A: AT+GSN?\r\r\n
+      0 A: A\r\n
+      0 A: \r\n
+      0 A: OK\r\n
+      0 A< AT+GSN=?\r
+      0 A: AT+GSN=?\r\r\n
+      0 A: OK\r\n
+      0 A< AT+GOI\r
+      0 A: AT+GOI\r\r\n
+      0 A: OK\r\n
+      0 A< AT+GOI=?\r
+      0 A: AT+GOI=?\r\r\n
+      0 A: OK\r\n
+      0 A< AT+GSN;+GMR\r
+      0 A: AT+GSN;+GMR\r\r\n
+      0 A: A\r\n
+      0 A: 1.0.0\r\n
+      0 A: \r\n
+      0 A: OK\r\n
+      0 A< AT+GSX\r
+      0 A: AT+GSX\r\r\n
+      0 A: ERROR\r\n
       0 A< AT+GMM\r
       0 A: AT+GMM\r\r\n
       0 A: D-Modem\r\n

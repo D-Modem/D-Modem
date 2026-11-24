@@ -421,9 +421,6 @@
       0 A< AT-V90=0\r
       0 A: AT-V90=0\r\r\n
       0 A: ERROR\r\n
-      0 A< AT+GSN\r
-      0 A: AT+GSN\r\r\n
-      0 A: ERROR\r\n
       0 A< AT&V\r
       0 A: AT&V\r\r\n
       0 A: ACTIVE PROFILE:\r\n

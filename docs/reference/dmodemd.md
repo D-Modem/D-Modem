@@ -15,6 +15,7 @@ This page gives all the options of `dmodemd`, from its option table (`frontend/d
 | `-v`, `--version` |  |  |  | The version, and exit. |
 | `-c`, `--country` | text | `USA` |  | The country's rules (--countrylist) |
 | `--countrylist` |  |  |  | The countries -c takes, and exit. |
+| `--serial` | text | `the modem's name` |  | The serial number that AT+GSN gives. |
 | `-g`, `--group` | text | `dialout` | not Windows | The pty's group. |
 | `-p`, `--perm` | number | `0660` | not Windows | The pty's mode, in octal. |
 | `-n`, `--nortpriority` |  |  |  | No realtime scheduling (on Windows: normal priority, not high) |

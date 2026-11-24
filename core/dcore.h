@@ -201,6 +201,12 @@ public:
 	virtual void pulse_dialling(Modem &m, bool on) { (void)m; (void)on; }
 	/* for ATI3 */
 	virtual const char *driver_name() { return nullptr; }
+	/* for +GSN: the serial number of the modem (a USB device's, say);
+	   NULL: the core gives its device name */
+	virtual const char *serial_number() { return nullptr; }
+	/* for +GOI: the global object identifier (ITU-T X.208), in dotted
+	   form ("1.3.6.1.4.1.<n>"); NULL: none, +GOI gives no text */
+	virtual const char *object_id() { return nullptr; }
 	/* the country (-c, +GCI) by its name, at the start and on each
 	   change: a line that sets its own termination and ring detection
 	   (a DAA's registers) sets the country's */
@@ -238,6 +244,9 @@ protected:
 struct Options {
 	const char *name = "modem";     /* for the log */
 	const char *dev_name = nullptr; /* for ATI3 */
+	/* for +GSN where the Host gives none (Host::serial_number());
+	   NULL: the device name */
+	const char *serial = nullptr;
 	s32 rate = 8000;                /* the line's sample rate */
 	const char *country = nullptr;  /* by name; NULL: USA */
 	/* the program takes a fax machine that calls itself (libdmodem's
@@ -678,6 +687,8 @@ private:
 	s16 at_ampZ(char *p, s16 *len);
 	bool sec_unlocked(std::string &arg) const;
 	s16 at_GCI(char *p, s16 *len);
+	/* +GMI, +GMM, +GMR, +GSN, +GOI, +GCAP (see at.cpp) */
+	s16 at_identity(char *p, s16 *len);
 	s16 at_MS(char *p, s16 *len);
 	s16 at_text(char *p, s16 *len);
 	s16 at_PMH(char *p, s16 *len);
@@ -727,7 +738,7 @@ private:
 	Host &host_;
 	struct modem *handle_;
 	bool ok_ = false;
-	const char *name_, *dev_name_;
+	const char *name_, *dev_name_, *serial_;
 	s32 srate_;
 	s32 frag_;
 

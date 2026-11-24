@@ -293,6 +293,7 @@ int main(int argc, char *argv[])
 	mo.dev_name = opt.name;
 	mo.rate = RATE;
 	mo.country = opt.country;
+	mo.serial = opt.serial;
 	if (opt.dsvd_audio) {
 		dsvd.reset(new dmd::DsvdAudio(opt.dsvd_audio));
 		mo.dsvd = dsvd.get();
