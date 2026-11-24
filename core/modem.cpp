@@ -1408,6 +1408,13 @@ void Modem::negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
 	     mnp5 ? ", MNP 5" : "");
 }
 
+/* the call's modulation (dcore.h): the pump table's name of the
+   pump the statistics report, else of the pump that runs */
+const char *Modem::modulation_name() const
+{
+	return dp_name(modulation(dp_stats_, dp_));
+}
+
 /* the call's error correction, as CONNECT and ATI11 name it */
 const char *Modem::protocol_name() const
 {

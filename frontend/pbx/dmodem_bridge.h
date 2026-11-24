@@ -205,6 +205,10 @@ struct dmbridge_call {
 	   HANGUP when the channel goes) */
 	const char *status;
 	char rate[32];          /* transmit/receive bit/s, once connected */
+	/* the modulation (V34, V90, K56Flex...), the error correction
+	   (LAPM, MNP, NONE...) and the compression (V42bis, V44, NONE...),
+	   once connected: dmodem_connection()'s */
+	char modulation[24], protocol[16], compression[16];
 
 	/* the bridge's */
 	const struct dmbridge_host *h;

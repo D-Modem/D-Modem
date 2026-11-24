@@ -124,6 +124,17 @@ void dmodem_set_clear(struct dmodem *d, int clear);
 int  dmodem_poll_dte(struct dmodem *d);
 /* the call's state now, into *s */
 void dmodem_status(struct dmodem *d, struct dmodem_status *s);
+/* what the modems agreed on, as CONNECT's Modulation:, Protocol: and
+   Compression: lines name it (AT+MS's pump names; LAPM, MNP...; V42bis,
+   V44, MNP5...): "" for what is not known.  Each string ends in a 0 */
+struct dmodem_connection {
+	char modulation[24];            /* V34, V90, V92, K56Flex, V32bis... */
+	char protocol[16];              /* LAPM, MNP, NONE, X.75, V.120... */
+	char compression[16];           /* V42bis, V44, MNP5, NONE... */
+};
+/* the call's connection now, into *c (all "" before the modems are
+   connected) */
+void dmodem_connection(struct dmodem *d, struct dmodem_connection *c);
 /* hang up (as ATH) */
 void dmodem_hangup(struct dmodem *d);
 /* dmodem_status()'s caller_speech_ms and caller_modem from nothing

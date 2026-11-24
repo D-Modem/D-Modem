@@ -373,6 +373,12 @@ static void run_call(Call *k)
 		dmodem_poll_dte(a);
 		ev = dmbridge_call_step(&c, FRAME);
 		if (ev == DMBRIDGE_CONNECTED) {
+			/* the connection's modulation and error correction
+			   known with the rate */
+			if (!c.modulation[0] || !c.protocol[0] ||
+			    !c.compression[0])
+				k->failures.push_back("no modulation, protocol "
+						      "or compression");
 			snprintf(buf, sizeof(buf), "%s", c.rate);
 			env[3] = buf;
 			ev = dmbridge_call_serve(&c, env);
