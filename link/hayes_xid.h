@@ -43,9 +43,12 @@ enum : u8 {
 	HAYES_HMP_COMP = 0x02,
 };
 
-/* the AFT option bits (AFT P2): escape the control characters, the
-   7-bit mode (probable) */
+/* the AFT capability (AFT P1 bit 1); the AFT option bits (AFT P2, the
+   OR of the two sides, which a Hayes modem copies to S34 for its AFT
+   set-up): escape the control characters (confirmed), the 7-bit mode
+   (probable) */
 enum : u8 {
+	AFT_CAP = 0x02,
 	AFT_OPT_CTRL = 0x02,
 	AFT_OPT_7BIT = 0x04,
 };
@@ -66,6 +69,8 @@ struct HayesAgreed {
 	u8 aft_caps = 0;        /* AFT P1: the AND */
 	u8 aft_opts = 0;        /* AFT P2: the OR */
 	u8 hmp = 0;             /* HMP P1: the AND */
+	bool aft = false;       /* AFT can be used: the AND of AFT P1 is
+				   not 0 (bit 1 is the AFT capability) */
 	bool comp = false;      /* HMP P1 bit 1 of the AND */
 };
 

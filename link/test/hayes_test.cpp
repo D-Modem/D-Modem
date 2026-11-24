@@ -327,7 +327,11 @@ TEST(Hayes, XidSelection)
 	EXPECT_TRUE(a.hayes);
 	EXPECT_EQ(a.aft_caps, 0x03);
 	EXPECT_EQ(a.aft_opts, 0x06);
+	EXPECT_TRUE(a.aft);
 	EXPECT_FALSE(a.comp);
+	/* AFT only when the AND of AFT P1 is not 0 */
+	EXPECT_FALSE(hayes_agree(hayes_local(HAYES_S46_LAPM, 0x01, 0),
+				 hayes_local(HAYES_S46_LAPM, 0x02, 0)).aft);
 	/* 1: no compression flag, none (also with V.42bis agreed) */
 	EXPECT_EQ(hayes_select(a, true), HayesComp::None);
 	EXPECT_EQ(hayes_comp_result(hayes_select(a, false)), 69);

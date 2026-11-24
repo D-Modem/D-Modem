@@ -131,8 +131,8 @@ normal V.42 rules apply.
 
 | Parameter | Result |
 |---|---|
-| AFT P1 | the AND of the two values (`Config::aft_caps`) |
-| AFT P2 | the OR of the two values (`Config::aft_opts`) |
+| AFT P1 | the AND of the two values (`Config::aft_caps`). AFT can be used only if it is not 0. Bit 1 is the AFT capability (confirmed). |
+| AFT P2 | the OR of the two values (`Config::aft_opts`). A Hayes modem copies it to S34, and its AFT set-up reads S34 (confirmed). |
 | HMP P1 | the AND of the two values. Bit 1 is the compression flag. |
 
 `Link::update_config()` then selects the compression (FA 6.8.1):
@@ -186,9 +186,10 @@ values.
 - The 7-bit mode (option bit 2) is not done. The firmware puts a parity
   bit from the table at A032h in bit 7 of each character. FA does not
   show how 8-bit data goes through this mode.
-- The link layer does not select AFT yet. FA does not show when the
-  firmware uses AFT in place of synchronous HDLC (result codes 73, 76
-  and 79). Thus `Aft` is tested alone.
+- The link layer does not select AFT yet. AFT is possible only when the
+  AND of AFT P1 is not 0 (`HayesAgreed::aft`), but FA does not show the
+  step in the call that changes the line from synchronous HDLC to AFT
+  (result codes 73, 76 and 79). Thus `Aft` is tested alone.
 
 Tests: `Hayes.AftFcs` (the FCS test values of RFC 1662), `Hayes.AftLine`
 (the 256 octet values on the line in the two escape modes),

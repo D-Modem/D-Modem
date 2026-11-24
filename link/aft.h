@@ -15,7 +15,8 @@
  *    - A frame is between flags 7Eh.  The control escape is 7Dh: an
  *      escaped octet goes out as 7Dh, then the octet XOR 20h.
  *    - 7Dh and 7Eh are always escaped.  With the option AFT_OPT_CTRL
- *      (AFT P2 bit 1), 00h-1Fh, 7Fh, 80h-9Fh and FFh are escaped too
+ *      (AFT P2 bit 1, confirmed: the OR of the two sides, S34 in a Hayes
+ *      modem), 00h-1Fh, 7Fh, 80h-9Fh and FFh are escaped too
  *      (the map at bank 4 6D5Fh, which includes XON and XOFF with and
  *      without bit 7).  The receiver then ignores these characters when
  *      they come without the escape (flow control from the DCE).

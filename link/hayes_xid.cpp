@@ -101,6 +101,7 @@ HayesAgreed hayes_agree(const HayesSets &local, const HayesSets &remote)
 	if (local.aft && remote.aft) {
 		a.aft_caps = static_cast<u8>(local.aft_p1 & remote.aft_p1);
 		a.aft_opts = static_cast<u8>(local.aft_p2 | remote.aft_p2);
+		a.aft = a.aft_caps != 0;
 	}
 	a.hmp = static_cast<u8>(local.hmp_p1 & remote.hmp_p1);
 	a.comp = (a.hmp & HAYES_HMP_COMP) != 0;
