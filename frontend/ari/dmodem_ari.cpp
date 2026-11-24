@@ -1050,6 +1050,9 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 				"DMODEM_CHANNEL", c.name.c_str(),
 				"DMODEM_PROFILE", c.profile.c_str(),
 				"DMODEM_RATE", bc.rate,
+				"DMODEM_MODULATION", bc.modulation,
+				"DMODEM_PROTOCOL", bc.protocol,
+				"DMODEM_COMPRESSION", bc.compression,
 				"DMODEM_CALLERID", c.caller.c_str(),
 				"DMODEM_DIALED", c.exten.c_str(),
 				"DMODEM_CONNECTED", connected,
@@ -1058,6 +1061,9 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 			snprintf(connected, sizeof(connected), "%" PRId64,
 				 static_cast<s64>(time(nullptr)));
 			set_var(c.id, "DMODEMRATE", bc.rate);
+			set_var(c.id, "DMODEMMODULATION", bc.modulation);
+			set_var(c.id, "DMODEMPROTOCOL", bc.protocol);
+			set_var(c.id, "DMODEMCOMPRESSION", bc.compression);
 			if (verbose >= 1)
 				say("%s: dmodem connected at %s bit/s",
 				    c.name.c_str(), bc.rate);

@@ -421,6 +421,16 @@ public:
 	u32 tx_rate() const { return tx_rate_; }
 	/* (see tx_rate()) */
 	u32 rx_rate() const { return rx_rate_; }
+	/* the call's modulation, as the pump table names it ("V34",
+	   "V90", "K56Flex"): the name of CONNECT's Modulation: line;
+	   NULL when it is not known */
+	const char *modulation_name() const;
+	/* the call's error correction ("LAPM", "MNP", "NONE"...), as
+	   CONNECT's Protocol: line names it */
+	const char *link_protocol() const { return protocol_name(); }
+	/* the call's compression ("V42bis", "V44", "MNP5", "NONE"...), as
+	   CONNECT's Compression: line names it */
+	const char *link_compression() const { return compression_name(); }
 	/* DTE data the remote does not have yet (with V.42: not
 	   acknowledged) */
 	bool tx_pending() const;

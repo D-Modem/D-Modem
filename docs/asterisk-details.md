@@ -350,6 +350,9 @@ controlling terminal, in raw mode. Its environment has:
 | `DMODEM_CHANNEL` | the Asterisk channel |
 | `DMODEM_PROFILE` | the profile |
 | `DMODEM_RATE` | the connect rate, transmit/receive bit/s |
+| `DMODEM_MODULATION` | the modulation of the connection, as the `Modulation:` line of `CONNECT` gives it: `V34`, `V90`, `V92`, `K56Flex`, `V32bis` and so on |
+| `DMODEM_PROTOCOL` | the error correction of the connection, as the `Protocol:` line of `CONNECT` gives it: `LAPM`, `MNP` or `NONE` (also `X.75`, `V.120` and others on special calls) |
+| `DMODEM_COMPRESSION` | the data compression of the connection, as the `Compression:` line of `CONNECT` gives it: `V42bis`, `V44`, `MNP5` or `NONE` |
 | `DMODEM_CALLERID` | the number of the caller |
 | `DMODEM_DIALED` | the dialled number (the DNID, or if not, the extension) |
 | `DMODEM_CONNECTED` | the time when the modems connected, in Unix time |
@@ -375,6 +378,9 @@ changes to a space), then an empty line, then the bytes of the caller:
 DMODEM_CHANNEL=PJSIP/trunk-00000001
 DMODEM_PROFILE=menu
 DMODEM_RATE=33600/31200
+DMODEM_MODULATION=V34
+DMODEM_PROTOCOL=LAPM
+DMODEM_COMPRESSION=V42bis
 DMODEM_CALLERID=5559999
 DMODEM_DIALED=5551000
 DMODEM_CONNECTED=1791666309
@@ -419,6 +425,10 @@ When it returns, `DModem()` sets:
     profile, an `answer` line that did not answer, or no connection to
     a server).
 - `DMODEMRATE`: the connect rate, transmit/receive bit/s.
+- `DMODEMMODULATION`, `DMODEMPROTOCOL` and `DMODEMCOMPRESSION`: the
+  modulation, the error correction and the data compression of the
+  connection, with the same values as `DMODEM_MODULATION`,
+  `DMODEM_PROTOCOL` and `DMODEM_COMPRESSION`.
 
 ## Testing
 

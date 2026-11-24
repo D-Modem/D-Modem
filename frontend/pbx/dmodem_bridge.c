@@ -1047,6 +1047,21 @@ static void log_fds(struct dmbridge_call *c)
 		 c->fd, c->dte[0], c->dte[1]);
 }
 
+/* the modulation, error correction and compression the modems agreed
+   on, into the call (for the module's variables and the program's
+   environment) */
+static void connection(struct dmbridge_call *c)
+{
+	struct dmodem_connection k;
+
+	dmodem_connection(c->d, &k);
+	copy(c->modulation, k.modulation, sizeof(c->modulation));
+	copy(c->protocol, k.protocol, sizeof(c->protocol));
+	copy(c->compression, k.compression, sizeof(c->compression));
+	log_line(c->h, c->call, DMBRIDGE_DEBUG, "connected: %s %s/%s",
+		 c->modulation, c->protocol, c->compression);
+}
+
 /* (see dmodem_bridge.h) */
 enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 {
@@ -1100,6 +1115,7 @@ enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 			c->online = 1;
 			snprintf(c->rate, sizeof(c->rate), "%u/%u",
 				 st->tx_rate, st->rx_rate);
+			connection(c);
 			return DMBRIDGE_CONNECTED;
 		}
 		if (st->link == DMODEM_IDLE || st->link == DMODEM_HANGUP ||

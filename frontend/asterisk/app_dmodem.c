@@ -108,6 +108,9 @@
 					<value name="ERROR">Configuration or system error.</value>
 				</variable>
 				<variable name="DMODEMRATE">The connect rate, transmit/receive bit/s.</variable>
+				<variable name="DMODEMMODULATION">The modulation of the connection: V34, V90, V92, K56Flex...</variable>
+				<variable name="DMODEMPROTOCOL">The error correction of the connection: LAPM, MNP or NONE.</variable>
+				<variable name="DMODEMCOMPRESSION">The data compression of the connection: V42bis, V44, MNP5 or NONE.</variable>
 			</variablelist>
 		</description>
 	</application>
@@ -1015,6 +1018,9 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 				"DMODEM_CHANNEL", name,
 				"DMODEM_PROFILE", args.profile,
 				"DMODEM_RATE", c.rate,
+				"DMODEM_MODULATION", c.modulation,
+				"DMODEM_PROTOCOL", c.protocol,
+				"DMODEM_COMPRESSION", c.compression,
 				"DMODEM_CALLERID",
 				S_COR(ast_channel_caller(chan)->id.number.valid,
 				      ast_channel_caller(chan)->id.number.str, ""),
@@ -1029,8 +1035,15 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 				 (long long)time(NULL));
 			peer_address(chan, peer, sizeof(peer));
 			pbx_builtin_setvar_helper(chan, "DMODEMRATE", c.rate);
-			ast_verb(3, "%s: DModem connected at %s bit/s\n", name,
-				 c.rate);
+			pbx_builtin_setvar_helper(chan, "DMODEMMODULATION",
+						  c.modulation);
+			pbx_builtin_setvar_helper(chan, "DMODEMPROTOCOL",
+						  c.protocol);
+			pbx_builtin_setvar_helper(chan, "DMODEMCOMPRESSION",
+						  c.compression);
+			ast_verb(3, "%s: DModem connected at %s bit/s (%s %s/%s)\n",
+				 name, c.rate, c.modulation, c.protocol,
+				 c.compression);
 			ev = dmbridge_call_serve(&c, env);
 		}
 		if (ev == DMBRIDGE_FAX) {

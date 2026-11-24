@@ -65,8 +65,9 @@ exten => 5551000,1,Stasis(dmodem,bbs)
 exten => s,1,Stasis(dmodem,isp,o)
 ```
 
-When the call ends, `dmodem-ari` sets `DMODEMSTATUS` and `DMODEMRATE`
-as `DModem()` does. Then the call continues in the dialplan after the
+When the call ends, `dmodem-ari` sets `DMODEMSTATUS`, `DMODEMRATE`,
+`DMODEMMODULATION`, `DMODEMPROTOCOL` and `DMODEMCOMPRESSION` as
+`DModem()` does. Then the call continues in the dialplan after the
 `Stasis()`, unless it has hung up.
 
 For faxes, `sendfax` or `receivefax` replaces the profile. The file and
@@ -154,8 +155,9 @@ For each call that comes into the app, `dmodem-ari` does these steps:
    server or program of the profile through the bridge of the PBX modules
    (`frontend/pbx/dmodem_bridge.c`). The details of the call go in the
    environment of the program or the header of the server:
-   `DMODEM_CHANNEL`, `DMODEM_PROFILE`, `DMODEM_RATE`, `DMODEM_CALLERID`,
-   `DMODEM_DIALED` and `DMODEM_CONNECTED`. A program also gets
+   `DMODEM_CHANNEL`, `DMODEM_PROFILE`, `DMODEM_RATE`,
+   `DMODEM_MODULATION`, `DMODEM_PROTOCOL`, `DMODEM_COMPRESSION`,
+   `DMODEM_CALLERID`, `DMODEM_DIALED` and `DMODEM_CONNECTED`. A program also gets
    `DMODEM_CONTROL`, its control channel to the modem, as in
    [app_dmodem](asterisk-details.md#what-the-server-or-program-sees).
 6. **End.** At the end, it deletes the external media channel and
