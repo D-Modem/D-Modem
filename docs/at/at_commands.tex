@@ -4976,9 +4976,11 @@ then makes a new pty (\cmd{/dev/ttyDM0} follows it).
 \item The numeric results (\cmdl[V]{V0}) and the number of \rc{CONNECT}
   for each rate are specific to D-Modem.  The numbers of the USRobotics
   and Conexant modems are different.
-\item \std{MNP} is classes 2 to 5 (\cmdl[bsN]{\bs N}, \cmdl[pctC]{\%C}):
-  there is no \std{MNP~10} or 10EC.  A modem with \std{MNP~10EC} connects
-  with \std{V.42} (the modem ignores its ``EM'' detection patterns).
+\item \std{MNP} is classes 2 to 5 (\cmdl[bsN]{\bs N}, \cmdl[pctC]{\%C})
+  and \std{MNP~10} (\cmdl[mnp10]{-K}).  The cellular modulations of
+  \std{MNP~10EC} are not available.  A modem with \std{MNP~10EC} connects
+  with \std{V.42} or with \std{MNP~10} (the modem ignores its ``EM''
+  detection patterns).
   Refer to \texttt{docs/link.md}, \std{MNP}.
 \item K56flex (\cmdl[plusMS]{+MS=56}) is tested against the Motorola SM56
   soft modem and against this modem.  It is not tested against a hardware
