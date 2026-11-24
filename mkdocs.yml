@@ -46,6 +46,7 @@ nav:
       - MNP 10: mnp/mnp10.md
       - MNP 10EC: mnp/mnp10ec.md
       - Firmware findings: mnp/firmware-findings.md
+    - Hayes V-series protocols: hayes.md
     - The x2 upgrade host: x2-upgrade.md
     - EBCDIC terminals and hosts: ebcdic.md
     - ZMODEM with zstd: zmodem-zstd.md

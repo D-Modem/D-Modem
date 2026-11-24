@@ -1056,6 +1056,101 @@ static std::vector<std::vector<uint8_t>> exchange(Link &l,
 	return dst.rx;
 }
 
+/* LAPM with the Hayes sets (S46 s46) and V.42bis offered or not: no
+   V.44 */
+static Config hayes_config(u8 s46, bool v42bis)
+{
+	Config c = lapm_config(3, false);
+	c.hayes = s46;
+	c.comp42 = v42bis ? 3 : 0;
+	return c;
+}
+
+/* two Links with the Hayes sets (S46 138 or 136) back to back: ADC both
+   ways when V.42bis is not offered, V.42bis when it is, no compression
+   without the flag (also with V.42bis); without S46 at either side,
+   the usual V.42 rules */
+TEST(Link, LapmHayesAdc)
+{
+	struct Case {
+		u8 c46, a46;
+		bool v42bis;
+		bool adc;
+		s16 comp;
+	};
+	const Case cases[] = {
+		{ 138, 138, false, true, 3 },
+		{ 138, 138, true, false, 3 },
+		{ 138, 136, true, false, 0 },
+		{ 136, 136, false, false, 0 },
+		{ 0, 138, true, false, 3 },
+		{ 0, 0, false, false, 0 },
+	};
+	for (const Case &k : cases) {
+		rnd_state = 12345;
+		Pair p(hayes_config(k.c46, k.v42bis),
+		       hayes_config(k.a46, k.v42bis));
+		p.start(true, true);
+		p.run(9600 * 3);
+		CHECK(p.dc.up && p.da.up, "LAPM up (S46 %d/%d)", k.c46,
+		      k.a46);
+		CHECK(p.lc.config().adc == k.adc && p.la.config().adc == k.adc,
+		      "ADC %d/%d, wanted %d (S46 %d/%d)", p.lc.config().adc,
+		      p.la.config().adc, k.adc, k.c46, k.a46);
+		CHECK(p.lc.config().comp == k.comp &&
+		      p.la.config().comp == k.comp,
+		      "compression %d/%d, wanted %d (S46 %d/%d)",
+		      p.lc.config().comp, p.la.config().comp, k.comp, k.c46,
+		      k.a46);
+		const std::string name = std::string("lapm, S46 ") +
+			std::to_string(k.c46) + "/" + std::to_string(k.a46) +
+			(k.adc ? " (adc)" : k.comp ? " (v42bis)" : "");
+		transfer(name.c_str(), p, 30000, 20000, 9600 * 60);
+		if (k.adc)
+			transfer("lapm + adc, noise", p, 5000, 5000, 9600 * 20,
+				 false);
+	}
+}
+
+/* a Hayes modem's XID command (FA 6.9, P0 0: no V.42bis) to an answerer
+   with S46 138: its response has the Hayes sets, and the call has ADC;
+   to an answerer without S46: no Hayes sets, no ADC.  A caller with S46
+   sends the sets in its command */
+TEST(Link, LapmHayesPeer)
+{
+	u8 info[HAYES_XID_LEN];
+	const s16 n = hayes_xid_template(info, 7, 0x00, HAYES_S46_LAPM_COMP,
+					 0, 0);
+	std::vector<uint8_t> cmd = { 0x03, 0xaf };
+	cmd.insert(cmd.end(), info, info + n);
+	const std::vector<uint8_t> sets = { 0xff, 0x03, 0x48, 0x4d, 0x50,
+		0x01, 0x01, 0x8a, 0x02, 0x01, 0x01 };
+	auto has = [](const std::vector<uint8_t> &f,
+		      const std::vector<uint8_t> &part) {
+		return std::search(f.begin(), f.end(), part.begin(),
+				   part.end()) != f.end();
+	};
+	for (int on = 0; on < 2; on++) {
+		Dte d("answerer");
+		Link l;
+		l.init(&d, false, hayes_config(on ? 138 : 0, true));
+		l.start(true, false);
+		std::vector<std::vector<uint8_t>> out =
+			exchange(l, { cmd }, 4);
+		CHECK(out.size() == 1 && has(out[0], sets) == (on == 1),
+		      "the answerer's XID response, S46 %d", on ? 138 : 0);
+		CHECK(l.config().adc == (on == 1), "ADC %d (S46 %d)",
+		      l.config().adc, on ? 138 : 0);
+	}
+	Dte d("caller");
+	Link l;
+	l.init(&d, true, hayes_config(138, true));
+	l.start(true, false);
+	std::vector<std::vector<uint8_t>> out = exchange(l, {}, 4);
+	CHECK(out.size() == 1 && has(out[0], sets),
+	      "the caller's XID has the Hayes sets");
+}
+
 /* an unsolicited DM with F = 0 while LAPM is idle: the remote asks for
    the link (8.8/V.42), so an SABME, not the link up without one; once
    the link was up and released, it is ignored */

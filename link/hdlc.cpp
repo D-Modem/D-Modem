@@ -14,6 +14,7 @@
 
 #include <cinttypes>
 
+#include "aft.h"
 #include "dm_types.h"
 #include "link.h"
 
@@ -512,6 +513,7 @@ void Hdlc::rx_scan()
 }
 
 /* the loops of the five framers (MnpAsync's hooks are in mnp.cpp) */
+template class BitFramer<Aft>;
 template class BitFramer<Async>;
 template class BitFramer<Detector>;
 template class BitFramer<Hdlc>;

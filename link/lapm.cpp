@@ -26,6 +26,7 @@
 #include <cstring>
 
 #include "dm_types.h"
+#include "hayes_xid.h"
 #include "link.h"
 
 namespace dlink {
@@ -92,8 +93,9 @@ enum {
 					   not limit */
 	V42BIS_DFLT_N2 = 512,           /* V.42bis's defaults (5.1) */
 	V42BIS_DFLT_N7 = 6,
-	XID_MAX = 90,                   /* our longest XID frame (V.42bis
-					   and V.44 both offered) */
+	XID_MAX = 90 + HAYES_SETS_LEN,  /* our longest XID frame (V.42bis
+					   and V.44 both offered, and the
+					   Hayes sets) */
 };
 
 static_assert(XID_MAX <= 4 + LAPM_MAX_INFO, "an XID fits a frame slot");
@@ -219,6 +221,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	v76_ = false;
 	fcs32_asked_ = fcs32_ = false;
 	no_zstd_ = false;
+	hayes_rx_ = false;
 	cmd_ud_.clear();
 	rsp_ud_.clear();
 	rtx_count_ = 0;
@@ -623,8 +626,19 @@ s16 Lapm::tx_xid(u8 addr)
 		}
 		put_group(g, GI_PRIVATE, p);
 	}
-	if (v44) {
+	/* the Hayes sets (hayes_xid.h) first in the user data subfield,
+	   as a Hayes modem has them: in a command when S46 asks for them,
+	   in a response when the remote's command had them too */
+	bool user = false;
+	if (link_->asked().hayes && (!response || hayes_rx_)) {
 		*p++ = GI_USER;
+		user = true;
+		p = hayes_put_sets(p, hayes_offer(link_->asked()));
+	}
+	if (v44) {
+		if (!user)
+			*p++ = GI_USER;
+		user = true;
 		p = put_id(p, PI_V44_SET, "V44");
 		p = put_param(p, PI_V44_C0, 0, 1);
 		p = put_param(p, PI_V44_P0, p0_44, 1);
@@ -635,7 +649,6 @@ s16 Lapm::tx_xid(u8 addr)
 		p = put_param(p, PI_V44_P3T, c.v44_history, 2);
 		p = put_param(p, PI_V44_P3R, c.v44_history, 2);
 	}
-	bool user = v44;
 	if (mnp_upgrade() && (!response || mnp_agreed_)) {
 		if (!user)
 			*p++ = GI_USER;
@@ -1171,6 +1184,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 	bool v44_set = false, zstd_set = false, hst_set = false;
 	const u8 *mnpi = nullptr;
 	s16 mnpi_len = 0;
+	HayesSetParser hayes;
 	u8 hst_opts = 0, hst_rates = 0;
 	r.zstd_dict = 0;
 	r.zstd_window = ZSTD_WINDOW_LOG;
@@ -1233,6 +1247,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 	};
 	auto user = [&](u8 pi, const u8 *pv, s16 pl) {
 		const s32 v = bounded(get_be(pv, pl));
+		hayes.param(pi, pv, pl);
 		switch (pi) {
 		case PI_V44_SET:
 			v44_set = pl == 3 && !memcmp(pv, "V44", 3);
@@ -1313,6 +1328,14 @@ void Lapm::rx_xid(Frame *f, bool response)
 	}
 	r.comp = response ? swap_dirs(p0) : p0;
 	r.hst = hst_set && (hst_opts & 1) ? hst_rates : 0;
+	/* the Hayes sets: kept for our response, and to the Link */
+	r.hayes_rx = hayes.sets();
+	hayes_rx_ = r.hayes_rx.hmp;
+	if (hayes_rx_)
+		link_->logf("ec: XID %s with the Hayes sets: AFT %02x/%02x, "
+			    "HMP %02x/%02x.", response ? "response" : "command",
+			    r.hayes_rx.aft_p1, r.hayes_rx.aft_p2,
+			    r.hayes_rx.hmp_p1, r.hayes_rx.hmp_p2);
 	r.tx_win = static_cast<s16>(tx_win_);
 	r.rx_win = static_cast<s16>(rx_win_);
 	r.tx_info = static_cast<s16>(tx_info_);
