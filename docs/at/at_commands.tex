@@ -2199,7 +2199,13 @@ directions (the modem sends it in its \std{MP} sequences).
 91 & V91 & \std{ITU} \std{V.91} & Two digital modems, after \std{V.8}. \\ \hline
 92 & V92 & \std{ITU} \std{V.92} & \std{V.90} with quick connect, \std{PCM} upstream and
   modem-on-hold (\emph{default}). \\ \hline
-56 & K56 & K56flex & Not available: the modem uses \std{V.90}. \\ \hline
+56 & K56 & K56flex & After \std{V.8 bis} and \std{V.8}.  On a digital line, the modem is the
+  server: it answers a K56flex modem with K56flex, and other modems with \std{V.90}.
+  On an analogue line, it is the analogue modem: it calls with K56flex when the
+  server answers with K56flex, and with \std{V.90} when not. \\ \hline
+57 & X2 & USRobotics x2 & On a digital line, the modem is the server: it answers an
+  x2 modem with x2, and other modems with \std{V.34}.  On an analogue line, it is
+  the client: it calls an x2 server with x2. \\ \hline
 150 & VCVM & \std{V.cvm} & Data on mobile speech paths, \std{175} to \std{3500}
   bit/s, after \std{V.8} (\cmdl[plusCVM]{+CVM}). \\ \hline
 200 & VWB & \std{V.wb} & Wideband \std{DMT} on a dry pair, at 48000 Hz or more,
@@ -4970,11 +4976,15 @@ then makes a new pty (\cmd{/dev/ttyDM0} follows it).
 \item The numeric results (\cmdl[V]{V0}) and the number of \rc{CONNECT}
   for each rate are specific to D-Modem.  The numbers of the USRobotics
   and Conexant modems are different.
-\item \std{MNP} is classes 2 to 5 (\cmdl[bsN]{\bs N}, \cmdl[pctC]{\%C}):
-  there is no \std{MNP~10} or 10EC.  A modem with \std{MNP~10EC} connects
-  with \std{V.42} (the modem ignores its ``EM'' detection patterns).
+\item \std{MNP} is classes 2 to 5 (\cmdl[bsN]{\bs N}, \cmdl[pctC]{\%C})
+  and \std{MNP~10} (\cmdl[mnp10]{-K}).  The cellular modulations of
+  \std{MNP~10EC} are not available.  A modem with \std{MNP~10EC} connects
+  with \std{V.42} or with \std{MNP~10} (the modem ignores its ``EM''
+  detection patterns).
   Refer to \texttt{docs/link.md}, \std{MNP}.
-\item K56flex is not available: \cmdl[plusMS]{+MS=56} uses \std{V.90}.
+\item K56flex (\cmdl[plusMS]{+MS=56}) is tested against the Motorola SM56
+  soft modem and against this modem.  It is not tested against a hardware
+  K56flex modem.  Refer to \texttt{docs/dsp/k56flex.md}.
 \end{itemize}
 
 \subsection{Not Available}
@@ -5063,7 +5073,7 @@ names of \cmdl[plusMS]{+MS} for modulations that the modem does not have
 \textbf{Init string} & A command line that sets the modem for a program.  \cmdl[bangR]{!R} shows an init string for the settings now. \\ \hline
 \textbf{\stdb{ISDN}} & Integrated Services Digital Network.  Digital telephone lines with \std{64000}~bit/s channels. \\ \hline
 \textbf{ITU-T} & International Telecommunication Union, Telecommunication Standardization Sector.  The standards organization that writes the V.\ldots{} recommendations (modems), the T.\ldots{} recommendations (fax) and other series. \\ \hline
-\textbf{K56flex} & The \std{56000}~bit/s modulation of Rockwell and Lucent, before \std{V.90}.  This modem uses \std{V.90} in its place. \\ \hline
+\textbf{K56flex} & The \std{56000}~bit/s modulation of Rockwell and Lucent, before \std{V.90}.  \cmdl[plusMS]{+MS=56} selects it. \\ \hline
 \textbf{Kissoff} & The tone (1400~Hz for 900~ms) that the receiver of Contact ID sends to confirm a message. \\ \hline
 \textbf{\stdb{LAPB}} & Link Access Procedure, Balanced.  The \std{HDLC} procedure of \std{X.25} and \std{X.75}. \\ \hline
 \textbf{Loop test} & A test in which the data goes back to its source.  A local loop tests this modem.  A remote loop tests the line and the far end (\std{V.54}, \cmdl[ampT]{\&T}). \\ \hline
