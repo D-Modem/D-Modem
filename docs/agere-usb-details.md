@@ -14,7 +14,7 @@ and a mask ROM. Behind the controller is a Mercury codec or a "Polaris"
 DAA (data access arrangement, the line interface). dmodemd controls it
 through libusb (`dmodemd --usb`, `frontend/dmodemd/usb_agere.cpp`), as it
 does the SmartUSB56
-([hardware.md](hardware-details.md#agere-usb-20-soft-modem)). It must
+([hardware-details.md](hardware-details.md#agere-usb-20-soft-modem)). It must
 have a USB 2.0 (high speed) port.
 
 ## Where this comes from
@@ -40,9 +40,9 @@ endpoints of the ROM, and it does not download code into the device.
 > [first device](#the-first-device) first ran on bulk endpoints, as in
 > the Linux driver of Agere, and gave no usable samples. The notes
 > below on the isochronous stream and on the transmit gain come from
-> later runs on it. These runs got to the remote modem, but the remote
-> modem received the signal badly. The current stream and start-up
-> procedure have had a full test only with the fake device.
+> later runs on it. In these runs, the calls reached the remote modem, but
+> the remote modem received the signal badly. The present stream and
+> start-up procedure have had a full test only with the fake device.
 
 ## The stream
 
@@ -62,7 +62,7 @@ Configuration 1, interface 0:
 | 2 | bulk IN 0x81 and OUT 0x01 (512 octets), interrupt IN 0x82 (16 octets, `bInterval` 16) |
 | 3 | as 1, with `bInterval` 1 |
 
-### Starting and stopping it
+### Start and stop of the stream
 
 **Command 0x0c** starts the stream (`AGRSM.sys` at 0x1e0e0, the handler
 of the ROM at 0x2a78). It is an OUT request with `wValue` 8, `wIndex` 1
@@ -117,14 +117,14 @@ takes. It holds the contents of the receive ring:
 Thus the host sets the rate of the packets, and the codec sets the rate
 of the samples.
 
-### Keeping the rings in step
+### How the rings stay in step
 
 The rings of the ROM do no checks. Their indices wrap. The ROM writes
 over a full transmit ring, and plays an empty one again. An IN packet
 can hold up to 10 samples (ROM at 0x940), which is 24 octets. This is
 more than the 16 octets of a high speed packet. Thus a backlog of 7 or
 more samples in the receive ring (some slots with no OUT packet, about
-0.75 ms) makes a packet that the host thinks is babble, and the stream
+0.75 ms) makes a packet that the host sees as babble, and the stream
 stops. This occurred in the stream of the first device after 38 s, with
 3 transfers in flight.
 
@@ -221,7 +221,7 @@ commands are OUT (0x40). The table of handlers in the ROM is at 0x2a2c
 | 0x09 | OUT n | slot, 0 | Loads code into the memory of the ARM and into the function table. dmodemd does not use it. |
 | 0x0a | IN 2 | register, 0 | Reads a codec register. |
 | 0x0b | OUT 0 | register, value | Writes a codec register. |
-| 0x0c | OUT 8 | 1, 8 | Starts the stream ([above](#starting-and-stopping-it)). |
+| 0x0c | OUT 8 | 1, 8 | Starts the stream ([above](#start-and-stop-of-the-stream)). |
 | 0x0d | OUT 0 | 0, 0 | Stops the stream. |
 | 0x10 | OUT 0 | mode, 0 | Calls entry 7 of the function table (an entry of a patch; the ROM has nothing there). |
 | 0x11 | OUT 0 | 1, divider | `USS_CMD_CUSTOM_ASYNC`: calls entry 6 (the clock change of ROM 1.0.6, which is a patch from Agere). |
@@ -295,7 +295,7 @@ This procedure follows the drivers of Agere (`uss_probe`,
 
 During the run, dmodemd controls the LEDs ([below](#the-line)). At
 close, it sends command 0x0d, puts the line on hook, sets GPIOs 2 and 3
-again as the `CUsbStop` of Agere does, turns off the OH LED, and
+again as the `CUsbStop` of Agere does, sets the OH LED off, and
 selects alternate setting 0.
 
 ### A Polaris's start-up
@@ -383,7 +383,7 @@ dialled pulse to an exchange.
   - no value of 0x0a8 counts as a ring in the first 2 s after a call
     goes back on hook;
   - if a ring bit stays set for more than 6 s (no cadence has rings that
-    long), dmodemd thinks it is stuck, and ignores it until it clears.
+    long), dmodemd treats it as stuck, and ignores it until it clears.
 
   The `FAKE_AGERE_RING_STICKS` setting of the fake device makes the
   ring bit of a Polaris stick in the same way.
@@ -454,7 +454,7 @@ add a udev rule (`/etc/udev/rules.d/60-agere-usb.rules`):
 
 On Windows, it must have WinUSB (`dmodem-driver usb dmodem-usb.inf`, or
 Zadig) instead of the driver of Agere
-([windows.md](windows-details.md#usb-modems---usb)).
+([windows-details.md](windows-details.md#usb-modems---usb)).
 
 ### What the log shows
 
@@ -485,7 +485,7 @@ one time.
 **A fixed transmit gain.** The remote of the first device received it
 badly (the V.34 MP sequence from the remote asked for 7200 bit/s
 maximum, and V.22bis lost the carrier). The received samples of the
-first device were clean. It sent at approximately -21 dBFS.
+first device were clean. It sent at about -21 dBFS.
 
 **The automatic transmit gain** (`DMODEM_USB_TX_GAIN=auto`) comes from
 the answer tone of the remote: 2100 Hz, received while the modem is
@@ -495,9 +495,9 @@ quiet (that is, on the calling side), the median of 10 frames.
   first device (where +6 and +10 dB connected at 19200 bit/s), gives
   +8 dB. Each dB less (a longer line) adds half a dB, in the range 0 to
   +12 dB.
-- On the other USB modems (the SmartUSB56 and the pico-serial sticks):
-  the STLC7550 of the SmartUSB56 is much louder (+12 dB got to a USR
-  Courier at -6 dBm, with clipping). Thus a tone at -14.8 dBFS gives
+- On all other USB modems, the values of the SmartUSB56 apply. Its
+  STLC7550 is much louder (+12 dB reached a USR Courier at -6 dBm, with
+  clipping). Thus a tone at -14.8 dBFS gives
   -2 dB, in the range -12 to +6 dB.
 - Until dmodemd receives a tone (on the answering side), the gain is
   the gain from the tone of the last call. If there was no tone yet, it
@@ -510,13 +510,13 @@ quiet (that is, on the calling side), the median of 10 frames.
 
 The log shows the gain and the level of the tone.
 
-**Recording a call** (`DMODEM_USB_REC=<path>`) records each call, from
+**Call recordings.** `DMODEM_USB_REC=<path>` records each call, from
 off hook to on hook, to `<path>-<date>-<time>.wav`. It is stereo at the
 rate of the line: the left channel is the samples from the line as they
 came, and the right channel is the samples from the modem as it sent
 them.
 
-If it does not operate correctly, send that log, with the dump (and a
+If it does not operate correctly, send us that log, with the dump (and a
 recording of a call).
 
 ### The first device

@@ -81,13 +81,16 @@ FreeSWITCH can serve many numbers in many methods:
 | `timeout` | `60` | The time in seconds in which the modems must connect. Then (`tcp`, `unix`), the time in seconds in which the server must accept the call. If not, the call stops with `ERROR`. |
 | `jitter-buffer` | `60` | The jitter buffer in ms, as in `<settings>` (refer to [The channel](#the-channel)). |
 | `fax` | `true` | Receive a calling fax machine as a fax (refer to [Fax](#fax)). |
+| `voice` | empty | `exten@context`, `exten` (in the context of the call) or a dial string with a `/`. A person who calls goes to this extension ([freeswitch.md](freeswitch.md#people-and-modems-on-one-number)). |
+| `voice-listen` | `3` | The seconds that the modem listens for a person before it answers. `0` disables this. |
+| `voice-dsvd` | `false` | V.70 DSVD or V.61 ASVD: `true` sends the voice channel to the `voice` extension when the caller opens it. `open` makes our modem open it immediately. |
 
-A profile can also hold any of the fax params of `<settings>`. The module compares param
-names without case, and `_` and `-` are the same.
-The module refuses a profile that does not have the necessary params of its mode. Then
-`dmodem` stops with `dmodem_status` `ERROR`.
+A profile can also hold all the fax params of `<settings>`. The module
+compares param names without case, and `_` and `-` are the same. The
+module refuses a profile that does not have the necessary params of its
+mode. Then `dmodem` stops with `dmodem_status` `ERROR`.
 
-### Answering and calling
+### The answer and the call
 
 The modem is first configured with `ATE0Q1S0=0S2=255X3` (no echo, no result
 codes, no auto-answer, no `+++` escape, no wait for a dial tone).
@@ -96,9 +99,9 @@ Then the `init` of the profile follows.
 By default, the modem answers with `ATA`. The `answer` param of a profile
 gives a different command line. Commands that apply only to the
 answering call go before the `A`. For example,
-`<param name="answer" value="AT+MS=132;A"/>` answers at V.32bis at most
-(in XML, you do not have to escape the `;`). If the modem does not answer after the
-command line, the call stops with `dmodem_status` `ERROR`.
+`<param name="answer" value="AT+MS=132;A"/>` answers at V.32bis maximum
+(in XML, you do not have to escape the `;`). If the modem does not answer
+after the command line, the call stops with `dmodem_status` `ERROR`.
 
 With `dmodem <profile>,o` (or `<profile> o`), our modem is the caller. It
 waits for the answer tone of the remote modem. This is for a call that
@@ -108,8 +111,8 @@ FreeSWITCH makes to a remote modem, for example:
 originate sofia/gateway/trunk/5559999 &dmodem(isp,o)
 ```
 
-Then the server or program of the profile communicates with the remote BBS or ISP. In
-`originate`, the comma form does not need quotes. An application argument
+Then the server or program of the profile communicates with the remote
+BBS or ISP. In `originate`, the comma form does not need quotes. An application argument
 with a space must have quotes, as in
 `'&dmodem_send_fax(/tmp/doc.tif +1 555 0100)'`.
 
@@ -141,12 +144,12 @@ It is an alternative to the `txfax` and `rxfax` of mod_spandsp:
 
 - **`dmodem` receives faxes automatically.** If the CNG tone of the calling
   machine, or its V.8 CM of a fax call, comes before a modem connection,
-  the call goes to the fax receiver instead. The receiver writes
+  the call goes to the fax receiver. The receiver writes
   `<fax-dir>/<date>-<time>-<caller>-<uuid>.tif`. The date and time
   are `YYYYMMDD-HHMMSS`, and the caller is the digits and `+` of the caller ID
-  (or `unknown`). Then `dmodem_status` is `FAX`. If you set the `fax`
-  param of the profile to `false`, this is disabled. This applies only when the module answers,
-  not with the `o` option.
+  (or `unknown`). Then `dmodem_status` is `FAX`. To disable this, set
+  the `fax` param of the profile to `false`. This applies only when the
+  module answers, not with the `o` option.
 - **`dmodem_receive_fax <file> [ident]`** answers as a fax machine and
   receives into the file.
 - **`dmodem_send_fax <file> [ident]`** sends a TIFF file on a call made
@@ -157,9 +160,9 @@ It is an alternative to the `txfax` and `rxfax` of mod_spandsp:
   ```
 
   It can send any TIFF of 1-bit pels: uncompressed, G3 1D or 2D, or G4.
-  The TIFF can have any width (the module fits it to the 1728 pels of the fax) and any
-  resolution (standard and fine go without changes; superfine is
-  halved). This command makes a TIFF from a PDF:
+  The TIFF can have any width (the module fits it to the 1728 pels of
+  the fax) and any resolution. Standard and fine go without changes, and
+  the module divides superfine by two. This command makes a TIFF from a PDF:
 
   ```
   gs -sDEVICE=tiffg4 -r204x196 -o doc.tif doc.pdf
@@ -180,8 +183,8 @@ The fax applications set these channel variables:
 | `dmodem_fax_pages` | the number of pages |
 | `dmodem_fax_rate` | the rate, in bit/s |
 | `dmodem_fax_remote` | the other machine's number |
-| `dmodem_fax_ecm` | `true` when the call used error correction mode, else `false` |
-| `dmodem_fax_t38` | `true` when the fax went over T.38, else `false` |
+| `dmodem_fax_ecm` | `true` when the call used error correction mode, if not `false` |
+| `dmodem_fax_t38` | `true` when the fax went over T.38, if not `false` |
 | `dmodem_fax_file` | the file |
 
 ### Fax params
@@ -194,7 +197,7 @@ These params go in `<settings>` or in a profile. The fax applications read only
 | `fax-dir` | FreeSWITCH's storage directory + `/fax` | Where `dmodem` puts the faxes it receives. |
 | `fax-ident` | empty | Our fax number (CSI and TSI). |
 | `fax-max-rate` | `14400` | The fastest rate. |
-| `fax-ecm` | `true` | Offer error correction mode (`false`: go without). |
+| `fax-ecm` | `true` | Offer error correction mode (`false`: do not offer it). |
 | `fax-t38` | `true` | Use T.38 when the channel does (`false`: keep the faxes on the audio). |
 
 ### T.38
@@ -205,16 +208,17 @@ the `txfax` and `rxfax` of mod_spandsp do:
 
 - `dmodem_receive_fax` asks for T.38 one second after it starts, that is,
   immediately after the answer. (A re-INVITE sent sooner can cross the
-  ACK of the call. Then FreeSWITCH gets a 491 and hangs up.) It waits up to 6 s for
-  the answer, with silence on the line. If T.38 is refused or there is
+  ACK of the call. Then FreeSWITCH gets a 491 and hangs up.) It waits up
+  to 6 s for the answer, with silence on the line. If T.38 is refused or there is
   no answer, the fax goes on the audio.
 - `dmodem_send_fax` accepts T.38 when the other end asks for it, until
   the first page has gone. After that, the fax stays on the audio. (The
   same rule applies to a receiver.)
-- `dmodem` accepts a T.38 offer that arrives before the modems connect as a
-  calling fax machine (for example, the offer of a gateway). For this, the module must be in answering
-  mode, with `fax` and `fax-t38` enabled. When `dmodem` hears a fax machine on the
-  audio, it asks for T.38 in the same method as `dmodem_receive_fax`.
+- `dmodem` accepts a T.38 offer that arrives before the modems connect
+  as a calling fax machine (for example, the offer of a gateway). For
+  this, the module must answer the call, with `fax` and `fax-t38`
+  enabled. When `dmodem` hears a fax machine on the audio, it asks for
+  T.38 in the same method as `dmodem_receive_fax`.
 
 FreeSWITCH refuses a T.38 offer on a channel without
 `fax_enable_t38=true`. Thus, the module sets that variable for the call
@@ -238,37 +242,38 @@ At the end of a fax that went over T.38, the log shows `over T.38`.
 The modem must have the audio of the line without changes:
 
 - **G.711 only, with no transcoding.** Use PCMU or PCMA. The `law` param
-  selects the law. `auto` uses the codec of the channel. If the channel has
-  a different codec, or the other law, the module asks FreeSWITCH for linear
-  (L16) audio, and FreeSWITCH transcodes. The module logs a warning
-  (`transcoding`). With transcoding, V.90 is not possible and V.34 is slower. For a SIP
+  selects the law. `auto` uses the codec of the channel. If the channel
+  has a different codec, or the other law, the module asks FreeSWITCH for
+  linear (L16) audio, and FreeSWITCH transcodes. The module logs a
+  warning (`transcoding`). With transcoding, V.90 is not possible and
+  V.34 is slower. For a SIP
   trunk, put G.711 first or alone in the codec preferences of the profile:
   `<param name="inbound-codec-prefs" value="PCMU"/>`, and the same for
   outbound.
 - **No processing on the path.** No echo cancellation, silence
   suppression or comfort noise (`suppress-cng`), and no media bugs that
-  change the audio. Recording has no bad effect, because FreeSWITCH decodes and
-  encodes G.711 again without loss.
+  change the audio. A call recording has no bad effect, because
+  FreeSWITCH decodes and encodes G.711 again without loss.
 - **A jitter buffer.** FreeSWITCH reads the RTP of a channel on a clock tick.
-  Without a jitter buffer, a packet that is some ms late is not available yet. Then the
-  modem gets a frame of silence, and from that time each frame is one
+  Without a jitter buffer, a packet that is some ms late is not
+  available at the tick. Then the modem gets a frame of silence, and from that time each frame is one
   frame late. This slip makes V.32bis and V.34 lose their training.
   Thus, the three applications put a 60 ms jitter buffer on the channel,
   without packet loss concealment (`rtp_jitter_buffer_plc=false`).
   `jitter-buffer` in `<settings>` or a profile changes its length in ms
   (0: none). The `jitterbuffer_msec` of a channel has priority.
 - **A steady RTP stream.** Packet loss and clock slips cause line
-  errors. V.42 sends the data again, but these errors can cause a fast connection to drop. A
-  missing packet or a comfort-noise frame goes to the modem as silence.
+  errors. V.42 sends the data again, but these errors can stop a fast
+  connection. A missing packet or a comfort-noise frame goes to the modem as silence.
 
 ## Building
 
-The module builds outside the FreeSWITCH tree, with the remaining parts of D-Modem,
-against an installed FreeSWITCH. CMake finds FreeSWITCH by its
+The module builds outside the FreeSWITCH tree, with the remaining parts
+of D-Modem, against an installed FreeSWITCH. CMake finds FreeSWITCH by its
 `freeswitch.pc`, through pkg-config, or in
 `/usr/local/freeswitch/lib/pkgconfig` for a source install. Without it,
-CMake does not build the module (`DMODEM_FREESWITCH`, enabled by default, but not on
-Windows).
+CMake does not build the module (`DMODEM_FREESWITCH`, enabled by
+default, but not on Windows).
 
 ```
 cmake -B build                      # in the top directory
@@ -277,13 +282,16 @@ cmake --install build --component freeswitch   # the module, and dmodem.conf.xml
 fs_cli -x "load mod_dmodem"
 ```
 
-To load the module at start-up, add `<load module="mod_dmodem"/>` to `modules.conf.xml`.
+To load the module when FreeSWITCH starts, add
+`<load module="mod_dmodem"/>` to `modules.conf.xml`.
+
 CMake options for other locations:
 
-- `-DFREESWITCH_PKGCONFIG=<dir>` for a `freeswitch.pc` in a different location;
-- `-DFREESWITCH_MODULES_DIR=...` and `-DFREESWITCH_CONF_DIR=...` for
-  the locations where `cmake --install` puts the module and the sample configuration
-  (by default, the directories that `freeswitch.pc` gives).
+- `-DFREESWITCH_PKGCONFIG=<dir>` for a `freeswitch.pc` in a different
+  location;
+- `-DFREESWITCH_MODULES_DIR=...` and `-DFREESWITCH_CONF_DIR=...` for the
+  locations where `cmake --install` puts the module and the sample
+  configuration (by default, the directories that `freeswitch.pc` gives).
 
 We tested it with FreeSWITCH 1.11.3 built from source, with sofia-sip
 1.13.19 and the spandsp of the repository of FreeSWITCH (3.1.1, which 1.11
@@ -303,18 +311,18 @@ percent of a core.
 
 The server or program sees nothing until the modems are connected. Then
 it gets the bytes from the remote modem, after V.42 and V.44 or V.42bis.
-A server in `mode` `unix` (a stream socket at `path`) gets exactly the same data as a
-server in `mode` `tcp`.
+A server in `mode` `unix` (a stream socket at `path`) gets exactly the
+same data as a server in `mode` `tcp`.
 
 How the call stops:
 
 - When the server or program stops its side (closes the socket, or the
-  program exits), the module hangs up when all the data that it sent last is on
-  the line: when nothing is left to send and a minimum of 1 s has passed, or
+  program stops), the module hangs up when all the data that it sent
+  last is on the line: when nothing is left to send and a minimum of 1 s has passed, or
   after 30 s at most.
 - When the remote modem hangs up, the module closes the socket, or hangs
-  up the pty (the program gets SIGHUP). If a program still runs 5 s after
-  the SIGHUP, the module stops it with SIGKILL.
+  up the pty (the program gets SIGHUP). If a program continues to run 5 s
+  after the SIGHUP, the module stops it with SIGKILL.
 
 A program in `mode` `exec` gets the pty as its stdin, stdout, stderr and
 controlling terminal, in raw mode. Its environment has:
@@ -342,9 +350,10 @@ control channel. Send one command on each line. The module sends `OK` or
 A server (`tcp` or `unix`) has no control channel.
 
 A server has no environment. Instead, with `header` `true` in a `tcp` or
-`unix` profile, the module sends the same variables first on the connection:
+`unix` profile, the module first sends the same variables on the
+connection:
 
-1. One `NAME=value` on each line (a line break in a value becomes a
+1. One `NAME=value` on each line (a line break in a value changes to a
    space).
 2. An empty line.
 3. The bytes of the caller.
@@ -363,34 +372,35 @@ DMODEM_PEER=192.0.2.1
 
 [`dmodem-login`](https://github.com/D-Modem/login) uses these variables. It
 gives a login (from a text file, LDAP, SQL or PAM) and a menu of a BBS,
-PPP and a shell. It starts each of these items with the credentials of the caller and these
-details of the call. It runs as a `mode` `exec` program for each
+PPP and a shell. It starts each of these items with the credentials of
+the caller and these details of the call. It runs as a `mode` `exec` program for each
 call, or as one server for all calls (`dmodem-login -serve`) behind a
 `mode` `unix` profile with `header` `true`.
 
 Each call is a separate connection to the server of the profile. Many
-callers at the same time on one `dmodem-login -serve` (or a BBS) socket are many
-connections, each with its own header.
+callers at the same time on one `dmodem-login -serve` (or a BBS) socket
+are many connections, each with its own header.
 
-With `handoff = yes` also (`unix` and `header` only), the module
+With `handoff` `true` also (`unix` and `header` only), the module
 puts the modem on a pty. It gives the terminal of the pty to the server
 and does not copy bytes to it. The header goes over the connection with
 the descriptor attached (`SCM_RIGHTS`). From then, the server, and
 all that it runs on that terminal (a login session, a shell, pppd), is
-on the line of the modem itself, as on a serial port. The connection carries nothing more. It stays open
-while the session continues. When the server closes it, the module
-waits for the last data that the server wrote to go out, then hangs up (`LOCAL`).
+on the line of the modem itself, as on a serial port. The connection
+carries nothing more. It stays open while the session continues. When
+the server closes it, the module waits until the last data from the
+server goes out, then hangs up (`LOCAL`).
 When the remote modem goes, the server sees its end of the line close.
 The server must expect the descriptor (`dmodem-login -serve` and the
-`handoff` listeners of the BBS do). A server that does not expect it gets the header and
-nothing after it.
+`handoff` listeners of the BBS do). A server that does not expect it
+gets the header and nothing after it.
 
 When it returns, `dmodem` sets these channel variables:
 
 - `dmodem_status`:
   - `NOCARRIER`: the modems did not connect (also in the
     `timeout` of the profile);
-  - `REMOTE`: the remote modem went away;
+  - `REMOTE`: the remote modem disconnected;
   - `LOCAL`: the server or program stopped the session;
   - `HANGUP`: the channel hung up;
   - `FAX`: a fax machine called and the fax receiver took the call;
@@ -402,11 +412,11 @@ When it returns, `dmodem` sets these channel variables:
 ## Testing
 
 The scripts in `test/` start a private FreeSWITCH. It is the installed
-FreeSWITCH (`FS_PREFIX`, default `/usr/local/freeswitch`), with the module built
-here and the configuration in `test/freeswitch.xml`: one SIP profile on
-127.0.0.1:5080, G.711 only. The scripts take the binaries from `build/`
-(`DMODEM_BUILD` gives a different build directory). They use again the BBS and user scripts of
-the Asterisk tests (`frontend/asterisk/test/bbs_sim.py`,
+FreeSWITCH (`FS_PREFIX`, default `/usr/local/freeswitch`), with the
+module built here and the configuration in `test/freeswitch.xml`: one SIP
+profile on 127.0.0.1:5080, G.711 only. The scripts take the binaries from
+`build/` (`DMODEM_BUILD` gives a different build directory). They use the
+BBS and user scripts of the Asterisk tests (`frontend/asterisk/test/bbs_sim.py`,
 `frontend/asterisk/test/sip_call.py`).
 
 ```
@@ -429,8 +439,8 @@ T38=yes test/fax.sh               # the same over T.38
 In `run.sh`, FreeSWITCH calls itself:
 
 - The answering `dmodem` serves the test BBS.
-- The calling `dmodem` (`dmodem term,o`) gives its data to a script that operates as
-  the user.
+- The calling `dmodem` (`dmodem term,o`) gives its data to a script that
+  operates as the user.
 - The user reads the banner, sends 20 lines, checks their echoes and logs
   out. Then the BBS closes, and this hangs up the call.
 
@@ -438,8 +448,10 @@ In `run.sh`, FreeSWITCH calls itself:
 
 ### fax.sh
 
-`fax.sh` sends a two-page fax (the test document of `dsp/test/fax_doc`)
-in six ways, or seven with `T38=yes`:
+`fax.sh` sends a two-page fax in six ways, or seven with `T38=yes`. The
+document is the test document that the `fax_doc` program writes. CMake
+builds this program from `dsp/test/fax_doc.cpp` into
+`build/dsp/test/fax_doc`. The ways are:
 
 1. `dmodem_send_fax` to `dmodem`, which must find the fax machine;
 2. `dmodem_send_fax` to `dmodem_receive_fax`;
@@ -448,8 +460,9 @@ in six ways, or seven with `T38=yes`:
 5. `dmodem_send_fax` to `rxfax`;
 6. `txfax` with `fax_enable_t38=false` to `dmodem_receive_fax`;
 7. with `T38=yes` only: `dmodem_receive_fax` to `dmodem`, which accepts its
-   T.38 request before the modems connect as a calling fax machine. The two
-   ends are receivers. Thus, there is no document, and the test checks only that.
+   T.38 request before the modems connect as a calling fax machine. The
+   two ends are receivers. Thus, there is no document, and the test
+   checks only that.
 
 Each time, it compares the received fax with the sent fax.
 
@@ -459,16 +472,17 @@ Each time, it compares the received fax with the sent fax.
   mode. Then the module uses error correction mode.
 - By default, the faxes are on the audio. `T38=yes test/fax.sh` enables T.38
   for the two machines (the `fax-t38` of the module, and the
-  `enable-t38` and `enable-t38-request` of mod_spandsp). Then it makes sure that each of the
-  faxes of the module went over T.38, but not the sixth fax (the request of the module
-  is refused, thus that fax stays on the audio).
+  `enable-t38` and `enable-t38-request` of mod_spandsp). Then it makes
+  sure that each fax of the module went over T.38, but not the sixth fax.
+  The other end refuses the request of the module, thus that fax stays
+  on the audio.
 - `CASES="2 5"` runs only those cases. `FAX_MAX_RATE=9600` keeps the
-  fax of the module at that rate or slower. `DMODEM_DEBUG=3` puts the DSP traces in
-  `freeswitch.log`.
+  fax of the module at that rate or slower. `DMODEM_DEBUG=3` puts the DSP
+  traces in `freeswitch.log`.
 
 ## Debugging
 
 `<param name="debug" value="3"/>` in `<settings>`, with the console or
-log file at the DEBUG level, shows the handshake of the modem. (The levels, as
-`dmodem.conf.xml` describes them: 0 none, 1 the connection, 3 the
+log file at the DEBUG level, shows the handshake of the modem. (The
+levels, as `dmodem.conf.xml` describes them: 0 none, 1 the connection, 3 the
 handshake, 5 everything.)

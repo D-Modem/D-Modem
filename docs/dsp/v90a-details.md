@@ -1,6 +1,6 @@
 # V.90 analogue modem: technical details
 
-This page gives the technical data for [V.90 and V.92: the analogue modem](v90a.md), which is the overview in plain English. Read the overview first. This page gives all the data: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [V.90 and V.92: the analogue modem](v90a.md). Read that overview first. This page gives the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 The open DSP has V.90 as the **digital modem** (refer to [V.90](v90.md)):
 the end of the call on the 8000 Hz G.711 network. This page is about
@@ -40,7 +40,7 @@ The work was done in stages, each with its tests:
 | G | V.92 as the analogue modem: V.92 with V.34 upstream and modem-on-hold | done |
 | G2 | PCM upstream of V.92, phase 3: INFO1a (Table 18), the PAM transmitter, Ru to E1u | done |
 | G3 | PCM upstream of V.92, phase 4 and data mode | done (on by default; `DSP_V92A_UP=0` removes it) |
-| G4 | Quick connect of V.92 as the analogue modem: short phase 1 calling, short phase 2 | done (calling; `DSP_V92A_QC=0` removes QC1a, `DSP_V92_SHORT2=0` short phase 2) |
+| G4 | Quick connect of V.92 as the analogue modem: short phase 1 as the caller, short phase 2 | done (as the caller; `DSP_V92A_QC=0` removes QC1a, `DSP_V92_SHORT2=0` short phase 2) |
 | G5 | Rate renegotiation and fast parameter exchange of PCM upstream, in the two directions | done |
 
 ## When it is used
@@ -54,7 +54,7 @@ modem:
 - **With V.92**, it also asks for PCM upstream when the digital modem
   offers it. `DSP_V92A_UP=0` removes only PCM upstream.
 - **At 8000 Hz** (`-r 8000`), V.90 as the analogue modem needs
-  `DSP_V90A=1`. If not, such a line runs V.34. Refer to
+  `DSP_V90A=1`. If not, such a line uses V.34. Refer to
   [8000 Hz lines](#8000-hz-lines).
 - The modem does not offer it when V.8 is used only to get a low-speed
   modulation.
@@ -69,7 +69,7 @@ analogue.
 ## Phases 1 and 2 (stage A)
 
 In `dp_v34.cpp`, with `AT+MS=90` or `92` on an analogue line (refer to
-above):
+[When it is used](#when-it-is-used)):
 
 ### V.8
 
@@ -193,7 +193,7 @@ nothing brings it back. At 16000 Hz nothing folds, and a T/2 equaliser
 operates correctly with all delays (86 to 88 dB at each phase, offline,
 on a raised cosine line).
 
-### Finding Sd
+### Search for Sd
 
 The receiver looks for Sd on alternate samples (8000 Hz), because Sd
 repeats each 6 symbols at all phases.
@@ -202,7 +202,7 @@ repeats each 6 symbols at all phases.
   to its negative 3 samples before (the pattern +W +0 +W −W −0 −W).
   This must be true for 96 samples.
 - At the reversal of Sd, the lag-6 correlation over 24 samples
-  decreases to approximately 0.5 (the 6 samples after it against the 6
+  decreases to about 0.5 (the 6 samples after it against the 6
   before), at all phases.
 - In that dip, the receiver takes the 6 samples whose lag-6 correlation
   is most negative: −1 on the instants of the symbols, −0.25 at a third
@@ -253,18 +253,18 @@ targets follow it. Ri uses the same targets.
   the codec.
 - **Clock fit:** from symbol 2000 to 6000, the phase that it has moved
   is fitted to a straight line. Its slope gives the offset of the clock
-  to approximately 0.1 ppm. The frequency term alone has an error of 1
+  to about 0.1 ppm. The frequency term alone has an error of 1
   or 2 ppm. Then the loop runs on the fitted value, with gains of 0.004
   and 2e−7. If not, the jitter of the loop would remove the margin of
   the dense constellations.
 - **Second solution:** then the equaliser is solved again, on the
-  locked timing. (The first solution is over a drifting clock: 29 dB at
+  locked timing. (The first solution is over a clock that drifts: 29 dB at
   100 ppm.) Then the spread of UINFO over 512 symbols is used as the
   noise (refer to [Phase 4](#phase-4-stage-d)).
 - Only then do we send our S, which ends Jd. (We can wait 5 s for it,
   9.3.2.7/V.90. When Jd is in, the code sends S at the latest 4 s into
   the wait, and retrains if Jd has not come in 4.5 s.) The receiver is
-  ready approximately 1.1 s into TRN1d.
+  ready about 1.1 s into TRN1d.
 - During the DIL, the loop runs on the frequency only: the levels of
   the DIL are the values that it measures, thus it has no reference.
   From Ri, it follows the error again: the signs of Ri, the known
@@ -307,17 +307,17 @@ of stage D:
 
 - **Levels and noise:** the level of each Ucode in each interval
   (`dil_level`) and its noise. The noise of the DIL is the median of
-  those (approximately 1 on a 16-bit scale on the quiet line of
+  those (about 1 on a 16-bit scale on the quiet line of
   netsim). The noise of the data mode is a different measure: the mse
   of the equaliser on random signs.
 - **Unusable Ucodes:** a Ucode is unusable where its noise is more than
   4 times the noise of the DIL plus 0.2% of its level. This finds the
   loudest codes, which clip at the codec of the analogue modem (from
-  approximately Ucode 112 on the line of netsim). The loudest come first
+  about Ucode 112 on the line of netsim). The loudest come first
   in a round. Thus the part of them that spills over the span of the
   equaliser falls on the other codes that clip. (When Ucode 0 came
   first, at the start of the round, it had a noise of 280.)
-- **Robbed bits:** the receiver thinks that an interval is robbed when:
+- **Robbed bits:** the receiver identifies an interval as robbed when:
   - two adjacent Ucodes (2m and 2m + 1, or 2m + 1 and 2m + 2, as the
     octet of the law sets) come out the same in 7 of 10 of the pairs
     that the noise can separate; or
@@ -386,7 +386,7 @@ phase 4, and the upstream data that comes after.
   is silent, until the Sd of the digital modem (`ec_schedule()`). Then
   it does not change.
 - For the PCM receiver, NLMS does not remove sufficient echo in that
-  time: approximately 33 dB of an echo 10 dB down. This leaves a noise
+  time: about 33 dB of an echo 10 dB down. This leaves a noise
   of 12, but a quiet line has 0.5. Thus the canceller keeps the data
   that it trained on. At the end, it solves the near part by least
   squares (`V34Echo::ls_solve()`: the normal equations built from their
@@ -398,7 +398,7 @@ phase 4, and the upstream data that comes after.
 `DSP_TEST_ECHO` gives a modem its own echo in the tests (refer to
 [testing](../testing-details.md)).
 
-### Not done yet
+### Not implemented
 
 MD, and SCR during the DIL, are not done.
 
@@ -409,20 +409,19 @@ low. The random symbols of TRN2d correct this: the gain of each interval
 on them, fitted over the second half of TRN2d, scales the levels used
 for MP, Ed and CP.
 
-## Phase 3: the procedure and the receiver, as planned
+## Phase 3: the procedure and the requirements of the receiver
 
-This section is the original plan for phase 3 (9.3.2/V.90, the
-analogue modem). It tells why the receiver has the design that the
-previous section gives.
+This section gives the procedure of phase 3 (9.3.2/V.90, the analogue
+modem). It also gives the reasons for the design of the receiver in the
+previous section.
 
 ### The procedure
 
 - **Out:** 70 ms of silence, S (128 T), S-bar (16 T), MD if INFO1a
   asked for one (we do not), PP, TRN (a minimum of 512 T, 4 points),
   then Ja (8.3.1, Table 12/V.90: the DIL descriptor) until the Sd of
-  the digital modem changes to S-bar d, then silence. The plan was to
-  retrain if that had not occurred in 1500 ms. The code waits 3 s from
-  the start of Ja (`P3V_JA`). This is the answerer phase 3 of V.34 at
+  the digital modem changes to S-bar d, then silence. If that does not
+  occur in 3 s from the start of Ja (`P3V_JA`), the modem retrains. This is the answerer phase 3 of V.34 at
   the upstream symbol rate, with Ja instead of J (`ptx` as `P3A_*` has
   it), and the echo canceller trained on it as in V.34.
 - **In:** the Sd, S-bar d, TRN1d (its two points, with signs from the
@@ -516,7 +515,7 @@ limit.
 1. In each interval, the first point is the lowest level that is a
    minimum of half the spacing up. Each next point is a minimum of the
    spacing above the last. The spacing is 10 times the noise
-   (approximately one symbol error in 10^6).
+   (about one symbol error in 10^6).
 2. K is the maximum that the points can carry, up to 36 (D = 42,
    56000 bit/s), and only a rate that Jd permits (from 28000 bit/s,
    K = 15, and higher).
@@ -537,7 +536,7 @@ below).
    starts at its end).
 2. On Ri-bar: **SCR** (ones, sent as CP is, a frame of 2 bits) after
    the CPt frame that goes out, while the known part of TRN2d comes in
-   (approximately 300 ms; 4000 ms maximum, 9.4.2.2/V.90).
+   (about 300 ms; 4000 ms maximum, 9.4.2.2/V.90).
 3. Then **CP**.
 4. On MP, when a full CP is out: **CP'** after the CP frame that goes
    out.
@@ -582,13 +581,12 @@ and goes to the data mode (`V90A_DATA`, below).
 | a robbed bit in one interval | 56000 bit/s, µ-law and A-law (that interval has half the points of the other intervals: 48 against 96) |
 | 6 dB pad, two robbed intervals and noise at 30 (`NET_FLOOR`) | 33333 bit/s, limited by the noise (57 at the receiver) |
 
-### A fix found on the way
+### S-bar after an S of odd length
 
-Before this fix, the S-bar of V.34 after an S of odd length started its
-alternation again from the start. Thus it was S turned by 90 degrees,
-not reversed, and the digital modem did not find it. Our S before Jd'
-continues for the time that Jd' takes, thus its length can be odd. Now
-S-bar continues the alternation of S (`V34Tx::s_odd`).
+Our S before Jd' continues for the time that Jd' takes. Thus its length
+can be odd. S-bar continues the alternation of S (`V34Tx::s_odd`). If
+S-bar started its alternation again, it would be S turned by 90 degrees,
+not reversed, and the digital modem would not find it.
 
 ### Tests
 
@@ -655,7 +653,7 @@ CONNECT comes when B1d is in and our E is out. The log shows
 "V.90 connect <up>/<down> (analogue modem)". The statistics of the call
 are kept as for V.90, then V.42 and V.44 run as with V.34.
 
-### Carrier loss and logging
+### Carrier loss and the log
 
 If the power of the downstream stays below a thousandth of the power of
 UINFO for the carrier loss time of the pump, the call ends. Each
@@ -689,7 +687,7 @@ not a V.90 digital modem, V.8 agrees on V.34 as before.
 
 On an analogue line at 8000 Hz (dmodemd `-a -r 8000`), the core reports
 the line as analogue with `dp_runtime_set_analog()`. If not, the pump
-would think that an 8000 Hz line is the network of the digital modem.
+would identify an 8000 Hz line as the network of the digital modem.
 
 - The PCM receiver takes the samples of the line from `process()` as
   they are, through `V90Interp` at 0.5 sample for each output. (The
@@ -730,7 +728,7 @@ makes modem A (or B) such a modem, and `MODEM_ANALOG=<name>` tells
 This is 9.5.2 and 9.6.2/V.90, tested with the side of our digital modem
 (9.5.1, 9.6.1).
 
-### The digital modem's renegotiation
+### The renegotiation of the digital modem
 
 Figure 8/V.90:
 
@@ -741,8 +739,8 @@ Figure 8/V.90:
 2. On Rd-bar, 24 symbols later, the frames of phase 4 start again
    (`reneg_frames()`): the constellations of CPt, a cleared descrambler
    and signs.
-3. TRN2d is optional in a renegotiation, thus the receiver does not
-   think that it is known. The equaliser trains on the decisions. Their
+3. TRN2d is optional in a renegotiation. Thus the receiver does not
+   use it as a known sequence. The equaliser trains on the decisions. Their
    error over frames 170 to 339 is the noise for the design of the new
    CP (the measure of phase 3 is not used).
 4. The pump (`v90a_reneg()`) sends S for 128 T and S-bar for 16 T
@@ -751,7 +749,7 @@ Figure 8/V.90:
    shows "V.90 renegotiated <up>/<down> (analogue modem)". There is no
    new CONNECT.
 
-### Ours
+### Our renegotiation
 
 Figure 9/V.90: we send S and S-bar while the data continues to come
 in. The digital modem answers our S-bar with Rd, and the remaining
@@ -786,7 +784,7 @@ Retrains are 9.5.2/V.90.
   Jd, Jd', DIL, Ri-bar, TRN2d, MP, MP' or B1d) and a renegotiation that
   times out. `ATO1` (the DTE) and `DSP_V34_RETRAIN=<ms>[a|c]` (a test,
   on the two modems) also start one.
-- **Falling back to V.34:** if there are no constellations or upstream
+- **Fallback to V.34:** if there are no constellations or upstream
   rate to use, or from the third retrain, the INFO1a of phase 2 asks
   for V.34 (the log shows "V.34 this time"). Thus a line that PCM
   cannot use connects at V.34. After four retrains, the call ends.
@@ -799,7 +797,7 @@ Retrains are 9.5.2/V.90.
 |---|---|
 | `open_v90a_reneg` | the renegotiation of the digital modem, upstream to 24000 bit/s, then its own back up to 26400; 100000 octets in each direction across the two |
 | `open_v90a_reneg_ours` | ours (`DSP_V90A_RENEG`) |
-| `open_v90a_reneg_noise` | noise of 25 rms on the line to us 16 s into the call (approximately 3 s into the data mode): ours on errors, CP spaced 231 apart, 45333 bit/s |
+| `open_v90a_reneg_noise` | noise of 25 rms on the line to us 16 s into the call (about 3 s into the data mode): ours on errors, CP spaced 231 apart, 45333 bit/s |
 | `open_v90a_retrain` | the retrain of the digital modem, in data mode: tone B, phases 2 to 4, data at 56000 again |
 | `open_v90a_retrain_ours` | ours, with tone A |
 | `open_v90a_v34` | noise of 400 rms: no CP, a retrain, V.34 at 12000 |
@@ -837,18 +835,15 @@ MHreq after its tone B:
 
 1. On a V.92 call, the tone A of our retrain holds back its reversal
    for 1 s (the reversal of a retrain would come before MHreq,
-   approximately 600 ms after the tone).
+   about 600 ms after the tone).
 2. We answer MHack (with our T1, `AT+PMHT`) or MHnack.
 3. We go on hold on its silence or tone.
 4. We send ANSam (with the V.21 receiver on the channel of CM, because
    we were the caller of the call), and answer its CM: phase 1 as the
    answer modem, then phases 2 to 4.
 
-Now the digital modem also uses the return procedure of the requester:
-its CM to the ANSam of the held modem. Before, it sent ANSam itself
-after the hold, against 9.10.2.1/V.92. (The modems behind the stand-in
-of netsim and the original library hang up during the hold, thus this
-problem did not show.)
+The digital modem also uses the return procedure of the requester
+(9.10.2.1/V.92): its CM to the ANSam of the held modem.
 
 Tests: `open_v92a_moh` (ours, 5 s on hold, with a 50 s stream of data
 across it) and `open_v92a_moh_theirs` (the request of the digital
@@ -875,7 +870,7 @@ the network.
   receiver measures it (`V90Rx::ppm()`, when that runs on TRN1d). Until
   then (Ru, the first TRN1u and Ja), it is free-running. At the end of
   the second TRN1u, it is in one symbol at 100 ppm.
-- LU is approximately the power of our V.34 signal (`V92A_LU`, 3000 on
+- LU is about the power of our V.34 signal (`V92A_LU`, 3000 on
   the line).
 - The symbols are made 16 in front of the line, thus the pump waits
   for the last pulse of E1u to go out (`e1u_sent()`).
@@ -920,11 +915,11 @@ automatically:
 
 - **The E1u detector of our digital modem:** the fill of CPt to the end
   of the data frame can be all zeros together with the last bit of the
-  CRC (when that is 0). The detector thought that this was E1u. Now E1u
-  is only a frame that starts after the end of the last CPt.
+  CRC (when that is 0). Thus the detector accepts as E1u only a frame
+  that starts after the end of the last CPt.
 - **The Sd-bar detector of the PCM receiver:** after a hold, an echo of
   ours over Sd makes its lag-6 correlation decrease slightly before the
-  reversal (to 0.49, where a reversal goes to −1.4). Now the detector
+  reversal (to 0.49, where a reversal goes to −1.4). Thus the detector
   does not accept a dip that never goes below −0.2 as Sd-bar, and
   accepts the next one. V.90 had the same dip, but there Sd comes
   later, after it.
@@ -1008,7 +1003,7 @@ is the clock of the network) and no renegotiation.
 
 The E2u detector of our digital modem had the same weakness as its E1u
 detector: the fill of an acknowledged SUVu, with the last 3 bits of its
-CRC at zero, is a frame of zeros. Now the detector accepts E2u only
+CRC at zero, is a frame of zeros. Thus the detector accepts E2u only
 after the end of the last sequence.
 
 ### Tests
@@ -1081,10 +1076,9 @@ design comes out one step lower than the 38666 after V.8.
 
 Two fixes on the side of the digital modem:
 
-- Its INFO0d asked for short phase 2 in a retrain, where it actually
-  does the full phase 2 (and the return from hold failed because of
-  this).
-- Now our own flag for it is cleared in a retrain (the INFO0 sequences
+- Its INFO0d does not ask for short phase 2 in a retrain, because it
+  does the full phase 2 there (if it asks, the return from hold fails).
+- Our own flag for it is cleared in a retrain (the INFO0 sequences
   are not sent again there).
 
 ### Not done
@@ -1100,7 +1094,7 @@ and the QC2a / CRe of V.8 bis.
 | `open_v92a_qc_off` | `DSP_V92A_QC=0`: V.8, then short phase 2 |
 | `open_v92a_qc_unanswered` | the digital modem with `DSP_V92_QC=0`: V.8 after our QC1a |
 
-## PCM upstream's renegotiation and fast parameter exchange (stage G5)
+## Renegotiation and fast parameter exchange of PCM upstream (stage G5)
 
 ### Rate renegotiation
 
@@ -1126,7 +1120,7 @@ Then:
 If no B1d arrives in 25 s (the limit of the digital modem), we retrain.
 The two sides do not ask for the silent period.
 
-### The digital modem's fast parameter exchange
+### The fast parameter exchange of the digital modem
 
 This is 9.9.2.2/V.92.
 
@@ -1152,15 +1146,14 @@ This is 9.9.2.2/V.92.
 
 The digital modem counts errors in FB1u and B1u:
 
-- with its prefilter, approximately 100 in the 2688 bits of FB1u,
-  approximately as many as with the original library (154);
+- with its prefilter, about 100 in the 2688 bits of FB1u,
+  about as many as with the original library (154);
 - with its plain precoder, none in the two, because its receiver
   accepts the restart at B1u in the way that this modem makes it (refer
   to [V.92 PCM upstream](v92-details.md#v92-pcm-upstream): the trellis
   paths run to their end and then start again from state 0, the
   descrambler from zero, and the previous outputs of the precoder stay
-  in the feedback). Before that fix, the last frames of FB1u and the
-  first two or three frames of B1u frequently had tens of errors.
+  in the feedback).
 
 ### Our own fast parameter exchange
 
@@ -1185,11 +1178,6 @@ from the renegotiation of V.90 for the same reason), or with
 The errors of the downstream still cause a renegotiation, which has
 TRN2d to train again on.
 
-Before this was done, a renegotiation or fast parameter exchange of a
-digital modem caused us to retrain to V.90. (When the digital modem
-received no RM a second after its Rf, it did a renegotiation instead.
-The renegotiation alone already completed correctly.)
-
 ### Tests
 
 All tests send 150 kB in each direction.
@@ -1212,7 +1200,7 @@ modems in the interop tests are all analogue modems. There are two
 checks against this:
 
 - The phase 3 and 4 signals of the analogue modems, from their calls to
-  `open8` (`smartlink_v90_*`, `agere_v90_*`, `sm56_v90_*`, ...), are a
+  `open8` (`smartlink_v90_*`, `agere_v90_*`, `sm56_v90_*` and other tests), are a
   reference for ours: you can compare S, PP, TRN, Ja and CP side by
   side.
 - The receiver of the digital modem already reads their signals. Thus
@@ -1222,5 +1210,5 @@ The equaliser of the receiver is tested against the analogue side of
 netsim (its noise, loss and echo). Its timing is tested with the clock
 offset and phase of netsim between the network and the codec
 (`NET_PPM`, `NET_PHASE`; refer to `open_v90a_ppm_fast` and
-`open_v90a_phase`). Real lines through dmodemd `-a` have not had a test
+`open_v90a_phase`). We did not test real lines through dmodemd `-a`
 yet.

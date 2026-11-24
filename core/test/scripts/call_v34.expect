@@ -6,11 +6,13 @@
       0 B: OK\r\n
       0 B< ATA\r
       0 A< ATD123\r
+   6340 B: \r\n
    6340 B: Modulation: V91\r\n
    6340 B: Protocol: LAPM\r\n
    6340 B: Compression: ZSTD\r\n
    6340 B: TxRate: 62666\r\n
    6340 B: CONNECT 62666\r\n
+   6360 A: \r\n
    6360 A: Modulation: V91\r\n
    6360 A: Protocol: LAPM\r\n
    6360 A: Compression: ZSTD\r\n
@@ -184,9 +186,12 @@
   12860 A: B0080 The quick brown fox jumps over the\r\n
   12860 A: OK\r\n
   13360 A< ATH\r
+  13360 A: \r\n
   13360 A: OK\r\n
+  13380 A: \r\n
   13380 A: NO CARRIER\r\n
-  13400 B: A0080 The quick brown fox jumps over the+++NO CARRIER\r\n
+  13400 B: A0080 The quick brown fox jumps over the+++\r\n
+  13400 B: NO CARRIER\r\n
   13400 until B 'NO CARRIER': yes
   13400 until A 'OK': yes
   13400 A: state 0, tx 62600 rx 62600, idle

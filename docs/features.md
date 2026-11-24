@@ -6,9 +6,12 @@ The signal processing of the modem is open source, in `dsp/`. It is C++ code beh
 
 The modem has these functions:
 
-- V.8 and V.34 (up to 33600 bps).
+- V.8 and V.34 (up to 33600 bps), and V.FC, the protocol of Rockwell before V.34 ([docs/dsp/vfc.md](dsp/vfc.md)).
 - V.8 bis before V.8 (`AT+A8E=1,1,,1`, [docs/dsp/v8bis.md](dsp/v8bis.md)). With V.8 bis, the modem also has V.70 voice and data together (`+DSVD=1`, [docs/v70.md](v70.md)). V.70 gives a data channel and a G.729 Annex A voice channel, with the silence compression of Annex B, through the multiplexer of V.76. The voice goes to the handset of a SmartUSB56 or to a `--dsvd-audio` command.
-- V.32bis (14400 bps) and V.32.
+- V.32bis (14400 bps) and V.32, and V.32terbo (19200 bps, [docs/dsp/v32terbo.md](dsp/v32terbo.md)).
+- HST of USRobotics (16800 bps in one direction, [docs/dsp/hst.md](dsp/hst.md)) and PEP of Telebit (about 20000 bps, [docs/dsp/pep.md](dsp/pep.md)).
+- V.61, speech and data at the same time on one analogue carrier ([docs/dsp/v61.md](dsp/v61.md)).
+- V.cvm, the proposal of D-Modem for data through mobile telephone calls ([docs/dsp/vcvm.md](dsp/vcvm.md)).
 - The ZyX modes of ZyXEL (7200 to 19200 bps at 2742.857 baud, `AT+MS=ZYX`, [docs/dsp/zyxel.md](dsp/zyxel.md)). They connect D-Modem to D-Modem. A part of the signal is a best guess, thus a real ZyXEL modem probably does not connect yet.
 - V.26 ter (2400 bps duplex, `AT+MS=V26T`) and V.26 bis (2400 bps in one direction with the 75 bps backward channel, `AT+MS=V26B`, [docs/dsp/v26.md](dsp/v26.md)).
 - V.22bis, V.22 and Bell 212A, with the fast connect of point of sale terminals (`ATS49=1`).
@@ -30,7 +33,16 @@ The modem has these functions:
 
 ## PCM modes
 
-The modem has V.90 only as the digital modem (on an 8000 Hz G.711 line). It has the quick connect of V.92, PCM upstream (up to 36000 bps upstream in the tests) and its rate renegotiation. It also has V.91 between two digital modems (up to 62667 bps in the two directions).
+D-Modem can be the two ends of a 56k call ([docs/dsp/README.md](dsp/README.md#the-two-ends-of-a-56k-call)):
+
+- The digital modem, on an 8000 Hz G.711 line (SIP or a PBX module). It has V.90, and the quick connect, modem-on-hold and PCM upstream of V.92 (up to 41333 bps upstream in the tests with real modems), with rate renegotiation ([docs/dsp/v90.md](dsp/v90.md), [docs/dsp/v92.md](dsp/v92.md)).
+- The analogue modem, on modem hardware (`-a`, `--usb`). It has V.90 and V.92 (up to 56000 bps down and 48000 bps up, [docs/dsp/v90a.md](dsp/v90a.md)).
+
+It also has these PCM modes:
+
+- V.91 between two digital modems (up to 62667 bps in the two directions, [docs/dsp/v91.md](dsp/v91.md)).
+- K56flex, at the two ends ([docs/dsp/k56flex.md](dsp/k56flex.md)).
+- x2 of USRobotics, as the server and as the client ([docs/dsp/x2.md](dsp/x2.md)). The [x2 upgrade host](x2-upgrade.md) enables x2 in a Courier that calls in.
 
 ## Copper pairs, leased lines and digital channels
 
@@ -52,9 +64,9 @@ For more data, refer to [docs/dsp/](dsp/README.md). For the tests, refer to [doc
 `link/` is the data link layer between the data pumps and the DTE ([docs/link.md](link.md)). It has these functions:
 
 - V.42 error correction (LAPM, with its detection phase).
-- MNP 2 to 4 (the alternative procedure of V.42) for modems without LAPM.
+- MNP 2 to 4 (the alternative procedure of V.42) and MNP 10 for modems without LAPM ([docs/mnp/README.md](mnp/README.md)).
 - V.44, V.42bis and MNP 5 compression (and zstd between two D-Modems).
 - The ETC cellular mode of the 3Com Megahertz PC Cards (`AT&F5`, `AT&F6`, S116 and the transmit filter of `AT+EF`; [docs/link-details.md](link-details.md)).
 - Plain asynchronous characters. Or, as an alternative, the synchronous access mode of V.80 for DTEs that make their own frames of data, for example H.324 terminals.
 
-`core/` is the modem core in C++ ([docs/core.md](core.md)). It contains the AT commands, the S-registers, the result codes, the state machine of the call and its timers. It has the same behaviour as the slmodemd core of Smart Link. slmodemd, libdmodem and modem_test use it.
+`core/` is the modem core in C++ ([docs/core.md](core.md)). It contains the AT commands, the S-registers, the result codes, the state machine of the call and its timers. It has the same behaviour as the slmodemd core of Smart Link. dmodemd, libdmodem and modem_test use it.

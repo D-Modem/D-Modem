@@ -1,7 +1,7 @@
 # ZyXEL 16800 and 19200: technical details
 
-Nobody published the specification of the ZyXEL modes. This page records
-what a static trace of the ZyXEL U-1496S firmware gave. For an overview,
+ZyXEL did not publish the specification of the ZyXEL modes. This page
+records what a static trace of the ZyXEL U-1496S firmware gave. For an overview,
 refer to [ZyXEL 16800 and 19200](zyxel.md). The trace itself (addresses,
 tools and the tables as JSON) is in the project files, in `zyxel/`.
 
@@ -56,10 +56,10 @@ firmware uses the bits of V.32terbo:
 - The modem uses B13 and B14 only after it found a ZyXEL peer. If not,
   it ignores them, as a V.32bis modem does.
 
-The same R and E words thus can mean two different signals: V.32terbo at
-2400 baud, or ZyX at 2742.857 baud. The detection of the ZyXEL peer
-occurs before the rate signals, so the two modems already agree on the
-symbol rate.
+Thus, the same R and E words can mean two different signals: V.32terbo
+at 2400 baud, or ZyX at 2742.857 baud. The detection of the ZyXEL peer
+occurs before the rate signals. Thus, the two modems already agree on
+the symbol rate.
 
 ## The symbol rate
 
@@ -182,30 +182,29 @@ We found only a part of this step.
   command `0xA145`, not `0x9001`).
 
 The DSP makes and detects the signal. Its code is in the ROM of the DSP.
-Thus, we do not know the signal yet.
+Thus, the trace of the U-1496S does not give the signal.
 
 ## Not known yet
 
-1. (Known now: refer to [The carrier](#the-carrier).)
-2. The signal for the detection of a ZyXEL peer, and when it occurs.
-   (The detector is known now, and a candidate signal: refer to
+1. The signal for the detection of a ZyXEL peer, and when it occurs.
+   (We know the detector and a candidate signal: refer to
    [The peer detection and the scrambler](#the-peer-detection-and-the-scrambler-not-proven).)
-3. The start-up at the new symbol rate (S, TRN, the rate signals).
-4. The scrambler. The serial hardware gives the bits. We think that it is
+2. The start-up at the new symbol rate (S, TRN, the rate signals).
+3. The scrambler. The serial hardware gives the bits. We think that it is
    the scrambler of V.32bis.
-5. The order of the bits in time inside a group. We think that bit 0 is
+4. The order of the bits in time inside a group. We think that bit 0 is
    the first bit, as Q1 is in V.32bis.
 
-A recording of two real ZyXEL modems can settle items 2 to 5.
+A recording of two real ZyXEL modems can give items 1 to 4. The carrier
+is known (refer to [The carrier](#the-carrier)).
 
 ## The carrier
 
 The carrier at 2742.857 baud is 12800/7 = 1828.571 Hz. This is 2/3 of
 the symbol rate (240 degrees for each symbol). It is the same as the high
 carrier of V.34 at 2743 baud. The evidence is from the ZyX DSP program of
-the Elite 2864I V.90 images (the first DSPA program, which the 68000
-loads with a run-length code; the earlier trace read the coded data and
-thus did not find it):
+the Elite 2864I V.90 images. This is the first DSPA program, which the
+68000 loads with a run-length code:
 
 - When ZyX starts, the 68000 starts DSPB again with the timer words 3674
   (10.08 MHz / 2743.6) and 27429 (10 × 2742.857). V.32bis uses 4200 and
@@ -215,7 +214,7 @@ thus did not find it):
 - In an emulation of the DSPA program in ZyX mode (8 samples for each
   symbol), an input at 1/12 of the sample rate comes out at 0 Hz. The
   carrier rotation table of DSPB for ZyX does not rotate. The same test
-  in V.32bis mode gives 1800 Hz, thus the method is correct.
+  in V.32bis mode gives 1800 Hz. Thus, the method is correct.
 
 These are the receive programs. The transmit side is not in the
 programs that we emulated, but it is almost certainly the same
@@ -240,18 +239,18 @@ program part that the 68000 loads in the start-up states `0x70` to
 In an emulation, an 1800 Hz carrier with a phase reversal every 2
 symbols at 2400 baud (the V.32 points A A C C ...) sets bit 4. This
 signal has lines at 1200 and 2400 Hz. The result changes with the
-alignment and the phase, and single tones do not set it. Thus the ZyXEL
+alignment and the phase, and single tones do not set it. Thus, the ZyXEL
 signal is probably a V.32-type signal with 2-symbol reversals in place
 of AA or AC. A recording of a real ZyXEL call can prove it.
 
-The firmware thread found the window of the detector. Each modem
+The trace of the firmware found the window of the detector. Each modem
 listens after the reversal that measures the round trip delay, in the
 silence before S. The answerer stops at the delay plus 0x100 ticks. The
 caller starts at the delay minus 0x28 ticks and has no limit. The
-caller detector wants status bits 2 or 3 (a signal with lines at 1500
-and 2100 Hz). Each modem changes to ZyX on its own detection.
+detector of the caller looks for status bits 2 or 3 (a signal with lines
+at 1500 and 2100 Hz). Each modem changes to ZyX on its own detection.
 
-D-Modem sends a marker only with `S115=1`, because a wrong signal in
+D-Modem sends a marker only with `S115=1`, because an incorrect signal in
 the V.32bis start-up can stop calls with other modems:
 
 | Modem | Marker that it sends (192 symbols) | It listens for |
@@ -261,12 +260,11 @@ the V.32bis start-up can stop calls with other modems:
 
 A modem finds a marker when its two lines are on, and the V.32 tones are
 off, for 24 symbols. With `S115=0`, the answerer listens only in the
-16 symbols of the V.32 silence (longer while the two lines are on),
-writes a detection in the debug log,
-and does not change to ZyX.
+16 symbols of the V.32 silence (longer while the two lines are on). It
+writes a detection in the debug log, and does not change to ZyX.
 
 The DSP programs and the 68000 code have no scrambler. For ZyX, the
-68000 writes the same serial hardware registers as for V.32bis. Thus
+68000 writes the same serial hardware registers as for V.32bis. Thus,
 the scrambler is in the serial hardware, and it is probably the V.32
 scrambler (GPC for the caller, GPA for the answerer), which D-Modem
 uses.
@@ -276,10 +274,9 @@ for ZyX is the same as the code of the U-1496S: the same ×8/7 change of
 the delay, the same DSP commands and the same ring table. The image also
 holds programs that the 68000 loads into DSPs. These programs are
 filters for the ISDN side of the modem, not the modem DSPs. The modem
-DSPs of the Elite run from mask ROM, as on the U-1496. Thus, no EPROM
-image that we have gives items 1 to 3. (This was incorrect. The V.90
-images of the Elite 2864I have the ZyX DSP program in run-length code.
-Refer to [The carrier](#the-carrier).)
+DSPs of the Elite 1.11 image run from mask ROM, as on the U-1496. But the
+V.90 images of the Elite 2864I have the ZyX DSP program in run-length
+code (refer to [The carrier](#the-carrier)).
 
 ## The version in D-Modem
 
@@ -309,5 +306,5 @@ For the parts that we do not know, D-Modem uses these guesses:
 | B1 | 128 symbols (16 frames) of scrambled ones, through the frame mapper. |
 | Transmit level | Each constellation is scaled to the mean power of the V.32bis constellations. For the speeds with a frame, this is the mean power with the ring frequencies of the ring table. |
 
-When a recording of a real call is available, these guesses can change
-without a change to the parts from the firmware.
+When a recording of a real call is available, these guesses can change.
+The parts from the firmware do not change.

@@ -33,7 +33,7 @@ Then the "Local copy" links in the table operate.
 | [V.23](https://www.itu.int/rec/T-REC-V.23) | 1200/75 bit/s FSK | `dsp/dp_fsk.cpp` | [V.23.pdf](V.23.pdf) |
 | [V.25](https://www.itu.int/rec/T-REC-V.25) | Answer and calling tones | `dsp/dp_callprog.cpp` | [V.25.pdf](V.25.pdf) |
 | [V.26 bis](https://www.itu.int/rec/T-REC-V.26bis) | 2400/1200 bit/s on the switched network, with a 75 baud backward channel | `dsp/dp_v26bis.cpp` ([v26-details.md](../dsp/v26-details.md)) | [V.26bis.pdf](V.26bis.pdf) |
-| [V.26 ter](https://www.itu.int/rec/T-REC-V.26ter) | 2400/1200 bit/s duplex on the switched network, echo cancelling | `dsp/dp_v26.cpp` ([v26-details.md](../dsp/v26-details.md)) | [V.26ter.pdf](V.26ter.pdf) |
+| [V.26 ter](https://www.itu.int/rec/T-REC-V.26ter) | 2400/1200 bit/s duplex on the switched network, with an echo canceller | `dsp/dp_v26.cpp` ([v26-details.md](../dsp/v26-details.md)) | [V.26ter.pdf](V.26ter.pdf) |
 | [V.27ter](https://www.itu.int/rec/T-REC-V.27ter) | 4800/2400 bit/s modem (fax, 4-wire leased) | `dsp/fax_modems.cpp`, `dsp/dp_4wire.cpp` | [V.27ter.pdf](V.27ter.pdf) |
 | [V.29](https://www.itu.int/rec/T-REC-V.29) | 9600 bit/s modem (fax, 4-wire leased) | `dsp/fax_modems.cpp`, `dsp/dp_4wire.cpp` | [V.29.pdf](V.29.pdf) |
 | [V.32](https://www.itu.int/rec/T-REC-V.32) | 9600 bit/s duplex, trellis coded | `dsp/dp_v32.cpp` | [V.32.pdf](V.32.pdf) |
@@ -95,7 +95,7 @@ The Unimodem Diagnostics Command Reference Specification of Microsoft,
 version 1.0 (2 July 1998), is in this folder as [umud10.rtf](umud10.rtf) and as
 [umud10.pdf](umud10.pdf) (the same text, in PDF format). `AT#UD`
 (`core/modem.cpp`, `unimodem_diag()`) obeys it. Microsoft grants the
-right to reproduce and distribute it for making hardware that complies
+right to reproduce and distribute it to make hardware that complies
 with it.
 
 The proposal of D-Modem for a new Recommendation, "Draft new
@@ -117,4 +117,5 @@ These standards do not come from the ITU:
 - Fixed-line SMS (ETSI ES 201 912 protocol 1, `dsp/dp_sms.cpp`). Its messages are the SMS-SUBMIT and SMS-DELIVER of 3GPP TS 23.040, in the alphabets of TS 23.038 (`dsp/sms_pdu.cpp`).
 
 Section references in the code and in these
-documents, for example "9.6.2/V.34", refer to these editions.
+documents, for example "9.6.2/V.34", refer to the editions that
+`fetch.sh` downloads.

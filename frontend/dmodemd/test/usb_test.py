@@ -239,7 +239,7 @@ try:
     check("voice codec: voice mode", m.cmd(b"AT+FCLASS=8"))
     check("voice codec: +VLS=? lists 14 and 15",
           m.cmd(b"AT+VLS=?", rb'14,"H",08000000,08000000,08000000\r\n'
-                rb'15,"HT",0B043060,0B043060,0B043060\r\nOK\r\n'))
+                rb'15,"HT",0B043060,0B043060,0B043060\r\n(\r\n)?OK\r\n'))
     fifo2 = lambda m: [int(v, 16) for v in
                        re.findall(rb"fake st7554: 1a = ([0-9a-f]{4})", log_of(m))]
     check("RHOM off while the modem stops", fifo2(m)[-1:] == [0x2828])
@@ -430,7 +430,7 @@ try:
     a.dte.write(b"ATD1002\r")
     check("1002 RING (voice)", b.expect(rb"RING\r\n", 20))
     check("1002 answers: +VLS=1", b.cmd(b"AT+VLS=1", t=5))
-    m = a.expect(rb"(\x10r)?(OK|BUSY|NO ANSWER|ERROR)\r\n", 30)
+    m = a.expect(rb"(\x10r)?(?:\r\n)?(OK|BUSY|NO ANSWER|ERROR)\r\n", 30)
     print("1001 voice dial: %s in %.1f s" % (m and m.group(2).decode(), time.time() - t))
     check("1001 heard the ringing tone and OK", m and m.group(1) and m.group(2) == b"OK")
     check("1001 +VTS=5", a.cmd(b"AT+VTS=5"))

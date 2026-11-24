@@ -8,8 +8,9 @@ completed V.34. The modems of AT&T had it. Other modems that used the
 modem chips of AT&T Microelectronics also had it (this business went to
 Lucent and then to Agere). Soon after, V.34 made it obsolete.
 
-It was never an ITU standard, and nobody published its specification.
-We made the version of D-Modem again from a modem that has it. This modem
+It was never an ITU standard, and AT&T did not publish its
+specification. We made the V.32terbo of D-Modem from a modem that has
+it. This modem
 is the soft modem of Agere, which the tests of D-Modem already use (refer
 to [Interop](../interop.md)). The two modems connect to each other at
 19200 bit/s. For how we found it and how it operates, refer to
@@ -37,7 +38,7 @@ Two D-Modems back to back on a simulated telephone line (`pump_test`):
 |---|---|
 | 34 dB and more | 19200 bit/s |
 | 26 to 33 dB | 16800 bit/s |
-| below 26 dB | V.32bis's speeds (14400 and down) |
+| below 26 dB | V.32bis's speeds (14400 and lower) |
 
 All of these calls had no bit errors.
 

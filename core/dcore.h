@@ -710,6 +710,9 @@ private:
 	/* (see puts(const char *)) */
 	void puts(const std::string &s) { puts(s.c_str()); }
 	void crlf();
+	/* the <CR><LF> before a command line's first information text
+	   (V.250 6.2.6, with ATV1), if it is due */
+	void text_head();
 	/* the modem's own text to the DTE (echo, results, information):
 	   in EBCDIC while the DTE's command text is EBCDIC */
 	void put_text(const char *buf, s32 n);
@@ -800,6 +803,9 @@ private:
 	/* while a command line runs: 1 if its text is EBCDIC, 0 if not;
 	   -1 at other times */
 	s8 line_ebc_ = -1;
+	/* a command line runs and has sent no text: the next information
+	   text starts with <CR><LF> (ATV1); a result code clears it */
+	bool text_head_ = false;
 	ebcdic::CodePage ebc_page_;
 
 	/* rings */

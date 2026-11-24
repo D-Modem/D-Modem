@@ -478,8 +478,9 @@ void Modem::at_process()
 			}
 			return false;
 		}
-		if (echo)
-			crlf();
+		/* (the echo ended with S3; the information text and the
+		   result code send their own headers) */
+		text_head_ = true;
 		memcpy(at_cmd_, at_line_, typed);
 		at_cmd_[typed] = '\0';
 		logf("run cmd: %s\n", cmd);
@@ -1244,7 +1245,6 @@ s16 Modem::at_I(char *p, s16 *len)
 			if (i % 8 == 7)
 				crlf();
 		}
-		crlf();
 		break;
 	case 5:
 		puts("Stored Profile 0:");

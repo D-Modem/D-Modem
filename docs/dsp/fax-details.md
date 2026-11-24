@@ -1,6 +1,8 @@
 # Fax: technical details
 
-This page gives the technical details for [Fax](fax.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [Fax](fax.md), the overview.
+Read the overview first. This page has the full details: the names in the
+code, the clauses of the Recommendations, the numbers and the test lists.
 
 This page uses these terms:
 
@@ -137,10 +139,10 @@ that it has not sent. `FAX_t38_stop()` goes back to the audio.
 
 | Command | On T.38 |
 |---|---|
-| `+FTH=3` | The V.21 preamble's indicator, then a second's worth of flags' time, then each of the DTE's frames as it comes. Frames are paced at 300 bit/s in packets of at most seven octets, each ended by `hdlc-fcs-OK` (`hdlc-fcs-OK-sig-end` for the final frame). Accepting a frame that is not the final one is the `CONNECT` for the next, as on the audio. 100 ms after the final frame (or an empty one): no-signal and `OK` |
-| `+FTM=` | The modulation's indicator and its training's time, then the DTE's octets at the modulation's rate, bit-reversed the T.38 way, `t4-non-ecm-sig-end` after the last, and no-signal 60 ms later. If the data starts with two HDLC flags, it is the DTE's own HDLC (in ECM, fax software frames the ECM blocks itself). The frames are then taken out of the bits and sent as HDLC data, each ended by `hdlc-fcs-OK` (or `hdlc-fcs-BAD` if the DTE's FCS was wrong), with `hdlc-sig-end` at the end |
-| `+FRH=3` | `CONNECT` at the V.21 preamble (or at its first data). Each frame goes to the DTE with an FCS computed here (deliberately spoilt, with `ERROR`, for an `hdlc-fcs-BAD`). `NO CARRIER` when the signal ends without a frame |
-| `+FRM=` | `CONNECT` at the first data of a fast modulation. T.4 data goes to the DTE in the DTE's bit order. HDLC frames (ECM) are rebuilt as an HDLC bit stream (flags first, zeros stuffed, the FCS, two closing flags at the end). `NO CARRIER` at the sig-end or no-signal |
+| `+FTH=3` | The indicator of the V.21 preamble, then the time of one second of flags, then each frame of the DTE when it comes. The frames go at the pace of 300 bit/s, in packets of a maximum of seven octets. `hdlc-fcs-OK` ends each frame (`hdlc-fcs-OK-sig-end` ends the final frame). When the modem accepts a frame that is not the final frame, this is the `CONNECT` for the next frame, as on the audio. 100 ms after the final frame (or an empty frame): no-signal and `OK` |
+| `+FTM=` | The indicator of the modulation and the time of its training. Then the octets of the DTE at the rate of the modulation, bit-reversed as T.38 sends them, `t4-non-ecm-sig-end` after the last, and no-signal 60 ms later. If the data starts with two HDLC flags, it is the HDLC of the DTE (in ECM, the fax program makes the frames of the ECM blocks). Then the modem takes the frames out of the bits and sends them as HDLC data. `hdlc-fcs-OK` ends each frame (`hdlc-fcs-BAD` if the FCS of the DTE was incorrect), and `hdlc-sig-end` comes at the end |
+| `+FRH=3` | `CONNECT` at the V.21 preamble (or at its first data). Each frame goes to the DTE with an FCS that the modem calculates. For an `hdlc-fcs-BAD`, the modem makes this FCS incorrect and gives `ERROR`. `NO CARRIER` when the signal ends without a frame |
+| `+FRM=` | `CONNECT` at the first data of a fast modulation. T.4 data goes to the DTE in the bit order of the DTE. The modem makes HDLC frames (ECM) into an HDLC bit stream again (flags first, zeros stuffed, the FCS, two flags at the end). `NO CARRIER` at the sig-end or no-signal |
 | `+FRS=` | Silence is "no signal" on T.38. CED is its indicator after 200 ms of no-signal. No CNG is sent (as with the T.30 machine below) |
 
 Tests:
@@ -204,7 +206,7 @@ The modem operates the T.30 machine of the subsequent section, with the
 class 2 engine as its host (the `host` of `t30_config`). The engine
 controls the speed of the machine.
 
-**Sending:**
+**To send:**
 
 1. After the DIS (`T30_EV_DIS`), the machine waits for `+FDT`. Then it
    sends the DCS with the session parameters of `+FIS` (`t30_session()`,
@@ -215,7 +217,7 @@ controls the speed of the machine.
 4. It reports the CFR (`T30_EV_TRAINED`) and each MCF
    (`T30_EV_PAGE_SENT`).
 
-**Receiving:** the machine operates as it does alone. The engine keeps
+**To receive:** the machine operates as it does alone. The engine keeps
 the received items, the session (`T30_EV_TRAINED`) and the pages with
 their post-page commands (`T30_EV_POST`), for the results of `ATA` and for
 each `+FDR`.
@@ -225,7 +227,7 @@ each `+FDR`.
 the line, with the scan line fill, MR on receipt, and ECM in the two
 directions. Thus, the DTE never has to frame ECM.
 
-**Polling:**
+**Poll:**
 
 - An answerer with `+FLP=1` (the `polled` of `t30_config`) sets DIS bit
   9. A DTC (with the CIG before it) then makes it the sender, as a caller
@@ -236,8 +238,8 @@ directions. Thus, the DTE never has to frame ECM.
 - The X bit of the frames stays that of the caller.
 
 **T.38:** `t30_set_t38()` moves the machine to T.38 (or back) at all
-points of the call. The data that was going out is sent again from its
-start on the new path, as `FAX_t38_start()` does for class 1.
+points of the call. The machine sends the current transmission again from
+its start on the new path, as `FAX_t38_start()` does for class 1.
 
 **V.34 fax (T.30 Annex F):** a `+FIS` bit rate (br) above 5 (16800 to
 33600 bit/s) together with ECM offers V.34 half-duplex (the `v34` of
@@ -292,13 +294,13 @@ each page as a T.85 bi-level image entity (BIE) in place of MH. The
 `jbig.cpp` is the coder (T.82 as T.85 profiles it: one layer, one
 bit-plane, sequential stripes):
 
-- **Sending:** stripes of 128 lines (the basic L0 of T.85, thus DCS bit
+- **To send:** stripes of 128 lines (the basic L0 of T.85, thus DCS bit
   79 is 0), the three-line template with the AT pixel in its default
   position (MX 0), typical prediction (TPBON), and the height of the page
   in the header (no NEWLEN). The octets of the BIE go into the ECM frames
   with no change. T.85 sends it least significant bit first, as ECM sends
   octets.
-- **Receiving:** a DCS with bit 78, or with only bit 79 (as spandsp sends
+- **To receive:** a DCS with bit 78, or with only bit 79 (as spandsp sends
   T.85 with a different L0), tells T.85. The receiver keeps the octets of
   the frames until the page ends. (They came with good FCSs. Thus, there
   are no bad rows to look for block by block.) Then it decodes them and
@@ -349,13 +351,13 @@ grey, 2 colour).
   `TiffIn` reads uncompressed 8-bit grey or RGB pages in that way, scaled
   to 1728 pels at 200 pels an inch. `TiffOut` writes such a page
   uncompressed (RGB, or grey with black zero) at 200 pels an inch.
-- **Sending:** a page with colour goes in JPEG when the remote offers bit
+- **To send:** a page with colour goes in JPEG when the remote offers bit
   68 (and 15, 200 by 200). It goes in colour if the remote offers 69. If
   not, only its lightness goes. The DCS sets 68, 69 for colour, 70 (the
   tables are K.3 to K.6 of T.81) and 15. A page without colour goes as
   before. Thus, a document that mixes them sends EOM between the two
   types, and a new DCS (as for a change of resolution).
-- **Receiving:** a DCS with bit 68 (69: colour) tells JPEG. The receiver
+- **To receive:** a DCS with bit 68 (69: colour) tells JPEG. The receiver
   keeps the frames to the end of the page as for T.85. Then it decodes
   them, changes them from CIELAB to sRGB, scales or centres them to 1728
   pels, and dithers them. A JPEG that is cut short keeps its lines up to
@@ -411,7 +413,7 @@ only with 68) and accepts plane-interleaved data (37). The `no_t43` of
 `t30_config` removes T.43 (JPEG only). The `t43` of `t30_status` tells
 what a call sends (1 grey, 2 colour).
 
-- **Sending:** a page with colour goes in T.43 when the remote offers
+- **To send:** a page with colour goes in T.43 when the remote offers
   bits 68, 36 and 15 and the page has few colours:
   - In colour (the remote offers 69, and the page is RGB) when it has a
     maximum of 4096 colours. It goes as a palette (image type 16: the
@@ -425,7 +427,7 @@ what a call sends (1 grey, 2 colour).
   black and white sends EOM. On the bar chart of the test (five colours,
   1728 by 400), T.43 uses 199 octets, and JPEG 25809. On its four-level
   grey chart, T.43 uses 300 and JPEG 11882.
-- **Receiving:** a DCS with 36 (and not 68) tells T.43. The receiver
+- **To receive:** a DCS with 36 (and not 68) tells T.43. The receiver
   keeps the frames to the end of the page, decodes them (a maximum of
   4800 lines), changes them to sRGB and sends them on as a JPEG page. It
   accepts all image types: one bit for each colour (RGB, CMY, CMYK: the
@@ -486,7 +488,7 @@ resolution and position, or one colour. Text over a picture keeps its
 edges sharp in the mask, while the picture goes in JPEG at half the
 resolution.
 
-- **Sending:** a colour or grey page goes in T.44 when the remote offers
+- **To send:** a colour or grey page goes in T.44 when the remote offers
   mode 1 (and 68 and 15) and the page has text or lines on it. Dark pels
   with a light pel within 3 pels make the mask. A minimum of 0.1 % of the
   page must be mask. (A page of few colours still goes in T.43. A page
@@ -506,7 +508,7 @@ resolution.
   (1728 by 600 in colour), the call takes 63 s, and in JPEG 275 s. The
   page comes back at 42.6 dB (in JPEG 29.6 dB). The edges of its text are
   within 1.7 levels (in JPEG 7.5). With the mask in MH, it takes 96 s.
-- **Receiving:** a DCS with one of 92 to 94 tells T.44. The receiver
+- **To receive:** a DCS with one of 92 to 94 tells T.44. The receiver
   decodes the page at its end (a maximum of 4800 lines). It sends it on as
   a JPEG page, in grey when all layers and colours are grey. It accepts
   all of mode 1:
@@ -575,7 +577,7 @@ the call, because we have no other form of the file to send. A received
 name comes from the remote. Use only its last component before you use it
 as a path.
 
-`t434.cpp` is the message in BER (X.690): [APPLICATION 23] holding a
+`t434.cpp` is the message in BER (X.690): [APPLICATION 23] that holds a
 SEQUENCE of attributes for each file. We send protocol-version [28]
 (version 3), filename [0], date-and-time-of-last-modification [5],
 filesize [13], mime-media-type [32] (a high tag number) and
@@ -636,8 +638,9 @@ V.17).
 ### Tests
 
 - The `Rates/T30Pair.*` cases of `fax_test` put two machines back to
-  back, at each rate from 14400 down to 2400, with ECM (in T.85, and one
-  time in MH: `14400_ecm_mh`), and with ECM on a noisy line. At 19 dB,
+  back. They send without ECM at each rate from 14400 to 2400. They send
+  with ECM at 14400 and 9600 (in T.85, and one time in MH:
+  `14400_ecm_mh`), and with ECM on a noisy line (`14400_ecm_snr19`). At 19 dB,
   ECM sends a few frames again, and the page comes out correctly. Without
   ECM, about two thousand rows came out damaged. The two test pages take
   88 s at 14400 bit/s with ECM in T.85, and 175 s in MH.
@@ -680,7 +683,7 @@ CNG. The call moved to T.38 because it is already known as a fax call. A
 gateway that plays CNG holds back what follows until it hears the V.21 of
 the other machine. This can be a DIS that has already gone by.
 
-The machine accepts incoming data in the same way: a sig-end field or a
+The machine accepts received data in the same way: a sig-end field or a
 no-signal indicator marks the end of the carrier. `t30_t38_time()` tells
 the machine how much time has gone by. The timers are the same as on
 audio.

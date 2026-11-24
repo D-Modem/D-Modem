@@ -1,6 +1,6 @@
 # K56flex: technical details
 
-This page gives the technical details for [K56flex](k56flex.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [K56flex](k56flex.md). Read that overview first. This page gives the names in the code, the numbers and the test lists.
 
 K56flex is the 56k PCM protocol of Rockwell and Lucent from before V.90.
 There is no public specification. This page records what we know of it
@@ -44,7 +44,7 @@ Status:
 Each claim has a mark:
 
 - **[seen]**: we read it in the code of sm56, or saw it on the line in our runs against it.
-- **[inferred]**: we deduced it, but did not prove it.
+- **[inferred]**: we think that it is true, but we did not prove it.
 
 ## Overview
 
@@ -54,7 +54,7 @@ type upstream. The start-up:
 
 | Phase | What happens | Roles |
 |---|---|---|
-| 1 | V.8bis (the K56flex capability, in a non-standard field), then V.8 selecting V.34 | the server is the V.8bis initiator and the V.8 answerer |
+| 1 | V.8bis (the K56flex capability, in a non-standard field), then V.8, which selects V.34 | the server is the V.8bis initiator and the V.8 answerer |
 | 2 | V.34 phase 2, with K56flex in the INFO1 frequency offset field | the server is the V.34 *answer* modem (unlike V.90) |
 | 3 | downstream PCM training; upstream S, S-bar, PP, TRN, J | the client waits for the server's signal |
 | 4 | downstream R, TRN2, MP, MP', E; upstream J', TRN, MP, MP', E, B1 | |
@@ -111,7 +111,7 @@ It does not do a check of `o[3]` and `o[4]`. A block with bit 0 of `o[6]`
 clear gets an MS without the NS block, and the call is V.34 [seen].
 
 We copied our NS block from the CL template of the client (`... 83 21`)
-and added 0x40 to the last octet. Most possibly, the 0x40 identifies the
+and added 0x40 to the last octet. Possibly, the 0x40 identifies the
 digital modem [inferred]. We also set bit 8 of that octet (`... 83 e1`).
 The CL parser of the Conexant HCF controller (hcfpcimodem 1.21) reads 2
 more octets when bit 8 of the 7th octet is 0, and refuses a 7-octet
@@ -313,19 +313,19 @@ symbol of R-bar and almost the same value at the first symbol of TRN2A.
 In a model of `MOD_Sync` on our codes, the two values are different by
 about 0.1 % [inferred]. Thus, the phase of the samples of the client
 decides which symbol is the sync. With the later symbol, the parity of
-sm56 is wrong. It then descrambles the signs against the running sum,
+sm56 is incorrect. It then descrambles the signs against the running sum,
 it stays in TRN2A (state 19), and it retrains with cause `0x21` [seen
 with `SM56_TRACE=1`].
 
 With the codes of `isdn_tx`, our TRN2A starts with `- + + -`. In our
 runs, sm56 trained for only 9 of 26 delays of our CL (steps of 4
 samples), and the result changed with the start of its DMA. Our server
-now chooses the data bits of the first two scrambled symbols of TRN2A
+selects the data bits of the first two scrambled symbols of TRN2A
 so that TRN2A always starts with `+ - - +` (`K56Train::next()`). With
 this start, sm56 trained for each delay from -10 to 40 samples (steps
 of 1 sample) and with each delay of its DMA that we tried (0 to 180
 codec samples), with and without robbed bits [seen]. The cost is a
-few wrong descrambled bits at the start of TRN2A, and sm56 trains with
+few incorrect descrambled bits at the start of TRN2A, and sm56 trains with
 them [seen]. Other starts gave these results for the 26 delays:
 `+ - + -` 17 or 21 (this depends on the symbols after it), `- + + -`
 and `- + - +` 9 [seen]. `k56flex_sm56` compares our codes with those of
@@ -516,7 +516,8 @@ set for positive. As a G.711 octet, this is 0xff − m (positive) or
 0x7f − m (negative) for µ-law, and the code xor 0x55 for A-law
 (`k56_g711()`). The encoder of sm56 writes its own codes with `c ^ 0x7f`
 for negative codes, and lets its hardware layer do the final inversion
-[seen in `isdn_tx`]. Nobody has tried an A-law client.
+[seen in `isdn_tx`]. We tried A-law only with our own client
+(`open_k56flex_alaw`).
 
 ### Data after phase 4
 
@@ -630,7 +631,7 @@ Against sm56 [seen with `SM56_TRACE=1`]:
   `SC_A56Phase4_Handler`, and it retrains with cause `0x21`. Then our
   modem retrains again. This is the fault of the second sync (refer to
   "The second sync of the client"), and the start of TRN2A that our
-  server now sends possibly removes it [inferred: we did not test the
+  server sends possibly removes it [inferred: we did not test the
   retrain again]. `State_TRN2A_DecDir` takes its
   references from the table at MOD + 0x3840. sm56 copies this table from
   the table that it adapted in data mode (+ 0x4040). The first
@@ -826,8 +827,8 @@ The firmware shows the data that the modems report about a call:
 - Do other clients accept a 4-level Js (the detector of sm56 cannot)? What
   is the real length of TRN1C? sm56 accepts all lengths from about 4000
   symbols.
-- An A-law client: what sets its law, and do the INFO1a codes 5 and 13
-  operate? Not tested.
+- A real A-law client: what sets its law, and does it accept the INFO1a
+  codes 5 and 13? We tested only our own client, with code 5.
 - The meaning of the x bit of INFO1a and of NS octets 3 to 7.
 - Which NS block does a real K56flex server send? The HCF controller of
   Conexant reads 9 octets (`b5 02 00 94 81 83 xx yy zz`) when bit 8 of
@@ -835,6 +836,6 @@ The firmware shows the data that the modems report about a call:
 - How does a real K56flex server start TRN2A? With the codes of
   `isdn_tx`, the second sync of sm56 is nearly a tie (refer to "The
   second sync of the client").
-- Why is the data of sm56 after a renegotiation wrong? Why does its
+- Why is the data of sm56 after a renegotiation incorrect? Why does its
   training in a retrain fail about half of the time? The probable cause
   is the table that sm56 adapts in data mode.

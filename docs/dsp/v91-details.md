@@ -1,6 +1,6 @@
 # V.91 digital to digital: technical details
 
-This page gives the technical details for [V.91: digital to digital](v91.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [V.91: digital to digital](v91.md). Read that overview first. This page gives the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 ## Overview
 
@@ -164,7 +164,7 @@ in `dsp/test/dmodem_test.cpp`). To run them, use `ctest -R v91`:
 | `v91_xlaw` | the caller on µ-law, the answerer on A-law, converted | 117 | 62667 |
 
 The tests do a check of a rate of 60000 bit/s or more (62666 for
-`v91_alaw`). The exact rates above are the rates that the calls get. The
+`v91_alaw` and `v91_bulk`). The exact rates above are the rates that the calls get. The
 same suite has these other cases:
 
 - `v91_bulk`: with the default `AT+MS=92`, 200 kB of data that does not

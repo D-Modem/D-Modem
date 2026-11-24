@@ -15,8 +15,8 @@ their own shorter start-ups:
 They are not ITU Recommendations. They come from Hypercom (now Verifone),
 and they became de facto standards. The timing of hosts is not always the
 same. D-Modem follows the published data about them, mainly AN93 of
-Silicon Labs (Appendix D, "EPOS applications"). Two D-Modems connect with
-each other with them. Nobody has tried them with a real terminal or host.
+Silicon Labs (Appendix D, "EPOS applications"). Two D-Modems connect to
+each other with them. We did not try them with a real terminal or host.
 
 For the full technical description, refer to
 [the technical details](fastpos-details.md).
@@ -50,10 +50,10 @@ want this. D-Modem accepts the two types from the far end.
 Set it on the two ends. The calling modem sends a steady 980 Hz tone
 while it waits. The answering modem answers with a 2225 Hz tone (S50 sets
 its length). Then the two modems give CONNECT. After this, the side whose
-computer has data sends it, and the other side listens. The turn goes to
-the other side when the data stops. `AT+MS=V29FP,0,4800,7200` operates
-it at 7200 bit/s. V.29 has no method to agree on a speed. Thus, set the
-same setting on the two ends.
+computer has data sends it, and the other side listens. When the data
+stops, the turn goes to the other side. `AT+MS=V29FP,0,4800,7200`
+operates it at 7200 bit/s. V.29 has no method to agree on a speed. Thus,
+set the same speed on the two ends.
 
 ## The data: SDLC frames
 
@@ -89,7 +89,7 @@ the request, the ACK and answer of the host, ACK, EOT):
 For these short messages, the training of V.29 at each turn takes more
 time than its speed saves. FastPOS gives an advantage on longer messages.
 
-## Not there yet
+## Not done
 
 - The short training of Hypercom for V.29 FastPOS (each turn sends the
   full V.29 training, about 250 ms) and its fallback to V.22bis.

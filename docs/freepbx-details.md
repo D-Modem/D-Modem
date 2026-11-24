@@ -6,8 +6,8 @@ This page gives the technical details for [FreePBX: the D-Modem module](freepbx.
 and 17) for [app_dmodem](asterisk.md) or [dmodem-ari](ari.md). It
 gives these items:
 
-- the profiles of the modem, which you edit in the web interface of FreePBX. Each profile is a
-  destination for inbound routes, IVRs, time conditions and similar items;
+- the profiles of the modem, which you edit in the web interface of
+  FreePBX. Each profile is a destination for inbound routes, IVRs, time conditions and similar items;
 - calls out to a remote modem with a profile;
 - the settings and profiles in the Backup & Restore of FreePBX;
 - a check of the PJSIP trunks and extensions for modem calls.
@@ -15,7 +15,7 @@ gives these items:
 It adds **Applications > D-Modem** to the menu and the `fwconsole dmodem`
 command. The module is only PHP. Nothing in it is compiled.
 
-## Installing
+## Installation
 
 1. **The modem.** Select one engine:
    - **dmodem-ari** together with Asterisk (`build/ari/dmodem-ari`), with an ARI
@@ -29,8 +29,8 @@ command. The module is only PHP. Nothing in it is compiled.
      to other persons ([LICENSING.md](../LICENSING.md)).
 2. **The module.** `cmake --build build --target freepbx_module` makes
    `build/freepbx/dmodem-<version>.tgz`. Upload it in Admin > Module
-   Admin (Upload modules). Or, unpack it into the modules directory of FreePBX
-   and install it from the command line:
+   Admin (Upload modules). Or, extract it into the modules directory of
+   FreePBX and install it from the command line:
 
    ```
    tar xzf dmodem-16.0.2.tgz -C /var/www/html/admin/modules/
@@ -40,7 +40,7 @@ command. The module is only PHP. Nothing in it is compiled.
 
    The module is not signed. Thus, FreePBX shows it as unsigned.
 
-## Using it
+## Use
 
 The page of the module has five parts.
 
@@ -57,23 +57,26 @@ Each profile also has:
 | field | default | notes |
 |---|---|---|
 | G.711 law | `auto` | `auto`, `ulaw` or `alaw`. |
-| ISDN data calls (`clear`) | `auto` | `auto`: a clear channel for a call with a digital bearer; `yes`: every call; `no`: never. A CLEARMODE call is clear all the same. See [isdn.md](isdn.md). |
-| Modem commands (`init`) | empty | Extra AT commands, starting with `AT`, 200 characters at most. |
-| Answer command (`answer`) | empty (`ATA`) | For example `AT+MS=132;A` answers at V.32bis at most. |
+| ISDN data calls (`clear`) | `auto` | `auto`: a clear channel for a call with a digital bearer; `yes`: every call; `no`: never. A CLEARMODE call is always clear. Refer to [isdn.md](isdn.md). |
+| Modem commands (`init`) | empty | More AT commands. They start with `AT`. 200 characters at most. |
+| Answer command (`answer`) | empty (`ATA`) | It starts with `AT`. 200 characters at most. For example, `AT+MS=132;A` answers at V.32bis maximum. The module writes the `;` as `\;` in `dmodem.conf`. |
 | Connect timeout | 60 s | 5 to 600 s. |
 | Take fax calls (`fax`) | on | Receive a calling fax machine as a fax. |
+| Voice extension (`voice`) | empty | An extension, or `extension@context` (`from-internal` if there is no context). A person who calls goes to it. Empty: the modem answers all calls. |
+| Listen for a person (`voice_listen`) | 3 s | 0 to 30 s. |
+| Modem voice, DSVD and ASVD (`voice_dsvd`) | `no` | `no`, `yes` (to the voice extension when the caller opens the voice channel) or `open` (our modem opens it immediately). `yes` and `open` need a voice extension. |
 | Call details first (`header`) | off | TCP and unix-socket servers only. |
-| Hand over the line (`handoff`) | off | Unix-socket servers with call details first only: the server gets the modem's line itself (a terminal) instead of a copy of its bytes. See [the handoff](asterisk-details.md). |
-| Description | empty | One line, 100 characters at most; shown with the destination. |
+| Hand over the line (`handoff`) | off | Only for unix-socket servers with call details first. The server gets the line of the modem (a terminal) instead of a copy of its bytes. Refer to [the handoff](asterisk-details.md#what-the-server-or-program-sees). |
+| Description | empty | One line, 100 characters at most. The destination shows it. |
 
 A profile name has 1 to 40 characters (lower-case letters, digits, `-`
 and `_`). The first character is a letter or digit. The names `general`,
 `receivefax` and `sendfax` are reserved.
 
-A profile `bbs` is the destination `app-dmodem,bbs,1`. Each destination picker shows it under
-"D-Modem". After you save a profile, you cannot change its name, because the name is its
-destination. You cannot delete a profile if a route or
-a different object still refers to it.
+A profile `bbs` is the destination `app-dmodem,bbs,1`. Each destination
+picker shows it under "D-Modem". After you save a profile, you cannot
+change its name, because the name is its destination. You cannot delete
+a profile if a route or a different object still refers to it.
 
 ### Settings
 
@@ -85,7 +88,7 @@ a different object still refers to it.
   (empty on the form; the module keeps the stored password) and Stasis app name
   (`dmodem`). Optionally, T.38 through the SIP side of dmodem-ari, with
   its PJSIP endpoint (`dmodem`) and SIP address (`127.0.0.1:5090`).
-- **Dialling out**: the dial-out context (`from-internal`), the caller ID,
+- **Dial out**: the dial-out context (`from-internal`), the caller ID,
   and the ring time (60 s; 5 to 300 s).
 - **Fax**, the fax settings of `[general]`:
   - the directory for received faxes (`/var/spool/asterisk/fax`);
@@ -138,7 +141,8 @@ This part shows the files that Apply Config writes.
 ## What Apply Config writes
 
 Apply Config writes `/etc/asterisk/dmodem.conf` (with the header of FreePBX
-first). Do not edit that file manually, because the next reload writes it again.
+first). Do not edit that file manually, because the next reload writes
+it again.
 Apply Config also writes the `app-dmodem` context into
 `extensions_additional.conf`:
 
@@ -172,7 +176,7 @@ fwconsole dmodem dial <profile> <number> [--callerid='"BBS" <5550100>']
 fwconsole dmodem profiles
 fwconsole dmodem export [file]          # the settings and profiles, as JSON
 fwconsole dmodem import <file> [--keep] # back in; --keep keeps the profiles
-                                        # that the file doesn't have
+                                        # that are not in the file
 ```
 
 - `dial` is the Dial out page for scripts (cron, the mailer of a BBS).
@@ -192,21 +196,23 @@ profiles: the same data as `fwconsole dmodem export`.
 A restore (as `fwconsole dmodem import` without `--keep`) checks the
 data as the forms do:
 
-- The settings are checked together. If one of them fails, the restore does not restore any
-  setting. The log of the restore gives the names of the settings that failed.
-- Each profile is checked separately. If a profile fails (for example a
-  profile with the name `general`), the restore does not restore it, and gives its name in the log.
-  The restore restores the other profiles.
+- The restore checks the settings together. If one setting fails, the
+  restore does not restore a setting. The log of the restore gives the
+  names of the settings that failed.
+- The restore checks each profile separately. If a profile fails (for
+  example a profile with the name `general`), the restore does not
+  restore it, and gives its name in the log. The restore restores the
+  other profiles.
 - The restore deletes the profiles that are not in the backup.
 
 The reload after the restore makes `dmodem.conf` and the dialplan again.
 Received faxes are files in the fax directory, outside the
 data of the module. Thus, a backup of the module does not include them.
 
-## The calls' path
+## The path of the call
 
 V.90 must have the G.711 of the call without changes from the network to the modem
-([asterisk.md](asterisk-details.md#the-channel)). In FreePBX:
+([asterisk-details.md](asterisk-details.md#the-channel)). In FreePBX:
 
 - In Settings > Asterisk SIP Settings, and on the trunk and the modem
   extension, permit only one law: the law that your provider uses (ulaw in
@@ -240,10 +246,10 @@ The line check shows the items that are still incorrect.
   <name>`, `module show` and `ari show apps`, and finds the meaning of the
   settings of an endpoint for a modem.
 - `lib/Dialout.php`: the Originate action of a call out, and the checks of its
-  number and caller ID (nothing that would break the lines of the manager).
+  number and caller ID (no line breaks in the lines to the manager).
 - `lib/Cli.php`: the subcommands of `fwconsole dmodem`
-  (`Console/Dmodem.class.php` gives them to it, thus they operate without
-  Symfony).
+  (`Console/Dmodem.class.php` gives them to it). Thus, they operate
+  without Symfony.
 - `Backup.php`, `Restore.php`: Backup & Restore (through
   `Dmodem::exportData()` and `importData()`).
 - `functions.inc.php`: the destination hooks of FreePBX.
@@ -253,12 +259,12 @@ The line check shows the items that are still incorrect.
 
 ### unit.php
 
-`frontend/freepbx/test/unit.php` (ctest `freepbx_unit`, label `quick`, built when
-PHP is installed) tests the module without FreePBX. It runs on stand-ins
+`frontend/freepbx/test/unit.php` (ctest `freepbx_unit`, label `quick`,
+registered when PHP is installed) tests the module without FreePBX. It runs on stand-ins
 for the items that the module uses (`fpbx_env.php`):
 
-- the kvstore, with the rules of DB_Helper (when you store false, the key is deleted, and
-  values come back as strings);
+- the kvstore, with the rules of DB_Helper (a stored false deletes the
+  key, and values come back as strings);
 - `extensions::add()` and its output, as the
   `extensions.class.php` of FreePBX has them;
 - the manager, with canned CLI output;
@@ -286,8 +292,8 @@ through the `extensions.class.php` of FreePBX instead of the stand-in.
 `frontend/freepbx/test/e2e.sh` runs the output of the module in a private Asterisk
 (`ARI=1`: with dmodem-ari as the engine):
 
-1. `gen.php` makes `dmodem.conf` and the `app-dmodem` context in the same method as the
-   page (with its forms posted).
+1. `gen.php` makes `dmodem.conf` and the `app-dmodem` context in the same
+   method as the page (with its forms posted).
 2. An inbound route sends 5551000 to `app-dmodem,bbs,1`. dmodemd calls it
    over SIP and uses the BBS. The test makes sure that the call went through
    `app-dmodem,bbs,1`. (Two D-Modems on a clean G.711 path connect with

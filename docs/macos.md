@@ -4,8 +4,9 @@ The daemon of D-Modem, `dmodemd`, builds for macOS 11 (Big Sur) and later, on
 Apple silicon Macs and on Intel Macs. It is the same modem as on Linux. It
 makes calls over SIP (internet telephony) and it sends and receives data and fax.
 It gives you a serial device, so that you can control it with AT commands. The USB modems
-that D-Modem supports (the SmartUSB56 of Smart Link, the pico-serial sticks, and
-the USB modem of Agere) also operate on macOS.
+that D-Modem supports (the SmartUSB56 of Smart Link, the pico-serial sticks, the
+USB modem of Agere, the Apple USB Modem and the Conexant USB HSF modems) also
+operate on macOS.
 
 For the full technical description, refer to
 [the technical details](macos-details.md).
@@ -17,10 +18,11 @@ For the full technical description, refer to
 
 ## What is missing on macOS
 
-- The ALSA line (`-a`) for modem chips inside a PC. This line is for Linux only.
+- The ALSA line (`-a`) for modem chips inside a PC, and the ISDN line
+  (`--misdn`). These lines are for Linux only.
 - The 32-bit test peers, because macOS does not run 32-bit programs now.
 
-## Building
+## Build
 
 You must have the command line tools of Apple (`xcode-select --install`) and
 CMake. Ninja is optional (`brew install cmake ninja`).
@@ -38,7 +40,7 @@ one program that runs on the two types of Mac:
 
 `cmake --install build` installs `dmodemd` in `/usr/local/sbin`.
 
-## Running
+## Start dmodemd
 
 `dmodemd` accepts the same options as on Linux (refer to
 [Using dmodemd](usage.md)). Some items are different:
@@ -48,5 +50,5 @@ one program that runs on the two types of Mac:
 - **The data folder.** Make it one time before the first run:
   `sudo mkdir -p /var/lib/dmodem`.
 - **Timing.** The modem asks macOS for real-time scheduling of the audio type.
-  This scheduling does not need special rights.
+  This scheduling does not need root.
 - **USB modems** do not need a driver. Nobody tried a USB modem on a Mac yet.

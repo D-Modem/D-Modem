@@ -2,20 +2,26 @@
       0 B: ATE0X3+MS=132*G3*H0="abc"*H1="Secret"&Z1="5551234"\r\r\n
       0 B: OK\r\n
       0 B< AT*V\r
+      0 B: \r\n
       0 B: *G3\r\n
       0 B: 0: abc \r\n
       0 B: 1: Secret 5551234\r\n
+      0 B: \r\n
       0 B: OK\r\n
       0 B< AT*G1\r
+      0 B: \r\n
       0 B: ERROR\r\n
       0 B< AT*H0=123456789\r
+      0 B: \r\n
       0 B: ERROR\r\n
       0 A< ATE0X3+MS=132\r
       0 A: ATE0X3+MS=132\r\r\n
       0 A: OK\r\n
       0 B< ATA\r
       0 A< ATD\r
+   9600 B: \r\n
    9600 B: CONNECT 14400\r\n
+   9640 A: \r\n
    9640 A: CONNECT 14400\r\n
    9640 until A 'PassWord:': yes
    9640 A< xyz\r
@@ -38,14 +44,19 @@
   13360 A: B0004 The quick brown fox jumps over the lazy dog 01\r\n
   13360 A: OK\r\n
   14060 A< ATH\r
+  14060 A: \r\n
   14060 A: OK\r\n
+  14080 A: \r\n
   14080 A: NO CARRIER\r\n
-  14120 B: A0004 The quick brown fox jumps over the lazy dog 01+++NO CARRIER\r\n
+  14120 B: A0004 The quick brown fox jumps over the lazy dog 01+++\r\n
+  14120 B: NO CARRIER\r\n
   14120 until B 'NO CARRIER': yes
   14120 until A 'OK': yes
   14620 B< ATA\r
   14620 A< ATD\r
+  24220 B: \r\n
   24220 B: CONNECT 14400\r\n
+  24260 A: \r\n
   24260 A: CONNECT 14400\r\n
   24260 until A 'PassWord:': yes
   24260 A< one\r
@@ -57,11 +68,14 @@
   24480 A: Error..., try again\r\n
   24480 until A 'PassWord:': yes
   24480 A< three\r
+  24640 B: \r\n
   24640 B: NO CARRIER\r\n
-  24680 A: PassWord:*****NO CARRIER\r\n
+  24680 A: PassWord:*****\r\n
+  24680 A: NO CARRIER\r\n
   24680 until A 'NO CARRIER': yes
   24680 until B 'NO CARRIER': yes
   24680 B< ATI6\r
+  24680 B: \r\n
   24680 B: Description                         Status\r\n
   24680 B: -----------                         ------\r\n
   24680 B: Last Connection                     V32bis\r\n
@@ -91,23 +105,31 @@
   24680 B: Rate Renegotiation by Remote Modem  0\r\n
   24680 B: Call Duration                       0:00:00\r\n
   24680 B: Call Termination Cause              Security check\r\n
+  24680 B: \r\n
   24680 B: OK\r\n
   25180 B< AT*G4\r
+  25180 B: \r\n
   25180 B: OK\r\n
   25180 B< ATA\r
   25180 A< ATD\r
+  34780 B: \r\n
   34780 B: CONNECT 14400\r\n
+  34820 A: \r\n
   34820 A: CONNECT 14400\r\n
   34820 until A 'PassWord:': yes
   34820 A< Secret\r
   34940 A: PassWord:******\r\n
   34940 A: Correct\r\n
+  35000 B: \r\n
   35000 B: NO CARRIER\r\n
+  35040 A: \r\n
   35040 A: NO CARRIER\r\n
   35040 until A 'NO CARRIER': yes
   35040 until B 'NO CARRIER': yes
   35040 A< ATA\r
+  44640 A: \r\n
   44640 A: CONNECT 14400\r\n
+  44680 B: \r\n
   44680 B: CONNECT 14400\r\n
   44680 until B 'CONNECT': yes
   44680 until A 'CONNECT': yes
@@ -117,27 +139,37 @@
   45180 B: \r\n
   45180 B: OK\r\n
   45880 B< ATH\r
+  45880 B: \r\n
   45880 B: OK\r\n
+  45900 B: \r\n
   45900 B: NO CARRIER\r\n
-  45940 A: +++NO CARRIER\r\n
+  45940 A: +++\r\n
+  45940 A: NO CARRIER\r\n
   45940 until A 'NO CARRIER': yes
   46440 B< AT*G5\r
+  46440 B: \r\n
   46440 B: OK\r\n
   46440 B< ATA\r
   46440 A< ATD\r
+  56040 B: \r\n
   56040 B: CONNECT 14400\r\n
+  56080 A: \r\n
   56080 A: CONNECT 14400\r\n
   56080 until A 'PassWord:': yes
   56080 A< abc\r
   56200 A: PassWord:***\r\n
   56200 until A 'number:': yes
   56200 A< 5559\x0888\r
+  56360 B: \r\n
   56360 B: NO CARRIER\r\n
-  56400 A: Call back phone number:5559\x0888NO CARRIER\r\n
+  56400 A: Call back phone number:5559\x0888\r\n
+  56400 A: NO CARRIER\r\n
   56400 until A 'NO CARRIER': yes
   56400 until B 'NO CARRIER': yes
   56400 A< ATA\r
+  66000 A: \r\n
   66000 A: CONNECT 14400\r\n
+  66040 B: \r\n
   66040 B: CONNECT 14400\r\n
   66040 until B 'CONNECT': yes
   66040 until A 'CONNECT': yes
@@ -147,24 +179,35 @@
   66540 B: \r\n
   66540 B: OK\r\n
   67240 B< ATH\r
+  67240 B: \r\n
   67240 B: OK\r\n
+  67260 B: \r\n
   67260 B: NO CARRIER\r\n
-  67300 A: +++NO CARRIER\r\n
+  67300 A: +++\r\n
+  67300 A: NO CARRIER\r\n
   67300 until A 'NO CARRIER': yes
   67800 B< AT*HS=boss\r
+  67800 B: \r\n
   67800 B: OK\r\n
   67800 B< AT*V\r
+  67800 B: \r\n
   67800 B: ERROR\r\n
   67800 B< AT*V=boss\r
+  67800 B: \r\n
   67800 B: *G5\r\n
   67800 B: 0: abc \r\n
   67800 B: 1: Secret 5551234\r\n
+  67800 B: \r\n
   67800 B: OK\r\n
   67800 B< AT*H2=pw\r
+  67800 B: \r\n
   67800 B: ERROR\r\n
   67800 B< AT*H2=boss,pw\r
+  67800 B: \r\n
   67800 B: OK\r\n
   67800 B< AT*H1\r
+  67800 B: \r\n
   67800 B: OK\r\n
   67800 B< ATDS9\r
+  67800 B: \r\n
   67800 B: ERROR\r\n

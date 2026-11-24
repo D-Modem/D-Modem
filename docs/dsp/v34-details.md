@@ -1,6 +1,6 @@
 # V.8 and V.34: technical details
 
-This page gives the technical details for [V.8 and V.34](v34.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [V.8 and V.34](v34.md). Read that overview first. This page gives the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 ## Where the code is
 
@@ -48,7 +48,7 @@ FSK callers wait for the mark of the answerer.
 
 A Bell 103 caller usually identifies the unscrambled ones of V.22 (2250 Hz) as the 2225 Hz mark of its answerer. It answers with its own mark (1270 Hz). 100 ms of that tone, in all of these stages, changes to Bell 103 immediately.
 
-## Calling automode
+## Automode of the caller
 
 - A 2225 Hz answer tone tells that the answerer is a Bell answerer. The modem distinguishes it from the 2250 Hz unscrambled ones of V.22 over 200 ms. The caller operates Bell 212A. If no scrambled ones come back in 1.5 s, it operates Bell 103.
 - After a 2100 Hz tone without ANSam, the V.32bis caller goes to V.22bis on unscrambled ones, to V.21 on a 1650 Hz mark, or to V.23 on a 1300 Hz mark.
@@ -62,7 +62,7 @@ Phase 2 exchanges the INFO0 and INFO1 frames, measures the round trip delay and 
 - **Round trip delay.** Tones A and B and their phase reversals measure it.
 - **Line probing.** L1 and L2 are 21 tones at multiples of 150 Hz (Table 17/V.34: 150 to 3750 Hz, without 900, 1200, 1800 and 2400 Hz). The probe gives the SNR (signal-to-noise ratio) after equalization for each symbol rate. It uses the received level of each tone and the noise between successive periods. Thus, clock offsets have no effect on it.
 
-### Choosing the symbol rate
+### The selection of the symbol rate
 
 The answerer selects the symbol rate that gives the highest data rate at the two ends, in the limits that the INFO0c of the caller offers:
 
@@ -75,11 +75,11 @@ A caller retrains on an INFO1a that asks for an item that its INFO0c did not all
 
 2400 bit/s is available only at 2400 baud (Table 10/V.34). The modem does not offer a symbol rate whose SNR cannot send 4800 bit/s. Thus, a very noisy line connects at 2400 baud, and does not fail.
 
-### Recovering a lost INFO0
+### Recovery of a lost INFO0
 
 When an INFO0 does not get through, the modem that did not receive it hears the tone of the other modem and repeats its own INFO0 (11.2.2/V.34, 9.2.1.2/V.90). In our code (`info0_resend()` and `info0_more()` in `dsp/dp_v34.cpp`):
 
-- While we send our tone (B, or A when we answer), our INFO0 goes out again, back to back, in these conditions: the INFO0 of the remote modem comes again, or the tone of the remote modem comes for 500 ms without its INFO0.
+- While we send our tone (B, or A when we answer), our INFO0 goes out again, with no gap between the frames, in these conditions: the INFO0 of the remote modem comes again, or the tone of the remote modem comes for 500 ms without its INFO0.
 - When we have the INFO0 of the remote modem, ours acknowledges it (bit 28).
 - We continue to repeat until an INFO0 of the remote modem acknowledges ours, or until 250 ms go by without one. We send a maximum of 16 INFO0s.
 - If an INFO0 acknowledges ours, we send ours one more time, because the HSF modem repeats its INFO0a until ours acknowledges it.
@@ -103,8 +103,8 @@ Before we added this recovery, we sent INFO0d again only after the quick connect
 ## Data mode
 
 - **What is implemented.** Shell mapping, the superconstellation with expanded shaping, differential encoding, the 16, 32 and 64 state 4D trellis codes, high and low mapping frames, and the superframe sync inversions. This includes all rates and symbol rates of Table 10/V.34, with and without the auxiliary channel.
-- **Trellis code choice.** We ask for the 64 state code (`V34_TRELLIS`). The original library sends the code that we ask for. It asks for the 16 state code itself.
-- **Matching the original library.** The trellis output of a 4D symbol is the low bit of the encoder state before that symbol. The inversion pattern starts at its bit 2J - 2. The 32 and 64 state encoders use the same inputs as the `Convolve32` and `Convolve64` tables of the original library.
+- **Trellis code selection.** We ask for the 64 state code (`V34_TRELLIS`). The original library sends the code that we ask for. It asks for the 16 state code itself.
+- **Compatibility with the original library.** The trellis output of a 4D symbol is the low bit of the encoder state before that symbol. The inversion pattern starts at its bit 2J - 2. The 32 and 64 state encoders use the same inputs as the `Convolve32` and `Convolve64` tables of the original library.
 - **Viterbi decoder.** The receiver uses a Viterbi decoder over the states of the code, with a decision delay of 32 4D symbols (`V34_TB`). For the equalizer and the timing, it still uses the nearest point.
 - **Coding gain.** The decoder gains 3 to 4 dB over decisions on the nearest points. With the 16 state code, the bit error rate stays below 1e-5 from an SNR of 3 dB for each bit for each symbol plus 4 dB, at all symbol rates. The 32 and 64 state codes need 0.5 to 1 dB less. The rate selection asks for 2 dB more than that.
 
@@ -152,13 +152,13 @@ The echo canceller (`V34Echo` in `dsp/dp_v34.cpp`) is a real pass band NLMS filt
 
 **Training.** The two parts train while our own phase 3 sequences go out and the remote modem is silent. The caller waits until the J of the answerer stops. The step size starts large and decreases: 0.5 for the first 300 ms, 0.2 up to 600 ms, then 0.05.
 
-**Freezing.** When the error is much more than the error that the training left (the first signal of the remote modem, before we have seen it), the parts stop adapting. They also do not adapt in data mode. The canceller does not count those samples in the echo that it removed. When it counted them, the Su of the remote modem made a canceller that had removed 35 dB look like a canceller of 3 dB, and the canceller disabled itself.
+**Adaptation stops.** When the error is much more than the error that the training left (the first signal of the remote modem, before we have seen it), the parts stop adapting. They also do not adapt in data mode. The canceller does not count those samples in the echo that it removed. When it counted them, the Su of the remote modem made a canceller that had removed 35 dB look like a canceller of 3 dB, and the canceller disabled itself.
 
-**Judging.** At the end of the training, the canceller measures how much echo it removed. If this is less than 6 dB, the canceller is bypassed, because it can only add noise. (This occurs if there is no echo to cancel, as on a 4-wire network, or if the remote modem did not stay silent.) `DSP_EC=0` always bypasses it (for tests). As the analogue modem of V.90, it also solves the near part by least squares on the stored training (`ls_solve()`). It keeps that solution when it removes more echo than NLMS did.
+**Measurement of the result.** At the end of the training, the canceller measures how much echo it removed. If this is less than 6 dB, the canceller is bypassed, because it can only add noise. (This occurs if there is no echo to cancel, as on a 4-wire network, or if the remote modem did not stay silent.) `DSP_EC=0` always bypasses it (for tests). As the analogue modem of V.90, it also solves the near part by least squares on the stored training (`ls_solve()`). It keeps that solution when it removes more echo than NLMS did.
 
 **Retrains.** After a retrain, it trains again from the start.
 
-**Finding the far echo.** The modem correlates the residual of the near part with our scrambled signal at all delays up to 1.7 s (`EC_HIST`). Over VoIP, the echo comes back after the network delay.
+**Search for the far echo.** The modem correlates the residual of the near part with our scrambled signal at all delays up to 1.7 s (`EC_HIST`). Over VoIP, the echo comes back after the network delay.
 
 **Phase 2.** The tone detectors of phase 2 listen exactly on a bin of the 64 sample probe period, where the echo of our own L1/L2 has nothing. The reversal detector does not use the symbol timing.
 
@@ -215,7 +215,7 @@ The codec of a SmartUSB56 operates about 140 ppm off. Without loop timing, a USR
 
 ## Rate renegotiation (11.6/V.34)
 
-**Decrease.** A modem asks for a lower rate when its data mode mse stays above the value for its receiving rate with a margin for 300 ms. (The margin is 0.2, in units of the spacing of the signal points, `V34_RN_DOWN`.) It does not do this in the first 2 s of data mode. The sequence is:
+**Decrease.** A modem asks for a lower rate when its data mode mse stays above the value for its receive rate with a margin for 300 ms. (The margin is 0.2, in units of the spacing of the signal points, `V34_RN_DOWN`.) It does not do this in the first 2 s of data mode. The sequence is:
 
 1. S for 128 symbols, then S-bar.
 2. TRN.
@@ -232,7 +232,7 @@ The rate decreases by the number of steps that the mse asks for (about 3 dB for 
 
 **Retrain in place of a renegotiation.** The modem retrains and does not renegotiate in these conditions:
 
-- The mse became worse by 6 dB or more (four times the good mse). The line has changed, most possibly in the two directions.
+- The mse became worse by 6 dB or more (four times the good mse). The line has changed, possibly in the two directions.
 - It already receives at the lowest rate of the symbol rate (4800 bit/s above 2400 baud, and the upstream of V.90).
 - The renegotiation does not end with E in 3 s plus three round trips.
 - The remote modem sends its tone.
@@ -252,8 +252,9 @@ The rate decreases by the number of steps that the mse asks for (about 3 dB for 
 
 `v34_hdx_create()` (`v34.h`) makes a half-duplex V.34 modem for T.30
 Annex F fax. Its host gives and receives the bits through `V34HdxHost`.
-For class 2 and 2.0, the host is the T.30 machine (`t30_v34.cpp`; refer
-to [the fax details](fax-details.md)). In half-duplex mode, V.8 never
+For class 2 and 2.0, the host is the T.30 machine (`t30_v34.cpp`). For
+class 1.0 (T.31 V.34 data mode), the host is the fax engine
+(`fax_class1.cpp`). Refer to [the fax details](fax-details.md#class-10-v34-half-duplex). In half-duplex mode, V.8 never
 falls back to a different pump. The T.30 machine continues with V.21 in
 its place.
 
@@ -285,8 +286,8 @@ look correct. Thus, the signal of the primary channel does not disturb
 it.
 
 **Tests.** `V34Hdx.CallerSends` and `V34Hdx.AnswererSendsToAPoll` operate
-two modems back to back: messages on the control channel in the two
+two modems that are connected to each other. They send messages on the control channel in the two
 directions, and two pages, each about 3 s at 31200 bit/s.
 
-**Not implemented now:** class 1 fax on V.34 (the V.34 mode of T.31), and
-a change of the rate of the primary channel between pages.
+**Not implemented:** a change of the rate of the primary channel between
+pages.

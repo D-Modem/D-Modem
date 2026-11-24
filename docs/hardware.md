@@ -21,7 +21,7 @@ For each chip, option and setting, refer to
 | **pico-serial Line**, a USB-C phone-line stick made for D-Modem | `dmodemd --usb=auto` | refer to the [hardware project](https://github.com/D-Modem/hardware) |
 | **pico-serial WB**, a stick for a bare pair of wires (not a phone line) | `dmodemd --usb=auto` | tested on a simulated pair |
 | **Agere USB 2.0 soft modem** | `dmodemd --usb=auto` | work in progress: refer to [its own page](agere-usb.md) |
-| **Apple USB Modem** (A1101, for Macs) | `dmodemd --usb=auto` | tested on simulated hardware: refer to [its own page](apple-usb-modem.md) |
+| **Apple USB Modem** (A1101, for Macs) | `dmodemd --usb=auto` | tested on simulated hardware and on one real device (an incoming V.34 call): refer to [its own page](apple-usb-modem.md) |
 | **Conexant USB HSF modems** (the "Cadmus 2" bridge, USB `0572:1300` and others; plain boards, not SmartDAA ones) | `DMODEM_CD2_FIRMWARE=c2firmware.h dmodemd --usb=auto` | tested on simulated hardware: refer to [the details](hardware-details.md#conexant-usb-hsf-modems) |
 
 The PC modems (`-a`) use the sound drivers of Linux (ALSA). Thus, they operate

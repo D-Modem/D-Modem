@@ -1,6 +1,6 @@
 # V.70 (DSVD): technical details
 
-The plain-English overview is [v70.md](v70.md). The references are to
+The overview in plain English is [v70.md](v70.md). The references are to
 ITU-T V.70 (08/96), V.75 (08/96), V.76 (08/96), V.8 bis (11/2000),
 G.729 (06/2012, Annex A) and H.245 (its ASN.1 module, which later
 editions extend compatibly).
@@ -28,7 +28,7 @@ editions extend compatibly).
 | 3 | | The first data channel opened, ERM both ways with a 16 bit FCS: its DLCI is the data channel's, our windows and N401 from the forward (what we receive) and reverse (what we send) parameters; UA, F 1, with OpenLogicalChannelAck; Up |
 | 4 | UA: Up | |
 | 5 | I and S frames on DLCI 0: LAPM's data phase, the DTE's characters | the same |
-| 6 | Hanging up: DISC with CloseLogicalChannel (source user) | Hanging up: the same |
+| 6 | Hang-up: DISC with CloseLogicalChannel (source user) | Hang-up: the same |
 | 7 | The remote's DISC: UA with CloseLogicalChannelAck, Released | the same |
 
 The address octet (6.1/V.76) is the DLCI in bits 8 to 3, C/R in bit 2,
@@ -44,9 +44,9 @@ it and does not open a different channel.
 
 | Frame | Answer |
 |---|---|
-| SABME opening a channel that is neither data nor audio (the out-of-band control channel, another DataType) | DM, F as P, with OpenLogicalChannelReject: dataTypeNotSupported |
-| SABME opening a second data channel | DM with OpenLogicalChannelReject: dataTypeNotAvailable (the initiator's answer to a colliding open, 6.2.2/V.70) |
-| SABME opening a data channel in UNERM, or with an 8 or 32 bit FCS | DM with OpenLogicalChannelReject: unsuitableReverseParameters |
+| SABME that opens a channel that is neither data nor audio (the out-of-band control channel, another DataType) | DM, F as P, with OpenLogicalChannelReject: dataTypeNotSupported |
+| SABME that opens a second data channel | DM with OpenLogicalChannelReject: dataTypeNotAvailable (the answer of the initiator to an open at the same time, 6.2.2/V.70) |
+| SABME that opens a data channel in UNERM, or with an 8 or 32 bit FCS | DM with OpenLogicalChannelReject: unsuitableReverseParameters |
 | SABME whose user data is not an OpenLogicalChannel (no FI 133, a message not read here) | DM with OpenLogicalChannelReject: unknownDataType |
 | XID command with a TerminalCapabilitySet (L-SETPARM, 8.3/V.75), on any DLC | XID response with TerminalCapabilitySetReject (unspecified), its sequence number: the defaults hold (6.2.1/V.70) |
 | DISC on a DLC that is not open | DM, F as P (7.4/V.76) |
@@ -63,8 +63,12 @@ channel:
 | 2 | | With a voice path: UA with OpenLogicalChannelAck, the channel open (`voice_state(true)`). Without: DM with OpenLogicalChannelReject, dataTypeNotSupported |
 | 3 | UA: open (`voice_state(true)`); DM: none, the call goes on with data alone | |
 | 4 | UI commands on the DLC: the audio header, then 10 octets of G.729 Annex A, or in silence a 2 octet SID frame now and then (below) | the same |
-| 5 | Hanging up: DISC with CloseLogicalChannel before the data channel's | the same |
+| 5 | Hang-up: DISC with CloseLogicalChannel before the data channel's | the same |
 | 6 | The remote's DISC: UA with CloseLogicalChannelAck, closed (`voice_state(false)`) | the same |
+
+If the initiator opens no voice channel in 1 s, a responder with a voice
+path opens it with the same steps (`voice_opens()`). For example, a PBX
+that waits for the voice channel of the other side does this.
 
 If nobody answers a SABME, the modem sends it again after about one second of line bits,
 four times in total. If a SABME comes again after the channel is open, the modem
@@ -167,10 +171,11 @@ the module of H.245) gives for each message.
 |---|---|
 | `Link.H245Messages`, `Link.H245Extensions` (`link/test/link_test.cpp`, label `quick`) | Each message against the compiler's octets and read back; V.75's FI 133; an OpenLogicalChannel with an extension addition, no port, N401 256, k 7 and a 32 bit FCS; the messages cut short anywhere |
 | `Link.V76`, `Link.V76Refused` | Two Links back to back: the initiator's data channel, 35000 octets both ways, again with bit errors, the responder's DISC; a responder given an audio channel, a DISC on a DLC not open, a capability set, a 32 bit FCS, then a data channel on DLCI 63 and a second one |
-| `Core.DsvdBoth`, `Core.DsvdCallerAlone` (`core/test/core_test.cpp`, label `quick`) | Two modems with `AT+A8E=1,1,,1+DSVD=1`: V.8 bis chooses DSVD, V.76 with the data channel, the DTEs' characters both ways, the answerer's hang-up closing the channel; `+DSVD` at the caller alone: data and V.42 as usual |
-| `Core.DsvdVoice` | Both modems with a voice path: the voice channel opened after the data channel, each side's tone heard at the other (over 80% of the received signal's energy at the tone), the data alongside, the channel closed at hang-up |
+| `Core.DsvdBoth`, `Core.DsvdCallerAlone` (`core/test/core_test.cpp`, label `quick`) | Two modems with `AT+A8E=1,1,,1+DSVD=1`: V.8 bis chooses DSVD, V.76 with the data channel, the DTEs' characters both ways, the hang-up of the answerer closes the channel; `+DSVD` at the caller alone: data and V.42 as usual |
+| `Core.DsvdVoice` | Both modems with a voice path: the voice channel opened after the data channel, each side's tone heard at the other (over 80% of the received signal's energy at the tone), the data alongside, the channel closed at the hang-up |
 | `Link.V76Voice`, `Link.V76VoiceHeader` (`link/test/link_test.cpp`) | Two Links at 28800 bit/s: two seconds of voice both ways with data alongside; the audio header's sequence numbers, an ERM audio channel and a second one refused, three lost frames concealed, the DISC |
-| `Link.V76VoiceSilence` | One side quiet (low noise) for two seconds: the far end still hears 10 ms every 10 ms, comfort noise within 10 dB of the room's level and no tone, and that side's data gets over half as much again as while talking |
+| `Link.V76VoiceResponderOpens` | An initiator that waits: the responder opens the voice channel 1 s after the data channel, each side hears the tone of the other, the initiator closes it and the data continues |
+| `Link.V76VoiceSilence` | One side quiet (low noise) for two seconds: the far end still hears 10 ms every 10 ms, comfort noise within 10 dB of the room's level and no tone, and the data of that side gets more than 1.5 times the data of a side that talks |
 | `G729a.*`, `G729aBcg729.BothWays`, `DsvdAudio.*` | The coder ([testing-details.md](testing-details.md)) |
 | `Core.A8e` | `+DSVD`'s value and range |
 
@@ -180,8 +185,9 @@ the module of H.245) gives for each message.
   it gets all frames), and the g729AnnexAwSilenceSuppression of H.245.
 - The voice on real SmartUSB56 hardware: we tested it only between simulated
   modems.
-- A voice channel that the responder opens, or a voice channel opened after the call
-  started (the initiator opens it one time, at the start).
+- A voice channel opened later in the call. The initiator opens it one
+  time, at the start, or the responder opens it 1 s after the data
+  channel.
 - More than one data channel, data channels in UNERM (V.70's synchronous
   data), V.75's segmentation (6.5/V.75) and break (clause 10/V.75),
   compression on a data channel (V.76's XID or H.245's

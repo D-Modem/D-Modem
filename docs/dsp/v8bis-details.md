@@ -1,6 +1,6 @@
 # V.8bis: technical details
 
-The plain-English overview is [v8bis.md](v8bis.md). The references are
+The overview is [V.8bis](v8bis.md). The references are
 to ITU-T V.8 bis (11/2000) and V.251 (02/98).
 
 ## The parts
@@ -12,7 +12,7 @@ to ITU-T V.8 bis (11/2000) and V.251 (02/98).
 | `MsgTx`, `MsgRx` | same | The messages of clause 7.2 on V.21. The initiating station uses channel 1 (980/1180 Hz), and the responding station uses channel 2 (1650/1850 Hz). Each message is 100 ms of mark, three flags, the frame with its FCS and stuffed zeros (`HdlcTx`, `HdlcRx` of `fax_hdlc.h`), and two flags. Queued messages (CL then MS) follow each other with no gap. A frame of three octets or more with an incorrect FCS is an invalid frame |
 | `DP_V8BIS` (108) | `dsp/dp_v8bis.cpp` | The transactions (refer to the subsequent section) |
 | Call progress | `dsp/dp_callprog.cpp` | When V.8 bis is enabled, it listens for the initiating signals together with the answer tones while it waits for the answer (10.2.1). Then it gives the call to `DP_V8BIS` with the signal that it heard (`rt->v8bis_sig`) |
-| `+A8E`, `Modem::v8bis_call()`, `MDMPRM_V8BIS` (76) | `core/at.cpp`, `core/modem.cpp`, `core/interface.cpp` | The `+A8E=<v8o>,<v8a>,<v8cf>,<v8b>` of V.251. With `<v8b>` 1, V.8 bis is enabled for a data call where the pump starts with V.8 (`+MS` V.34, V.90, V.91, V.92, V.cvm). It is not enabled on a leased line, a clear channel or a relayed call. Then the `change_dp()` of the answerer starts `DP_V8BIS` before V.8. Call progress asks for `MDMPRM_V8BIS` |
+| `+A8E`, `Modem::v8bis_call()`, `MDMPRM_V8BIS` (76) | `core/at.cpp`, `core/modem.cpp`, `core/interface.cpp` | The `+A8E=<v8o>,<v8a>,<v8cf>,<v8b>` of V.251. With `<v8b>` 1, V.8 bis is enabled for a data call with `+MS` V.34, V.90, V.91, V.92, V.cvm, K56flex or X2 (`Modem::v8bis_call()`). It is not enabled on a leased line, a clear channel or a relayed call. Then the `change_dp()` of the answerer starts `DP_V8BIS` before V.8. Call progress asks for `MDMPRM_V8BIS` |
 
 ## The transactions
 
@@ -29,8 +29,8 @@ D-Modem makes sure that this station is the modem that answered the call.
 | 5 | On MS: ACK(1) if MS asks for it, then V.8 (`DP_V8`, ANSam after its 200 ms of silence) | On ACK(1): 100 ms of ANSam, then the caller of V.8 (`rt->answer_tone` set, as call progress sets it) |
 
 This is transaction 10 of Table 7 (MRe, CRd, CL, MS, ACK). The answerer
-also accepts transaction 1: ESr and MS immediately after its MRe. The answerer answers
-with ACK(1) (if MS asks for it) and V.8.
+also accepts transaction 1: ESr and MS immediately after its MRe. The
+answerer answers with ACK(1) (if MS asks for it) and V.8.
 
 The answerer refuses an MS with NAK(3) in these conditions:
 
@@ -39,10 +39,10 @@ The answerer refuses an MS with NAK(3) in these conditions:
   CM).
 - The MS selects only modulations that the answerer did not offer.
 
-Then the answerer continues to V.8 without V.8 bis. The caller answers ESi and a subsequent CL with its MS
-(transaction 5).
+Then the answerer continues to V.8 without V.8 bis. The caller answers
+ESi and a subsequent CL with its MS (transaction 5).
 
-### When it does not happen
+### When the transaction fails
 
 | Where | What | Then |
 |---|---|---|
@@ -55,32 +55,31 @@ Then the answerer continues to V.8 without V.8 bis. The caller answers ESi and a
 | Caller | MS or CLR after ESi (the answerer would be the caller of V.8) | The answer tone |
 | Caller | No CL in 5 s, no ACK(1) in 5 s after the MS | The answer tone |
 
-"The answer tone" means that the caller waits for 300 ms of 2100 or 2225 Hz, as
-call progress does, and then continues to the pump. (S7 is the limit, as for all
-handshakes.) After its MS, the caller accepts 100 ms of 2100 Hz as the
+"The answer tone" means that the caller waits for 300 ms of 2100 or
+2225 Hz, as call progress does, and then continues to the pump. (S7 is
+the limit, as for all handshakes.) After its MS, the caller accepts 100 ms of 2100 Hz as the
 ANSam of the answerer. Thus, if an ACK(1) is lost, the caller does not stop.
 
 With `+DSVD=1`, the CL also offers the SVD mode. The MS of the caller
-selects it when the two stations have what V.70 must have. The details are in
-[v70-details.md](../v70-details.md). With `+ASVD=1`, the SVD mode has
-V.61. An MS with V.61 starts the start-up of V.61 at the two ends, instead of
-V.8 ([v61-details.md](v61-details.md#v8-bis)).
+selects it when the two stations have what V.70 must have. The details
+are in [v70-details.md](../v70-details.md). With `+ASVD=1`, the SVD mode
+has V.61. An MS with V.61 starts the start-up of V.61 at the two ends,
+instead of V.8 ([v61-details.md](v61-details.md#v8-bis)).
 
 ## Levels
 
 | Signal | Level | Constant |
 |---|---|---|
 | MRe, CRe | -22 dBm0 (the two tones of segment 1 have half of the power each) | `AMP_E` in `dsp/v8bis.h` |
-| MRd, CRd, ESi, ESr, the messages | Approximately -14.5 dBm0 (the level of V.8) | `AMP_MSG` in `dsp/v8bis.h` |
+| MRd, CRd, ESi, ESr, the messages | About -14.5 dBm0 (the level of V.8) | `AMP_MSG` in `dsp/v8bis.h` |
 
 Clause 7.1.4 sets the level of MRe and CRe 12 to 15 dB below the
 nominal permitted level, not below the level of the modem. The nominal
 permitted level is -9 to -10 dBm0 (V.2). Thus, the correct range is
--21 to -25 dBm0. Before, MRe was 12 dB below the level of the messages,
-at -26.5 dBm0. That is below the range, and a line with loss can make
-it too weak for a caller. The K56flex server (`dsp/v34_k56.h`) sends
-its MRe at the level of the SM56 tests (approximately -17.5 dBm0), and
-this change does not touch it.
+-21 to -25 dBm0. A level 12 dB below the messages (-26.5 dBm0) would be
+below this range, and a line with loss can make it too weak for a caller.
+The K56flex server (`dsp/v34_k56.h`) sends its MRe at a different level:
+the level of the SM56 tests (about -17.5 dBm0).
 
 ## Against other modems
 
@@ -95,7 +94,7 @@ this change does not touch it.
 7.80.02.06oem) does not answer MRe, MRd, CRe or CRd. It is silent until
 our ANSam. Then it connects with V.90. The tests
 `hsf_v8bis_mre_unanswered` and `hsf_k56flex_mre_unanswered` (label
-`hsf`) show this behaviour. Its `+A8E?` gives `1,1,C1,1`, but its
+`hsf`) show this. Its `+A8E?` gives `1,1,C1,1`, but its
 controller has no V.8 bis code. The engine has no `v8bis.c` and no
 `cpv8bis.c`. It has only the tone detector of the DSP (`cr_det.cpp`) and
 the `V8BIS DSP VER` line of its diagnostics. Thus, an HSF modem cannot
@@ -108,7 +107,7 @@ hcfpcimodem 1.21 (`hcfengine-i386.O`). It has V.8 bis (`v8bis.c`,
 
 - On a call, the controller enables V.8 bis in call progress when `<v8b>`
   of `+A8E` is not 0 and `+MS` is V34, K56, V90 or V92. It does not
-  look at the K56flex setting. Thus, the modem of issue #119 (`+MS=K56`,
+  examine the K56flex setting. Thus, the modem of issue #119 (`+MS=K56`,
   `+A8E: 1,1,C1,1`) listens for V.8 bis.
 - When the DSP tells it that an initiating signal is there, the
   controller sends CRd. Then it waits for a CL on V.21. On the CL, it
@@ -116,15 +115,15 @@ hcfpcimodem 1.21 (`hcfengine-i386.O`). It has V.8 bis (`v8bis.c`,
   transaction 10, as in our answerer.
 - In V.8 bis mode, the controller uses two different answer tone
   detectors (`V8BTONE_2100_PARAMS` and `V8BTONE_2225_PARAMS` in its
-  configuration). If ANS, ANSam or the 2225 Hz tone stays for 200 ms, it
-  stops V.8 bis and continues with V.8.
+  configuration). If ANS, ANSam or the 2225 Hz tone continues for
+  200 ms, it stops V.8 bis and continues with V.8.
 - The detector of the initiating signals is in the DSP of the chip. The
-  driver does not contain this code, thus we cannot read it. The DSP of
+  driver does not contain this code. Thus, we cannot read it. The DSP of
   the HSF engine (`cr_det.cpp`, at 16000 Hz) possibly uses the same
   method. That detector measures the two tones of segment 1 in a
   window of 10 ms and compares each tone with the total power. Each tone
-  must have approximately the same level (the first tone can be 1.8 dB
-  below the second tone, or 5 dB above it). Then it measures the tone
+  must have about the same level (the first tone can be 1.8 dB below
+  the second tone, or 5 dB above it). Then it measures the tone
   of segment 2 for 80% of its length. We did not find a property of our
   MRe that this detector refuses.
 
@@ -136,11 +135,9 @@ parser of the HCF controller on our CL of K56flex. It refuses our CL.
 After the 7th octet of the non-standard block (`61`), it reads 2 more
 octets, because bit 8 of that octet is 0. Our block has only 7 octets.
 With `e1` as the 7th octet, or with 9 octets (`... 61 00 85`, as the
-block of the HCF controller), it accepts the CL. Our CL now ends with
-`e1`. SM56 accepts both octets. (With `e1`, the K56flex training of
-SM56 first failed. The cause was not the block, but the start of our
-TRN2A: refer to [k56flex-details.md](k56flex-details.md#the-second-sync-of-the-client).)
-This item is important only after the HCF modem answers with CRd.
+block of the HCF controller), it accepts the CL. Thus, our CL ends with
+`e1` (`dsp/v34_k56.h`). SM56 accepts the two forms. This item is
+important only after the HCF modem answers with CRd.
 
 **Data that we need.** To find the cause of issue #119, we need these
 items from a call of the HCF modem to D-Modem:
@@ -154,8 +151,8 @@ items from a call of the HCF modem to D-Modem:
 
 ## `+A8E`
 
-`+A8E=<v8o>,<v8a>,<v8cf>,<v8b>` (V.251 5.1). The modem keeps it with the other
-extended parameters:
+`+A8E=<v8o>,<v8a>,<v8cf>,<v8b>` (V.251 5.1). The modem keeps it with the
+other extended parameters:
 
 | Subparameter | Values | Meaning here |
 |---|---|---|
@@ -165,8 +162,8 @@ extended parameters:
 | `<v8b>` | 0, 1 | V.8 bis disabled, or done by the modem at the start of a data call |
 
 In V.251, the default of `<v8b>` is 1, "based on manufacturer-determined
-procedures". The default of D-Modem is 0, because an answer with V.8 bis makes a
-caller without V.8 bis wait about 3.5 s more. These values give `ERROR`:
+procedures". The default of D-Modem is 0, because an answer with V.8 bis
+makes a caller without V.8 bis wait about 3.5 s more. These values give `ERROR`:
 
 - `<v8b>` 2 (the DTE does V.8 bis with `+A8M` and the `+A8x` indications).
 - The `<cfrange>` and `<protrange>` subparameters.
@@ -180,13 +177,13 @@ caller without V.8 bis wait about 3.5 s more. These values give `ERROR`:
 
 ## Not done
 
-- The code encodes and reads the other modes (H.324, V.18, T.30, telephony),
-  but it selects only data and SVD (V.70, with `+DSVD`: refer to
+- The code encodes and reads the other modes (H.324, V.18, T.30,
+  telephony), but it selects only data and SVD (V.70, with `+DSVD`: refer to
   [v70-details.md](../v70-details.md); V.61, with `+ASVD`: refer to
   [v61-details.md](v61-details.md)).
 - Transactions where the caller receives MS (2, 3, 7 to 9, 11 to 13
-  from the side of the answerer, 4 and 6 after ESi). For these, the caller of D-Modem
-  would have to be the answering modem of V.8.
+  from the side of the answerer, 4 and 6 after ESi). For these, the
+  caller of D-Modem would have to be the answering modem of V.8.
 - The short V.8 start-up (9.9.2), and the V.25 start-up after V.8 bis
   (9.9.3, ANS instead of ANSam).
 - Message segmentation (9.10: "additional information available",

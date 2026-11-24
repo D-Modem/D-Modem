@@ -1,9 +1,12 @@
 # V.wb: wideband DMT on a bare pair: technical details
 
-This page gives the technical details for [V.wb: wideband on a bare pair](vwb.md), the plain-English overview. Read the overview first. This page has the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for
+[V.wb: wideband on a bare pair](vwb.md), the overview. Read the overview
+first. This page has the full details: the names in the code, the
+numbers and the test lists.
 
-`AT+MS=VWB` (or `AT+MS=200`) starts the own wideband mode of D-Modem. On
-a line sampled at 48000 Hz or more, it is the default. It is also the only
+`AT+MS=VWB` (or `AT+MS=200`) starts the wideband mode of D-Modem. On a
+line sampled at 48000 Hz or more, it is the default. It is also the only
 mode that the core operates on such a line.
 
 It is for a **bare copper pair** between two D-Modems: a dry pair, an
@@ -82,8 +85,9 @@ The FFT window starts half of the cyclic prefix (20 samples at 96 kHz)
 before the end of the prefix. This leaves 20 samples for the dispersion
 of the pair and 20 for the offset of the echo.
 
-Thus, the hybrid leak of the own signal of each side (10 to 20 dB down on
-the stick, -15 dB in the tests) has no measurable effect. The receiver
+Thus, the hybrid leak of the signal of each side into its own receiver
+(10 to 20 dB down on the stick, -15 dB in the tests) has no measurable
+effect. The receiver
 tracks the clock offset, whatever its value. The tests use ±100 ppm (the
 crystals of the stick are in the range ±50 ppm). The receivers give the
 offset that they track.
@@ -217,7 +221,7 @@ The two ends operate on the simulated pair of `dsp/test/vwb_line.cpp` at
   5 µs/km of delay.
 - The transformer of each end is a high pass at 2.7 kHz.
 - White noise at the receivers.
-- -15 dB of the own signal of each side at its receiver (the hybrid).
+- The signal of each side at its own receiver, at -15 dB (the hybrid).
 - The clock of the answerer is 100 ppm fast (resampled to and from the
   line).
 - About 5.3 ms of latency in each direction (the converters and buffers
@@ -254,17 +258,17 @@ Other results:
   then sends 83 kbit/s in each direction (the window of LAPM waits a
   longer round trip). dmodemd itself operates the call between two fake
   WB sticks on this pair in real time
-  (`frontend/dmodemd/test/pico_wb_test.py`, [hardware.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).
+  (`frontend/dmodemd/test/pico_wb_test.py`,
+  [hardware-details.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).
 - **Dropout.** A 0.5 s cut of the pair causes one retrain. The data
   continues after it, and LAPM sends again the data that was lost.
 - **CPU.** One end uses about 1.5% of one x86 core at 96 kHz.
 
-## Left to do
+## Not done
 
-- Bit swapping in a call (the bits of a tone move when its noise
-  changes).
+- Bit swap in a call (the bits of a tone move when its noise changes).
 - Trellis coding.
 - The extended windows of V.42, which a long interleaver and the buffers
   of a host would need.
 - A real pair, and a real WB stick (the `--usb` of dmodemd operates it:
-  [hardware.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).
+  [hardware-details.md](../hardware-details.md#pico-serial-wb-wideband-bare-pair)).
