@@ -13,9 +13,10 @@
 # Every push to main sends the event, also a push that changes only
 # documentation: the app copies the AT command reference from docs/at.
 #
-# It needs the DEPENDENTS_TOKEN secret: a fine-grained personal access
-# token with Contents: read and write on D-Modem/app and D-Modem/gui (a
-# repository_dispatch needs that permission). The workflow's own
+# It needs the DMODEM_BUMP_TOKEN secret (an organization secret, which
+# the bump workflows of app and gui also use): a fine-grained personal
+# access token with Contents: read and write on D-Modem/app and
+# D-Modem/gui (a repository_dispatch needs that permission). The workflow's own
 # GITHUB_TOKEN cannot send an event to a different repository. Without
 # the secret, the run gives a warning and sends nothing. The daily
 # schedule of each bump workflow then moves the submodule.
@@ -40,11 +41,11 @@ jobs:
     steps:
       - name: Send d-modem-main to ${{ matrix.repo }}
         env:
-          GH_TOKEN: ${{ secrets.DEPENDENTS_TOKEN }}
+          GH_TOKEN: ${{ secrets.DMODEM_BUMP_TOKEN }}
           REPO: ${{ matrix.repo }}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::No DEPENDENTS_TOKEN secret (see this workflow's header): $REPO is not told"
+            echo "::warning::No DMODEM_BUMP_TOKEN secret (see this workflow's header): $REPO is not told"
             exit 0
           fi
           gh api "repos/$REPO/dispatches" \
