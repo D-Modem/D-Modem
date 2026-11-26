@@ -79,6 +79,8 @@ measurements, and test lists.
   answers the far modem itself, and sends the data as bytes over the internet
 - [Leased lines and dry pairs](leased.md): private circuits with no
   telephone exchange, and their line tests
+- [The speaker of the modem](speaker.md): hear the call on a sound
+  device of the computer (`--speaker`, `ATM`, `ATL`)
 - ZyXEL compatibility: [encryption (S102, ATCK)](zyxel-des.md),
   [fax mode (class 6)](zyxel-fax.md) and [security](zyxel-security.md)
 

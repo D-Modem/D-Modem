@@ -55,6 +55,7 @@ nav:
     - Modem relay (V.150.1): v150.md
     - The V.cvm proposal: vcvm-spec.md
     - Leased lines and dry pairs: leased.md
+    - The speaker of the modem: speaker.md
     - ZyXEL security and call back: zyxel-security.md
     - ZyXEL fax mode (class 6): zyxel-fax.md
   - Phone systems:

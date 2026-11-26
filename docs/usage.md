@@ -53,6 +53,13 @@ By default (`AT+MS=92`), the modem negotiates the best common modulation with V.
     at+ms=132,0,4800,9600 
     OK
 
+## The speaker
+
+`--speaker=<device>` sends the audio of the call to a sound device, as
+the speaker of a hardware modem does. `ATM` and `ATL` control it. For
+example, `dmodemd --speaker=default`. Refer to
+[The speaker of the modem](speaker.md).
+
 ## Fax
 dmodemd is a class 1 fax modem (`AT+FCLASS=1`). It is also a class 2 and 2.0
 fax modem (`AT+FCLASS=2`, `AT+FCLASS=2.0`, T.32). In class 2 and 2.0, the modem runs T.30, and the

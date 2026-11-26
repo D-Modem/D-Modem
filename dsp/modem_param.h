@@ -161,6 +161,9 @@ enum MODEM_PARAMETER_NAMES {
 				      the channels around in the call:
 				      the pump turns at each new one (0
 				      or -1: never) */
+	MDMPRM_DIAL_DONE    = 80,  /* set: call progress has dialled the
+				      whole number (the dial string's end;
+				      not a ';'): ATM3's speaker on */
 };
 
 /*

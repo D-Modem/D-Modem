@@ -511,6 +511,7 @@ float CallProgPump::dial_sample()
 		ch = dial[dial_pos];
 		if (!ch) {
 			pulse_dialling_now(0);
+			modem_set_param(modem, MDMPRM_DIAL_DONE, 1);
 			set_state(CP_WAIT_ANSWER);
 			return 0;
 		}
