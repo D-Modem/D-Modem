@@ -2195,17 +2195,21 @@ directions (the modem sends it in its \std{MP} sequences).
 202 & B202, BELL202 & Bell 202 & \std{1200} bit/s \std{FSK} in the two directions, 4-wire leased. \\ \hline
 208 & B208, BELL208 & Bell 208 & \std{4800} bit/s 8-phase \std{DPSK}, 4-wire leased. \\ \hline
 34 & V34 & \std{ITU} \std{V.34} & \std{2400} to \std{33600} bit/s, after \std{V.8}. \\ \hline
-90 & V90 & \std{ITU} \std{V.90} & As the digital modem, after \std{V.8}. \\ \hline
+90 & V90 & \std{ITU} \std{V.90} & After \std{V.8}.  On a digital line, the digital
+  modem or the analogue modem (\std{V.8} selects the end).  On an analogue line,
+  the analogue modem. \\ \hline
 91 & V91 & \std{ITU} \std{V.91} & Two digital modems, after \std{V.8}. \\ \hline
 92 & V92 & \std{ITU} \std{V.92} & \std{V.90} with quick connect, \std{PCM} upstream and
   modem-on-hold (\emph{default}). \\ \hline
-56 & K56 & K56flex & After \std{V.8 bis} and \std{V.8}.  On a digital line, the modem is the
-  server: it answers a K56flex modem with K56flex, and other modems with \std{V.90}.
-  On an analogue line, it is the analogue modem: it calls with K56flex when the
-  server answers with K56flex, and with \std{V.90} when not. \\ \hline
-57 & X2 & USRobotics x2 & On a digital line, the modem is the server: it answers an
-  x2 modem with x2, and other modems with \std{V.34}.  On an analogue line, it is
-  the client: it calls an x2 server with x2. \\ \hline
+56 & K56 & K56flex & After \std{V.8 bis} and \std{V.8}.  When it answers on a digital
+  line, the modem is the server: it answers a K56flex modem with K56flex, and other
+  modems with \std{V.90}.  When it calls (on an analogue line or a digital line), it
+  is the analogue modem: it calls with K56flex when the server answers with K56flex,
+  and with \std{V.90} when not. \\ \hline
+57 & X2 & USRobotics x2 & When it answers on a digital line, the modem is the server:
+  it answers an x2 modem with x2, and other modems with \std{V.34}.  When it calls
+  (on an analogue line or a digital line), it is the client: it calls an x2 server
+  with x2. \\ \hline
 150 & VCVM & \std{V.cvm} & Data on mobile speech paths, \std{175} to \std{3500}
   bit/s, after \std{V.8} (\cmdl[plusCVM]{+CVM}). \\ \hline
 200 & VWB & \std{V.wb} & Wideband \std{DMT} on a dry pair, at 48000 Hz or more,
@@ -2297,7 +2301,9 @@ a \std{G.711} VoIP line), on an 8000 Hz \std{G.711} line.  Analogue
 \std{V.90} and \std{V.92} modems that call can connect at up to
 \std{56000} bit/s downstream.  90 and 92 also offer \std{V.91}, which two
 digital modems use, and \std{V.34} for the other modems.  On a line at a
-different sample rate, they are \std{V.34}.  With automode, \std{V.8}
+different sample rate, they are \std{V.34}.  On a digital line, they are
+also available as the \emph{analogue} modem (refer to
+\hyperref[sec:digitalclient]{the client on a digital line}).  With automode, \std{V.8}
 and the \std{V.34} modem change to \std{V.32bis} (and its \std{V.22bis}
 and \std{V.22}) for a modem without \std{V.34}.  For a modem without
 \std{V.8}, the answering modem tries \std{V.23} and Bell 103.
@@ -2308,6 +2314,23 @@ modem is the analogue end of the call.  \std{V.90} and \std{V.92} operate
 as the analogue modem with a \std{V.90} or \std{V.92} server (at 9600~Hz.
 Refer to \texttt{docs/hardware.md}).  \std{V.91} and \cmd{CLEAR} must
 have a digital line, thus they operate as \std{V.34}.
+
+\paragraph{The Client on a Digital Line.}\label{sec:digitalclient}  On a
+digital line (\std{SIP}, or the line of a telephone system), the modem
+can also be the analogue end of the call, with no modem hardware.  It
+calls the 56k server of a provider with \std{V.92}, \std{V.90} (90 and
+92), K56flex (56) or x2 (57).  \std{V.8} selects the end:
+\begin{itemize}
+\item Against a server, the modem is the analogue modem.
+\item Against an analogue modem, the modem is the digital modem.
+\item Against another D-Modem on a digital line, the two modems use
+  \std{V.91}.
+\item If the two ends can be the two ends and \std{V.91} is not
+  available, the calling modem is the analogue modem.
+\end{itemize}
+The path must be \std{G.711} from end to end, with no transcoding.  The
+quick connect of \std{V.92} is not used as the analogue modem on a
+digital line.  Refer to \texttt{docs/dsp/sip-client.md}.
 
 \paragraph{V.cvm.}  \cmd{VCVM} is the proposed Recommendation of
 \cmd{docs/v\_cvm.pdf}.  It is for calls whose speech path uses a mobile
@@ -4985,6 +5008,10 @@ then makes a new pty (\cmd{/dev/ttyDM0} follows it).
 \item K56flex (\cmdl[plusMS]{+MS=56}) is tested against the Motorola SM56
   soft modem and against this modem.  It is not tested against a hardware
   K56flex modem.  Refer to \texttt{docs/dsp/k56flex.md}.
+\item The analogue modem on a digital line (\std{SIP},
+  \hyperref[sec:digitalclient]{the client on a digital line}) is tested
+  only against this modem, on a simulated network.  It is not tested
+  against the server of a real provider.
 \end{itemize}
 
 \subsection{Not Available}
