@@ -640,6 +640,9 @@ template <class P>
 struct V34V8 {
 	s16 v8_low;             /* V.8 for this low speed modulation alone
 				   (rt->v8_for), else back to it */
+	s16 v8_only;            /* automode off (S31=0, +MS=<mod>,0): the
+				   CM and the JM have the modulation of +MS
+				   alone, no slower one */
 	s16 v8_dp;              /* the modulation agreed in V.8 when not
 				   V.34 (0: none in common) */
 	/* ANSam and V.8's transmitter */
@@ -1499,6 +1502,9 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 		if (v8_low && k == 2)
 			c = 0x10 | (v8_low == DP_V23 ? V8_MOD3_V23 :
 				    v8_low == DP_V21 ? V8_MOD3_V21 : 0);
+		/* automode off: no V.32bis, V.22bis, V.23 or V.21 */
+		if (v8_only && !v8_low && !self.vcvm && !self.hdx && k >= 1)
+			c = 0x10;
 		/* V.cvm: V.22 and V.21 its fallback, nothing above V.22
 		   (8.3/V.cvm: a legacy DCE then takes V.22 at once) */
 		if (self.vcvm && k == 0)
@@ -7977,6 +7983,28 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	/* (x2's client: V.8 for V.34 alone, on a digital line too) */
 	if (x2c)
 		v90a = v90 = v91 = v92 = 0;
+	/* the PCM end on a digital line (S117): 0 automatic, 1 the digital
+	   modem (the server) only, 2 the analogue modem (the client) only.
+	   A caller sends only the mode that +MS selects: V.90 or V.92 (in
+	   automatic mode its two ends, V.8 then selects one), and V.91
+	   only with +MS=V91.  A server that sees the V.91 bit in a CM
+	   selects V.91 (#176).  An answerer in automatic mode offers the
+	   two ends and V.91, and the CM selects one.  S117=1 or 2 is one
+	   end of V.90 alone, without V.91 */
+	/* automode off (on any line): the K56flex and the x2 client have
+	   no V.90 to fall back to */
+	v8_only = !modem_get_sreg(m, SREG_AUTOMODE);
+	if (v8_only && (k56c || x2c))
+		v90a = 0;
+	if (digital_line && id != DP_V91) {
+		s16 end = static_cast<s16>(modem_get_sreg(m, SREG_PCM_END));
+		if (end == 1)
+			v90a = v91 = 0;
+		else if (end == 2)
+			v90 = v91 = 0;
+		else if (caller_)
+			v91 = 0;
+	}
 	v90a_on = v90a_rx = 0;
 	v92a = v90a && id == DP_V92 &&
 		env_on("DSP_V92A");

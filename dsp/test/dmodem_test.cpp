@@ -464,7 +464,7 @@ INSTANTIATE_TEST_SUITE_P(V91, DmodemPair, testing::Values(
 	v91("v91_pad", "+MS=91", NET_PAD, 60000),
 	v91("v91_xlaw", "+MS=91", NET_XLAW, 60000),
 	alaw(v91("v91_alaw", "+MS=91", NET_G711, 62666)),
-	bulk(v91("v91_bulk", "+MS=92", NET_G711, 62666, 60), 200000),
+	bulk(v91("v91_bulk", "+MS=91", NET_G711, 62666, 60), 200000),
 	v91("ms56", "+MS=56", NET_G711, 0),
 	v91("v91_retrain", "+MS=91", NET_G711, 0, 30,
 	    { { "DSP_V91_RETRAIN", "3000c" } }),

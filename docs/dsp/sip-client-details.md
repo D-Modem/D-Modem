@@ -35,35 +35,59 @@ and thus does not supply these receivers.
 
 ## The two ends in V.8
 
-On a digital line, the CM and the JM of D-Modem have the two bits of V.90
-(analogue modem and digital modem) and the bit of V.91. Thus, the remote
-modem can select the end of D-Modem. These rules give the result
-(`v8_v90()`, `v8_v90a()`, `v8_v91()`, `v8_v90_both()`):
+On a digital line, the PCM bits of the CM and the JM of D-Modem come from
+`AT+MS` and S117 (`SREG_PCM_END`, in `V34Pump::start()`):
+
+| Modem | `AT+MS` | S117 | PCM bits |
+|---|---|---|---|
+| Caller | `90`, `92` | 0 | digital, analogue |
+| Caller | `90`, `92` | 1 | digital |
+| Caller | `90`, `92` | 2 | analogue |
+| Caller | `V91` | any | V.91 |
+| Answerer | `90`, `92` | 0 | digital, analogue, V.91 |
+| Answerer | `90`, `92` | 1 | digital |
+| Answerer | `90`, `92` | 2 | analogue |
+| Answerer | `V91` | any | V.91 |
+
+The digital network access bit goes in the CM only with the digital bit
+or the V.91 bit. The JM gives only the bits that are also in the CM.
+
+Before this change, the caller also sent the V.91 bit. A server that has
+V.91 then selected V.91, and the call failed (issue #176).
+
+These rules give the result (`v8_v90()`, `v8_v90a()`, `v8_v91()`,
+`v8_v90_both()`):
 
 1. **V.91**, if the two modems offer it, and the remote modem is not only an
-   analogue modem. (A modem that also offers the digital end is on a digital
-   line, as V.91 must have.)
+   analogue modem.
 2. If not, **we are the digital modem** if the remote modem offers the
    analogue end.
 3. If not, **we are the analogue modem** if the remote modem offers the
    digital end.
 4. If the two modems offer the two ends, the **caller is the analogue
-   modem**. This is the usual case: a customer calls a provider.
+   modem**.
 
 | Remote modem | Its PCM bits | Result |
 |---|---|---|
-| Server of a provider | digital | D-Modem is the client (V.92 or V.90) |
+| Server of a provider | digital (and V.91) | D-Modem is the client (V.92 or V.90) |
 | Analogue 56k modem | analogue | D-Modem is the server |
-| D-Modem on a digital line | digital, analogue, V.91 | V.91 |
-| D-Modem with `DSP_V91=0` | digital, analogue | the caller is the client |
+| D-Modem that calls with `AT+MS=V91` | V.91 | V.91 |
+| D-Modem that calls (S117=0) | digital, analogue | D-Modem is the server |
+| D-Modem that calls with S117=1 | digital | D-Modem is the client |
 | D-Modem on modem hardware | analogue | D-Modem is the server |
+
+### Automode off
+
+With automode off (`ATN0`, `AT+MS=<mod>,0`), the CM and the JM give only
+the modulation of `AT+MS`, on all lines. The modulation octets then have
+no V.32bis, V.22bis, V.23 or V.21 (`v8_only`). The K56flex client and the
+x2 client also do not offer V.90.
 
 ### Quick connect
 
 The quick connect of V.92 (QC1a) as the client is off on a digital line,
-if `DSP_V92A_QC` does not set it. A D-Modem that answers would accept the
-quick connect, and the call would then be V.92 and not V.91. Without the
-quick connect, the start of a call to a provider is about 1 s longer.
+if `DSP_V92A_QC` does not set it. Without the quick connect, the start of a
+call to a provider is about 1 s longer.
 
 ### K56flex and x2
 
@@ -160,7 +184,12 @@ modem without V.91, as the server of a provider).
 | Test | What it covers |
 |---|---|
 | `open_v92a_8k` | V.92 PCM upstream on an analogue line at 8000 Hz |
-| `open_digital_v91` | two D-Modems on digital lines: V.91 |
+| `open_digital_v91` | two D-Modems on digital lines, `AT+MS=V91`: V.91 |
+| `open_digital_auto` | a caller against an answerer with V.91 and the two ends: V.92, the caller is the client (#176) |
+| `open_digital_s117_digital` | a caller with S117=1: the caller is the server |
+| `open_digital_s117_analog` | two modems with S117=2: no PCM, V.34 |
+| `open_34_automode_off` | `AT+MS=34,0`: V.34 alone in the CM and the JM |
+| `open_digital_k56flex_automode_off` | `AT+MS=56,0`: K56flex, with no V.90 in the CM |
 | `open_digital_v92a` | the V.92 client against a server only |
 | `open_digital_v92a_alaw` | the same on an A-law network |
 | `open_digital_v90a` | the V.90 client (`AT+MS=90`) |

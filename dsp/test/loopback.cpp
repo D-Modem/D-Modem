@@ -272,7 +272,7 @@ static const LoopbackConfig *run_cfg;
 /* the S-registers the pumps read: the run's own (LoopbackConfig's
    side_sregs, then sregs),
    else 50 s for the handshake, 1.4 s of carrier loss, 95 ms DTMF and the
-   dial timings, +MS's modulation for PEP (the call progress listens for
+   dial timings, automode on (S31's default), +MS's modulation for PEP (the call progress listens for
    its tones); 0 for all others (blind dialling among them) */
 int modem_get_sreg(struct modem *m, unsigned int num)
 {
@@ -285,6 +285,8 @@ int modem_get_sreg(struct modem *m, unsigned int num)
 			if ((unsigned)r.first == num)
 				return r.second;
 	switch (num) {
+	case SREG_AUTOMODE:
+		return 1;
 	case SREG_DIAL_TONE_WAIT_TIME:
 		return 5;
 	case SREG_WAIT_CARRIER_AFTER_DIAL:
