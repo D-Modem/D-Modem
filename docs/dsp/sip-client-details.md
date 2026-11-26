@@ -40,8 +40,9 @@ On a digital line, the PCM bits of the CM and the JM of D-Modem come from
 
 | Modem | `AT+MS` | S117 | PCM bits |
 |---|---|---|---|
-| Caller | `90`, `92` | 0 or 2 | analogue |
+| Caller | `90`, `92` | 0 | digital, analogue |
 | Caller | `90`, `92` | 1 | digital |
+| Caller | `90`, `92` | 2 | analogue |
 | Caller | `V91` | any | V.91 |
 | Answerer | `90`, `92` | 0 | digital, analogue, V.91 |
 | Answerer | `90`, `92` | 1 | digital |
@@ -51,9 +52,8 @@ On a digital line, the PCM bits of the CM and the JM of D-Modem come from
 The digital network access bit goes in the CM only with the digital bit
 or the V.91 bit. The JM gives only the bits that are also in the CM.
 
-Before this change, the caller also sent the digital bit and the V.91 bit.
-A server that has V.91 then took the caller for a digital modem, and the
-call failed (issue #176).
+Before this change, the caller also sent the V.91 bit. A server that has
+V.91 then selected V.91, and the call failed (issue #176).
 
 These rules give the result (`v8_v90()`, `v8_v90a()`, `v8_v91()`,
 `v8_v90_both()`):
@@ -72,8 +72,16 @@ These rules give the result (`v8_v90()`, `v8_v90a()`, `v8_v91()`,
 | Server of a provider | digital (and V.91) | D-Modem is the client (V.92 or V.90) |
 | Analogue 56k modem | analogue | D-Modem is the server |
 | D-Modem that calls with `AT+MS=V91` | V.91 | V.91 |
+| D-Modem that calls (S117=0) | digital, analogue | D-Modem is the server |
 | D-Modem that calls with S117=1 | digital | D-Modem is the client |
 | D-Modem on modem hardware | analogue | D-Modem is the server |
+
+### Automode off
+
+With automode off (`ATN0`, `AT+MS=<mod>,0`), the CM and the JM give only
+the modulation of `AT+MS`, on all lines. The modulation octets then have
+no V.32bis, V.22bis, V.23 or V.21 (`v8_only`). The K56flex client and the
+x2 client also do not offer V.90.
 
 ### Quick connect
 
@@ -177,9 +185,11 @@ modem without V.91, as the server of a provider).
 |---|---|
 | `open_v92a_8k` | V.92 PCM upstream on an analogue line at 8000 Hz |
 | `open_digital_v91` | two D-Modems on digital lines, `AT+MS=V91`: V.91 |
-| `open_digital_auto` | a caller against an answerer with V.91 and the two ends: V.92 (#176) |
+| `open_digital_auto` | a caller against an answerer with V.91 and the two ends: V.92, the caller is the client (#176) |
 | `open_digital_s117_digital` | a caller with S117=1: the caller is the server |
-| `open_digital_s117_analog` | an answerer with S117=2: no PCM, V.34 |
+| `open_digital_s117_analog` | two modems with S117=2: no PCM, V.34 |
+| `open_34_automode_off` | `AT+MS=34,0`: V.34 alone in the CM and the JM |
+| `open_digital_k56flex_automode_off` | `AT+MS=56,0`: K56flex, with no V.90 in the CM |
 | `open_digital_v92a` | the V.92 client against a server only |
 | `open_digital_v92a_alaw` | the same on an A-law network |
 | `open_digital_v90a` | the V.90 client (`AT+MS=90`) |

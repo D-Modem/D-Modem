@@ -14,8 +14,10 @@ this. It calls the 56k server of an internet provider with these standards:
 The modem also stays the **digital end** (the server) on the same line.
 When D-Modem calls, its V.8 CM gives only the mode that `AT+MS` selects:
 
-- With `AT+MS=90` or `AT+MS=92`, the CM gives only the analogue end. Thus,
-  the server of a provider cannot select V.91 by mistake.
+- With `AT+MS=90` or `AT+MS=92`, the CM gives the two ends of V.90, but
+  not V.91. Thus, the server of a provider cannot select V.91 by mistake.
+  Against a server, D-Modem is the client. Against an analogue modem,
+  D-Modem is the server.
 - With `AT+MS=V91`, the CM gives only V.91 (up to 62666 bit/s in the two
   directions against another D-Modem).
 
@@ -30,7 +32,7 @@ S117 selects the end on a digital line:
 
 | S117 | End |
 |---|---|
-| 0 (the default) | Automatic: the analogue end when the modem calls, the two ends when it answers |
+| 0 (the default) | Automatic: the two ends (and V.91 only when the modem answers) |
 | 1 | The digital end (the server) only |
 | 2 | The analogue end (the client) only |
 
@@ -59,6 +61,8 @@ restart of the jitter buffer of dmodemd, with no retrain.
 - `DSP_V92A_QC=1`: use the quick connect of V.92 as the client on a SIP
   line. It is off by default there.
 - `DSP_K56A=0`, `DSP_X2C=0`: no K56flex or x2 client.
+- `ATN0` or `AT+MS=<mod>,0` (automode off): the CM gives only the selected
+  modulation, on all lines, with no slower modulation as a fallback.
 
 For the technical details, refer to
 [the technical details](sip-client-details.md).
