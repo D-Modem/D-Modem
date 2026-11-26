@@ -65,6 +65,7 @@
 #include "run_loop.h"
 #include "sip.h"
 #include "sip_modem.h"
+#include "speaker_out.h"
 #include "reinit.h"
 
 #define ERR(fmt, ...) fprintf(stderr, "error: " fmt, ##__VA_ARGS__)
@@ -260,6 +261,8 @@ int main(int argc, char *argv[])
 	dcore::Options mo;
 	/* (before the modems: they may close its voice channel as they go) */
 	std::unique_ptr<dmd::DsvdAudio> dsvd;
+	/* (and the speaker: they turn it off as they go) */
+	dmd::SpeakerOut speaker;
 	sip::Config cfg;
 	const char *name, *slash;
 	s16 ret;
@@ -297,6 +300,12 @@ int main(int argc, char *argv[])
 	if (opt.dsvd_audio) {
 		dsvd.reset(new dmd::DsvdAudio(opt.dsvd_audio));
 		mo.dsvd = dsvd.get();
+	}
+	/* the speaker's device opened as root (its group may be audio) */
+	if (opt.speaker) {
+		if (!speaker.open(opt.speaker))
+			exit(-1);
+		mo.speaker = &speaker;
 	}
 	/* the modem: on the ALSA line (the core on it alone), or on SIP */
 	std::unique_ptr<dmd::SipModem> sm;

@@ -519,7 +519,12 @@ a BSD licence). The code is in `frontend/dmodemd/usb_line.cpp`:
   volume, and off at other times:
   - ATM1 (the default): on from dialling or answering until the CONNECT;
   - ATM2: always on;
+  - ATM3: on after the modem dials (or from the answer) until the
+    CONNECT;
   - ATM0, or ATL0: never on.
+
+  To hear the audio of the call, use `--speaker` with or without the
+  buzzer ([speaker.md](speaker.md)).
 
   The Windows driver of Smart Link does this in `SetSpeakerVolume` with
   `Options.Buzzer` (off in the INF of Creative). A buzzer has no volume,

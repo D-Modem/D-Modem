@@ -197,13 +197,16 @@ struct Line final : public dcore::Host {
 	}
 };
 
-/* a modem on l at 8000 Hz, in country (NULL: USA) */
-static Modem *make(Line &l, const char *name, const char *country = nullptr)
+/* a modem on l at 8000 Hz, in country (NULL: USA), with the program's
+   speaker spk (NULL: none) */
+static Modem *make(Line &l, const char *name, const char *country = nullptr,
+		   dcore::SpeakerPath *spk = nullptr)
 {
 	dcore::Options o;
 	o.name = name;
 	o.rate = 8000;
 	o.country = country;
+	o.speaker = spk;
 	return new Modem(l, o);
 }
 
@@ -1146,10 +1149,12 @@ struct Pair {
 	std::vector<int16_t> ia, ib, oa, ob;
 	std::string got_a, got_b;       /* what each DTE received */
 	static const int BLOCK = 160;
-	/* two modems, ATE0X3 and the modulation command ms */
-	Pair(const char *ms) {
-		a = make(la, "A");
-		b = make(lb, "B");
+	/* two modems, ATE0X3 and the modulation command ms; the
+	   program's speakers sa and sb (NULL: none) */
+	Pair(const char *ms, dcore::SpeakerPath *sa = nullptr,
+	     dcore::SpeakerPath *sb = nullptr) {
+		a = make(la, "A", nullptr, sa);
+		b = make(lb, "B", nullptr, sb);
 		ia.assign(BLOCK, 0);
 		ib = oa = ob = ia;
 		std::string s = std::string("ATE0X3") + ms + "\r";
@@ -1771,6 +1776,105 @@ TEST(Core, Mnp10Climbs)
 	EXPECT_TRUE(p.a->carrier() && p.b->carrier());
 	dcore::log_level = 0;
 	dcore::log_set_hook(nullptr);
+}
+
+/* the program's speaker (Options::speaker): the volumes it was told,
+   the rate, and the samples it had (what came, what was sent) */
+struct Speaker final : public dcore::SpeakerPath {
+	std::vector<int> levels;
+	s32 rate = 0;
+	long samples = 0;
+	double tx_pow = 0;
+	/* kept */
+	void volume(s16 level, s32 r) override {
+		levels.push_back(level);
+		rate = r;
+	}
+	/* counted, tx's power added up */
+	void audio(const s16 *, const s16 *tx, s32 n) override {
+		samples += n;
+		for (s32 i = 0; i < n; i++)
+			tx_pow += static_cast<double>(tx[i]) * tx[i];
+	}
+};
+
+/* the two modems of p online (V.22's handshake) */
+static bool online(Pair &p)
+{
+	return p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 20000);
+}
+
+/* ATM1 (the default): on at ATL's volume while the call starts, both
+   ends, the line's samples meanwhile; off when it is connected, and
+   no samples after.  The Host is told too */
+TEST(Core, SpeakerUntilConnect)
+{
+	Speaker sa, sb;
+	Pair p("+MS=V22", &sa, &sb);
+	p.a->dte_input("ATL2\r", 5);
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(online(p));
+	EXPECT_EQ(sa.levels, (std::vector<int>{ 2, 0 }));
+	EXPECT_EQ(sb.levels, (std::vector<int>{ 3, 0 }));
+	EXPECT_EQ(sa.rate, 8000);
+	EXPECT_EQ(p.la.volume, 0);
+	EXPECT_GT(sa.samples, 8000);            /* the handshake's, 1 s+ */
+	EXPECT_GT(sb.tx_pow, 0.0);              /* the answer tone */
+	long heard = sa.samples;
+	p.run_until([](Pair &) { return false; }, 1000);
+	EXPECT_EQ(sa.samples, heard);
+}
+
+/* ATM3: not while the number is dialled (an analogue line's DTMF),
+   then on until the call is connected; ATM1 at once */
+TEST(Core, SpeakerAfterDialling)
+{
+	for (const char *m : { "ATM3\r", "ATM1\r" }) {
+		SCOPED_TRACE(m);
+		Speaker sa;
+		Pair p("+MS=V22", &sa);
+		p.la.analog = true;
+		p.a->dte_input(m, 5);
+		EXPECT_EQ(p.b->answer(), 0);
+		EXPECT_EQ(p.a->dial("123"), 0);
+		p.step();
+		if (m[3] == '3') {
+			EXPECT_TRUE(sa.levels.empty());
+		} else {
+			EXPECT_EQ(sa.levels, (std::vector<int>{ 3 }));
+		}
+		/* (three digits: well over 300 ms) */
+		p.run_until([](Pair &) { return false; }, 200);
+		if (m[3] == '3') {
+			EXPECT_TRUE(sa.levels.empty());
+		}
+		ASSERT_TRUE(online(p));
+		EXPECT_EQ(sa.levels, (std::vector<int>{ 3, 0 }));
+		EXPECT_GT(sa.samples, 0);
+	}
+}
+
+/* ATM2: on at once, and through the call; ATM0: never on */
+TEST(Core, SpeakerAlwaysAndNever)
+{
+	Speaker sa, sb;
+	Pair p("+MS=V22", &sa, &sb);
+	p.a->dte_input("ATM2\r", 5);
+	p.b->dte_input("ATM0\r", 5);
+	EXPECT_EQ(sa.levels, (std::vector<int>{ 3 }));
+	EXPECT_TRUE(sb.levels.empty());
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(online(p));
+	long heard = sa.samples;
+	p.run_until([](Pair &) { return false; }, 500);
+	EXPECT_GT(sa.samples, heard);
+	EXPECT_EQ(sa.levels, (std::vector<int>{ 3 }));
+	EXPECT_TRUE(sb.levels.empty());
+	EXPECT_EQ(sb.samples, 0);
 }
 
 /* +MS's highest rate holds on V.34 as well (each MP asks for no more,

@@ -371,6 +371,7 @@ Modem::Modem(Host &host, const Options &opt)
 	handle_->self = this;
 	fax_detect_ = opt.fax_detect;
 	dsvd_path_ = opt.dsvd;
+	speaker_path_ = opt.speaker;
 	cng_ = new dsp::CngDetect();
 	cng_->init(srate_);
 	link_owner_ = new LinkOwner(*this);
@@ -741,8 +742,11 @@ s16 Modem::start_call(bool keep_line)
 	dsp::zero(dp_stats_);
 	setup_config();
 	set_state(DP_ESTAB);
-	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
-		host_.speaker(*this, sregs_[SREG_SPEAKER_VOLUME]);
+	/* ATM1 on now; ATM3 on now for an answer, for a call we dial
+	   when its number is dialled (MDMPRM_DIAL_DONE) */
+	if (sregs_[SREG_SPEAKER_CONTROL] == 1 ||
+	    (sregs_[SREG_SPEAKER_CONTROL] == 3 && !caller_))
+		set_speaker(sregs_[SREG_SPEAKER_VOLUME]);
 	/* (loop 3 keeps the line as it is: the pump hears itself) */
 	if (!loop3_ && set_hook(MODEM_HOOK_OFF))
 		return fail("cannot go off hook");
@@ -822,7 +826,7 @@ s16 Modem::stop_call()
 	}
 	set_hook(MODEM_HOOK_ON);
 	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
-		host_.speaker(*this, 0);
+		set_speaker(0);
 	caller_ = false;
 	dialed_ = false;
 	voice_held_ = false;
@@ -1578,7 +1582,7 @@ void Modem::update_status(Status s)
 			dp_stats_.renegs_remote;
 		sync_rate_due_ = false;
 		if (sregs_[SREG_SPEAKER_CONTROL] & 1)
-			host_.speaker(*this, 0);
+			set_speaker(0);
 		break;
 	case ST_EC_RELEASE:
 	case ST_EC_ERROR:
@@ -2145,6 +2149,8 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 	log_data(this, LOG_RX_SAMPLES, scratch_, 2 * n);
 	run(scratch_, out, n);
 	log_data(this, LOG_TX_SAMPLES, out, 2 * n);
+	if (speaker_on_ > 0 && speaker_path_)
+		speaker_path_->audio(in, out, n);
 	if (stats_.connected && !stats_.ended && !stats_.fax &&
 	    (state_ == ONLINE || state_ == COMMAND_ONLINE)) {
 		for (s32 i = 0; i < n; i++) {
@@ -3010,8 +3016,21 @@ s16 Modem::set_mode(enum MODEM_MODE mode)
 /* ATL, ATM: the speaker on at S30 with ATM2, else off */
 void Modem::update_speaker()
 {
-	host_.speaker(*this, sregs_[SREG_SPEAKER_CONTROL] == 2 ?
-		      sregs_[SREG_SPEAKER_VOLUME] : 0);
+	set_speaker(sregs_[SREG_SPEAKER_CONTROL] == 2 ?
+		    sregs_[SREG_SPEAKER_VOLUME] : 0);
+}
+
+/* the speaker at volume (0 off): the Host told, and the program's
+   speaker (Options::speaker) when the volume changes, which then has
+   the line's samples in process() */
+void Modem::set_speaker(s16 volume)
+{
+	const s16 was = speaker_on_;
+
+	speaker_on_ = volume;
+	host_.speaker(*this, volume);
+	if (speaker_path_ && volume != was)
+		speaker_path_->volume(volume, srate_);
 }
 
 /* the network's G.711 law, for this call's pumps and the next ones' */

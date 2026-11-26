@@ -2013,10 +2013,15 @@ RING
 \section{Speaker, Line and Country}\label{sec:line}
 
 \begin{command}{L}{L\p{n}}{Speaker Volume}
-This command sets the volume of the speaker (\sreg{30}).  A \std{SIP} line
-has no speaker: the modem only keeps the setting.  A SmartUSB56 with
-\texttt{dmodemd --usb-buzzer} operates its buzzer while the speaker is
-on, at all volumes except \cmdl[L]{L0}.
+This command sets the volume of the speaker (\sreg{30}).  With
+\texttt{dmodemd --speaker=}\p{device}, the speaker is a sound device of
+the computer, on all lines (\std{SIP}, \texttt{-a}, \texttt{--usb},
+\texttt{--misdn}): Linux an ALSA PCM, Windows a waveOut device, Haiku
+\texttt{default}.  You hear the signal that comes from the line and the
+signal that the modem sends.  Without \texttt{--speaker}, the modem only
+keeps the setting.  A SmartUSB56 with \texttt{dmodemd --usb-buzzer}
+operates its buzzer while the speaker is on, at all volumes except
+\cmdl[L]{L0}.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--3.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -2024,14 +2029,15 @@ on, at all volumes except \cmdl[L]{L0}.
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{L\p{n} Commands}
   {\thd{Command} & \thd{Function}}
 L0 & Off. \\ \hline
-L1 & Low volume. \\ \hline
-L2 & Medium volume. \\ \hline
-L3 & High volume (\emph{default}). \\ \hline
+L1 & Low volume ($-12$~dB). \\ \hline
+L2 & Medium volume ($-6$~dB). \\ \hline
+L3 & High volume, 0~dB (\emph{default}). \\ \hline
 \end{vtable}
 \end{command}
 
 \begin{command}{M}{M\p{n}}{Speaker Control}
-This command sets when the speaker is on (\sreg{29}).
+This command sets when the speaker is on (\sreg{29}).  Refer to
+\cmdl[L]{L} for the speaker of \texttt{dmodemd}.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--3.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -2041,7 +2047,10 @@ This command sets when the speaker is on (\sreg{29}).
 M0 & Speaker always off. \\ \hline
 M1 & Speaker on until the call is connected (\emph{default}). \\ \hline
 M2 & Speaker always on. \\ \hline
-M3 & As \cmdl[M]{M1} (on other modems: not during dialing). \\ \hline
+M3 & Speaker off while the modem dials, then on until the call is
+  connected.  When the modem answers, as \cmdl[M]{M1}.  On \std{SIP}
+  and ISDN, the modem dials no digits: the speaker comes on at the start
+  of the call. \\ \hline
 \end{vtable}
 \end{command}
 

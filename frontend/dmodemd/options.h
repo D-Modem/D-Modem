@@ -56,6 +56,9 @@ struct Options {
 	bool usb_rhom = false;
 	/* the SmartUSB56's buzzer as the speaker (--usb-buzzer) */
 	bool usb_buzzer = false;
+	/* the speaker on a sound device (--speaker, speaker_out.h): its
+	   name; NULL: none */
+	const char *speaker = nullptr;
 	/* a pico-serial WB's transmit level and hybrid input gain, dB
 	   (--usb-wb-tx-gain, --usb-wb-rx-gain) */
 	double usb_wb_tx_gain = 0, usb_wb_rx_gain = 0;

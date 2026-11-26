@@ -54,6 +54,28 @@ if(DMODEM_DMODEMD)
 		POSITION_INDEPENDENT_CODE ON)
 	target_link_libraries(dmodem_sip PUBLIC libre ${DMODEM_LIBM} Threads::Threads)
 
+	# ALSA (libasound2-dev), for -a and --speaker
+	find_package(PkgConfig QUIET)
+	if(PkgConfig_FOUND AND NOT WIN32)
+		pkg_check_modules(ALSA QUIET IMPORTED_TARGET alsa)
+	endif()
+	# dmodem_speaker: the modem's speaker on a sound device (--speaker,
+	# speaker_out.cpp): ALSA's PCM on Linux, waveOut (winmm) on
+	# Windows, the Media Kit's BSoundPlayer on Haiku; elsewhere
+	# --speaker is refused
+	add_library(dmodem_speaker STATIC speaker_out.cpp)
+	target_link_libraries(dmodem_speaker PUBLIC dmodem_core)
+	if(ALSA_FOUND)
+		target_compile_definitions(dmodem_speaker PRIVATE
+			DMODEM_SPEAKER_ALSA)
+		target_link_libraries(dmodem_speaker PUBLIC PkgConfig::ALSA)
+	elseif(WIN32)
+		target_link_libraries(dmodem_speaker PUBLIC winmm)
+	elseif(CMAKE_SYSTEM_NAME STREQUAL "Haiku")
+		target_link_libraries(dmodem_speaker PUBLIC media be)
+	endif()
+	dmodem_flags(dmodem_speaker EXTRA)
+
 	# the modem daemon: the modem on a SIP line (or with -a an ALSA
 	# one, below) and a pty
 	if(WIN32)
@@ -63,13 +85,13 @@ if(DMODEM_DMODEMD)
 		# the shell's Shell_NotifyIcon; dmodemd.rc its icon)
 		add_executable(dmodemd main_windows.cpp windows_tray.cpp
 			dmodemd.rc)
-		target_link_libraries(dmodemd PRIVATE dmodem_sip winmm shell32
-			user32 gdi32)
+		target_link_libraries(dmodemd PRIVATE dmodem_sip dmodem_speaker
+			winmm shell32 user32 gdi32)
 		install(TARGETS dmodemd RUNTIME
 			DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT dmodemd)
 	else()
 		add_executable(dmodemd main.cpp)
-		target_link_libraries(dmodemd PRIVATE dmodem_sip)
+		target_link_libraries(dmodemd PRIVATE dmodem_sip dmodem_speaker)
 		install(TARGETS dmodemd RUNTIME
 			DESTINATION ${CMAKE_INSTALL_SBINDIR} COMPONENT dmodemd)
 		# HD-audio modem codecs outside snd-hda-codec-si3054's list
@@ -97,7 +119,8 @@ if(DMODEM_DMODEMD)
 			${ARGN})
 		target_include_directories(dmodemd_fake_${fake} PRIVATE
 			${PROJECT_SOURCE_DIR}/dsp)
-		target_link_libraries(dmodemd_fake_${fake} PRIVATE dmodem_sip)
+		target_link_libraries(dmodemd_fake_${fake} PRIVATE dmodem_sip
+			dmodem_speaker)
 		if(WIN32)
 			# (main_windows.cpp's tray, windows_tray.cpp)
 			target_sources(dmodemd_fake_${fake} PRIVATE
@@ -127,11 +150,7 @@ if(DMODEM_DMODEMD)
 		endif()
 	endif()
 	# -a: a softmodem's codec through ALSA for the line (alsa_line.cpp),
-	# if libasound2-dev is there
-	find_package(PkgConfig QUIET)
-	if(PkgConfig_FOUND AND NOT WIN32)
-		pkg_check_modules(ALSA QUIET IMPORTED_TARGET alsa)
-	endif()
+	# if libasound2-dev is there (found above)
 	if(ALSA_FOUND)
 		target_sources(dmodemd PRIVATE alsa_line.cpp hda_codec.cpp si3054.cpp
 			cx_daa.cpp cx_country.cpp ac97_ports.cpp)

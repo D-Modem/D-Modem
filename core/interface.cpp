@@ -378,6 +378,11 @@ s32 Modem::set_param(u32 name, s32 val)
 	case MDMPRM_PULSE_DIALLING:
 		host_.pulse_dialling(*this, val != 0);
 		return 0;
+	case MDMPRM_DIAL_DONE:
+		/* ATM3: the speaker on after the dialling */
+		if (sregs_[SREG_SPEAKER_CONTROL] == 3 && caller_)
+			set_speaker(sregs_[SREG_SPEAKER_VOLUME]);
+		return 0;
 	default:
 		return -1;
 	}

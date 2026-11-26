@@ -241,6 +241,22 @@ protected:
 	~VoicePath() = default;
 };
 
+/* the modem's speaker outside the Host (Options::speaker): a program's
+   own audio device that lets the user hear the call, as ATM and ATL
+   set it (on while it dials and trains with ATM1; ATM3 not while it
+   dials; always with ATM2).  The core calls it on the line's thread */
+class SpeakerPath {
+public:
+	/* the speaker's volume as it changes: 0 off, 1 to 3 ATL's; rate,
+	   the line's samples a second */
+	virtual void volume(s16 level, s32 rate) = 0;
+	/* while it is on: n samples of the line, what came (rx) and the
+	   modem's answer (tx); it must not block */
+	virtual void audio(const s16 *rx, const s16 *tx, s32 n) = 0;
+protected:
+	~SpeakerPath() = default;
+};
+
 struct Options {
 	const char *name = "modem";     /* for the log */
 	const char *dev_name = nullptr; /* for ATI3 */
@@ -257,6 +273,9 @@ struct Options {
 	/* DSVD's voice path where the Host has none (VoicePath); NULL:
 	   none */
 	VoicePath *dsvd = nullptr;
+	/* the speaker where the Host has none of its own (SpeakerPath);
+	   NULL: none.  Host::speaker() is told all the same */
+	SpeakerPath *speaker = nullptr;
 };
 
 enum class Result {
@@ -585,6 +604,8 @@ private:
 	s16 online();
 	s16 hook(s16 state);
 	void update_speaker();
+	/* the speaker at volume (0 off): the Host's and Options::speaker */
+	void set_speaker(s16 volume);
 	s16 check_escape(const char *buf, s32 n);
 	void run(s16 *in, s16 *out, s32 n);
 	void dp_process(s16 *in, s16 *out, s32 n);
@@ -1060,6 +1081,8 @@ private:
 	enum class Adapt { Off, Detect, Data, Fax };
 	Adapt adapt_ = Adapt::Off;
 	VoicePath *dsvd_path_ = nullptr;     /* Options::dsvd */
+	SpeakerPath *speaker_path_ = nullptr; /* Options::speaker */
+	s16 speaker_on_ = 0;                 /* set_speaker()'s volume */
 	bool fax_detect_ = false;
 	bool fax_caller_ = false;
 	dsp::CngDetect *cng_ = nullptr;

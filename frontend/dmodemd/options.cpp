@@ -53,7 +53,7 @@ enum {
 	OPT_ALSA, OPT_ALSA_CTL, OPT_USB, OPT_USB_LEDS, OPT_USB_WAKE,
 	OPT_USB_HANDSET, OPT_USB_INTERNATIONAL, OPT_USB_VOICE_CODEC, OPT_USB_RHOM, OPT_USB_BUZZER,
 	OPT_USB_WB_TX_GAIN, OPT_USB_WB_RX_GAIN, OPT_MISDN, OPT_MISDN_MSN,
-	OPT_MISDN_NOFLIP, OPT_RATE,
+	OPT_MISDN_NOFLIP, OPT_RATE, OPT_SPEAKER,
 #ifndef _WIN32
 	OPT_DSVD_AUDIO,
 #endif
@@ -143,6 +143,11 @@ const Option OPTIONS[OPT_COUNT] = {
 	  "the codec's rate with -a or --usb (8000 or 9600; 48000, 96000 or "
 	  "192000 for the wideband mode, AT+MS=VWB: a pico-serial WB's "
 	  "96000 unless given)", "9600", false },
+	{ 0, "speaker", Takes::Text, true,
+	  "the modem's speaker (ATM, ATL) on a sound device: the call's "
+	  "audio; Linux an ALSA PCM (default, plughw:0), Windows a waveOut "
+	  "device (default, its number or a part of its name), Haiku "
+	  "default", "none", false },
 #ifndef _WIN32
 	{ 0, "dsvd-audio", Takes::Text, true,
 	  "DSVD's voice (AT+DSVD=1) through this command while its voice "
@@ -461,6 +466,8 @@ void CommandLine::apply(Options &opt) const
 		opt.usb_rhom = true;
 	if (o[OPT_USB_BUZZER].given)
 		opt.usb_buzzer = true;
+	if (o[OPT_SPEAKER].given)
+		opt.speaker = o[OPT_SPEAKER].value;
 	if (!wb_gain(o[OPT_USB_WB_TX_GAIN], -63.5, 24, opt.usb_wb_tx_gain) ||
 	    !wb_gain(o[OPT_USB_WB_RX_GAIN], 0, 47.5, opt.usb_wb_rx_gain))
 		exit(1);
