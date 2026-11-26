@@ -435,8 +435,11 @@ s16 V34K56<P>::k8_step(s32 c)
 			if ((k8_msg[0] & 0x0f) != K8_MSG_ACK1)
 				break;
 			k56c_on = 1;
-			/* V.8 for V.34 alone: K56flex goes on from phase 2 */
+			/* V.8 for V.34 alone: K56flex goes on from phase 2
+			   (on a digital line without the digital modem's
+			   modes too) */
 			self.v90a = self.v92a = 0;
+			self.v90 = self.v91 = self.v92 = 0;
 			DSP_DBG("v34: V.8bis ACK(1): K56flex\n");
 			self.set_state(KC8_ANS);
 		} else if (c >= ms2samples(2000, self.srate)) {

@@ -406,10 +406,13 @@ void K56Rx::data(float y)
 	unsigned char m = mags[i];
 	float a = y > 0 ? val(m) : -val(m);
 	float e = a - y;
-	adapt(k, e);
-	timing(k, y, a);
+	/* (a gap of silence: no training on it, no error counted) */
+	if (!gap.step(y, dpow)) {
+		adapt(k, e);
+		timing(k, y, a);
+		de_mse += 0.001f * (e * e - de_mse);
+	}
 	dpow += 0.001f * (a * a - dpow);
-	de_mse += 0.001f * (e * e - de_mse);
 	dy[k & 15] = y;
 	code[fpos++] = static_cast<unsigned char>((y > 0 ? 0x80 : 0) | m);
 	if (fpos < 8)

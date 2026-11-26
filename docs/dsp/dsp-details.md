@@ -121,8 +121,10 @@ V.90 is available in the two roles:
   or 92 (92 is the default). It gets 56000 bit/s down and 33600 up from a
   V.90 digital modem, and V.34 or lower from all other modems, with its
   retrains and rate renegotiations. `DSP_V90A=0` removes it (refer to
-  [V.90 analogue modem](v90a.md)). At 8000 Hz, it operates only with
-  `DSP_V90A=1`.
+  [V.90 analogue modem](v90a.md)). On an analogue line at 8000 Hz, it
+  operates only with `DSP_V90A=1`. On a digital line (SIP), it is on, and
+  V.8 selects the end (refer to
+  [The 56k client on a SIP line](sip-client-details.md)).
 
 V.92 as the analogue modem has PCM upstream (up to 48000 bit/s), quick
 connect when it calls, and modem-on-hold. `DSP_V92A_UP=0` removes PCM

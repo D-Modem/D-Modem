@@ -692,6 +692,7 @@ struct V34V8 {
 	s16 v8_choice();
 	s16 v8_handover();
 	s16 v8_back(const char *why);
+	s16 v8_v90_both();
 	s16 v8_v90();
 	s16 v8_v90a();
 	s16 v8_v91();
@@ -877,6 +878,8 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	s32 line_rate;          /* 9600, or 8000 through the converters */
 	s16 analog;             /* an analogue line: 9600 Hz, or 8000 Hz
 				   with dp_runtime_set_analog() */
+	s16 digital_line;       /* not an analogue line: 8000 Hz with the
+				   network's own codes (SIP) */
 	s16 v90;                /* offer V.90 as the digital modem */
 	s16 pcm;                /* V.90 agreed in V.8 */
 	s16 v91;                /* offer V.91 */
@@ -1118,6 +1121,7 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 	}
 	s16 handshake();
 	float pump_tx_sample();
+	float pam_sample();
 	s16 sample(float x, float *y, const float *ref);
 	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 max_frag);
 	void cleanup();
@@ -1674,31 +1678,51 @@ s16 V34V8<P>::v8_handover()
 	return self.hand_over(static_cast<enum DP_ID>(v8_dp), 0);
 }
 
-/* V.90 with us as the digital modem: both offer it */
+/* Both ends offer the two ends of V.90 (D-Modem on a digital line,
+   such as SIP, offers the two): then the caller is the analogue
+   modem, as a customer who calls a provider */
+template <class P>
+s16 V34V8<P>::v8_v90_both()
+{
+	P &self = static_cast<P &>(*this);
+	s16 c = v8_remote_cat(V8_CAT_PCM);
+	return self.v90 && self.v90a && c >= 0 &&
+		(c & V8_PCM_ANALOGUE) != 0 && (c & V8_PCM_DIGITAL) != 0;
+}
+
+/* V.90 with us as the digital modem: both offer it, V.91 not agreed,
+   and we are not the caller of two ends that offer both */
 template <class P>
 s16 V34V8<P>::v8_v90()
 {
 	P &self = static_cast<P &>(*this);
 	s16 c = v8_remote_cat(V8_CAT_PCM);
-	return self.v90 && c >= 0 && (c & V8_PCM_ANALOGUE) != 0;
+	return self.v90 && c >= 0 && (c & V8_PCM_ANALOGUE) != 0 &&
+		!v8_v91() && !(v8_v90_both() && self.caller);
 }
 
-/* V.90 with us as the analogue modem: the remote is its digital one */
+/* V.90 with us as the analogue modem: the remote is its digital one,
+   V.91 not agreed, and we are not the answerer of two ends that offer
+   both */
 template <class P>
 s16 V34V8<P>::v8_v90a()
 {
 	P &self = static_cast<P &>(*this);
 	s16 c = v8_remote_cat(V8_CAT_PCM);
-	return self.v90a && c >= 0 && (c & V8_PCM_DIGITAL) != 0;
+	return self.v90a && c >= 0 && (c & V8_PCM_DIGITAL) != 0 &&
+		!v8_v91() && !(v8_v90_both() && !self.caller);
 }
 
-/* V.91: both offer it (and the remote is not an analogue V.90 modem) */
+/* V.91: both offer it, and the remote is not an analogue V.90 modem
+   alone (one that also offers the digital end is on a digital line,
+   as V.91 needs) */
 template <class P>
 s16 V34V8<P>::v8_v91()
 {
 	P &self = static_cast<P &>(*this);
 	s16 c = v8_remote_cat(V8_CAT_PCM);
-	return self.v91 && !v8_v90() && c >= 0 && (c & V8_PCM_V91) != 0;
+	return self.v91 && c >= 0 && (c & V8_PCM_V91) != 0 &&
+		((c & V8_PCM_ANALOGUE) == 0 || (c & V8_PCM_DIGITAL) != 0);
 }
 
 /* V.cvm: both offer it (its field in the remote's CM or JM) */
@@ -3280,11 +3304,14 @@ void V34Pump::pump_rx_sample(float x)
 		return;
 	}
 	if (x2_rx) {
-		/* x2's client: the server's PCM, our echo taken away */
-		ec_schedule();
-		if (!ec.bypass)
-			x = ec.run(last_tx, x);
-		x2rx.line(x);
+		/* x2's client: the server's PCM, our echo taken away; on an
+		   8000 Hz line it has the line's own samples in process() */
+		if (line_rate == V34_SRATE) {
+			ec_schedule();
+			if (!ec.bypass)
+				x = ec.run(last_tx, x);
+			x2rx.line(x);
+		}
 		if (state >= XC4_DATA && state <= XC5_E && x2rx.qn) {
 			unsigned char b[X2RX_Q];
 			s16 m = x2rx.take(b, X2RX_Q);
@@ -3294,11 +3321,14 @@ void V34Pump::pump_rx_sample(float x)
 	}
 	if (k56_rx) {
 		/* K56flex's analogue modem: the digital modem's PCM, our
-		   echo taken away */
-		ec_schedule();
-		if (!ec.bypass)
-			x = ec.run(last_tx, x);
-		k56rx.line(x);
+		   echo taken away; on an 8000 Hz line it has the line's own
+		   samples in process() */
+		if (line_rate == V34_SRATE) {
+			ec_schedule();
+			if (!ec.bypass)
+				x = ec.run(last_tx, x);
+			k56rx.line(x);
+		}
 		/* the digital modem's tone A: a retrain */
 		if (state == KC4_DATA)
 			rt_tone(x);
@@ -7532,13 +7562,22 @@ float V34Pump::pump_tx_sample()
 			ptx.sample();
 		break;
 	case TXM_PAM:
-		/* on the network's clock, once the PCM receiver has it */
-		if (v90rx.t_on)
-			patx.set_ppm(v90rx.ppm());
-		y = patx.sample();
+		/* on an 8000 Hz line process() sends it at the line's own
+		   rate (pam_sample()) */
+		if (line_rate == V34_SRATE)
+			y = pam_sample();
 		break;
 	}
 	return y;
+}
+
+/* V.92's PCM upstream (the analogue modem's): its next sample at
+   line_rate, on the network's clock once the PCM receiver has it */
+float V34Pump::pam_sample()
+{
+	if (v90rx.t_on)
+		patx.set_ppm(v90rx.ppm());
+	return patx.sample();
 }
 
 /* one sample at 9600 Hz each way; ref: what goes out on the line instead
@@ -7766,18 +7805,31 @@ s16 V34Pump::process(void *in, void *out, s32 cnt)
 		}
 		if (pcm_tx)
 			y = pcm_;
+		/* V.92's PCM upstream from the analogue modem: its levels at
+		   the line's 8000 Hz, not through the converter (which
+		   would cut the top of its band and give 9600 samples a
+		   second of a signal made for 8000).  The converter's own
+		   output, silent by now, adds to it: the end of what went
+		   before (INFO1a) is still in its filter */
+		if (txm == TXM_PAM)
+			y += pam_sample();
 		dst[i] = dsp_clip16(y);
 		if (test_echo.g)
 			test_echo.push(dst[i]);
-		/* V.90's analogue modem: the PCM receiver on the line's
-		   samples, our echo (of what goes out with them) taken
-		   away at 8000 Hz */
-		if (v90a_rx) {
+		/* the analogue modem of V.90, K56flex or x2: the PCM
+		   receiver on the line's samples, our echo (of what goes
+		   out with them) taken away at 8000 Hz */
+		if (v90a_rx || k56_rx || x2_rx) {
 			float x = src[i];
 			ec_schedule();
 			if (!ec.bypass)
 				x = ec.run(dst[i], x);
-			v90rx.line(x);
+			if (v90a_rx)
+				v90rx.line(x);
+			else if (k56_rx)
+				k56rx.line(x);
+			else
+				x2rx.line(x);
 		}
 		out_n++;
 	}
@@ -7884,29 +7936,47 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	analog = line_rate == 9600 || (rt && rt->analog);
 	if (analog)
 		v90 = v91 = v92 = k56 = 0;
+	/* a digital line: 8000 Hz G.711 that is not an analogue one (SIP,
+	   a telephone system's line).  Its samples are the network's own
+	   codes on the network's clock, the best case of the analogue
+	   modem's PCM receiver (phase 0, no drift), so the modem can be the
+	   analogue end there too */
+	digital_line = !analog;
+	/* V.92's quick connect as the analogue modem only on an analogue
+	   line, if DSP_V92A_QC does not say: on a digital line the
+	   answerer can be another D-Modem, and V.8 then agrees on V.91 (64
+	   kbit/s each way), which a quick connect would skip */
+	if (digital_line && !env("DSP_V92A_QC"))
+		qca_ok = 0;
 	/* K56flex as the analogue modem, calling on an analogue line at
-	   9600 Hz (DSP_K56A=0 leaves it out: V.90 then) */
-	k56c = k56c && analog && line_rate == V34_SRATE &&
+	   9600 Hz or on a digital line (DSP_K56A=0 leaves it out: V.90
+	   then) */
+	k56c = k56c && (digital_line || line_rate == V34_SRATE) &&
 		env_on("DSP_K56A");
 	k8_init();
-	/* x2's client, calling on an analogue line at 9600 Hz (DSP_X2C=0
-	   leaves it out: V.90 then): V.8 for V.34 alone, the server known
-	   by its INFO0 */
-	x2c = x2c && analog && line_rate == V34_SRATE && env_on("DSP_X2C");
-	/* V.90 as the analogue modem, on an analogue line at 9600 Hz
-	   (DSP_V90A=0 leaves it out).  At 8000 Hz only with DSP_V90A=1:
-	   there the band's top folds onto itself in the codec, and half a
-	   sample off the network's symbols it cancels (21 dB at best), so
-	   a codec whose clock is not the network's, its phase drifting,
-	   loses the PCM signal every so often (each 1.25 s at 100 ppm) */
+	/* x2's client, calling on an analogue line at 9600 Hz or on a
+	   digital line (DSP_X2C=0 leaves it out: V.90 then): V.8 for V.34
+	   alone, the server known by its INFO0 */
+	x2c = x2c && (digital_line || line_rate == V34_SRATE) &&
+		env_on("DSP_X2C");
+	/* V.90 as the analogue modem (DSP_V90A=0 leaves it out), on an
+	   analogue line at 9600 Hz, and on a digital line besides the
+	   digital modem's V.90 (the V.8 exchange chooses the end,
+	   v8_v90a()).  On an analogue line at 8000 Hz only with
+	   DSP_V90A=1: there the band's top folds onto itself in the codec,
+	   and half a sample off the network's symbols it cancels (21 dB at
+	   best), so a codec whose clock is not the network's, its phase
+	   drifting, loses the PCM signal every so often (each 1.25 s at
+	   100 ppm) */
 	{
 		const char *e = env("DSP_V90A");
-		v90a = (id == DP_V90 || id == DP_V92) && analog && !v8_low &&
-			(line_rate == V34_SRATE ? !(e && !atoi(e)) :
-			 e && atoi(e));
+		v90a = (id == DP_V90 || id == DP_V92) && !v8_low &&
+			(analog && line_rate != V34_SRATE ? e && atoi(e) :
+			 !(e && !atoi(e)));
 	}
+	/* (x2's client: V.8 for V.34 alone, on a digital line too) */
 	if (x2c)
-		v90a = 0;
+		v90a = v90 = v91 = v92 = 0;
 	v90a_on = v90a_rx = 0;
 	v92a = v90a && id == DP_V92 &&
 		env_on("DSP_V92A");

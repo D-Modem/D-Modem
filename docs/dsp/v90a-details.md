@@ -713,6 +713,10 @@ phases, and through the bad phase each 1.25 s at 100 ppm. Thus V.90 at
 8000 Hz is stable only with the codec on the clock of the network, and
 the modem uses it only with `DSP_V90A=1`.
 
+A digital line (SIP) has no codec: its samples are at phase 0, on the
+clock of the network. There, V.90 is on by default (refer to
+[The 56k client on a SIP line](sip-client-details.md)).
+
 In the tests, `NET_ANALOG=a` (or `b`) of netsim with `NET=8000:8000`
 makes modem A (or B) such a modem, and `MODEM_ANALOG=<name>` tells
 `half_open` that its line is analogue.

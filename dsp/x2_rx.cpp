@@ -539,10 +539,15 @@ void X2Rx::code(float y)
 	float e;
 	s16 d = cur->decide(fpos, y, &e);
 	float a = y > 0 ? cur->mag[fpos][d] : -cur->mag[fpos][d];
-	known(y, a);
+	/* (in the data, a gap of silence: no training on it, no error
+	   counted) */
+	bool held = dfr >= 0 && gap.step(y, dpow);
+	if (!held)
+		known(y, a);
 	if (dfr >= 0) {
 		dpow += 0.001f * (a * a - dpow);
-		de_mse += 0.001f * (e - de_mse);
+		if (!held)
+			de_mse += 0.001f * (e - de_mse);
 	}
 	fy[fpos++] = y;
 	if (fpos == X2_FRAME) {

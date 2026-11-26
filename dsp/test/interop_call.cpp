@@ -141,6 +141,25 @@ std::string env(const char *name, const std::string &def = "")
 	return v ? v : def;
 }
 
+/* The variables of ENV_A (or ENV_B) for one modem alone: its value
+   split at the spaces, each one NAME=value (they go ahead of the
+   environment, so they override it for that modem) */
+std::vector<std::string> modem_env(const char *name)
+{
+	std::vector<std::string> v;
+	std::string s = env(name), w;
+	for (char c : s + " ") {
+		if (c == ' ') {
+			if (!w.empty())
+				v.push_back(w);
+			w.clear();
+		} else {
+			w += c;
+		}
+	}
+	return v;
+}
+
 /* in a child: SIGKILL when the driver (parent) dies, so that the modems
    and netsim don't run on without it */
 void die_with(pid_t parent)
@@ -1173,9 +1192,11 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 
 	bool result;
 	try {
-		if (!m[0]->start(exe_a, "modemA", a_in, a_out, dbg, {},
+		if (!m[0]->start(exe_a, "modemA", a_in, a_out, dbg,
+				 modem_env("ENV_A"),
 				 log_dir + "/modemA.log") ||
-		    !m[1]->start(exe_b, "modemB", b_in, b_out, dbg, {},
+		    !m[1]->start(exe_b, "modemB", b_in, b_out, dbg,
+				 modem_env("ENV_B"),
 				 log_dir + "/modemB.log")) {
 			say("a modem did not start\n");
 			done(false);
@@ -1264,7 +1285,7 @@ bool data_call(const std::string &exe_a, const std::string &exe_b,
 						m[1]->hook_fd = hook[1].w;
 					m[1]->country = env("COUNTRY_B");
 					if (!m[1]->start(exe_b, "modemB2", b_in,
-							 b_out, dbg, {},
+							 b_out, dbg, modem_env("ENV_B"),
 							 log_dir + "/modemB2.log")) {
 						say("modemB2 did not start\n");
 						done(false);

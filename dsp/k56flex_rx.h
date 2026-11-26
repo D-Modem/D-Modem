@@ -117,6 +117,8 @@ struct K56Rx : PcmEqualizer<K56Rx, K56RX_TAPS> {
 	unsigned char q[K56RX_Q];
 	s16 qh, qn;
 	float dpow, de_mse;
+	/* the data mode's gaps of silence (a lost SIP packet) */
+	PcmGap<8, K56RX_TAPS / 2 + 8> gap;
 	s32 dec_err0;
 	/* data mode: the last 16 symbols (R's search), R2's first 16
 	   codes; the error each rate allows (lim, as SM56's

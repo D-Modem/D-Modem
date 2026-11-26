@@ -7,7 +7,9 @@
  *               signal and its reversal (ReversalSums); the T/2
  *               equaliser, solved by least squares on the known
  *               training and followed by NLMS, and the timing loop on
- *               its error, which moves the interpolator (PcmEqualizer)
+ *               its error, which moves the interpolator (PcmEqualizer);
+ *               the hold over a gap of silence in the data mode
+ *               (PcmGap)
  *
  *    A mixin on the receiver H (CRTP), which has
  *
@@ -80,6 +82,29 @@ struct ReversalSums {
 	double r() const { return e_lag > 0 ? a_lag / e_lag : 0; }
 	/* and over WIN */
 	double q() const { return e_win > 0 ? a_win / e_win : 1; }
+};
+
+/* A gap in the data mode: a lost packet of a SIP call, played as
+   silence.  RUN symbols in a row 30 dB under the signal's power start
+   it.  The receiver then holds its equaliser, its timing, its levels
+   and its error while the gap lasts and for HOLD symbols after it (the
+   equaliser's span, which still has the gap in its taps), so that no
+   decision on the silence trains the receiver or counts as an error */
+template <s16 RUN, s16 HOLD>
+struct PcmGap {
+	s16 run, hold;
+
+	/* the symbol y against the signal's power pw: true while the
+	   receiver is to hold */
+	bool step(float y, float pw)
+	{
+		run = y * y < 1e-3f * pw ? static_cast<s16>(run + 1) : 0;
+		if (run >= RUN)
+			hold = HOLD;
+		else if (hold > 0)
+			hold--;
+		return hold > 0;
+	}
 };
 
 template <class H, s16 TAPS>
