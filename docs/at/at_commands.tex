@@ -2209,7 +2209,7 @@ directions (the modem sends it in its \std{MP} sequences).
   line, the modem is the server: it answers a K56flex modem with K56flex, and other
   modems with \std{V.90}.  When it calls (on an analogue line or a digital line), it
   is the analogue modem: it calls with K56flex when the server answers with K56flex,
-  and with \std{V.90} when not. \\ \hline
+  and with \std{V.90} when not (only with automode). \\ \hline
 57 & X2 & USRobotics x2 & When it answers on a digital line, the modem is the server:
   it answers an x2 modem with x2, and other modems with \std{V.34}.  When it calls
   (on an analogue line or a digital line), it is the client: it calls an x2 server
@@ -2487,7 +2487,8 @@ B15, B16 & Accepted (other modems: \std{V.21} or Bell 103 at \std{300} bit/s). \
 This command sets if the modems can find their best common modulation,
 from the modulation that \cmdl[plusMS]{+MS} selected and lower
 (\sreg{31}).  It is the same as the second parameter of
-\cmdl[plusMS]{+MS}.
+\cmdl[plusMS]{+MS}.  With \cmd{N0}, the \std{V.8} CM and JM give only
+the modulation of \cmdl[plusMS]{+MS}, on all lines.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -3615,7 +3616,8 @@ The setting of \cmdl[L]{L}.
 
 \sregdef{31}{Automode}
 The setting of \cmdl[N]{N}, and the second parameter of
-\cmdl[plusMS]{+MS}.
+\cmdl[plusMS]{+MS}.  0: the \std{V.8} CM and JM give only the
+modulation of \cmdl[plusMS]{+MS}, with no slower modulation.
 \facts{0, 1}{1}{none}
 
 \sregdef{32}{Modulation}
