@@ -65,8 +65,10 @@ static s16 files_readable(const char *list)
 				return -1;
 			memcpy(name, list, n);
 			name[n] = 0;
-			if (access(name, R_OK))
+			FILE *fp = fopen(name, "rb");
+			if (!fp)
 				return -1;
+			fclose(fp);
 			any = 1;
 		}
 		list += n;
