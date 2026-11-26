@@ -86,7 +86,6 @@ int udp_socket()
 
 const s16 IDLE_MS = 200;        /* no packet this long: go on alone */
 const s16 MAX_SAMPLES = 1600;   /* in a packet, 200 ms */
-const s64 T38_WAIT_MS = 6000;   /* a fax receiver's wait for T.38 */
 
 /*
  *    configuration and logging
@@ -549,6 +548,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	cfg.file = file.c_str();
 	cfg.ident = fs.ident;
 	cfg.max_bps = fs.max_bps;
+	cfg.min_bps = fs.min_bps;
 	cfg.no_ecm = !fs.ecm;
 	set_var(c.id, "DMODEMFAXFILE", file);
 	f = dmodem_fax_create(&cfg);
@@ -619,8 +619,8 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 				may_switch = false;
 			}
 			asking = asked && l.t38 == ari::T38_ASKED &&
-				now_us() - asked < T38_WAIT_MS * 1000 &&
-				waited < T38_WAIT_MS * 8;
+				now_us() - asked < fs.t38_timeout * 1000LL &&
+				waited < fs.t38_timeout * 8LL;
 		}
 		if (t38) {
 			unsigned char pkt[2048];

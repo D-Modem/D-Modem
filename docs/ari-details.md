@@ -169,9 +169,9 @@ For each call that comes into the app, `dmodem-ari` does these steps:
 The fax machine is the same as that of `app_dmodem`: T.30 on V.17, V.29
 and V.27ter, with error correction mode (ECM) and TIFF files (refer to
 [asterisk.md](asterisk.md#fax)). Its settings come from the `[general]`
-section of `dmodem.conf`: `fax_ident`, `fax_max_rate`, `fax_ecm`,
-`fax_t38`, and `fax_dir` for the faxes that the modem profiles receive
-(default `/var/spool/asterisk/fax`).
+section of `dmodem.conf`: `fax_ident`, `fax_max_rate`, `fax_min_rate`,
+`fax_ecm`, `fax_t38`, `fax_t38_timeout`, and `fax_dir` for the faxes that
+the modem profiles receive (default `/var/spool/asterisk/fax`).
 
 ### Three ways to fax
 

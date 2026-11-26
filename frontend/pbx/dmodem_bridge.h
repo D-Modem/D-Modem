@@ -67,8 +67,13 @@ struct dmbridge_fax {
 	char dir[256];          /* ... into this directory */
 	char ident[21];         /* our number (CSI / TSI) */
 	int max_bps;
+	int min_bps;            /* no page below this rate (0: none) */
 	int ecm;                /* error correction mode offered */
 	int t38;                /* over T.38 when the channel has it */
+	int t38_timeout;        /* ms to wait for the answer to our T.38
+				   request */
+	int res_vars;           /* also set res_fax's variables (FAXSTATUS,
+				   FAXPAGES, ...) */
 };
 
 /* a profile's voice_dsvd "open" (see struct dmbridge_profile) */
@@ -112,10 +117,12 @@ struct dmbridge_profile {
    aside */
 int dmbridge_option_is(const char *name, const char *key);
 
-/* the built-in fax settings: on, into dir, 14400 bit/s, ECM, T.38 */
+/* the built-in fax settings: on, into dir, 14400 bit/s, no lowest
+   rate, ECM, T.38 (6000 ms for the answer), res_fax's variables too */
 void dmbridge_fax_defaults(struct dmbridge_fax *f, const char *dir);
-/* a fax option (fax, fax-dir, fax-ident, fax-max-rate, fax-ecm,
-   fax-t38); 0 if name is something else */
+/* a fax option (fax, fax-dir, fax-ident, fax-max-rate, fax-min-rate,
+   fax-ecm, fax-t38, fax-t38-timeout, fax-res-vars); 0 if name is
+   something else */
 int dmbridge_fax_option(const struct dmbridge_host *h,
 			struct dmbridge_fax *f, const char *name,
 			const char *value);

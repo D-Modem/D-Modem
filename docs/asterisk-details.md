@@ -12,13 +12,14 @@ This page gives the technical data for [Asterisk: app_dmodem](asterisk.md), whic
 
 ## Overview
 
-The module adds three dialplan applications:
+The module adds three dialplan applications and one dialplan function:
 
-| application | what it does |
+| application or function | what it does |
 |---|---|
 | `DModem([profile[,options]])` | Answers the call with a software modem and, when the modems connect, sends the data to a server or program. |
-| `DModemReceiveFax(file[,ident])` | Answers as a fax machine and receives into a TIFF file. |
-| `DModemSendFax(file[,ident])` | Sends a TIFF file as a fax on a call to a fax machine. |
+| `DModemReceiveFax(file[,ident[,options]])` | Answers as a fax machine and receives into a TIFF file. |
+| `DModemSendFax(file[&file2...][,ident[,options]])` | Sends one or more TIFF files as a fax on a call to a fax machine. |
+| `DMODEMFAXOPT(item)` | Reads or sets the fax settings of the channel, and reads the results of the last fax. |
 
 `DModem()` sends the data to one of three destinations, as the profile
 in `dmodem.conf` specifies:
@@ -143,10 +144,13 @@ You can use it in three ways:
   caller ID (or `unknown`). Then `DMODEMSTATUS` is `FAX`. Set `fax = no`
   in the profile to disable this. This applies only to answering, not
   to the `o` option.
-- **`DModemReceiveFax(file[,ident])`** answers as a fax machine and
-  receives into the file. If no page came, it writes no file.
-- **`DModemSendFax(file[,ident])`** sends a TIFF file on a call to a fax
-  machine (it waits for the DIS of the machine), for example:
+- **`DModemReceiveFax(file[,ident[,options]])`** answers as a fax
+  machine and receives into the file. If no page came, it writes no file.
+- **`DModemSendFax(file[&file2...][,ident[,options]])`** sends TIFF
+  files on a call to a fax machine (it waits for the DIS of the machine).
+  To send more than one file in one fax, put `&` between the names. The
+  module sends the pages of each file in turn. If one of the files is
+  not there, the module sends no fax. For example:
 
   ```
   channel originate PJSIP/5551234@trunk application DModemSendFax /var/spool/fax/doc.tif
@@ -163,8 +167,71 @@ You can use it in three ways:
   ```
 
 `ident` is our fax number (the CSI when we receive, the TSI when we
-send). If there is no `ident`, the module uses `fax_ident` of
-`[general]`.
+send). If there is no `ident`, the module uses
+`DMODEMFAXOPT(localstationid)`. If that is not set, the module uses
+`fax_ident` of `[general]`.
+
+### Fax application options
+
+These options are the same as the options of `SendFAX` and `ReceiveFAX`
+of Asterisk, with one more option (`T`):
+
+| option | meaning |
+|---|---|
+| `d` | Write each phase of the fax to the log (verbose level 3). |
+| `f` | If T.38 fails, use the audio. This is the default. The module accepts the option for dialplans that use it with `SendFAX`. |
+| `F` | Use the audio only. Do not ask for T.38 and refuse the requests for T.38. |
+| `z` | `DModemSendFax` only: ask for T.38 before the fax starts, as `DModemReceiveFax` always does. |
+| `T` | Use T.38 only. If the channel cannot use T.38, or the other end refuses it or does not answer, the module sends or receives no fax and sets `FAXERROR` to `T38`. |
+
+You cannot use `F` and `T` together. Example:
+
+```
+exten => s,1,DModemSendFax(/var/spool/fax/cover.tif&/var/spool/fax/doc.tif,,dz)
+```
+
+### DMODEMFAXOPT()
+
+`DMODEMFAXOPT(item)` is the D-Modem equivalent of `FAXOPT(item)` of
+Asterisk. Set an item before the fax application. The value applies to
+the faxes of this channel only, and replaces the value of `[general]`
+(and of the profile for `DModem()`). An `ident` argument of the
+application replaces `localstationid`.
+
+You can set and read these items:
+
+| item | value |
+|---|---|
+| `ecm` | `yes` or `no`: offer error correction mode. |
+| `maxrate` | The highest rate: 2400, 4800, 7200, 9600, 12000 or 14400. |
+| `minrate` | The lowest rate (same values). The fax stops if the two machines cannot use this rate or a higher rate. |
+| `t38timeout` | The time in ms to wait for the answer to our T.38 request. |
+| `localstationid` | Our fax number (CSI or TSI), up to 20 characters. |
+
+You can only read these items. They give the result of the last fax on
+the channel:
+
+| item | value |
+|---|---|
+| `status` | `SUCCESS` or `FAILED` |
+| `statusstr` | The reason as text |
+| `error` | The reason as a code (refer to [Fax variables](#fax-variables)) |
+| `pages` | The number of pages |
+| `rate` | The rate, in bit/s |
+| `resolution` | `8040x3850` (standard) or `8040x7700` (fine), in pels for each metre |
+| `remotestationid` | The number of the other machine |
+| `filename` | The first file |
+| `filenames` | All the files, with `&` between them |
+| `sessionid` | The number of the fax session (it increases by one for each fax) |
+
+Example:
+
+```
+exten => s,1,Set(DMODEMFAXOPT(minrate)=9600)
+ same => n,Set(DMODEMFAXOPT(localstationid)=+1 555 0100)
+ same => n,DModemReceiveFax(/var/spool/fax/in.tif)
+ same => n,Verbose(1,${DMODEMFAXOPT(status)} ${DMODEMFAXOPT(pages)} pages)
+```
 
 ### Fax variables
 
@@ -174,12 +241,36 @@ After a fax, all three applications set these channel variables:
 |---|---|
 | `DMODEMFAXSTATUS` | `SUCCESS` or `FAILED` |
 | `DMODEMFAXRESULT` | the reason (for example `no document` when the module could not read or write the file) |
+| `DMODEMFAXERROR` | the reason as a code (refer to the table below) |
 | `DMODEMFAXPAGES` | the number of pages |
 | `DMODEMFAXRATE` | the rate, in bit/s |
+| `DMODEMFAXRESOLUTION` | `8040x3850` (standard) or `8040x7700` (fine) |
 | `DMODEMFAXREMOTE` | the number of the other machine |
 | `DMODEMFAXECM` | `yes` when the call used error correction mode, if not `no` |
 | `DMODEMFAXT38` | `yes` when the fax went through T.38, if not `no` |
-| `DMODEMFAXFILE` | the file |
+| `DMODEMFAXSESSION` | the number of the fax session |
+| `DMODEMFAXFILE` | the file (or the files, with `&` between them) |
+
+The module also sets the variables of `res_fax`, for dialplans that
+were written for `SendFAX` and `ReceiveFAX`: `FAXSTATUS`,
+`FAXSTATUSSTRING`, `FAXERROR`, `FAXPAGES`, `FAXBITRATE`, `FAXRESOLUTION`,
+`REMOTESTATIONID` and `LOCALSTATIONID`. Set `fax_res_vars = no` in
+`[general]` to stop this.
+
+The codes of `DMODEMFAXERROR` and `FAXERROR`:
+
+| code | meaning |
+|---|---|
+| `NO_ERROR` | The fax went through. |
+| `NO_FAX` | No fax machine answered or called. |
+| `INCOMPATIBLE` | The two machines have no rate or coding in common. |
+| `TRAINING` | The training failed at all rates, or the rate was below the lowest rate. |
+| `NO_RESPONSE` | The other machine stopped its responses. |
+| `PAGE` | A page failed each time that it was sent. |
+| `HANGUP` | The other machine disconnected too early. |
+| `DOCUMENT` | The module could not read the file to send, or could not use the file to receive. |
+| `FILE` | The module could not write the received pages. |
+| `T38` | Option `T`, and no T.38. |
 
 ### Fax options
 
@@ -191,8 +282,11 @@ Put these in `[general]` or in a profile. `DModemSendFax` and
 | `fax_dir` | `/var/spool/asterisk/fax` (the spool directory of Asterisk + `/fax`) | The directory where `DModem()` puts the faxes that it receives. |
 | `fax_ident` | empty | Our fax number (CSI and TSI). |
 | `fax_max_rate` | `14400` | The highest rate: 14400, 12000, 9600, 7200, 4800 or 2400. |
+| `fax_min_rate` | `0` (none) | The lowest rate (same values). |
 | `fax_ecm` | `yes` | Offer error correction mode. |
 | `fax_t38` | `yes` | Use T.38 when the channel has it. |
+| `fax_t38_timeout` | `6000` | The time in ms to wait for the answer to our T.38 request. |
+| `fax_res_vars` | `yes` | Also set the variables of `res_fax` (`FAXSTATUS` and the other variables). |
 
 In error correction mode (T.30 Annex A), a page goes in blocks of HDLC
 frames. The receiving machine asks again for each frame that a line hit
@@ -208,9 +302,10 @@ the faxes change to T.38 when the channel changes, as the `SendFAX` and
 `ReceiveFAX` of Asterisk do. `fax_t38 = no` keeps them on the audio.
 
 - `DModemReceiveFax` asks for T.38 immediately (Asterisk sends a
-  re-INVITE). It waits up to 6 s for the answer, with silence on the
-  line. If the other end refuses T.38 or does not answer, the fax goes
-  on the audio.
+  re-INVITE). It waits up to `fax_t38_timeout` ms (6 s) for the answer,
+  with silence on the line. If the other end refuses T.38 or does not
+  answer, the fax goes on the audio (option `T` stops the fax).
+- `DModemSendFax` with option `z` asks for T.38 in the same way.
 - `DModemSendFax` accepts T.38 when the other end asks for it, until the
   first page has gone. After that, the fax stays on the audio. (The same
   rule applies to a receiver.)

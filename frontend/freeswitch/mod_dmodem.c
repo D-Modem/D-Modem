@@ -838,6 +838,7 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 	cfg.file = file;
 	cfg.ident = fs->ident;
 	cfg.max_bps = fs->max_bps;
+	cfg.min_bps = fs->min_bps;
 	cfg.no_ecm = !fs->ecm;
 	switch_channel_set_variable(channel, "dmodem_fax_file", file);
 	f = dmodem_fax_create(&cfg);

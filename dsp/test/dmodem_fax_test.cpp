@@ -281,3 +281,75 @@ TEST(DmodemFaxT38, IfpPackets)
 	dmodem_fax_destroy(receiver);
 	EXPECT_TRUE(same_pages(in, out));
 }
+
+/* two files in one call (their names with & between them): the four
+   pages over T.38 (IFP packets), the two of each file in turn, and the
+   error code NO_ERROR at the end */
+TEST(DmodemFaxFiles, SendsEachFileInTurn)
+{
+	std::string a = fax_file("a.tif"), b = fax_file("b.tif");
+	std::string out = fax_file("out.tif"), list = a + "&" + b;
+	struct dmodem_fax_config fc = {};
+	struct dmodem_fax *sender, *receiver;
+	struct dmodem_fax_status ss = {}, rs = {};
+	T38Line ab = { {}, 0, 0 }, ba = { {}, 0, 0 };
+	int n;
+
+	ASSERT_TRUE(write_test_doc(a, true));
+	ASSERT_TRUE(write_test_doc(b, false));
+	dmodem_init();
+	fc.law = DMODEM_LAW_ULAW;
+	fc.t38 = 1;
+	fc.t38_ifp = 1;
+	fc.t38_max_datagram = 400;
+	fc.t38_send = t38_send;
+	fc.dir = DMODEM_FAX_SEND;
+	fc.file = list.c_str();
+	fc.t38_ctx = &ab;
+	sender = dmodem_fax_create(&fc);
+	ASSERT_NE(sender, nullptr);
+	fc.dir = DMODEM_FAX_RECEIVE;
+	fc.file = out.c_str();
+	fc.t38_ctx = &ba;
+	receiver = dmodem_fax_create(&fc);
+	ASSERT_NE(receiver, nullptr);
+	for (n = 0; n < 50 * 900; n++) {
+		std::vector<std::vector<unsigned char>> to_r, to_s;
+		to_r.swap(ab.pkts);
+		to_s.swap(ba.pkts);
+		for (auto &p : to_r)
+			dmodem_fax_t38_rx(receiver, p.data(), (int)p.size());
+		for (auto &p : to_s)
+			dmodem_fax_t38_rx(sender, p.data(), (int)p.size());
+		dmodem_fax_t38_time(sender, 160);
+		dmodem_fax_t38_time(receiver, 160);
+		dmodem_fax_status(sender, &ss);
+		dmodem_fax_status(receiver, &rs);
+		if (ss.done && rs.done)
+			break;
+	}
+	EXPECT_TRUE(ss.ok) << "sender: " << ss.result;
+	EXPECT_TRUE(rs.ok) << "receiver: " << rs.result;
+	EXPECT_EQ(ss.pages, 4);
+	EXPECT_EQ(rs.pages, 4);
+	EXPECT_STREQ(ss.error, "NO_ERROR");
+	EXPECT_STREQ(rs.error, "NO_ERROR");
+	dmodem_fax_destroy(sender);
+	dmodem_fax_destroy(receiver);
+}
+
+/* a list with a file that is not there: no fax at all */
+TEST(DmodemFaxFiles, MissingFileRefused)
+{
+	std::string a = fax_file("a.tif"), list = a + "&/nonexistent/x.tif";
+	struct dmodem_fax_config fc = {};
+
+	ASSERT_TRUE(write_test_doc(a, true));
+	dmodem_init();
+	fc.law = DMODEM_LAW_ULAW;
+	fc.dir = DMODEM_FAX_SEND;
+	fc.file = list.c_str();
+	EXPECT_EQ(dmodem_fax_create(&fc), nullptr);
+	fc.file = "&";
+	EXPECT_EQ(dmodem_fax_create(&fc), nullptr);
+}

@@ -200,9 +200,14 @@ enum dmodem_t38_ec { DMODEM_T38_EC_NONE, DMODEM_T38_EC_REDUNDANCY };
 struct dmodem_fax_config {
 	enum dmodem_law law;
 	enum dmodem_fax_dir dir;
-	const char *file;               /* the TIFF to send, or to write */
+	const char *file;               /* the TIFF to send, or to write;
+					   to send several, their names
+					   with & between them (the pages
+					   of each in turn) */
 	const char *ident;              /* our number (TSI/CSI), 20 chars */
 	int32_t max_bps;                /* 14400 if 0 */
+	int32_t min_bps;                /* no page below this rate (0:
+					   none) */
 	int no_ecm;                     /* without error correction mode */
 	/* T.38 instead of audio: our UDPTL packets to t38_send, the other
 	   end's by dmodem_fax_t38_rx() */
@@ -233,6 +238,10 @@ struct dmodem_fax_status {
 	int fine;
 	char remote_ident[21];
 	const char *result;             /* how it ended (or "in progress") */
+	const char *error;              /* the same as a code: NO_ERROR,
+					   RUNNING, NO_FAX, INCOMPATIBLE,
+					   TRAINING, NO_RESPONSE, PAGE,
+					   HANGUP, DOCUMENT, FILE, HOST */
 	const char *phase;
 	int ecm;                        /* the call has error correction
 					   mode */
