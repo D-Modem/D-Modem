@@ -122,6 +122,11 @@ enum S_REGISTER {
 						    (the responder always
 						    takes it, with %C2 or
 						    %C3) */
+	SREG_PCM_END                      = 117, /* the PCM end on a
+						    digital line: 0
+						    automatic, 1 digital
+						    (the server), 2
+						    analogue (the client) */
 	SREG_ETC                          = 116, /* ETC's flags, as 3Com's
 						    TC110 firmware keeps
 						    them (AT&F5: 0xEE

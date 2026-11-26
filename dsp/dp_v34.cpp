@@ -7977,6 +7977,22 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	/* (x2's client: V.8 for V.34 alone, on a digital line too) */
 	if (x2c)
 		v90a = v90 = v91 = v92 = 0;
+	/* the PCM end on a digital line (S117): 0 automatic, 1 the digital
+	   modem (the server) only, 2 the analogue modem (the client) only.
+	   A caller sends only the mode that +MS selects: in automatic mode
+	   it is the analogue end of V.90 or V.92 (a customer calls a
+	   provider), and V.91 only with +MS=V91.  A server that sees the
+	   digital or the V.91 bit in a CM takes the caller for a digital
+	   modem, and selects V.91 (#176).  An answerer in automatic mode
+	   offers the two ends and V.91, and the CM selects one.  S117=1
+	   or 2 is one end of V.90 alone, without V.91 */
+	if (digital_line && id != DP_V91) {
+		s16 end = static_cast<s16>(modem_get_sreg(m, SREG_PCM_END));
+		if (end == 1)
+			v90a = v91 = 0;
+		else if (end == 2 || caller_)
+			v90 = v91 = 0;
+	}
 	v90a_on = v90a_rx = 0;
 	v92a = v90a && id == DP_V92 &&
 		env_on("DSP_V92A");

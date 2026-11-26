@@ -925,13 +925,37 @@ std::vector<Call> calls()
 	      "V.92 connect [234][0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=V.92 connect 5[0-9]+/" });
 	/* --- the analogue end on a digital line (SIP): two 8000 Hz modems,
-	   the line the network's own codes.  Each offers the two ends of
-	   V.90 and V.91; two D-Modems agree on V.91, and the caller is the
-	   analogue modem of a digital modem that has no V.91 or analogue
-	   end of its own (ENV_B: as an internet provider's) */
-	add("open", "open_digital_v91", "open8", "open8", "ATX3",
+	   the line the network's own codes.  A caller sends only the mode
+	   of +MS: the analogue end of V.90 or V.92 (S117=0), V.91 only with
+	   +MS=V91.  An answerer offers the two ends and V.91.  The caller
+	   is the analogue modem of a digital modem that has no V.91 or
+	   analogue end of its own (ENV_B: as an internet provider's) */
+	add("open", "open_digital_v91", "open8", "open8", "ATX3;AT+MS=V91",
 	    { "NET=8000:8000:ulaw", "BULK=50000",
 	      "EXPECT_A=V.91 connect", "EXPECT_B=V.91 connect" });
+	/* (#176) an answerer that offers V.91 and the two ends: the
+	   caller's CM has the analogue end alone, so V.92, not V.91 */
+	add("open", "open_digital_auto", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:ulaw", "BULK=50000",
+	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
+	      "V.92 connect [34][0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.90 with us as the digital modem.*"
+	      "V.92 connect 56000/",
+	      "REJECT_A=V.91 connect" });
+	/* S117=1: the caller is the digital modem (the server) alone */
+	add("open", "open_digital_s117_digital", "open8", "open8",
+	    "ATX3;ATS117=1",
+	    { "NET=8000:8000:ulaw", "BULK=50000", "PROTO_B=ATX3",
+	      "EXPECT_A=V.90 with us as the digital modem",
+	      "EXPECT_B=(?s)V.90 with us as the analogue modem.*"
+	      "V.92 connect [34][0-9]+/56000 \\(analogue modem\\)" });
+	/* S117=2 at the answerer, the analogue end alone: no PCM (each
+	   offers the analogue end only), V.34 */
+	add("open", "open_digital_s117_analog", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:ulaw", "BULK=50000",
+	      "PROTO_B=ATX3;ATS117=2",
+	      "EXPECT_A=v34: connect", "EXPECT_B=v34: connect",
+	      "REJECT_A=V.9[0-2] connect" });
 	add("open", "open_digital_v92a", "open8", "open8", "ATX3",
 	    { "NET=8000:8000:ulaw", "ENV_B=DSP_V90A=0 DSP_V91=0",
 	      "BULK=100000",
