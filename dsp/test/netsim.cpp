@@ -10,9 +10,10 @@
  *
  *    reads A's samples (16 bit) from fd <a in>, writes them to B on
  *    fd <b out>, and the other way round.  Each impairment is a class
- *    of its own (Drop, Step, Noise, Echo, Loop, Moh: NET_DROP, NET_STEP,
- *    NET_NOISE and NET_FLOOR, NET_ECHO, NET_LOOP, NET_MOH), its members
- *    named for it, set from the environment by its init(); the network
+ *    of its own (Drop, Slip, Step, Noise, Echo, Loop, Moh: NET_DROP,
+ *    NET_SLIP, NET_STEP, NET_NOISE and NET_FLOOR, NET_ECHO, NET_LOOP,
+ *    NET_MOH), its members named for it, set from the environment by
+ *    its init(); the network
  *    (Net) derives from them all and runs a direction's samples through
  *    them in turn.  NET_CODEC=amr:12.2 (or amrwb:23.85, ...: codec_sim.h)
  *    puts a mobile network's speech codec on the 8000 Hz line in place
@@ -92,6 +93,46 @@ struct Drop {
 	{
 		return drop_at >= 0 && t >= drop_at &&
 			t < drop_at + drop_ms / 1000;
+	}
+};
+
+/* NET_SLIP=<at s>:<samples>[:a|b]: a slip on the digital line toward
+   modem A (or B): that many samples of silence put in (a positive
+   count) or samples left out (a negative count), once.  This is what a
+   SIP jitter buffer does when it starts over (dmodemd's sip.cpp) */
+struct Slip {
+	float slip_at = -1;
+	int slip_n = 0, slip_to_b = 0, slip_done = 0;
+	int slip_skip = 0;      /* samples still to leave out */
+
+	/* NET_SLIP's value e: its time, count and direction */
+	void slip_init(const char *e)
+	{
+		char w = 'a';
+		sscanf(e, "%f:%d:%c", &slip_at, &slip_n, &w);
+		slip_to_b = w == 'b';
+	}
+	/* at t in the direction toward A (to_a) or B: the samples of
+	   silence to put in before this one (0 if none); with skip set,
+	   this sample is left out */
+	int slip_run(float t, int to_a, int *skip)
+	{
+		int put = 0;
+		*skip = 0;
+		if (slip_at < 0 || to_a == slip_to_b)
+			return 0;
+		if (!slip_done && t >= slip_at) {
+			slip_done = 1;
+			if (slip_n > 0)
+				put = slip_n;
+			else
+				slip_skip = -slip_n;
+		}
+		if (slip_skip > 0) {
+			slip_skip--;
+			*skip = 1;
+		}
+		return put;
 	}
 };
 
@@ -898,7 +939,7 @@ struct Ring {
 /* the network: the law (alaw) or a speech codec (NET_CODEC), the far
    codec of a 9600 Hz modem and the gains on the way (NET_PLAIN, NET_GAIN,
    NET_GAIN_UP), the impairments */
-struct Net : Drop, Step, Noise, Loop, Echo, Moh, Ring {
+struct Net : Drop, Slip, Step, Noise, Loop, Echo, Moh, Ring {
 	int plain;      /* NET_PLAIN=1: 8000 -> 9600 Hz with the short
 			   resampler of dsp_util, not the raised cosine (the
 			   law still on the 8000 Hz samples) */
@@ -931,6 +972,8 @@ struct Net : Drop, Step, Noise, Loop, Echo, Moh, Ring {
 			rbs = (int)strtol(getenv("NET_RBS"), NULL, 0) & 63;
 		if (getenv("NET_DROP"))
 			drop_init(getenv("NET_DROP"));
+		if (getenv("NET_SLIP"))
+			slip_init(getenv("NET_SLIP"));
 		noise_init();
 		if (getenv("NET_LOOP"))
 			loop_init(atof(getenv("NET_LOOP")));
@@ -1010,6 +1053,17 @@ int Net::run(struct dir *d, int a_out, int a_in)
 		if (a_out)
 			echo_r++;
 		if (!d->to_codec && !d->from_codec) {
+			/* NET_SLIP: silence put in, or this sample left
+			   out */
+			int skip, put = slip_run(t, a_in, &skip);
+			for (; put > 0 && o < 8192; put--) {
+				int z = line_sample(d, 0);
+				d->lbuf[o] = (float)z;
+				d->obuf[o++] = (short)z;
+				wav_put(!a_out, z);
+			}
+			if (skip)
+				continue;
 			int s = line_sample(d, ibuf[i]);
 			if (d->rbs_pad && !d->codec)
 				s = digital(s, d->nin - 1);

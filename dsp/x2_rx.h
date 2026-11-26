@@ -155,6 +155,8 @@ struct X2Rx : PcmEqualizer<X2Rx, X2RX_TAPS> {
 	unsigned char q[X2RX_Q];
 	s16 qh, qn;
 	float dpow, de_mse;
+	/* the data mode's gaps of silence (a lost SIP packet) */
+	PcmGap<X2_FRAME, X2RX_TAPS / 2 + X2_FRAME> gap;
 
 	/* events (cleared by the caller) */
 	s16 ev_pre;             /* the preamble's turn */

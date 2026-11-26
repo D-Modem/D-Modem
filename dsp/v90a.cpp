@@ -1265,6 +1265,21 @@ void V90Rx::frame()
 		ref.push(one, 0);
 		ref.pop(out);
 	}
+	/* data mode: a frame of silence (30 dB under the signal, a lost
+	   packet of a SIP call) holds the receiver for it and the
+	   V90RX_GAP_HOLD frames after it: no decision on silence
+	   trains the equaliser, the timing or the levels, or counts in
+	   the error */
+	if (cn == &con_data) {
+		float fp = 0;
+		for (j = 0; j < 6; j++)
+			fp += fy[j] * fy[j];
+		if (fp < 6e-3f * dpow)
+			gap_hold = V90RX_GAP_HOLD;
+		else if (gap_hold > 0)
+			gap_hold--;
+	}
+	s16 hold = cn == &con_data && gap_hold > 0;
 	for (j = 0; j < 6; j++) {
 		float m = fabsf(fy[j]), best = 1e30f, tg;
 		s16 l, bl = 0;
@@ -1295,9 +1310,13 @@ void V90Rx::frame()
 			t2_yy[j] += static_cast<double>(fy[j]) * fy[j];
 			t2_n++;
 		}
-		adapt(k - 5 + j, tg - fy[j]);
-		timing(k - 5 + j, fy[j], tg);
-		if (cn == &con_data) {
+		if (!hold) {
+			adapt(k - 5 + j, tg - fy[j]);
+			timing(k - 5 + j, fy[j], tg);
+		}
+		if (cn == &con_data && hold) {
+			dpow += 0.0002f * (fy[j] * fy[j] - dpow);
+		} else if (cn == &con_data) {
 			/* each point's level follows its decisions (the
 			   DIL's, by the gain TRN2d showed, are a little off
 			   for some codes) */

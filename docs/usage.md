@@ -48,7 +48,7 @@ Our SIP connection has no dial tone. Thus, you must disable dial tone detection:
     atx3 
     OK
 
-By default (`AT+MS=92`), the modem negotiates the best common modulation with V.8. This is V.91 with another digital modem, V.90 or V.92 with an analogue 56k modem, or V.34 at up to 33600 bps. If necessary, it is V.32bis or lower. dmodemd keeps the audio of the call free of sample slips (a fixed jitter buffer, and the modem at the 8000 Hz of the call), because V.34 must have this. Over a clean G.711 path (the tests in `frontend/asterisk/test`), V.34 connects at 33600 bps. A real PSTN gateway adds its own impairments. Thus, it can be necessary to select a modulation and data rate manually. For example, the subsequent command selects V.32bis with a data rate of 4800 – 9600 bps. For more details, refer to the manual.
+By default (`AT+MS=92`), the modem negotiates the best common modulation with V.8. This is V.91 with another digital modem, V.90 or V.92 with an analogue 56k modem, V.90 or V.92 as the client of a 56k server ([docs/dsp/sip-client.md](dsp/sip-client.md)), or V.34 at up to 33600 bps. If necessary, it is V.32bis or lower. dmodemd keeps the audio of the call free of sample slips (a fixed jitter buffer, and the modem at the 8000 Hz of the call), because V.34 must have this. Over a clean G.711 path (the tests in `frontend/asterisk/test`), V.34 connects at 33600 bps. A real PSTN gateway adds its own impairments. Thus, it can be necessary to select a modulation and data rate manually. For example, the subsequent command selects V.32bis with a data rate of 4800 – 9600 bps. For more details, refer to the manual.
 
     at+ms=132,0,4800,9600 
     OK

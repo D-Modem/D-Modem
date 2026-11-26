@@ -42,6 +42,8 @@ measurements, and test lists.
   - [V.90: the digital modem](dsp/v90.md): D-Modem as the 56k server
   - [V.90 and V.92: the analogue modem](dsp/v90a.md): D-Modem as the
     56k modem of the customer
+  - [The 56k client on a SIP line](dsp/sip-client.md): V.90, V.92,
+    K56flex and x2 as the modem of the customer, without hardware
   - [V.92](dsp/v92.md): quick connect, modem-on-hold and faster uploads
   - [V.91](dsp/v91.md): about 62000 bit/s between two digital modems
   - [V.cvm](dsp/vcvm.md): data through mobile phone calls (the

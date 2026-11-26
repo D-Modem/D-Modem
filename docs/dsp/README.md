@@ -81,6 +81,9 @@ D-Modem can be **the two ends**:
   (refer to [V.90](v90.md)).
 - The analogue modem on a real telephone line, through modem hardware
   (refer to [V.90 analogue modem](v90a.md)).
+- The analogue modem on a SIP line, when it calls the server of a provider
+  (refer to [The 56k client on a SIP line](sip-client.md)). V.8 selects
+  the end.
 
 ## Testing
 

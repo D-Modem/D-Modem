@@ -37,6 +37,7 @@ D-Modem can be the two ends of a 56k call ([docs/dsp/README.md](dsp/README.md#th
 
 - The digital modem, on an 8000 Hz G.711 line (SIP or a PBX module). It has V.90, and the quick connect, modem-on-hold and PCM upstream of V.92 (up to 41333 bps upstream in the tests with real modems), with rate renegotiation ([docs/dsp/v90.md](dsp/v90.md), [docs/dsp/v92.md](dsp/v92.md)).
 - The analogue modem, on modem hardware (`-a`, `--usb`). It has V.90 and V.92 (up to 56000 bps down and 48000 bps up, [docs/dsp/v90a.md](dsp/v90a.md)).
+- The analogue modem on a SIP line, without hardware, when it calls a 56k server: V.90, V.92, K56flex and x2 ([docs/dsp/sip-client.md](dsp/sip-client.md)).
 
 It also has these PCM modes:
 

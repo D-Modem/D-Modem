@@ -13,6 +13,9 @@ specification.
   customer**. It calls with K56flex when the server answers with the
   first signal of K56flex. It calls with V.90 when the server answers as a V.90
   server.
+- On a digital line, it is also the modem of the customer when it calls
+  a K56flex server (refer to
+  [The 56k client on a SIP line](sip-client.md)).
 
 We got our data about K56flex from the one K56flex modem
 that was available, the SM56 soft modem of Motorola. We read its code and we monitored

@@ -122,6 +122,9 @@ struct V90Interp {
 #define V90RX_LS        1020    /* TRN1d symbols the equaliser is first
 				   solved on (least squares) */
 #define V90RX_DIL_ROUNDS 2      /* the DIL's rounds measured */
+#define V90RX_GAP_HOLD  12      /* data frames held after a gap: the
+				   equaliser's span (V90RX_TAPS samples, 64
+				   symbols) and a little more */
 #define V90RX_Q         1024    /* data mode bits held for the caller */
 #define V90RX_SEQ       8192    /* MP, or V.92's SUVd or CPd, bits */
 
@@ -310,6 +313,11 @@ struct V90Rx : PcmEqualizer<V90Rx, V90RX_TAPS> {
 	unsigned char q[V90RX_Q];
 	s16 qh, qn;
 	float dpow, de_mse;
+	/* data mode frames still to hold the equaliser, the timing, the
+	   levels and de_mse as they are: a gap of silence (a lost SIP
+	   packet) and the frames after it, while the equaliser still has
+	   the gap in its taps */
+	s16 gap_hold;
 	V90Mp mp;
 
 	void init(s16 alaw_, s16 uinfo_, s16 rate = 9600);
