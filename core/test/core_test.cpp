@@ -1841,14 +1841,16 @@ TEST(Core, SpeakerAfterDialling)
 		EXPECT_EQ(p.b->answer(), 0);
 		EXPECT_EQ(p.a->dial("123"), 0);
 		p.step();
-		if (m[3] == '3')
+		if (m[3] == '3') {
 			EXPECT_TRUE(sa.levels.empty());
-		else
+		} else {
 			EXPECT_EQ(sa.levels, (std::vector<int>{ 3 }));
+		}
 		/* (three digits: well over 300 ms) */
 		p.run_until([](Pair &) { return false; }, 200);
-		if (m[3] == '3')
+		if (m[3] == '3') {
 			EXPECT_TRUE(sa.levels.empty());
+		}
 		ASSERT_TRUE(online(p));
 		EXPECT_EQ(sa.levels, (std::vector<int>{ 3, 0 }));
 		EXPECT_GT(sa.samples, 0);
