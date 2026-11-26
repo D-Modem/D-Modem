@@ -290,12 +290,13 @@ TEST(Clear, FromTheProgram)
 }
 
 /* dmodem_set_clear() before the call, and back to G.711 after it: the
-   next call is V.91 between the two again */
+   next call is V.91 between the two again (the caller selects it,
+   +MS=V91) */
 TEST(Clear, SetPerCall)
 {
 	debug();
 	Channel l;
-	End c("caller", "ATE0X3\r", false, DMODEM_LAW_ULAW),
+	End c("caller", "ATE0X3+MS=V91\r", false, DMODEM_LAW_ULAW),
 		a("answerer", "ATE0\r", false, DMODEM_LAW_ULAW);
 	dmodem_set_clear(c.m, 1);
 	dmodem_set_clear(a.m, 1);
