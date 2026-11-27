@@ -8,7 +8,8 @@
 #   2. DModemSendFax calls DModemReceiveFax(file)
 #   3. DMODEMFAXOPT(): two files in one fax at 9600 bit/s without ECM,
 #      the receiver's lowest rate 9600, options d and F; res_fax's
-#      variables (FAXSTATUS and the rest) set too
+#      variables (FAXSTATUS and the rest) set too; then
+#      DMODEMFAXOPT(headerinfo): page 1 has the header line's rows more
 #   4. the receiver's lowest rate 9600 and the sender's top rate 4800:
 #      no fax (FAXERROR TRAINING)
 #   5. option T on a Local channel (no T.38): no fax (FAXERROR T38)
@@ -119,6 +120,27 @@ has() {
 		echo "FAIL: $2"; r=1
 	fi
 }
+# the rows of the first page of the TIFF file $1 (its first IFD's
+# ImageLength), or 0
+tiff_rows() {
+	python3 -I -c '
+import struct, sys
+try:
+    d = open(sys.argv[1], "rb").read()
+    e = "<" if d[:2] == b"II" else ">"
+    at = struct.unpack(e + "I", d[4:8])[0]
+    n = struct.unpack(e + "H", d[at:at + 2])[0]
+    for k in range(n):
+        tag, typ, cnt, val = struct.unpack(e + "HHI4s", d[at + 2 + 12 * k:at + 14 + 12 * k])
+        if tag == 257:
+            print(struct.unpack(e + ("H" if typ == 3 else "I"), val[:2 if typ == 3 else 4])[0])
+            break
+    else:
+        print(0)
+except Exception:
+    print(0)
+' "$1"
+}
 # the results of DMODEMFAXOPT() read, as the console has them: empty
 # with ARI=1 (the variables DMODEMFAXOPT_PAGES and the others are none)
 if [ -z "$ARI" ]; then
@@ -150,9 +172,24 @@ if true; then
 			{ echo "FAIL: option d: the phases in the log"; r=1; }
 	fi
 
-	$ast -rx "dialplan set global FAXMAX 4800" >/dev/null
+	plain_rows=$(tiff_rows "$run/received.tif")
+
+	rm -f "$run/received.tif"
+	$ast -rx "dialplan set global FAXHDR ACME-Ltd" >/dev/null
 	$ast -rx "channel originate Local/s@faxopt-recv/n extension s@faxopt-send"
 	wait_for " SENDOPT " 2 && wait_for " RECVOPT " 2
+	header_rows=$(tiff_rows "$run/received.tif")
+	echo "rows of page 1: $plain_rows without, $header_rows with the header"
+	if [ "$plain_rows" -gt 0 ] &&
+	   [ "$header_rows" -gt "$plain_rows" ]; then
+		echo "PASS: DMODEMFAXOPT(headerinfo): a header line above the page"
+	else
+		echo "FAIL: DMODEMFAXOPT(headerinfo): a header line above the page"; r=1
+	fi
+
+	$ast -rx "dialplan set global FAXMAX 4800" >/dev/null
+	$ast -rx "channel originate Local/s@faxopt-recv/n extension s@faxopt-send"
+	wait_for " SENDOPT " 3 && wait_for " RECVOPT " 3
 	grep -E " RECVOPT " "$run/console.log" | tail -1
 	has " RECVOPT FAXSTATUS=FAILED FAXERROR=TRAINING FAXPAGES=0" "the lowest rate refused"
 

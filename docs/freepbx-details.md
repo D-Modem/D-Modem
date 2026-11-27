@@ -93,6 +93,10 @@ a profile if a route or a different object still refers to it.
 - **Fax**, the fax settings of `[general]`:
   - the directory for received faxes (`/var/spool/asterisk/fax`);
   - our fax number (up to 20 digits, `+` and spaces);
+  - the fax header (up to 63 characters): the text of the header line
+    on the top of each page that D-Modem sends. The line also has the
+    date, the time, our fax number and the page number. Empty: no
+    header line;
   - the fastest rate (14400, 12000, 9600, 7200, 4800 or 2400 bit/s);
   - error correction mode (on) and T.38 (on);
   - **Fax destination** (on): a destination "D-Modem: receive a fax"

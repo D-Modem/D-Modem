@@ -40,6 +40,8 @@ class Config
 			'debug' => 0,
 			'fax_dir' => '/var/spool/asterisk/fax',
 			'fax_ident' => '',
+			/* the header line on each page sent (empty: none) */
+			'fax_header' => '',
 			'fax_max_rate' => 14400,
 			'fax_ecm' => true,
 			'fax_t38' => true,
@@ -210,6 +212,8 @@ class Config
 			$e['fax_dir'] = _('An absolute path');
 		if (!preg_match('/^[0-9+ ]{0,20}$/', $s['fax_ident']))
 			$e['fax_ident'] = _('Up to 20 digits, + and spaces');
+		if (!preg_match('/^[\x20-\x7e]{0,63}$/', $s['fax_header']))
+			$e['fax_header'] = _('Up to 63 characters, no line breaks');
 		if (!in_array($s['fax_max_rate'], self::FAX_RATES, true))
 			$e['fax_max_rate'] = _('One of the fax rates');
 		if (!preg_match('/^[A-Za-z0-9_.-]{1,79}$/', $s['dialout_context']))
@@ -278,6 +282,8 @@ class Config
 		$o[] = self::line('fax_dir', $s['fax_dir']);
 		if ($s['fax_ident'] !== '')
 			$o[] = self::line('fax_ident', $s['fax_ident']);
+		if ($s['fax_header'] !== '')
+			$o[] = self::line('fax_header', $s['fax_header']);
 		$o[] = self::line('fax_max_rate', (int)$s['fax_max_rate']);
 		$o[] = self::line('fax_ecm', (bool)$s['fax_ecm']);
 		$o[] = self::line('fax_t38', (bool)$s['fax_t38']);

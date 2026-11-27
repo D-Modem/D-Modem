@@ -112,6 +112,8 @@ foreach (Config::FAX_RATES as $r)
 	     _('Where received faxes go, as TIFF files: <date>-<time>-<caller>-<uniqueid>.tif. Asterisk must be able to write there.'));
 	$row('fax_ident', _('Our fax number'), $text('fax_ident', $s['fax_ident']),
 	     _('Sent to the other fax machine (CSI/TSI): up to 20 digits, + and spaces.'));
+	$row('fax_header', _('Fax header'), $text('fax_header', $s['fax_header']),
+	     _('A header line on the top of each page that D-Modem sends: the date, the time, this text, our fax number and the page number. Empty: no header line.'));
 	$row('fax_max_rate', _('Fastest fax rate'), $select('fax_max_rate', $s['fax_max_rate'], $rates),
 	     _('Lower it for lines that drop pages at 14400.'));
 	$row('fax_ecm', _('Error correction (ECM)'), $check('fax_ecm', $s['fax_ecm']),

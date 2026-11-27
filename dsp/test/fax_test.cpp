@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "../fax.h"
+#include "../fax_header.h"
 #include "fax_util.h"
 #include "t30.h"
 #include "t4.h"
@@ -1207,4 +1208,63 @@ TEST(T30MinRate, DocumentAtOrAboveMin)
 	EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
 	EXPECT_EQ(sa.pages, 2);
 	EXPECT_GE(sa.bps, 9600);
+}
+
+/*
+ *    the header line (fax_header.h)
+ *
+ */
+
+/* the black pels of rows [from, to) of a page */
+static long black_pels(const T4Page &p, s32 from, s32 to)
+{
+	s16 stride = T4_STRIDE(p.width);
+	long n = 0;
+	for (s32 r = from; r < to; r++)
+		for (s16 b = 0; b < stride; b++)
+			for (unsigned v = p.bits[(size_t)r * stride + b]; v;
+			     v &= v - 1)
+				n++;
+	return n;
+}
+
+/* the header rows come above the page's own rows, which stay as they
+   were; text in them, more for more characters; in fine twice the rows */
+TEST(FaxHeader, RowsAboveThePage)
+{
+	T4Page p, q;
+	unsigned char row[T4_STRIDE(T4_WIDTH)];
+
+	memset(row, 0xf0, sizeof(row));
+	ASSERT_EQ(p.init(T4_WIDTH, 0), 0);
+	for (int r = 0; r < 100; r++)
+		p.add_row(row);
+	ASSERT_EQ(fax_header_add(&p, "26-NOV-2026 12:00  ACME  +1 555 0100  P.1"), 0);
+	EXPECT_EQ(p.rows, 100 + fax_header_rows(0));
+	EXPECT_GT(black_pels(p, 0, fax_header_rows(0)), 0);
+	EXPECT_EQ(black_pels(p, fax_header_rows(0), p.rows), 100L * 864);
+	/* the first and last rows of the header blank */
+	EXPECT_EQ(black_pels(p, 0, 2), 0);
+	EXPECT_EQ(black_pels(p, fax_header_rows(0) - 2, fax_header_rows(0)), 0);
+
+	ASSERT_EQ(q.init(T4_WIDTH, 1), 0);
+	ASSERT_EQ(fax_header_add(&q, "a"), 0);
+	EXPECT_EQ(q.rows, fax_header_rows(1));
+	EXPECT_EQ(fax_header_rows(1), 2 * fax_header_rows(0));
+	/* a small letter as its capital, at twice the rows */
+	T4Page a;
+	ASSERT_EQ(a.init(T4_WIDTH, 0), 0);
+	ASSERT_EQ(fax_header_add(&a, "A"), 0);
+	EXPECT_EQ(black_pels(q, 0, q.rows), 2 * black_pels(a, 0, a.rows));
+}
+
+/* a colour page stays as it is (no header line) */
+TEST(FaxHeader, ColourPageUnchanged)
+{
+	T4Page p;
+	ASSERT_EQ(p.init(T4_WIDTH, 0), 0);
+	p.add_row(nullptr);
+	p.comps = 3;
+	ASSERT_EQ(fax_header_add(&p, "X"), 0);
+	EXPECT_EQ(p.rows, 1);
 }

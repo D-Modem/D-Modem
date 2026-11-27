@@ -91,6 +91,7 @@ void dmbridge_fax_defaults(struct dmbridge_fax *f, const char *dir)
 	f->on = 1;
 	copy(f->dir, dir, sizeof(f->dir));
 	f->ident[0] = 0;
+	f->header[0] = 0;
 	f->max_bps = 14400;
 	f->min_bps = 0;
 	f->ecm = 1;
@@ -110,6 +111,8 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 		copy(f->dir, value, sizeof(f->dir));
 	else if (dmbridge_option_is(name, "fax-ident"))
 		copy(f->ident, value, sizeof(f->ident));
+	else if (dmbridge_option_is(name, "fax-header"))
+		copy(f->header, value, sizeof(f->header));
 	else if (dmbridge_option_is(name, "fax-max-rate"))
 		f->max_bps = atoi(value);
 	else if (dmbridge_option_is(name, "fax-min-rate"))
@@ -129,7 +132,8 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 
 /* (see dmodem_bridge.h) */
 const char *const dmbridge_faxopt_items[] = {
-	"ecm", "maxrate", "minrate", "t38timeout", "localstationid", NULL
+	"ecm", "maxrate", "minrate", "t38timeout", "localstationid",
+	"headerinfo", NULL
 };
 
 /* a fax rate that T.30 has: 2400 to 14400 in steps of 2400; 0 if not */
@@ -165,6 +169,10 @@ int dmbridge_faxopt(const struct dmbridge_host *h, struct dmbridge_fax *f,
 		if (strlen(value) >= sizeof(f->ident))
 			return -1;
 		copy(f->ident, value, sizeof(f->ident));
+	} else if (!strcasecmp(item, "headerinfo")) {
+		if (strlen(value) >= sizeof(f->header))
+			return -1;
+		copy(f->header, value, sizeof(f->header));
 	} else {
 		return -1;
 	}

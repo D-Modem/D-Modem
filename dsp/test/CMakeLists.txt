@@ -239,7 +239,7 @@ set(_tiffcp "${TIFFCP}")
 if(NOT TIFFCP)
 	set(_tiffcp "")
 endif()
-dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/jbig.cpp ${S}/jpeg.cpp ${S}/t43.cpp ${S}/t44.cpp ${S}/t434.cpp ${S}/t38.cpp
+dmodem_test_exe(fax_test fax_test.cpp fax_docs.cpp fax_stubs.cpp test_util.cpp ${S}/t30.cpp ${S}/fax_header.cpp ${S}/jbig.cpp ${S}/jpeg.cpp ${S}/t43.cpp ${S}/t44.cpp ${S}/t434.cpp ${S}/t38.cpp
 	${S}/t4.cpp ${S}/tiff.cpp ${_fax})
 target_compile_definitions(fax_test PRIVATE "TIFFCP=\"${_tiffcp}\"")
 dmodem_gtest(fax_test LABELS quick)

@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <new>
 
 #include <unistd.h>
@@ -19,6 +20,7 @@
 #include "dm_types.h"
 #include "dmodem.h"
 #include "dmodem_g711.h"
+#include "fax_header.h"
 #include "reinit.h"
 #include "t30.h"
 #include "t38.h"
@@ -41,6 +43,11 @@ struct dmodem_fax {
 	char files[4096];
 	size_t next;
 	s16 in_done;            /* the last page of the last file has gone */
+	/* the header line: on (header given), its text before the page
+	   number, the pages sent so far */
+	s16 header_on;
+	char header[160];
+	s32 page_no;
 	/* T.38 */
 	s32 t38_version, t38_ifp;
 	s32 t38_max_datagram;
@@ -106,8 +113,16 @@ static s16 next_page(void *ctx, T4Page *p)
 {
 	struct dmodem_fax *f = static_cast<dmodem_fax*>(ctx);
 	while (!f->in_done) {
-		if (f->in.read_page(p) == 1)
+		if (f->in.read_page(p) == 1) {
+			if (f->header_on) {
+				char line[200];
+				snprintf(line, sizeof(line), "%s  P.%d",
+					 f->header, static_cast<int>(++f->page_no));
+				/* (out of memory: the page without it) */
+				fax_header_add(p, line);
+			}
 			return 1;
+		}
 		f->in.close();
 		if (open_next_file(f))
 			f->in_done = 1;
@@ -217,6 +232,21 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 			delete f;
 			return nullptr;
 		}
+	}
+	if (f->sending && cfg->header) {
+		/* the date and time now, the sender's name, our number */
+		char when[32];
+		time_t now = time(nullptr);
+		struct tm tm_now;
+#ifdef _WIN32
+		localtime_s(&tm_now, &now);
+#else
+		localtime_r(&now, &tm_now);
+#endif
+		strftime(when, sizeof(when), "%d-%b-%Y %H:%M", &tm_now);
+		snprintf(f->header, sizeof(f->header), "%s  %s  %s", when,
+			 cfg->header, cfg->ident ? cfg->ident : "");
+		f->header_on = 1;
 	}
 	c.sending = f->sending;
 	c.ident = cfg->ident;
