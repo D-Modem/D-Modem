@@ -381,6 +381,11 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	s16 load_next();
 	void send_post_page();
 	s16 choose();
+	/* one of the modems in mask is permitted (cfg.modems; 0: all) */
+	s16 modem_ok(u16 mask) const
+	{
+		return !cfg.modems || (cfg.modems & mask);
+	}
 	void next_page_or_end();
 	void page_settings();
 	void sender_message();
@@ -512,6 +517,13 @@ static s16 dis_rate_ok(const unsigned char *fif, s16 len, const struct rate *r)
 	default:
 		return r->bps == 2400 || (v & 0x2);
 	}
+}
+
+/* the modem mask bit of a rate's family (V.27ter, V.29, V.17) */
+static u16 family_modem(s16 family)
+{
+	return family == 2 ? T30_MODEM_V17 :
+	       family == 1 ? T30_MODEM_V29 : T30_MODEM_V27;
 }
 
 /* a CSI / TSI: 20 characters, the last first */
@@ -734,11 +746,16 @@ void T30::send_dis_dtc(s16 dtc)
 	if (v34_on)
 		set_bit(fif, 6);                /* V.8 capabilities */
 	set_bit(fif, 10);                       /* receives */
-	/* V.27ter, V.29 and V.17 as far as the configuration goes */
-	if (cfg.max_bps > 9600) {
+	/* V.27ter, V.29 and V.17 as far as the configuration goes (its
+	   rates and its modems).  T.30 has no code for V.17 without V.29
+	   and V.27ter, or for V.29 alone at 7200 bit/s and less: a DCS on
+	   a modem not permitted gets FTT (tcf_done()) */
+	if (modem_ok(T30_MODEM_V17) && cfg.max_bps > 9600) {
 		set_bit(fif, 11), set_bit(fif, 12), set_bit(fif, 14);
-	} else if (cfg.max_bps >= 7200) {
-		set_bit(fif, 11), set_bit(fif, 12);
+	} else if (modem_ok(T30_MODEM_V29) && cfg.max_bps >= 7200) {
+		set_bit(fif, 11);
+		if (modem_ok(T30_MODEM_V27))
+			set_bit(fif, 12);
 	} else {
 		set_bit(fif, 12);
 	}
@@ -858,11 +875,18 @@ void T30::page_done()
 }
 
 /* the end of the TCF: CFR if half of it (750 ms) came as zeros in a
-   row, else FTT */
+   row, else FTT.  FTT also when the DCS chose a modem that the
+   configuration does not permit (the DIS can not always tell: V.17 is
+   only offered with V.29 and V.27ter), so that the sender steps down */
 void T30::tcf_done()
 {
 	s32 bps = rates[rate].bps;
 	s16 ok = max_zero_run >= bps * 3 / 4;        /* 750 ms */
+	if (!modem_ok(family_modem(rates[rate].family))) {
+		DSP_DBG("t30: DCS on a modem not permitted (%" PRId32
+			" bit/s): FTT\n", bps);
+		ok = 0;
+	}
 	DSP_DBG("t30: TCF: %" PRId32 " zeros in a row (of %" PRId32 "): %s\n",
 		max_zero_run, bps * 3 / 2, ok ? "ok" : "failed");
 	stop_fast();
@@ -938,6 +962,13 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 			break;
 	if (k == NRATES) {
 		DSP_DBG("t30: DCS with unknown rate %x\n", v);
+		return;
+	}
+	if (rates[k].bps < cfg.min_bps) {
+		/* slower than the configuration permits */
+		DSP_DBG("t30: DCS at %" PRId32 " bit/s, below %" PRId32 "\n",
+			rates[k].bps, cfg.min_bps);
+		send_dcn(T30_ERR_TRAINING);
 		return;
 	}
 	rate = k;
@@ -1309,6 +1340,8 @@ s16 T30::choose()
 	s16 k;
 	for (k = 0; k < NRATES; k++)
 		if (rates[k].bps <= cfg.max_bps &&
+		    rates[k].bps >= cfg.min_bps &&
+		    modem_ok(family_modem(rates[k].family)) &&
 		    dis_rate_ok(dis, dis_len, &rates[k]))
 			break;
 	if (k == NRATES)
@@ -1386,10 +1419,14 @@ void T30::sender_message()
 			gap_then(RESPONSE_GAP_MS, ecm_on ? &T30::start_ecm_page :
 				 &T30::send_page);
 		} else if (fcf == FCF_FTT) {
-			/* a lower rate the remote has */
+			/* a lower rate the remote has (not below
+			   min_bps) */
 			s16 k;
 			for (k = rate + 1; k < NRATES; k++)
-				if (dis_rate_ok(dis, dis_len, &rates[k]))
+				if (rates[k].bps >= cfg.min_bps &&
+				    modem_ok(family_modem(
+					    rates[k].family)) &&
+				    dis_rate_ok(dis, dis_len, &rates[k]))
 					break;
 			if (k == NRATES) {
 				send_dcn(T30_ERR_TRAINING);

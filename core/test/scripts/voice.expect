@@ -4,14 +4,17 @@
       0 A< AT+FCLASS?\r
       0 A: AT+FCLASS?\r\r\n
       0 A: 8\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VGT?\r
       0 A: AT+VGT?\r\r\n
       0 A: +VGT=128\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VGT=?\r
       0 A: AT+VGT=?\r\r\n
       0 A: +VGT=0-128\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VGT=100\r
       0 A: AT+VGT=100\r\r\n
@@ -19,6 +22,7 @@
       0 A< AT+VGT?\r
       0 A: AT+VGT?\r\r\n
       0 A: +VGT=100\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VGR=129\r
       0 A: AT+VGR=129\r\r\n
@@ -38,10 +42,12 @@
       0 A: 134,"ZYXEL ADPCM 2/D-Modem",2,0,(9600,8000,7200),(0),(0)\r\n
       0 A: 135,"ZYXEL ADPCM 3/D-Modem",3,0,(9600,8000,7200),(0),(0)\r\n
       0 A: 136,"ZYXEL ADPCM 4/D-Modem",4,0,(9600,8000,7200),(0),(0)\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n
       0 A: +VSM=1,8000,0,0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSM=1,8000\r
       0 A: AT+VSM=1,8000\r\r\n
@@ -55,6 +61,7 @@
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n
       0 A: +VSM=129,11025,128,5\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSM=4,11025\r
       0 A: AT+VSM=4,11025\r\r\n
@@ -65,6 +72,7 @@
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n
       0 A: +VSM=4,8000,0,0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSM=2,8000\r
       0 A: AT+VSM=2,8000\r\r\n
@@ -78,6 +86,7 @@
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n
       0 A: +VSM=132,7200,0,0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSM=1,8000\r
       0 A: AT+VSM=1,8000\r\r\n
@@ -85,6 +94,7 @@
       0 A< AT+VSD=?\r
       0 A: AT+VSD=?\r\r\n
       0 A: +VSD=0-255,0-255\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSD=100,40\r
       0 A: AT+VSD=100,40\r\r\n
@@ -92,6 +102,7 @@
       0 A< AT+VSD?\r
       0 A: AT+VSD?\r\r\n
       0 A: +VSD=100,40\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSD=100\r
       0 A: AT+VSD=100\r\r\n
@@ -102,6 +113,7 @@
       0 A< AT+VIT?\r
       0 A: AT+VIT?\r\r\n
       0 A: +VIT=10\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VNH=1\r
       0 A: AT+VNH=1\r\r\n
@@ -109,14 +121,17 @@
       0 A< AT+VNH?\r
       0 A: AT+VNH?\r\r\n
       0 A: +VNH=0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTD=?\r
       0 A: AT+VTD=?\r\r\n
       0 A: +VTD=0-6000\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTD?\r
       0 A: AT+VTD?\r\r\n
       0 A: +VTD=100\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTD=6001\r
       0 A: AT+VTD=6001\r\r\n
@@ -127,14 +142,17 @@
       0 A< AT+VTD?\r
       0 A: AT+VTD?\r\r\n
       0 A: +VTD=5\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTS=?\r
       0 A: AT+VTS=?\r\r\n
       0 A: +VTS=0-4000,0-4000,0-6000\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTS?\r
       0 A: AT+VTS?\r\r\n
       0 A: +VTS=933,0,150\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTS=[933,0,100]\r
       0 A: AT+VTS=[933,0,100]\r\r\n
@@ -157,6 +175,7 @@
       0 A< AT+VCID?\r
       0 A: AT+VCID?\r\r\n
       0 A: 1\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VXX\r
       0 A: AT+VXX\r\r\n
@@ -167,6 +186,7 @@
       0 A< AT+VGT?\r
       0 A: AT+VGT?\r\r\n
       0 A: +VGT=128\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+IFC=2,2\r
       0 A: AT+IFC=2,2\r\r\n
@@ -174,29 +194,32 @@
       0 A< AT+VLS?\r
       0 A: AT+VLS?\r\r\n
       0 A: +VLS=0\r\n
+      0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VLS=1\r
-      0 A: AT+VLS=1\r\r\n
+     20 A: AT+VLS=1\r\r\n
      20 A: OK\r\n
     100 A< AT+VLS?\r
     100 A: AT+VLS?\r\r\n
     100 A: +VLS=1\r\n
+    100 A: \r\n
     100 A: OK\r\n
     100 A< AT+VTS=[933,0,10]\r
-    100 A: AT+VTS=[933,0,10]\r\r\n
+    200 A: AT+VTS=[933,0,10]\r\r\n
     200 A: OK\r\n
     300 A< AT+VTS={5,10},{#,10}\r
-    300 A: AT+VTS={5,10},{#,10}\r\r\n
+    560 A: AT+VTS={5,10},{#,10}\r\r\n
     560 A: OK\r\n
     700 A< AT+VTD?\r
     700 A: AT+VTD?\r\r\n
     700 A: +VTD=100\r\n
+    700 A: \r\n
     700 A: OK\r\n
     700 A< AT+VTD=5\r
     700 A: AT+VTD=5\r\r\n
     700 A: OK\r\n
     700 A< AT+VTS=1,2\r
-    700 A: AT+VTS=1,2\r\r\n
+    880 A: AT+VTS=1,2\r\r\n
     880 A: OK\r\n
    1000 A< AT+VTS=1,!\r
    1000 A: AT+VTS=1,!\r\r\n
@@ -207,6 +230,7 @@
    1000 A< AT+VLS?\r
    1000 A: AT+VLS?\r\r\n
    1000 A: +VLS=0\r\n
+   1000 A: \r\n
    1000 A: OK\r\n
    1000 A< AT+VLS=0\r
    1000 A: AT+VLS=0\r\r\n
@@ -220,4 +244,5 @@
    1000 A< AT+FCLASS?\r
    1000 A: AT+FCLASS?\r\r\n
    1000 A: 0\r\n
+   1000 A: \r\n
    1000 A: OK\r\n

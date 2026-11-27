@@ -4,8 +4,8 @@
 first in 1986, and people used it until the middle of the 1990s. It is
 not symmetrical. In one direction, it has a fast **forward channel** (up
 to 14400 bit/s, later 16800). In the other direction, it has a slow
-**back channel** of 300 bit/s. The modems turn the channels around when
-the direction of the larger traffic changes. This was good for bulletin
+**back channel** of 300 bit/s. When the direction of the larger traffic
+changes, the modems turn the channels around. This was good for bulletin
 boards and FidoNet, where most data goes in one direction. HST was the
 preferred protocol of BBS sysops until V.32bis and V.34 became equally
 fast. USRobotics never published it.
@@ -50,8 +50,8 @@ The speeds that the modem offers follow `+MS`, for example
 `AT+MS=HST,0,4800,7200`. The answering modem sends the forward channel
 first. The caller sends the 300 bit/s back channel. When the side on the
 back channel has data to send, it asks, and the modems turn the channels
-around. The fast direction follows the data. When the two sides send,
-this occurs every few seconds. The rates in `CONNECT` are those of the
+around. The fast direction follows the data. When the two sides have data
+to send, the channels turn every few seconds. The rates in `CONNECT` are those of the
 start. D-Modem does not change speed during the call. (A Courier
 increases its speed from 9600 when the line lets it.)
 
@@ -59,13 +59,16 @@ With V.42 disabled (`AT\N0`), there is no set-up in which to offer HST.
 Thus, the modems start HST immediately with the start-up of D-Modem. In
 this start-up, the caller measures the line and asks for the fastest
 speed that the line lets (up to 16800). A Courier does not understand
-that start-up. V.8 has no code for HST. Thus, the modem uses HST only if
-you select it with `AT+MS`.
+that start-up.
+
+V.8 has no code for HST. Thus, the modem uses HST only if you select it
+with `AT+MS`.
 
 ## Speeds in simulation
 
-Two D-Modems back to back on a simulated telephone line (`pump_test`, with
-the start-up of D-Modem, which selects the speed from the line):
+This table shows two D-Modems back to back on a simulated telephone line
+(`Hst.Rates` in `dsp/test/pump_test.cpp`). They use the start-up of
+D-Modem, which selects the speed from the line:
 
 | Line's signal to noise | Forward channel |
 |---|---|
@@ -76,6 +79,6 @@ the start-up of D-Modem, which selects the speed from the line):
 | 12 dB | 4800 bit/s |
 
 All of these calls had no bit errors. Calls with these conditions also
-had no bit errors: a clock difference of 300 ppm, a gain change of 6 dB,
-an echo, and a sample rate of 8000 Hz. Below about 12 dB, the start-up
+had no bit errors: a clock difference of 300 ppm with a line gain of 2,
+an echo at -6 dB, and a sample rate of 8000 Hz. Below about 12 dB, the start-up
 fails.

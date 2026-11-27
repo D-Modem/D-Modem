@@ -923,6 +923,120 @@ std::vector<Call> calls()
 	add("open", "open_v90a_off", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "DSP_V90A=0",
 	      "EXPECT_A=data rates tx [0-9]+ rx [0-9]+, trellis" });
+	/* V.92's PCM upstream from the analogue modem with its codec at
+	   8000 Hz: its levels at the line's rate (not through the 9600 Hz
+	   converter) */
+	add("open", "open_v92a_8k", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:ulaw", "NET_ANALOG=a", "MODEM_ANALOG=modemA",
+	      "NET_PHASE=0.25", "DSP_V90A=1", "BULK=50000",
+	      "EXPECT_A=(?s)V.92: PCM upstream phase 3.*"
+	      "V.92 connect [234][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=V.92 connect 5[0-9]+/" });
+	/* --- the analogue end on a digital line (SIP): two 8000 Hz modems,
+	   the line the network's own codes.  A caller sends only the mode
+	   of +MS: the two ends of V.90 or V.92 (S117=0), V.91 only with
+	   +MS=V91.  An answerer offers the two ends and V.91.  The caller
+	   is the analogue modem of a digital modem that has no V.91 or
+	   analogue end of its own (ENV_B: as an internet provider's) */
+	add("open", "open_digital_v91", "open8", "open8", "ATX3;AT+MS=V91",
+	    { "NET=8000:8000:ulaw", "BULK=50000",
+	      "EXPECT_A=V.91 connect", "EXPECT_B=V.91 connect" });
+	/* (#176) an answerer that offers V.91 and the two ends: the
+	   caller's CM has no V.91, so V.92 with the caller the analogue
+	   modem */
+	add("open", "open_digital_auto", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:ulaw", "BULK=50000",
+	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
+	      "V.92 connect [34][0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.90 with us as the digital modem.*"
+	      "V.92 connect 56000/",
+	      "REJECT_A=V.91 connect" });
+	/* S117=1: the caller is the digital modem (the server) alone */
+	add("open", "open_digital_s117_digital", "open8", "open8",
+	    "ATX3;ATS117=1",
+	    { "NET=8000:8000:ulaw", "BULK=50000", "PROTO_B=ATX3",
+	      "EXPECT_A=V.90 with us as the digital modem",
+	      "EXPECT_B=(?s)V.90 with us as the analogue modem.*"
+	      "V.92 connect [34][0-9]+/56000 \\(analogue modem\\)" });
+	/* S117=2 at the two ends, the analogue end alone: no PCM, V.34 */
+	add("open", "open_digital_s117_analog", "open8", "open8",
+	    "ATX3;ATS117=2",
+	    { "NET=8000:8000:ulaw", "BULK=50000",
+	      "EXPECT_A=v34: connect", "EXPECT_B=v34: connect",
+	      "REJECT_A=V.9[0-2] connect" });
+	/* automode off (+MS=<mod>,0), on any line: the CM and the JM have
+	   the modulation of +MS alone, no V.32bis, V.22bis, V.23 or V.21 */
+	add("open", "open_34_automode_off", "open", "open", "ATX3;AT+MS=34,0",
+	    { "BULK=20000",
+	      "EXPECT_B=V.8 CM received, [0-9]+ octets: e0 c1 45 10 10 ",
+	      "EXPECT_A=V.8 JM received, [0-9]+ octets: e0 c1 45 10 10 " });
+	add("open", "open_digital_k56flex_automode_off", "open8", "open8",
+	    "ATX3;AT+MS=56,0",
+	    { "NET=8000:8000:ulaw", "BULK=50000",
+	      "EXPECT_A=K56flex connect [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.8 CM received, [0-9]+ octets: e0 c1 45 10 10 .*"
+	      "K56flex connect 56000/" });
+	add("open", "open_digital_v92a", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:ulaw", "ENV_B=DSP_V90A=0 DSP_V91=0",
+	      "BULK=100000",
+	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
+	      "V.92 connect [34][0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=(?s)V.90 with us as the digital modem.*"
+	      "V.92 connect 56000/" });
+	add("open", "open_digital_v92a_alaw", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:alaw", "DSP_G711=alaw",
+	      "ENV_B=DSP_V90A=0 DSP_V91=0", "BULK=100000",
+	      "EXPECT_A=V.92 connect [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
+	      "EXPECT_B=V.92 connect 5[0-9]+/" });
+	add("open", "open_digital_v90a", "open8", "open8", "ATX3;AT+MS=90",
+	    { "NET=8000:8000:ulaw", "ENV_B=DSP_V90A=0 DSP_V91=0",
+	      "BULK=100000",
+	      "EXPECT_A=V.90 connect 3[0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=V.90 connect 56000/" });
+	/* both offer the two ends, without V.91: the caller is the
+	   analogue modem */
+	add("open", "open_digital_both", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:ulaw", "DSP_V91=0", "BULK=50000",
+	      "EXPECT_A=(?s)V.90 with us as the analogue modem.*"
+	      "V.92 connect [34][0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=V.90 with us as the digital modem" });
+	add("open", "open_digital_k56flex", "open8", "open8",
+	    "ATX3;AT+MS=56",
+	    { "NET=8000:8000:ulaw", "BULK=100000",
+	      "EXPECT_A=(?s)V.8bis ACK\\(1\\): K56flex.*"
+	      "K56flex connect [0-9]+/56000 \\(analogue modem\\)",
+	      "EXPECT_B=K56flex connect 56000/" });
+	add("open", "open_digital_x2", "open8", "open8", "ATX3;AT+MS=X2",
+	    { "NET=8000:8000:ulaw", "BULK=100000",
+	      "EXPECT_A=(?s)INFO0a: an x2 server.*"
+	      "x2 connect [0-9]+/32000 \\(client\\)",
+	      "EXPECT_B=x2 connect 32000/" });
+	/* a lost packet (20 ms of silence both ways) in the data, and a
+	   start over of the SIP jitter buffer (silence put in, a whole
+	   number of 24 sample frames later: sip.cpp): the clients ride
+	   through them, with no retrain or renegotiation of their own */
+	add("open", "open_digital_v92a_gap", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:ulaw", "ENV_B=DSP_V90A=0 DSP_V91=0",
+	      "NET_DROP=16:20", "STREAM=12",
+	      "EXPECT_A=V.92 connect [34][0-9]+/56000 \\(analogue modem\\)",
+	      "REJECT_A=retrain [0-9]|renegotiation [0-9]" });
+	add("open", "open_digital_v92a_slip", "open8", "open8", "ATX3",
+	    { "NET=8000:8000:ulaw", "ENV_B=DSP_V90A=0 DSP_V91=0",
+	      "NET_SLIP=16:168:a", "STREAM=12",
+	      "EXPECT_A=V.92 connect [34][0-9]+/56000 \\(analogue modem\\)",
+	      "REJECT_A=retrain [0-9]|renegotiation [0-9]" });
+	add("open", "open_digital_k56flex_gap", "open8", "open8",
+	    "ATX3;AT+MS=56",
+	    { "NET=8000:8000:ulaw", "NET_DROP=26:20", "NET_SLIP=28:-24:a",
+	      "STREAM=12",
+	      "EXPECT_A=K56flex connect [0-9]+/56000 \\(analogue modem\\)",
+	      "REJECT_A=retrain [0-9]" });
+	add("open", "open_digital_x2_gap", "open8", "open8",
+	    "ATX3;AT+MS=X2",
+	    { "NET=8000:8000:ulaw", "NET_DROP=20:20", "NET_SLIP=22:168:a",
+	      "STREAM=12",
+	      "EXPECT_A=x2 connect [0-9]+/32000 \\(client\\)",
+	      "REJECT_A=retrain [0-9]|timed out" });
 #ifdef INTEROP_HAVE_AMR
 	/* --- two open modems (8000 Hz) through a mobile network's speech
 	   codec (netsim's NET_CODEC): V.22 passes AMR at 12.2 kbit/s with

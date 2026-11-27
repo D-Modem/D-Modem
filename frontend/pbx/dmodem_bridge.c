@@ -91,9 +91,14 @@ void dmbridge_fax_defaults(struct dmbridge_fax *f, const char *dir)
 	f->on = 1;
 	copy(f->dir, dir, sizeof(f->dir));
 	f->ident[0] = 0;
+	f->header[0] = 0;
 	f->max_bps = 14400;
+	f->min_bps = 0;
 	f->ecm = 1;
+	f->modems = 0;
 	f->t38 = 1;
+	f->t38_timeout = 6000;
+	f->res_vars = 1;
 }
 
 /* (see dmodem_bridge.h) */
@@ -107,15 +112,126 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 		copy(f->dir, value, sizeof(f->dir));
 	else if (dmbridge_option_is(name, "fax-ident"))
 		copy(f->ident, value, sizeof(f->ident));
+	else if (dmbridge_option_is(name, "fax-header"))
+		copy(f->header, value, sizeof(f->header));
 	else if (dmbridge_option_is(name, "fax-max-rate"))
 		f->max_bps = atoi(value);
-	else if (dmbridge_option_is(name, "fax-ecm"))
+	else if (dmbridge_option_is(name, "fax-min-rate"))
+		f->min_bps = atoi(value);
+	else if (dmbridge_option_is(name, "fax-t38-timeout"))
+		f->t38_timeout = atoi(value) > 0 ? atoi(value) : 6000;
+	else if (dmbridge_option_is(name, "fax-res-vars"))
+		f->res_vars = h->is_true(value);
+	else if (dmbridge_option_is(name, "fax-modems")) {
+		int m = dmbridge_fax_modems(value);
+		if (m < 0)
+			log_line(h, NULL, DMBRIDGE_WARNING,
+				 "fax_modems: not valid: %s", value);
+		else
+			f->modems = m;
+	} else if (dmbridge_option_is(name, "fax-ecm"))
 		f->ecm = h->is_true(value);
 	else if (dmbridge_option_is(name, "fax-t38"))
 		f->t38 = h->is_true(value);
 	else
 		return 0;
 	return 1;
+}
+
+/* (see dmodem_bridge.h) */
+const char *const dmbridge_faxopt_items[] = {
+	"ecm", "maxrate", "minrate", "t38timeout", "localstationid",
+	"headerinfo", "modems", NULL
+};
+
+/* (see dmodem_bridge.h) */
+int dmbridge_fax_modems(const char *list)
+{
+	int m = 0, any = 0;
+	const char *p = list;
+
+	if (!p || !*p || !strcasecmp(p, "all"))
+		return 0;
+	while (*p) {
+		size_t n = strcspn(p, ", |");
+		if (n == 3 && !strncasecmp(p, "v17", 3))
+			m |= DMODEM_FAX_V17;
+		else if (n == 3 && !strncasecmp(p, "v27", 3))
+			m |= DMODEM_FAX_V27;
+		else if (n == 3 && !strncasecmp(p, "v29", 3))
+			m |= DMODEM_FAX_V29;
+		else if (n == 3 && !strncasecmp(p, "v34", 3))
+			any = 1;
+		else if (n)
+			return -1;
+		p += n;
+		if (*p)
+			p++;
+	}
+	if (!m)
+		return any ? -1 : 0;
+	return m;
+}
+
+/* (see dmodem_bridge.h) */
+void dmbridge_fax_modems_text(int m, char *buf, size_t len)
+{
+	if (!m)
+		m = DMODEM_FAX_V17 | DMODEM_FAX_V27 | DMODEM_FAX_V29;
+	snprintf(buf, len, "%s%s%s%s%s",
+		 m & DMODEM_FAX_V17 ? "v17" : "",
+		 m & DMODEM_FAX_V17 && m & (DMODEM_FAX_V27 | DMODEM_FAX_V29) ?
+		 "," : "",
+		 m & DMODEM_FAX_V27 ? "v27" : "",
+		 m & DMODEM_FAX_V27 && m & DMODEM_FAX_V29 ? "," : "",
+		 m & DMODEM_FAX_V29 ? "v29" : "");
+}
+
+/* a fax rate that T.30 has: 2400 to 14400 in steps of 2400; 0 if not */
+static int fax_rate_value(const char *value)
+{
+	int r = atoi(value);
+	return r >= 2400 && r <= 14400 && r % 2400 == 0 ? r : 0;
+}
+
+/* (see dmodem_bridge.h) */
+int dmbridge_faxopt(const struct dmbridge_host *h, struct dmbridge_fax *f,
+		    const char *item, const char *value)
+{
+	int v;
+
+	if (!item || !value)
+		return -1;
+	if (!strcasecmp(item, "ecm")) {
+		f->ecm = h->is_true(value) ? 1 : 0;
+	} else if (!strcasecmp(item, "maxrate")) {
+		if (!(v = fax_rate_value(value)))
+			return -1;
+		f->max_bps = v;
+	} else if (!strcasecmp(item, "minrate")) {
+		if (!(v = fax_rate_value(value)))
+			return -1;
+		f->min_bps = v;
+	} else if (!strcasecmp(item, "t38timeout")) {
+		if ((v = atoi(value)) <= 0)
+			return -1;
+		f->t38_timeout = v;
+	} else if (!strcasecmp(item, "localstationid")) {
+		if (strlen(value) >= sizeof(f->ident))
+			return -1;
+		copy(f->ident, value, sizeof(f->ident));
+	} else if (!strcasecmp(item, "modems")) {
+		if ((v = dmbridge_fax_modems(value)) < 0)
+			return -1;
+		f->modems = v;
+	} else if (!strcasecmp(item, "headerinfo")) {
+		if (strlen(value) >= sizeof(f->header))
+			return -1;
+		copy(f->header, value, sizeof(f->header));
+	} else {
+		return -1;
+	}
+	return 0;
 }
 
 /* (see dmodem_bridge.h) */
@@ -1047,6 +1163,21 @@ static void log_fds(struct dmbridge_call *c)
 		 c->fd, c->dte[0], c->dte[1]);
 }
 
+/* the modulation, error correction and compression the modems agreed
+   on, into the call (for the module's variables and the program's
+   environment) */
+static void connection(struct dmbridge_call *c)
+{
+	struct dmodem_connection k;
+
+	dmodem_connection(c->d, &k);
+	copy(c->modulation, k.modulation, sizeof(c->modulation));
+	copy(c->protocol, k.protocol, sizeof(c->protocol));
+	copy(c->compression, k.compression, sizeof(c->compression));
+	log_line(c->h, c->call, DMBRIDGE_DEBUG, "connected: %s %s/%s",
+		 c->modulation, c->protocol, c->compression);
+}
+
 /* (see dmodem_bridge.h) */
 enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 {
@@ -1100,6 +1231,7 @@ enum dmbridge_event dmbridge_call_step(struct dmbridge_call *c, int n)
 			c->online = 1;
 			snprintf(c->rate, sizeof(c->rate), "%u/%u",
 				 st->tx_rate, st->rx_rate);
+			connection(c);
 			return DMBRIDGE_CONNECTED;
 		}
 		if (st->link == DMODEM_IDLE || st->link == DMODEM_HANGUP ||

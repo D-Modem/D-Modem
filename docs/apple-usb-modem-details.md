@@ -117,8 +117,8 @@ does:
 1. Register 11 (revision): the ID of the line side in its top bits. 1 is a
    Si3018, 3 is a Si3019 (whose AC termination is register 30).
 2. Register 6 to 0: the line side gets power.
-3. dmodemd polls register 12 for FDT (0x40): the isolation link is up. If it
-   does not come, dmodemd tells this and continues.
+3. dmodemd reads register 12 until FDT (0x40) is set: the isolation link is up. If
+   FDT does not come, dmodemd tells this and continues.
 4. On hook, and the on-hook line monitor enabled (the ONHM of register 5, 0x08).
    Thus, caller ID comes in the samples. Off hook, the monitor is disabled.
 5. dmodemd reads the registers of the country (16, 26, 30 on a Si3019, 31, 59), then
@@ -146,7 +146,7 @@ stalled. Thus, when it stalls, dmodemd uses the OH of register 5 for the hook
 (`FAKE_APPLE_HOOK_STALL` makes the fake device stall it too). We do not know yet if the
 device accepts the request off hook, or never.
 
-The next try started, but the modem gave phantom calls. dmodemd had
+In the next try, the modem reported calls that did not occur. dmodemd had
 read bit 15 of `RING_DETECT` as "ringing", but this bit is always set.
 Then a log of a real incoming call showed the ring itself:
 notification 0x09 each 40 ms during each 2 s ring, nothing between rings, and

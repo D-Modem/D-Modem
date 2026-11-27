@@ -8,36 +8,37 @@ This page gives the technical details for [Building and testing](testing.md), th
     cmake --build build
 
 i386 is not necessary. D-Modem builds natively on x86_64, ARM and
-other architectures, and links with `-lm`. Clang and GCC can both build it.
+other architectures, and links with `-lm`. Clang and GCC can both build
+it.
 
 Only the interop tests must have a 32-bit build (`-m32`, with 32-bit
 libraries: `g++-multilib` on Debian or Ubuntu), because the original
-library and the modems of the other vendors are 32-bit i386 code. Without it,
-those tests do not run.
+library and the modems of the other vendors are 32-bit i386 code.
+Without it, those tests do not run.
 
 ### Other C libraries
 
-With a C library other than glibc (musl on Alpine, the C library of Windows or of Apple),
-the test programs take the `rand()` sequence of glibc from
+With a C library other than glibc (musl on Alpine, the C library of
+Windows or of Apple), the test programs take the `rand()` sequence of glibc from
 `dsp/test/libc_compat.h`. Then their noise and random fax pages are the
 same values that we used to set the thresholds of the tests. With a different
 sequence, some of the spandsp tests fail on musl. `libc_compat.h` is
 included before each test source in `dsp/test/`. With glibc on Linux,
 it is empty.
 
-The `musl` job of CI builds and runs the offline tests on Alpine. There, the tests
-must have `coreutils` (for `stdbuf`) and `tiff-dev` (for the headers of spandsp).
+The `musl` job of CI builds and runs the offline tests on Alpine. There,
+the tests must have `coreutils` (for `stdbuf`) and `tiff-dev` (for the headers of spandsp).
 
 ### Windows
 
-A Windows build (MinGW-w64, `-DCMAKE_TOOLCHAIN_FILE=platforms/windows/mingw-w64.cmake`)
-runs its tests under Wine: `ctest --test-dir build-win -L quick`. The
+A Windows build (MinGW-w64,
+`-DCMAKE_TOOLCHAIN_FILE=platforms/windows/mingw-w64.cmake`) runs its tests under Wine: `ctest --test-dir build-win -L quick`. The
 interop tests do not run there, because netsim is not built for Windows
 ([windows.md](windows.md)).
 
 ## Tests
 
-### Running them
+### How to run them
 
     ctest --test-dir build -j16         # all of them (-j about four times the
                                         # processors: about 1.5 min on 4)
@@ -60,11 +61,13 @@ There is one label for each peer for the interop calls:
 |---|---|
 | `smartlink` | Smart Link's original library |
 | `agere`, `sm56`, `pctel`, `hsf`, `broadcom`, `intel`, `ess` | the other vendors' soft modems |
+| `courier` | the emulated USRobotics Courier V.Everything |
+| `3com` | the emulated 3Com TC110 PC Card |
 | `spanpeer` | spandsp's modems |
 | `hda` | the open modem on an emulated HD-audio modem codec |
 | `open` | two open modems |
-| `ring` | netsim putting the call through as each country's exchange does |
-| `adaptive` | fax senders and data callers into the open modem answering with `AT+FAA=1` |
+| `ring` | netsim puts the call through as the exchange of each country does |
+| `adaptive` | fax senders and data callers into the open modem, which answers with `AT+FAA=1` |
 
 Other labels: `quick` (the offline tests), `spandsp` (the
 transmitters and T.30 of spandsp against ours), `alsa` (dmodemd on emulated
@@ -86,20 +89,21 @@ run last, and one at a time:
   (`TEST_FILTER`, CMake 3.22 and later; with older CMake, they run with
   the others).
 
-When you correct one of them, remove it from the list. Put a new flaky test on the
-list with its task number.
+When you correct one of them, remove it from the list. Put a new flaky
+test on the list with its task number.
 
 ### Test names
 
-The test programs are in `dsp/test/`. The test programs of the link layer and the core are
-in `link/test/` and `core/test/`. The test programs of dmodemd and the Windows driver are
-in `frontend/dmodemd/test/` and `platforms/windows/winmodem/test/`.
+The test programs are in `dsp/test/`. The test programs of the link
+layer and the core are in `link/test/` and `core/test/`. The test
+programs of dmodemd and the Windows driver are in
+`frontend/dmodemd/test/` and `platforms/windows/winmodem/test/`.
 
 Most of them are GoogleTest programs (the libgtest-dev of the system, or
-downloaded when you configure). ctest runs each of their cases as a separate test,
-with the name `<suite>/<Test>.<case>/<parameters>`, for example
-`Line/PumpLoopback.DataBothWays/v34_echoes`. The names of the interop calls are
-`<label>.<call>`, for example `agere.agere_v92_qc`. The other tests are
+downloaded when you configure). ctest runs each of their cases as a
+separate test, with the name `<suite>/<Test>.<case>/<parameters>`, for example
+`Line/PumpLoopback.DataBothWays/v34_echoes`. The names of the interop
+calls are `<label>.<call>`, for example `agere.agere_v92_qc`. The other tests are
 scripts and commands added directly to ctest (`doc_check`,
 `v44_preset_check`, `compress_bench_check`, the `dmodemd_*` Python
 tests, and other items).
@@ -149,6 +153,7 @@ The details of the fax tests are in [Fax](dsp/fax-details.md).
 | `leased_call_test` | Leased lines under libdmodem at 9600 Hz on a simulated circuit with no exchange ([leased.md](leased.md)). Each voice band modulation on `AT&L1`; V.29, V.33 and V.27ter at each rate on `AT&L2`; the faster end that comes down; a dropout under LAPM; noise that brings V.33 down; a late answerer; a long cut and the call again; a reroute through which V.34 and V.32bis retrain (V.32bis does not with `DSP_V32_LOST=0`); a burst of noise. The loops 2 and 3 of V.54 with the self-test of V.52 (`AT&T`), refused loops, S18. The simulated carrier of V.13 (S48). V.91 on a 4-wire digital circuit (`AT&L2+MS=V91`, G.711 octets at 8000 Hz): the two laws, robbed bits, a late answerer, a short and a long cut. `LEASED_DEBUG=<level>` gives the log of libdmodem |
 | `clear_call_test` | The clear 64 kbit/s channel (`AT+MS=CLEAR`): two modems on a simulated digital channel. CONNECT 64000 in the two directions; data through X.75 and through the link of the modem itself; a late answerer, no answerer, a nailed-up channel (`AT&L2`) that calls again; X.75 as T.90 and isdn4linux have it, through a dropout; the frames of PPP. `CLEAR_DEBUG=<level>` gives the log of libdmodem |
 | `v110_osmo_test` (labels `quick`, `osmocom`) | V.110 against the implementation of libosmocore. Built only when `-DOSMOCORE_SRC=<libosmocore source tree>` (1.14 or later) is given |
+| `dmodem_bridge_test` (not on Windows) | The bridge of the PBX modules (`frontend/pbx/dmodem_bridge.c`): many callers at the same time on the unix socket of one server. `BRIDGE_DEBUG=<level>` gives its log |
 | `vwb_call_test` | V.wb under libdmodem at 96000 Hz with `AT&L1` (S0=1 answers with no ring): bulk data in the two directions through V.42, a retrain under LAPM, NO CARRIER and the call again automatically, each end behind the buffers of a host (the USB line of dmodemd: 20 ms frames, 4672 samples ahead), and refusal at 9600 Hz |
 
 **The link layer and the core:**
@@ -168,13 +173,13 @@ The details of the fax tests are in [Fax](dsp/fax-details.md).
 
 | Program | What it tests |
 |---|---|
-| `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `intel_test`, `ess_test`, `spanpeer_test`, `open_test`, `hda_test`, `ring_test`, `adaptive_test` | Calls between this modem and the others ([interop.md](interop.md)). `hda` is the open modem on an emulated HD-audio modem codec. In `ring`, netsim puts the call through as the exchange of each country does (dial tone, digits, ringing, busy and congestion tones). `adaptive` sends fax senders and data callers into the open modem, which answers with `AT+FAA=1`. All the calls are in one table in `interop_test.cpp`. Each program runs the calls of one label |
+| `smartlink_test`, `agere_test`, `sm56_test`, `pctel_test`, `hsf_test`, `broadcom_test`, `intel_test`, `ess_test`, `spanpeer_test`, `courier_test`, `3com_test`, `open_test`, `hda_test`, `ring_test`, `adaptive_test` | Calls between this modem and the others ([interop.md](interop.md)). `hda` is the open modem on an emulated HD-audio modem codec. In `ring`, netsim puts the call through as the exchange of each country does (dial tone, digits, ringing, busy and congestion tones). `adaptive` sends fax senders and data callers into the open modem, which answers with `AT+FAA=1`. All the calls are in one table in `interop_test.cpp`. Each program runs the calls of one label |
 
 **dmodemd and the hardware** (`frontend/dmodemd/test/`):
 
 | Test | What it tests |
 |---|---|
-| `dmodemd_alsa` (`alsa_test.py`, label `alsa`) | Two dmodemd on fake ALSA modem cards (alsa-lib plugins), which call each other through a simulated exchange: dial tone, DTMF, rings, caller ID, V.34, busy, a stall, a voice call ([hardware.md](hardware.md)). A fake HD-audio hwdep device (`fake_hda_hwdep.cpp`, by `LD_PRELOAD`) checks the line settings of the Si3054 (`-c UK`, `AT+GCI`, RZ cleared off hook, a different chip not changed). Must have libasound2-dev |
+| `dmodemd_alsa` (`alsa_test.py`, label `alsa`) | Two dmodemd on fake ALSA modem cards (alsa-lib plugins), which call each other through a simulated exchange: dial tone, DTMF, rings, caller ID, V.34, busy, a stall, a voice call ([hardware.md](hardware.md)). The first dmodemd has `--speaker` on the `file` plugin of alsa-lib: the file has the audio of the call until `CONNECT` ([speaker-details.md](speaker-details.md#tests)). A fake HD-audio hwdep device (`fake_hda_hwdep.cpp`, by `LD_PRELOAD`) checks the line settings of the Si3054 (`-c UK`, `AT+GCI`, RZ cleared off hook, a different chip not changed). Must have libasound2-dev |
 | `dmodemd_usb` (`usb_test.py`, label `alsa`) | Two dmodemd on fake SmartUSB56s (`fake_st7554.cpp`, a libusb put in front of the real one by `LD_PRELOAD`) on the same exchange: the checks of the device, rings, V.34, busy, a voice call, disconnection ([hardware.md](hardware.md)). Must have libusb-1.0-0-dev |
 | `dmodemd_agere` (`agere_test.py`, label `alsa`) | dmodemd on two fake Agere USB 2.0 soft modems (`fake_agere.cpp`) on the same exchange: the stream of the ROM, rings and caller ID, a call in each direction with text, pulse dialling, disconnection |
 | `dmodemd_pico_line` (`pico_line_test.py`, label `alsa`) | The same on fake pico-serial Line sticks (`fake_pico_line.cpp`), with caller ID on hook, and the line settings of the country written to the DAA of the stick (`-c UK`, then `AT+GCI`) ([hardware.md](hardware-details.md#pico-serial-line)). Must have libusb-1.0-0-dev |
@@ -186,6 +191,7 @@ The details of the fax tests are in [Fax](dsp/fax-details.md).
 | `dmodemd_red` (`clearmode_test.py --red`, label `quick`) | The same calls over a lossy trunk with RFC 2198 redundancy (the assured mode of V.152): `red/8000` and `a=maxmptime` in the offer and answer, one packet in three lost in each direction, and each lost packet made again from the subsequent packets |
 | `dmodemd_v150` (`v150_test.py`, label `quick`) | dmodemd with `SIP_V150=yes` against the SIP peer and V.150.1 gateway (SSE, SPRT) of the script, with calls out and in: the SDP lines, ANSam as events, `SSE:M`, `INIT`, `JM_INFO`, `CONNECT 33600`, a line in each direction, `CLEARDOWN` ([v150-details.md](v150-details.md#tests)) |
 | `V8bis.*` (`v8bis_test.cpp`, label `quick`) | The level of MRe, the messages of V.8 bis against their octets, the parameter trees parsed past the parts that are not read, the signals through their detector, the messages through V.21 and HDLC ([v8bis-details.md](dsp/v8bis-details.md#tests)) |
+| `Core.Speaker*` (`core_test.cpp`, label `quick`) | The speaker of the program (`Options::speaker`): `ATM1` on until `CONNECT`, `ATM3` off while the modem dials, `ATM2` always on, `ATM0` never on ([speaker-details.md](speaker-details.md#tests)) |
 | `Core.Dsvd*` (`core_test.cpp`, label `quick`) | Two modems with `AT+A8E=1,1,,1+DSVD=1`: V.8 bis selects DSVD, the data channel of V.76 carries the characters of the DTEs in the two directions, and the hang-up closes it; DSVD at the caller only: data and V.42; `Core.DsvdVoice`: with a voice path at the two ends, each end hears the tone of the other through G.729 Annex A together with the data, and the voice channel closes at hang-up ([v70-details.md](v70-details.md#tests)) |
 | `Core.V8bis*` (`core_test.cpp`, label `quick`) | Two modems with `AT+A8E=1,1,,1` at the two ends, or at one end: the transaction (MRe, CRd, CL, MS, ACK(1)) then V.8, or V.8 without it ([v8bis-details.md](dsp/v8bis-details.md#tests)) |
 | `RtpRed.*` (`rtp_red_test.cpp`, label `quick`) | RFC 2198 redundancy (`rtp_red.h`): RED payloads built and read back, the layout of the RFC itself, timestamps that wrap, blocks that a header cannot hold, malformed payloads, and `a=fmtp` values |
@@ -208,9 +214,9 @@ The details of the fax tests are in [Fax](dsp/fax-details.md).
 ## Test logs
 
 If a ctest run has a failure, it keeps the logs of the failed tests in
-a separate directory under `build/test-logs/`. The name of the directory is the start
-time of the run (`latest` points to the newest). A run without a failure does not keep
-logs there. Skipped tests are not failures.
+a separate directory under `build/test-logs/`. The name of the directory
+is the start time of the run (`latest` points to the newest). A run
+without a failure does not keep logs there. Skipped tests are not failures.
 
     build/test-logs/2026-10-16_21-34-03/
         run.txt                     when, the ctest command, the commit, the host
@@ -232,69 +238,72 @@ fixture does it (`cmake/test_logs.cmake`):
 2. Each test runs under `cmake/test_run.sh`, which keeps its output and
    also gives it to ctest. A test finds its directory in
    `DMODEM_TEST_DIR`.
-3. When a test passes, the launcher deletes its directory immediately. A test
-   without its `result.txt` was killed (for example at its ctest timeout)
+3. When a test passes, the launcher deletes its directory immediately.
+   A test without its `result.txt` was killed (for example at its ctest timeout)
    and counts as failed.
 4. `test_logs_end` writes the summary after the last test. If the run
-   stopped without a failure, it deletes the directory of the run and points
-   `latest` at the newest run that stays.
+   stopped without a failure, it deletes the directory of the run and
+   points `latest` at the newest run that stays.
 
 Settings:
 
-- `DMODEM_TEST_KEEP_PASSED=1` keeps all logs (approximately 100 MB for a full
-  run).
+- `DMODEM_TEST_KEEP_PASSED=1` keeps all logs (approximately 100 MB for a
+  full run).
 - The 20 latest runs are kept (`-DDMODEM_TEST_LOG_KEEP=<n>`).
 - `-DDMODEM_TEST_LOG_ROOT=<dir>` puts them in a different location.
 
 ### Debug levels
 
-Each run records much log data. The launcher sets the debug level of each
-modem and library that the tests run to `DMODEM_TEST_DEBUG` (5 by default),
-where it is not already set:
+Each run records much log data. The launcher sets the debug level of
+each modem and library that the tests run to `DMODEM_TEST_DEBUG` (5 by
+default), where it is not already set:
 
 - `DSP_DEBUG` (the pumps), `CORE_DEBUG`, `DMODEM_DEBUG` (libdmodem),
-  `DBG` (the modems of the interop calls), `DMODEMD_DEBUG` (the `-d` of dmodemd);
+  `DBG` (the modems of the interop calls), `DMODEMD_DEBUG` (the `-d` of
+  dmodemd);
 - `LINK_DEBUG` and `SPANDSP_DEBUG` are enabled.
 
 At level 5, the modems log each step of a call, with the values of their
-equalizers and retrains. Levels 6 and higher log each
-bit and symbol (`DSP_DEBUG=6 ctest -R ...` for one test).
-`DMODEM_TEST_DEBUG=0` keeps the levels of the tests themselves. With all of this, a
-full run takes about a tenth more time.
+equalizers and retrains. Levels 6 and higher log each bit and symbol
+(`DSP_DEBUG=6 ctest -R ...` for one test). `DMODEM_TEST_DEBUG=0` keeps
+the levels of the tests themselves. With all of this, a full run takes
+about a tenth more time.
 
-`dmodem_bridge_test` does not use `DMODEM_DEBUG`. Its 16 modems at level 5
-write more log data than ctest can read, and on macOS the calls then do not
-end in time. Use `BRIDGE_DEBUG=<level>` to get its log.
+`dmodem_bridge_test` does not use `DMODEM_DEBUG`. Its 16 modems at level
+5 write more log data than ctest can read, and on macOS the calls then do
+not end in time. Use `BRIDGE_DEBUG=<level>` to get its log.
 
-A call that you run manually (`interop_call`, or a test program outside ctest)
-writes its modem logs to `LOG_DIR`, or to `build/dsp/test/logs/<test>/`
+A call that you run manually (`interop_call`, or a test program outside
+ctest) writes its modem logs to `LOG_DIR`, or to `build/dsp/test/logs/<test>/`
 for the test programs.
 
 ## How the calls keep time
 
 The interop calls run as fast as the modems can. Each modem keeps time
-by the samples of its line. The Agere, SM56, PCTel, HSF and Broadcom harnesses
-count jiffies and timers in samples. Our core, under the open pumps
-or the original library, does this with `PIPE_SYNC`. Thus, a call goes as it
-would in real time, only sooner, and a busy machine only makes it slower.
+by the samples of its line. The Agere, SM56, PCTel, HSF and Broadcom
+harnesses count jiffies and timers in samples. Our core, under the open
+pumps or the original library, does this with `PIPE_SYNC`. Thus, a call
+goes as it would in real time, only sooner, and a busy machine only
+makes it slower.
 
-The seconds of the call itself (`STREAM`, `MIDCALL`, `WAIT`, `ANSWER_AFTER`,
-`HANGUP_WAIT`, and the time that the driver waits for the messages of the modems)
-are then the seconds of the line, from the clock of netsim (`NET_CLOCK_FD`). They
-run faster or slower than the wall clock, as the machine permits. The
-wall clock is used only while the line does not move (a modem has stopped).
+The seconds of the call itself (`STREAM`, `MIDCALL`, `WAIT`,
+`ANSWER_AFTER`, `HANGUP_WAIT`, and the time that the driver waits for the
+messages of the modems) are then the seconds of the line, from the clock
+of netsim (`NET_CLOCK_FD`). They run faster or slower than the wall
+clock, as the machine permits. The driver uses the wall clock only while
+the line does not move (a modem has stopped).
 
 Three things keep such a call the same from run to run, also when the
 driver answers late:
 
-- **On hook, our modem and the original library always run in real time**
-  (`PIPE_SYNC`). Thus, the commands of the driver meet the samples that they would meet in
-  real time. The call itself, from the dial or the answer, runs as fast
-  as it can. Their line also runs from the start, as the lines of the other harnesses
-  do: the lead silence is written when they start, not at the first
-  `ATD` or `ATA`. A line that did not move until then accepted the commands as
-  they came, and the call started at the positions where the scheduler had the two
-  modems at that time.
+- **On hook, our modem and the original library always run in real
+  time** (`PIPE_SYNC`). Thus, the commands of the driver meet the samples
+  that they would meet in real time. The call itself, from the dial or
+  the answer, runs as fast as it can. Their line also runs from the
+  start, as the lines of the other harnesses do: they write the lead
+  silence when they start, not at the first `ATD` or `ATA`. If the line
+  did not move until then, the call would start at the positions where
+  the scheduler had the two modems at that time.
 - **The driver waits 100 ms of the line after a CONNECT before it sends
   data** (`DATA_WAIT`). The SM56 shows CONNECT a little before it accepts
   data, and echoes as a command line all data that comes sooner.
@@ -303,19 +312,19 @@ driver answers late:
 
 ### Fax calls
 
-The fax calls (`interop_call --fax`) keep time by the relay of the line by the driver
-(the samples of A at `LINE_RATE`: 8000, or 9600 with the original
-library). They go at a maximum of ten times as fast as real time (`MODEM_SPEED=10`,
-for `half_open` and `half_smartlink`):
+The fax calls (`interop_call --fax`) keep time by the relay of the line
+by the driver (the samples of A at `LINE_RATE`: 8000, or 9600 with the
+original library). They go at a maximum of ten times as fast as real time
+(`MODEM_SPEED=10`, for `half_open` and `half_smartlink`):
 
 - The fax modems use so little processor time that the line would
-  otherwise run some hundred times as fast. Then the milliseconds that the driver
-  takes to answer a modem (it does T.30 for the two machines) would be
+  otherwise run some hundred times as fast. Then the milliseconds that
+  the driver takes to answer a modem (it does T.30 for the two machines) would be
   most of a second of the line, more than the turnarounds of T.30.
-- The modems accept the commands of the DTE each 192 samples (`PIPE_SYNC=192`:
-  20 ms at 9600 Hz, the frame of the original library). The V.17 receiver of the original
-  library accepts a short train or not because of how its frames
-  fall on it. Thus, our training must start at the same point of those
+- The modems accept the commands of the DTE each 192 samples
+  (`PIPE_SYNC=192`: 20 ms at 9600 Hz, the frame of the original library).
+  The V.17 receiver of the original library accepts a short train or not
+  because of the position of its frames. Thus, our training must start at the same point of those
   frames each time.
 
 Thus, the calls use the same turnarounds as the real-time calls, and give
@@ -323,25 +332,27 @@ the same TCF and pages, in a tenth of the time.
 
 The relay also holds the line while the driver has not yet answered a
 message of a modem (from the output of the modem until the next poll or
-write of the driver). Also when the scheduler lets the driver run late, its answer meets
-the line at the position where an immediate answer would meet it. (Before this, the `+FTH` of the Agere modem
-sometimes stopped with ERROR, because its frame arrived some seconds of
-line time after its CONNECT.)
+write of the driver). Also when the scheduler lets the driver run late,
+its answer meets the line at the position where an immediate answer
+would meet it. (Without this, the `+FTH` of the Agere modem can stop with
+ERROR, because its frame arrives some seconds of line time after its
+CONNECT.)
 
 ### Parallel runs
 
-The calls run a little nicer (`nice` 10) than the remaining processes of the machine.
-Each takes about one processor while it runs, but not during the moments on
-hook in real time. Thus, `-j` can be about four times the number of
-processors. On 4 processors, the full suite takes approximately 75 s at `-j16`
-(105 s at `-j8`; 13 minutes when all calls ran in real time). With much more
-than that (`-j32` on 4), the calls on hook become slower than real time.
-None of the calls must run alone.
+The calls run at a lower priority (`nice` 10) than the remaining
+processes of the machine. Each takes about one processor while it runs,
+but not during the moments on hook in real time. Thus, `-j` can be about
+four times the number of processors. On 4 processors, the full suite
+takes approximately 75 s at `-j16` (105 s at `-j8`; 13 minutes when all
+calls run in real time). With much more than that (`-j32` on 4), the
+calls on hook become slower than real time. None of the calls must run
+alone.
 
-`MODEM_REALTIME=1 ctest ...` runs all calls in real time, as they all
-did before (this helps when you compare a failure).
+`MODEM_REALTIME=1 ctest ...` runs all calls in real time (this helps
+when you compare a failure).
 
-## Tools for trying a line by hand
+## Tools to try a line by hand
 
 The test programs are in `build/dsp/test/`.
 
@@ -353,19 +364,21 @@ makes one call manually:
     interop_call <caller> <answerer> ["ATX3;AT+MS=122"]
     interop_call --fax <sender> <receiver> [mod] [AT setup]
 
-The settings of the call come from the environment (`interop_call.h`: `NET`,
-`STREAM`, `BULK`, `CALLS`, `EXPECT_B`, ...; `NETSIM` for the path of netsim
-and `LOG_DIR` for the logs, by default the current directory).
+The settings of the call come from the environment (`interop_call.h`:
+`NET`, `STREAM`, `BULK`, `CALLS`, `EXPECT_B`, ...; `NETSIM` for the path
+of netsim and `LOG_DIR` for the logs, by default the current directory).
 
-A call connects two modem processes with pipes: `half_open` (this code on
-the modem core, `../core`) and the harness of a different modem, or a second
-`half_open` (the `open` label). Each goes through the full controller of the modem:
-AT commands, V.42/LAPM detection and data in the two
-directions. `half_open8` is the open modem at 8000 Hz (the original
-library does not operate at 8000 Hz). The other modems, their harnesses and
-the results of calls with them are in [interop.md](interop.md): the original
-library of Smart Link (`half_smartlink`), the Agere, SM56, PCTel, HSF,
-Broadcom, Intel and ESS soft modems, and the modems of spandsp.
+A call connects two modem processes with pipes: `half_open` (this code
+on the modem core, `core/`) and the harness of a different modem, or a
+second `half_open` (the `open` label). Each goes through the full
+controller of the modem: AT commands, V.42/LAPM detection and data in the
+two directions. `half_open8` is the open modem at 8000 Hz (the original
+library does not operate at 8000 Hz). The other modems, their harnesses
+and the results of calls with them are in
+[interop-details.md](interop-details.md): the original library of Smart
+Link (`half_smartlink`), the Agere, SM56, PCTel, HSF, Broadcom, Intel and
+ESS soft modems, the modems of spandsp, the emulated Courier
+(`half_courier`) and the emulated 3Com TC110 (`half_3com`).
 
 ### dsp_loopback
 
@@ -374,8 +387,9 @@ Broadcom, Intel and ESS soft modems, and the modems of spandsp.
 
 `dsp_loopback` runs a caller and an answerer through a simulated line
 with delay, a low-pass filter, white noise and an optional sample clock
-offset. Then it checks the bit error rate in the two directions. It is the
-simulation that `pump_test` uses, to try a line from the command line.
+offset. Then it checks the bit error rate in the two directions. It is
+the simulation that `pump_test` uses, to try a line from the command
+line.
 
 | Setting | Effect |
 |---|---|
@@ -409,10 +423,10 @@ With `FAR_DELAY` set to 200 ms, it still runs at 33600 bit/s.
 `NET=<rate A>:<rate B>:<ulaw|alaw>` puts `netsim`, a simulated G.711
 network, between the two modems. Each direction goes through the G.711
 law at 8000 Hz. A modem at 9600 Hz connects through a converter that
-operates as a codec on an analogue line: a raised cosine at 4000 Hz. Thus,
-the PCM samples stay free of intersymbol interference. `NET_PLAIN=1`
-uses the short resampler of dsp_util instead, which is not free of it. Thus,
-V.90 falls back to V.34 through it.
+operates as a codec on an analogue line: a raised cosine at 4000 Hz.
+Thus, the PCM samples stay free of intersymbol interference.
+`NET_PLAIN=1` uses the short resampler of dsp_util instead, which is not
+free of it. Thus, V.90 falls back to V.34 through it.
 
 ### Analogue modems at 8000 Hz
 
@@ -425,16 +439,17 @@ its pumps are the pumps of the analogue modem).
 ### Mobile speech codecs
 
 `NET_CODEC=amr:12.2` (AMR at 4.75 to 12.2 kbit/s) or
-`NET_CODEC=amrwb:23.85` (AMR-WB at 6.6 to 23.85 kbit/s) puts the speech codec of a mobile
-network on the 8000 Hz line instead of G.711. Each
+`NET_CODEC=amrwb:23.85` (AMR-WB at 6.6 to 23.85 kbit/s) puts the speech
+codec of a mobile network on the 8000 Hz line instead of G.711. Each
 direction is encoded and decoded frame by frame
 (`dsp/test/codec_sim.cpp`, on the OpenCORE and VisualOn libraries:
 the libopencore-amrnb-dev, libopencore-amrwb-dev and
 libvo-amrwbenc-dev of Debian; without them, netsim tells this).
 
-- `:dtx` after the rate enables the discontinuous transmission of the codecs.
-- `NET_CODEC_LOSS=<percent>` erases that percentage of the frames at random
-  (`NET_CODEC_SEED`), as lost packets would.
+- `:dtx` after the rate enables the discontinuous transmission of the
+  codecs.
+- `NET_CODEC_LOSS=<percent>` erases that percentage of the frames at
+  random (`NET_CODEC_SEED`), as lost packets would.
 - `codec_probe` runs a file of samples through the same codec, to
   measure its effect on a signal.
 
@@ -447,23 +462,23 @@ the speech paths of mobile telephony ([v_cvm.pdf](specs/v_cvm.pdf)).
 - `NET_GAIN` sets an analogue gain on the path to the 9600 Hz modem.
 - `NET_PAD=<dB>` puts a digital loss pad on that path: each code is
   encoded again that much lower.
-- `NET_RBS=<mask>` adds robbed bit signalling. In the samples whose count
-  mod 6 has its bit set in the mask, the least significant bit of the octet is
-  forced to 1, as on T1 trunks.
+- `NET_RBS=<mask>` adds robbed bit signalling. In the samples whose
+  count mod 6 has its bit set in the mask, netsim sets the least
+  significant bit of the octet to 1, as on T1 trunks.
 
 The DIL of V.90 finds pads and robbed bits ([v90a.md](dsp/v90a.md)).
 
-The codec of the 9600 Hz modem is on the clock of the network, with its samples on
-the symbols of the network, except in these conditions:
+The codec of the 9600 Hz modem is on the clock of the network, with its
+samples on the symbols of the network, except in these conditions:
 
 - `NET_PHASE=<fraction>`: its samples are that fraction of a network
   sample late; or
-- `NET_PPM=<ppm>`: its clock is that many parts per million fast, in the two
-  directions.
+- `NET_PPM=<ppm>`: its clock is that many parts per million fast, in the
+  two directions.
 
 This models a converter whose output times move with the clock (the
-raised cosine of netsim toward the modem, a 3900 Hz low pass from it). The PCM receiver of V.90
-must follow it.
+raised cosine of netsim toward the modem, a 3900 Hz low pass from it).
+The PCM receiver of V.90 must follow it.
 
 ### Echoes
 
@@ -475,13 +490,13 @@ netsim has the samples in blocks:
   and a low pass at 3400 Hz (`a` or `c`: only the answerer or the
   caller).
 - `NET_ECHO=<dB>:<ms>` adds the echo of a hybrid at the line of A, in the
-  sample clock of A: what A receives comes back with what it sends. netsim takes it
-  from the line before the codec of A would clip it.
+  sample clock of A: what A receives comes back with what it sends.
+  netsim takes it from the line before the codec of A would clip it.
 
-The `NET_ECHO` delay must be more than the time by which the modem at A sends ahead of
-what it has received (approximately 20 ms for the HSF modem). If not, netsim
-tells how many samples went without their echo. A canceller cannot learn an echo
-with gaps in it.
+The `NET_ECHO` delay must be more than the time by which the modem at A
+sends ahead of what it has received (approximately 20 ms for the HSF
+modem). If not, netsim tells how many samples went without their echo.
+A canceller cannot learn an echo with gaps in it.
 
 ## The fax calls and the fax modulation tests
 
@@ -496,12 +511,13 @@ library makes some bit errors with some of its own signals.
 The `Class1/FaxModulation.*` cases of `fax_test` send random data through
 each fax modulation over a simulated line:
 
-- The V.17 short train codes run a long train first. Thus, the receiver has
-  an equalizer from which to start.
+- The V.17 short train codes run a long train first. Thus, the receiver
+  has an equalizer from which to start.
 - Some V.17 14400 cases (`_page<seed>`) send the MH bits of a test page
-  instead, as do the `_page` cases of `spandsp_test` from the transmitter of spandsp.
+  instead, as do the `_page` cases of `spandsp_test` from the
+  transmitter of spandsp.
 
-The series of the same few patterns on a page move the loops of the receiver in a way
-that random data does not. Thus, a page can lose a row where random data
-goes through. The selected seeds are pages that lost a row before we made the
-AGC and timing loop of the receiver slower in the data.
+The series of the same few patterns on a page move the loops of the
+receiver in a way that random data does not. Thus, a page can lose a row
+where random data goes through. The selected seeds are pages that lose a
+row with a faster AGC and timing loop in the receiver.

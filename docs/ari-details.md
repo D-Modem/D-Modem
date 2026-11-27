@@ -32,7 +32,7 @@ licence for that use. `dmodem-ari` is under the AGPL-3.0, or a commercial
 licence (refer to [LICENSING.md](../LICENSING.md)), whatever the terms of
 Asterisk are.
 
-## Setting up
+## Installation
 
 ### Asterisk's HTTP server and an ARI user
 
@@ -65,8 +65,9 @@ exten => 5551000,1,Stasis(dmodem,bbs)
 exten => s,1,Stasis(dmodem,isp,o)
 ```
 
-When the call ends, `dmodem-ari` sets `DMODEMSTATUS` and `DMODEMRATE`
-as `DModem()` does. Then the call continues in the dialplan after the
+When the call ends, `dmodem-ari` sets `DMODEMSTATUS`, `DMODEMRATE`,
+`DMODEMMODULATION`, `DMODEMPROTOCOL` and `DMODEMCOMPRESSION` as
+`DModem()` does. Then the call continues in the dialplan after the
 `Stasis()`, unless it has hung up.
 
 For faxes, `sendfax` or `receivefax` replaces the profile. The file and
@@ -106,7 +107,7 @@ debug = 0               ; the modem's own log (1: the core, 3: the pumps)
 | `ari_app` | `dmodem` |
 | `debug` | `0` |
 
-### Running it
+### The command line
 
 ```
 dmodem-ari [-c /etc/asterisk/dmodem.conf] [-u http://host:port]
@@ -117,8 +118,8 @@ dmodem-ari [-c /etc/asterisk/dmodem.conf] [-u http://host:port]
   `/etc/asterisk/dmodem.conf`.
 - `-u`, `-U` and `-a` override `ari_url`, `ari_user`/`ari_password` and
   `ari_app` in `[general]`.
-- Each `-v` logs more on stderr. One `-v` logs the calls (answering,
-  connected, done). A second `-v` adds the details of the bridge.
+- Each `-v` logs more on stderr. One `-v` logs the steps of each call
+  (answer, connection, end). A second `-v` adds the details of the bridge.
 
 If the WebSocket stops, `dmodem-ari` connects again a second later.
 Calls that are already in progress continue during this time.
@@ -154,11 +155,12 @@ For each call that comes into the app, `dmodem-ari` does these steps:
    server or program of the profile through the bridge of the PBX modules
    (`frontend/pbx/dmodem_bridge.c`). The details of the call go in the
    environment of the program or the header of the server:
-   `DMODEM_CHANNEL`, `DMODEM_PROFILE`, `DMODEM_RATE`, `DMODEM_CALLERID`,
-   `DMODEM_DIALED` and `DMODEM_CONNECTED`. A program also gets
+   `DMODEM_CHANNEL`, `DMODEM_PROFILE`, `DMODEM_RATE`,
+   `DMODEM_MODULATION`, `DMODEM_PROTOCOL`, `DMODEM_COMPRESSION`,
+   `DMODEM_CALLERID`, `DMODEM_DIALED` and `DMODEM_CONNECTED`. A program also gets
    `DMODEM_CONTROL`, its control channel to the modem, as in
-   [app_dmodem](asterisk-details.md).
-6. **Clean up.** At the end, it deletes the external media channel and
+   [app_dmodem](asterisk-details.md#what-the-server-or-program-sees).
+6. **End.** At the end, it deletes the external media channel and
    the bridge, sets the variables, and continues the call in the
    dialplan.
 
@@ -167,11 +169,11 @@ For each call that comes into the app, `dmodem-ari` does these steps:
 The fax machine is the same as that of `app_dmodem`: T.30 on V.17, V.29
 and V.27ter, with error correction mode (ECM) and TIFF files (refer to
 [asterisk.md](asterisk.md#fax)). Its settings come from the `[general]`
-section of `dmodem.conf`: `fax_ident`, `fax_max_rate`, `fax_ecm`,
-`fax_t38`, and `fax_dir` for the faxes that the modem profiles receive
-(default `/var/spool/asterisk/fax`).
+section of `dmodem.conf`: `fax_ident`, `fax_header`, `fax_modems`, `fax_max_rate`, `fax_min_rate`,
+`fax_ecm`, `fax_t38`, `fax_t38_timeout`, `fax_res_vars`, and `fax_dir` for the faxes that
+the modem profiles receive (default `/var/spool/asterisk/fax`).
 
-### Three ways to fax
+### Four ways to fax
 
 - **A fax machine calls a modem profile.** When the profile has `fax`
   enabled (the default), the fax goes into
@@ -180,13 +182,73 @@ section of `dmodem.conf`: `fax_ident`, `fax_max_rate`, `fax_ecm`,
   machine by its CNG tone, or by a V.8 CM that tells of a fax call.
   `DMODEMSTATUS` is set to `FAX` immediately when the modem hears the fax
   machine.
-- **`Stasis(dmodem,receivefax,<file>[,<ident>])`** answers as a fax
-  machine and receives into the file.
-- **`Stasis(dmodem,sendfax,<file>[,<ident>])`** sends a TIFF file (all
-  TIFFs of 1 bit pels, as `DModemSendFax` accepts) on a call to a fax
-  machine.
+- **`Stasis(dmodem,receivefax,<file>[,<ident>[,<options>]])`** answers
+  as a fax machine and receives into the file.
+- **`Stasis(dmodem,sendfax,<file>[&<file2>...][,<ident>[,<options>]])`**
+  sends one or more TIFF files (all TIFFs of 1 bit pels, as
+  `DModemSendFax` accepts) on a call to a fax machine.
+
+- **`Stasis(dmodem,faxdetect[,<seconds>[,<options>]])`** listens for a
+  fax machine, as `DModemFaxDetect` does (refer to
+  [asterisk-details.md](asterisk-details.md#fax-detection)). It has the
+  same options and sets the same variables. When it hears a fax
+  machine and the context has a `fax` extension, the call continues
+  there (not with the option `x`). Else the call continues at the next
+  priority.
+
+  It hears a T.38 request only with the SIP side (`t38 = yes`). Unlike
+  `DModemFaxDetect`, it accepts the T.38 request on its own leg (it
+  cannot keep the request open for a later leg). The caller then stays
+  on T.38 with Asterisk, and the fax application asks for T.38 again on
+  its own leg. Option `r` plays `tone:ring` on the channel.
 
 `<ident>` is our own number. It replaces `fax_ident`.
+
+`<options>` are the options of `DModemSendFax` and `DModemReceiveFax`:
+`d`, `f`, `F`, `z`, `T` and `s` (refer to
+[asterisk-details.md](asterisk-details.md#fax-application-options)).
+For option `z` and option `T`, `dmodem-ari` must have its SIP side
+(`t38 = yes`).
+
+### The fax settings of a call
+
+`DMODEMFAXOPT()` is a function of `app_dmodem`. Without `app_dmodem`,
+set the channel variables that it sets. `dmodem-ari` reads them before
+each fax, also for a fax machine that calls a modem profile:
+
+| variable | the same as |
+|---|---|
+| `DMODEMFAXOPT_ECM` | `DMODEMFAXOPT(ecm)` |
+| `DMODEMFAXOPT_MAXRATE` | `DMODEMFAXOPT(maxrate)` |
+| `DMODEMFAXOPT_MINRATE` | `DMODEMFAXOPT(minrate)` |
+| `DMODEMFAXOPT_T38TIMEOUT` | `DMODEMFAXOPT(t38timeout)` |
+| `DMODEMFAXOPT_LOCALSTATIONID` | `DMODEMFAXOPT(localstationid)` |
+| `DMODEMFAXOPT_MODEMS` | `DMODEMFAXOPT(modems)` |
+| `DMODEMFAXOPT_HEADERINFO` | `DMODEMFAXOPT(headerinfo)` (refer to [asterisk-details.md](asterisk-details.md#page-header-line)) |
+
+Example:
+
+```
+exten => 5551001,1,Set(DMODEMFAXOPT_MINRATE=9600)
+ same => n,Stasis(dmodem,receivefax,/var/spool/fax/${UNIQUEID}.tif,,d)
+```
+
+### Fax events and totals
+
+`dmodem-ari` cannot add CLI commands or AMI actions to Asterisk. It
+gives the same data in these ways:
+
+- At the end of each fax, it sends the ARI user event `DModemSendFax`
+  or `DModemReceiveFax` on the channel. AMI shows it as a `UserEvent`
+  with `UserEvent: DModemSendFax` (or `DModemReceiveFax`) and the same
+  headers as the AMI event of `app_dmodem` (refer to
+  [asterisk-details.md](asterisk-details.md#fax-cli-and-ami)).
+- With option `s`, it sends the user event `DModemFaxStatus` at each
+  phase and each page.
+- On the signal `SIGUSR1` (`kill -USR1 <pid>`), it writes the faxes that
+  run now and the totals since its start to its log: the attempts to
+  send and to receive, the completed faxes, the failed faxes and the
+  number of failures for each `FAXERROR` code.
 
 ### The variables
 
@@ -197,11 +259,18 @@ section of `dmodem.conf`: `fax_ident`, `fax_max_rate`, `fax_ecm`,
 |---|---|
 | `DMODEMFAXSTATUS` | `SUCCESS` or `FAILED` |
 | `DMODEMFAXRESULT` | the result in words |
+| `DMODEMFAXERROR` | the result as a code (`NO_ERROR`, `TRAINING`, `T38` and the other codes of `app_dmodem`) |
 | `DMODEMFAXPAGES` | pages sent or received |
 | `DMODEMFAXRATE` | the bit rate |
+| `DMODEMFAXRESOLUTION` | `8040x3850` or `8040x7700` |
 | `DMODEMFAXREMOTE` | the other machine's ident |
 | `DMODEMFAXECM` | `yes` or `no` |
 | `DMODEMFAXT38` | `yes` or `no` |
+| `DMODEMFAXSESSION` | the number of the fax session in `dmodem-ari` |
+
+`dmodem-ari` also sets the variables of `res_fax` (`FAXSTATUS`,
+`FAXSTATUSSTRING`, `FAXERROR`, `FAXPAGES`, `FAXBITRATE`, `FAXRESOLUTION`,
+`REMOTESTATIONID` and `LOCALSTATIONID`), unless `fax_res_vars = no`.
 
 ### One difference from the module
 
@@ -230,7 +299,7 @@ a modem call that the other side hangs up. `DMODEMSTATUS` is not set in
 With `t38 = yes` in `[general]`, the line of each call is a SIP leg, not
 an external media channel:
 
-- Asterisk calls the own SIP side of `dmodem-ari` on its own PJSIP
+- Asterisk calls the SIP side of `dmodem-ari` on its own PJSIP
   endpoint (`POST /channels` to
   `PJSIP/<sip_endpoint>/sip:<token>@<sip_bind>`).
 - The audio arrives in RTP, as before.
@@ -275,7 +344,7 @@ sip_bind = 127.0.0.1:5090       ; dmodem-ari's SIP side (its RTP, UDPTL too)
 ### How the faxes use it
 
 The faxes use T.38 in the same way as the faxes of the module
-([asterisk.md](asterisk-details.md#t38)). `fax_t38 = no` keeps them on
+([asterisk-details.md](asterisk-details.md#t38)). `fax_t38 = no` keeps them on
 the audio.
 
 - **`receivefax`, and a modem profile that hears a fax machine,** ask for
@@ -312,7 +381,7 @@ V.91 come through it with no changes, as through external media.
 
 - **Variables after a hangup:** if the other side hangs up a call, the
   variables of the call are only as complete as they were before the
-  hangup (refer to [Faxes](#faxes)).
+  hangup (refer to [One difference from the module](#one-difference-from-the-module)).
 - **Plain HTTP:** `dmodem-ari` connects to ARI through plain HTTP. Thus,
   Asterisk must be on the same host or on a trusted network. The program
   does not do a check of the `Sec-WebSocket-Accept` header of the
@@ -330,7 +399,7 @@ V.91 come through it with no changes, as through external media.
 
 ## Testing
 
-`ARI=1` runs the Asterisk tests ([asterisk.md](asterisk-details.md#testing))
+`ARI=1` runs the Asterisk tests ([asterisk-details.md](asterisk-details.md#testing))
 through `dmodem-ari` in place of the module (`frontend/asterisk/test/ari_env.sh`).
 It enables the HTTP server and ARI of Asterisk, does not load
 `app_dmodem`, and writes the `DModem(...)`, `DModemSendFax(...)` and
@@ -344,15 +413,15 @@ It enables the HTTP server and ARI of Asterisk, does not load
 - **`ARI=1 frontend/asterisk/test/run.sh`:** two `dmodem-ari` modems on the
   two halves of a Local channel (no clock), also at 62666/62666 bit/s.
 - **`ARI=1 frontend/asterisk/test/fax.sh` and `ARI=1 frontend/asterisk/test/fax_spandsp.sh`:**
-  the faxes. They run between the own machines of `dmodem-ari` (a modem
+  the faxes. They run between the fax machines of `dmodem-ari` (a modem
   profile that receives, `receivefax`, `sendfax`) and against the
   `SendFAX` and `ReceiveFAX` of Asterisk (spandsp). The `h` extensions
   must have the results, and the received files must have the pages that
   were sent.
 - **`ARI_SIP=1` with each of them:** `t38 = yes`, with the calls on SIP
   legs (the test adds a `dmodem` endpoint to `pjsip.conf`). The modems
-  still connect at 62666/62666. The faxes between the own machines of
+  still connect at 62666/62666. The faxes between the fax machines of
   `dmodem-ari` go through T.38, also through a Local channel.
 - **`ARI=1 frontend/asterisk/test/t38.sh`:** the T.38 test of the module
-  ([asterisk.md](asterisk-details.md#testing)) through `dmodem-ari`, with
+  ([asterisk-details.md](asterisk-details.md#testing)) through `dmodem-ari`, with
   `t38 = yes` and its SIP side on the `dmodem` endpoint.

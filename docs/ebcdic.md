@@ -1,7 +1,5 @@
 # EBCDIC terminals and hosts
 
-Written in ASD-STE100 Simplified Technical English.
-
 ## What it does
 
 Most terminals and computers send ASCII characters to a modem. IBM
@@ -63,7 +61,7 @@ EBCDIC DTE.
 | `<mode>` 1  | Each command line identifies the character set (default). |
 | `<mode>` 2  | EBCDIC only. The modem ignores a command line in ASCII.   |
 | `<data>` 0  | The modem does not change the data of a call (default).   |
-| `<data>` 1  | The modem changes the data of a call (see below).         |
+| `<data>` 1  | The modem changes the data of a call (refer to the next section). |
 | `<cp>`      | The IBM code page. The default is 37 (USA and Canada).    |
 
 The modem sends the result of the command line that sets `+DEBC` in the

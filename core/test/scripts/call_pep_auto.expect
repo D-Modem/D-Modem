@@ -6,7 +6,9 @@
       0 B: OK\r\n
       0 B< ATA\r
       0 A< ATD\r
+  13420 B: \r\n
   13420 B: CONNECT 33600\r\n
+  13480 A: \r\n
   13480 A: CONNECT 33600\r\n
   13480 until A 'CONNECT': yes
   13480 until B 'CONNECT': yes
@@ -30,16 +32,22 @@
   13580 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
   13580 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
   13580 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  17800 A: B0009 The quick brown fox jumps over the lNO CARRIER\r\n
-  17820 B: A0009 The quick brown fox jumps over the lNO CARRIER\r\n
+  17800 A: B0009 The quick brown fox jumps over the l\r\n
+  17800 A: NO CARRIER\r\n
+  17820 B: A0009 The quick brown fox jumps over the l\r\n
+  17820 B: NO CARRIER\r\n
   17820 until B 'NO CARRIER': yes
   18320 A< ATE0X3W2+MS=132\r
+  18320 A: \r\n
   18320 A: OK\r\n
   18320 B< ATE0+MS=PEP\r
+  18320 B: \r\n
   18320 B: OK\r\n
   18320 B< ATA\r
   18320 A< ATD\r
+  27840 B: \r\n
   27840 B: CONNECT 14400\r\n
+  27880 A: \r\n
   27880 A: CONNECT 14400\r\n
   27880 until A 'CONNECT': yes
   27880 until B 'CONNECT': yes
@@ -63,16 +71,22 @@
   27980 B: A0006 The quick brown fox jumps over the lazy dog 0123456789\r\n
   27980 B: A0007 The quick brown fox jumps over the lazy dog 0123456789\r\n
   27980 B: A0008 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  31900 B: A0009 The quick brown fox jumps over the lNO CARRIER\r\n
-  31940 A: B0009 The quick brown fox jumps over the lNO CARRIER\r\n
+  31900 B: A0009 The quick brown fox jumps over the l\r\n
+  31900 B: NO CARRIER\r\n
+  31940 A: B0009 The quick brown fox jumps over the l\r\n
+  31940 A: NO CARRIER\r\n
   31940 until A 'NO CARRIER': yes
   32440 A< ATE0+MS=PEP\r
+  32440 A: \r\n
   32440 A: OK\r\n
   32440 B< ATE0+MS=PEP\r
+  32440 B: \r\n
   32440 B: OK\r\n
   32440 B< ATA\r
   32440 A< ATD\r
+  42520 B: \r\n
   42520 B: CONNECT FAST\r\n
+  42980 A: \r\n
   42980 A: CONNECT FAST\r\n
   42980 until A 'CONNECT': yes
   42980 until B 'CONNECT': yes
@@ -80,6 +94,7 @@
   45480 A: \r\n
   45480 A: OK\r\n
   46480 A< ATI12\r
+  46480 A: \r\n
   46480 A: Bin   Hz      Tx  Rx  Noise (dBm0)\r\n
   46480 A: 1     7.8     6   6   -110.5\r\n
   46480 A: 2     15.6    6   6   -110.5\r\n
@@ -592,4 +607,5 @@
   46480 A: 509   3976.6  6   6   -110.5\r\n
   46480 A: 510   3984.4  6   6   -110.5\r\n
   46480 A: 511   3992.2  6   6   -110.5\r\n
+  46480 A: \r\n
   46480 A: OK\r\n

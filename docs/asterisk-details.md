@@ -12,13 +12,15 @@ This page gives the technical data for [Asterisk: app_dmodem](asterisk.md), whic
 
 ## Overview
 
-The module adds three dialplan applications:
+The module adds four dialplan applications and one dialplan function:
 
-| application | what it does |
+| application or function | what it does |
 |---|---|
 | `DModem([profile[,options]])` | Answers the call with a software modem and, when the modems connect, sends the data to a server or program. |
-| `DModemReceiveFax(file[,ident])` | Answers as a fax machine and receives into a TIFF file. |
-| `DModemSendFax(file[,ident])` | Sends a TIFF file as a fax on a call to a fax machine. |
+| `DModemReceiveFax(file[,ident[,options]])` | Answers as a fax machine and receives into a TIFF file. |
+| `DModemSendFax(file[&file2...][,ident[,options]])` | Sends one or more TIFF files as a fax on a call to a fax machine. |
+| `DModemFaxDetect([seconds[,options]])` | Listens for a fax machine on an incoming call, and goes to the `fax` extension when it hears one. |
+| `DMODEMFAXOPT(item)` | Reads or sets the fax settings of the channel, and reads the results of the last fax. |
 
 `DModem()` sends the data to one of three destinations, as the profile
 in `dmodem.conf` specifies:
@@ -58,7 +60,7 @@ This is D-Modem as an ARI (Asterisk REST Interface) application next to
 Asterisk. It uses the same profiles, through `Stasis(dmodem,bbs)` and
 `Stasis(dmodem,receivefax,<file>)`, and does not need a module in
 Asterisk. Its faxes use T.38 in the same way as the faxes of the module
-([ari.md](ari-details.md#t38)).
+([ari-details.md](ari-details.md#t38)).
 
 ### Profile options
 
@@ -76,15 +78,18 @@ Asterisk. Its faxes use T.38 in the same way as the faxes of the module
 | `clear` | `auto` | ISDN data calls as a clear 64 kbit/s channel: `auto`, `yes` or `no` (refer to [The channel](#the-channel)). |
 | `timeout` | `60` | The seconds that the modems have to connect. Then (`tcp`, `unix`) the seconds that the server has to accept the call. If not, the call ends with `ERROR`. |
 | `fax` | `yes` | Receive a calling fax machine as a fax (refer to [Fax](#fax)). |
+| `voice` | empty | `exten@context`: a person who calls goes to this extension ([asterisk.md](asterisk.md#people-and-modems-on-one-number)). The modem answers when the leg of the extension ends, or when the modem of the caller sends its calling tone. |
+| `voice_listen` | `3` | The seconds that the modem listens before it answers, to find a person. `0` disables this. A value less than 0 or more than 30 gives 3. |
+| `voice_dsvd` | `no` | V.70 DSVD or V.61 ASVD: `yes` sends the voice channel of the modem to the `voice` extension when the caller opens it. `open` makes our modem open it immediately. |
 
 Option names are not case-sensitive, and `_` and `-` are the same
 (`fax_dir` and `fax-dir` are both correct). If a profile does not have
 the fields that its mode needs, the module refuses it, and `DModem()`
 ends with `DMODEMSTATUS` `ERROR`.
 
-### Answering and calling
+### The answer and the call
 
-First, the module sets up the modem with `ATE0Q1S0=0S2=255X3` (no echo,
+First, the module configures the modem with `ATE0Q1S0=0S2=255X3` (no echo,
 no result codes, no auto-answer, no `+++` escape, no wait for a dial
 tone), and then with the `init` of the profile.
 
@@ -129,7 +134,7 @@ The module is also a group 3 fax machine. It is an alternative to the
 - pages in MH or MR coding, in TIFF files;
 - error correction mode (ECM) when the other machine has it.
 
-You can use it in three ways:
+You can use it in four ways:
 
 - **`DModem()` receives faxes automatically.** The modem answers
   adaptively. If the CNG tone of the calling machine, or its V.8 CM of a
@@ -138,12 +143,15 @@ You can use it in three ways:
   `<fax_dir>/<date>-<time>-<caller>-<uniqueid>.tif`. The date and time
   are `YYYYMMDD-HHMMSS`, and the caller is the digits and `+` of the
   caller ID (or `unknown`). Then `DMODEMSTATUS` is `FAX`. Set `fax = no`
-  in the profile to turn this off. This applies only to answering, not
+  in the profile to disable this. This applies only to answering, not
   to the `o` option.
-- **`DModemReceiveFax(file[,ident])`** answers as a fax machine and
-  receives into the file. If no page came, it writes no file.
-- **`DModemSendFax(file[,ident])`** sends a TIFF file on a call to a fax
-  machine (it waits for the DIS of the machine), for example:
+- **`DModemReceiveFax(file[,ident[,options]])`** answers as a fax
+  machine and receives into the file. If no page came, it writes no file.
+- **`DModemSendFax(file[&file2...][,ident[,options]])`** sends TIFF
+  files on a call to a fax machine (it waits for the DIS of the machine).
+  To send more than one file in one fax, put `&` between the names. The
+  module sends the pages of each file in turn. If one of the files is
+  not there, the module sends no fax. For example:
 
   ```
   channel originate PJSIP/5551234@trunk application DModemSendFax /var/spool/fax/doc.tif
@@ -160,8 +168,153 @@ You can use it in three ways:
   ```
 
 `ident` is our fax number (the CSI when we receive, the TSI when we
-send). If there is no `ident`, the module uses `fax_ident` of
-`[general]`.
+send). If there is no `ident`, the module uses
+`DMODEMFAXOPT(localstationid)`. If that is not set, the module uses
+`fax_ident` of `[general]`.
+
+- **`DModemFaxDetect([seconds[,options]])`** finds a fax machine on an
+  incoming call before the dialplan sends the call to a person or to
+  an IVR (refer to [Fax detection](#fax-detection)).
+
+### Fax detection
+
+`DModemFaxDetect([seconds[,options]])` is the D-Modem equivalent of
+`FAXOPT(faxdetect)` of Asterisk. It answers the call, and listens for up
+to `seconds` (default 4, decimals are permitted). It listens for these
+signals:
+
+- the calling tone (CNG, 1100 Hz) of a fax machine;
+- a request for T.38 from the other end.
+
+When it hears one, it does these steps:
+
+1. It sets `DMODEMFAXDETECTED` to `CNG` or `T38`.
+2. It sets `DMODEMFAXEXTEN` to the extension that the call was on.
+3. If the context has a `fax` extension, the call goes to `fax`,
+   priority 1. If not (or with the option `x`), the dialplan continues
+   at the next priority.
+
+When it hears no fax machine, it sets `DMODEMFAXDETECTED` to `NONE`, and
+the dialplan continues at the next priority.
+
+The application does not answer the T.38 request. The fax application
+in the `fax` extension answers it.
+
+| option | meaning |
+|---|---|
+| `c` | Listen for the CNG only. |
+| `t` | Listen for the T.38 request only. |
+| `n` | Do not answer the call (listen on the early media). |
+| `r` | Send the ring tone of the channel's tone zone to the caller while the application listens. |
+| `x` | Do not go to the `fax` extension. The dialplan reads `DMODEMFAXDETECTED` and goes to the fax destination itself. The FreePBX module uses this option on inbound routes. |
+
+`FAXOPT(faxdetect)` of Asterisk listens in the background while other
+applications run. `DModemFaxDetect` listens only while it runs, as an
+"answer and wait" step at the start of the call. A FreePBX inbound route
+does the same (it answers and waits for the detection time).
+
+Example:
+
+```
+exten => 5551000,1,DModemFaxDetect(4,r)
+ same => n,Dial(PJSIP/reception)
+exten => fax,1,DModemReceiveFax(/var/spool/fax/${UNIQUEID}.tif)
+```
+
+### Fax application options
+
+These options are the same as the options of `SendFAX` and `ReceiveFAX`
+of Asterisk, with one more option (`T`):
+
+| option | meaning |
+|---|---|
+| `d` | Write each phase of the fax to the log (verbose level 3). |
+| `f` | If T.38 fails, use the audio. This is the default. The module accepts the option for dialplans that use it with `SendFAX`. |
+| `F` | Use the audio only. Do not ask for T.38 and refuse the requests for T.38. |
+| `z` | `DModemSendFax` only: ask for T.38 before the fax starts, as `DModemReceiveFax` always does. |
+| `T` | Use T.38 only. If the channel cannot use T.38, or the other end refuses it or does not answer, the module sends or receives no fax and sets `FAXERROR` to `T38`. |
+| `s` | Send an AMI `DModemFaxStatus` event at each phase and each page (refer to [Fax CLI and AMI](#fax-cli-and-ami)). |
+
+You cannot use `F` and `T` together. Example:
+
+```
+exten => s,1,DModemSendFax(/var/spool/fax/cover.tif&/var/spool/fax/doc.tif,,dz)
+```
+
+### DMODEMFAXOPT()
+
+`DMODEMFAXOPT(item)` is the D-Modem equivalent of `FAXOPT(item)` of
+Asterisk. Set an item before the fax application. The function keeps each
+setting in the channel variable `DMODEMFAXOPT_<ITEM>` (for example
+`DMODEMFAXOPT_MINRATE`). `dmodem-ari` reads the same variables (refer to
+[ari-details.md](ari-details.md#the-fax-settings-of-a-call)). The value applies to
+the faxes of this channel only, and replaces the value of `[general]`
+(and of the profile for `DModem()`). An `ident` argument of the
+application replaces `localstationid`.
+
+You can set and read these items:
+
+| item | value |
+|---|---|
+| `ecm` | `yes` or `no`: offer error correction mode. |
+| `maxrate` | The highest rate: 2400, 4800, 7200, 9600, 12000 or 14400. |
+| `minrate` | The lowest rate (same values). The fax stops if the two machines cannot use this rate or a higher rate. |
+| `t38timeout` | The time in ms to wait for the answer to our T.38 request. |
+| `localstationid` | Our fax number (CSI or TSI), up to 20 characters. |
+| `modems` | The modems that can send the pages: a list of `v17`, `v27` and `v29`, with commas between them (`v34` is accepted, and not used). The default is all three. |
+| `headerinfo` | The text of the header line on each page that we send, up to 63 characters (refer to [Page header line](#page-header-line)). |
+
+You can only read these items. They give the result of the last fax on
+the channel:
+
+| item | value |
+|---|---|
+| `status` | `SUCCESS` or `FAILED` |
+| `statusstr` | The reason as text |
+| `error` | The reason as a code (refer to [Fax variables](#fax-variables)) |
+| `pages` | The number of pages |
+| `rate` | The rate, in bit/s |
+| `resolution` | `8040x3850` (standard) or `8040x7700` (fine), in pels for each metre |
+| `remotestationid` | The number of the other machine |
+| `filename` | The first file |
+| `filenames` | All the files, with `&` between them |
+| `sessionid` | The number of the fax session (it increases by one for each fax) |
+
+Example:
+
+```
+exten => s,1,Set(DMODEMFAXOPT(minrate)=9600)
+ same => n,Set(DMODEMFAXOPT(localstationid)=+1 555 0100)
+ same => n,DModemReceiveFax(/var/spool/fax/in.tif)
+ same => n,Verbose(1,${DMODEMFAXOPT(status)} ${DMODEMFAXOPT(pages)} pages)
+```
+
+### Page header line
+
+When `DMODEMFAXOPT(headerinfo)` or `fax_header` has a text, the module
+adds one header line to the top of each page that it sends. The line
+has these parts, from left to right:
+
+1. The date and the time when the fax starts (for example
+   `27-NOV-2026 09:15`).
+2. The header text.
+3. Our fax number (`ident`, `localstationid` or `fax_ident`).
+4. The page number (for example `P.2`).
+
+The module draws the line with its own font, and puts it above the
+contents of the page. Thus the header does not hide the contents. The
+page is longer by 18 rows (standard resolution) or 36 rows (fine
+resolution). The font has the capital letters, the digits, the space and
+the characters `! # % & ' ( ) * + , - . / : ; = ? @ _`. A small letter
+prints as a capital letter. Each other character prints as `?`. A
+colour page gets no header line.
+
+Example:
+
+```
+exten => s,1,Set(DMODEMFAXOPT(headerinfo)=ACME LTD)
+ same => n,DModemSendFax(/var/spool/fax/out.tif,+1 555 0100)
+```
 
 ### Fax variables
 
@@ -171,12 +324,36 @@ After a fax, all three applications set these channel variables:
 |---|---|
 | `DMODEMFAXSTATUS` | `SUCCESS` or `FAILED` |
 | `DMODEMFAXRESULT` | the reason (for example `no document` when the module could not read or write the file) |
+| `DMODEMFAXERROR` | the reason as a code (refer to the table below) |
 | `DMODEMFAXPAGES` | the number of pages |
 | `DMODEMFAXRATE` | the rate, in bit/s |
+| `DMODEMFAXRESOLUTION` | `8040x3850` (standard) or `8040x7700` (fine) |
 | `DMODEMFAXREMOTE` | the number of the other machine |
 | `DMODEMFAXECM` | `yes` when the call used error correction mode, if not `no` |
 | `DMODEMFAXT38` | `yes` when the fax went through T.38, if not `no` |
-| `DMODEMFAXFILE` | the file |
+| `DMODEMFAXSESSION` | the number of the fax session |
+| `DMODEMFAXFILE` | the file (or the files, with `&` between them) |
+
+The module also sets the variables of `res_fax`, for dialplans that
+were written for `SendFAX` and `ReceiveFAX`: `FAXSTATUS`,
+`FAXSTATUSSTRING`, `FAXERROR`, `FAXPAGES`, `FAXBITRATE`, `FAXRESOLUTION`,
+`REMOTESTATIONID` and `LOCALSTATIONID`. Set `fax_res_vars = no` in
+`[general]` to stop this.
+
+The codes of `DMODEMFAXERROR` and `FAXERROR`:
+
+| code | meaning |
+|---|---|
+| `NO_ERROR` | The fax went through. |
+| `NO_FAX` | No fax machine answered or called. |
+| `INCOMPATIBLE` | The two machines have no rate or coding in common. |
+| `TRAINING` | The training failed at all rates, or the rate was below the lowest rate. |
+| `NO_RESPONSE` | The other machine stopped its responses. |
+| `PAGE` | A page failed each time that it was sent. |
+| `HANGUP` | The other machine disconnected too early. |
+| `DOCUMENT` | The module could not read the file to send, or could not use the file to receive. |
+| `FILE` | The module could not write the received pages. |
+| `T38` | Option `T`, and no T.38. |
 
 ### Fax options
 
@@ -187,15 +364,53 @@ Put these in `[general]` or in a profile. `DModemSendFax` and
 |---|---|---|
 | `fax_dir` | `/var/spool/asterisk/fax` (the spool directory of Asterisk + `/fax`) | The directory where `DModem()` puts the faxes that it receives. |
 | `fax_ident` | empty | Our fax number (CSI and TSI). |
+| `fax_modems` | `v17,v27,v29` | The modems that can send the pages (refer to `DMODEMFAXOPT(modems)`). |
+| `fax_header` | empty | The text of the header line on each page that we send. Empty: no header line. |
 | `fax_max_rate` | `14400` | The highest rate: 14400, 12000, 9600, 7200, 4800 or 2400. |
+| `fax_min_rate` | `0` (none) | The lowest rate (same values). |
 | `fax_ecm` | `yes` | Offer error correction mode. |
 | `fax_t38` | `yes` | Use T.38 when the channel has it. |
+| `fax_t38_timeout` | `6000` | The time in ms to wait for the answer to our T.38 request. |
+| `fax_res_vars` | `yes` | Also set the variables of `res_fax` (`FAXSTATUS` and the other variables). |
 
 In error correction mode (T.30 Annex A), a page goes in blocks of HDLC
 frames. The receiving machine asks again for each frame that a line hit
 damaged. Thus the page arrives exactly as it was sent. Without ECM, the
 rows that a hit damaged arrive damaged. The two machines must offer ECM.
-`fax_ecm = no` turns it off.
+`fax_ecm = no` disables it.
+
+### Fax CLI and AMI
+
+These CLI commands are the D-Modem equivalents of the `fax show`
+commands of `res_fax`:
+
+| command | what it shows |
+|---|---|
+| `dmodem fax show sessions` | One line for each DModem fax that runs now: the session number, the channel, the direction, T.38, the pages, the rate, the time and the phase. |
+| `dmodem fax show session <id>` | All the details of one fax that runs now. |
+| `dmodem fax show stats` | The totals since the module loaded: the sessions now, the attempts to send and to receive, the completed faxes, the failed faxes and the number of failures for each `FAXERROR` code. |
+| `dmodem fax show settings` | The fax settings of `[general]`. |
+| `dmodem fax show capabilities` | What the fax machine can do. |
+
+The module adds these AMI actions (class `reporting`):
+
+| action | response |
+|---|---|
+| `DModemFaxSessions` | One `DModemFaxSessionsEntry` event for each fax that runs, then `DModemFaxSessionsComplete`. |
+| `DModemFaxSession` | The `DModemFaxSession` event of the fax with the number in the header `SessionNumber`. |
+| `DModemFaxStats` | A `DModemFaxStats` event with `CurrentSessions`, `TransmitAttempts`, `ReceiveAttempts`, `CompletedFAXes` and `FailedFAXes`. |
+
+The module sends these AMI events (class `call`):
+
+| event | when | headers |
+|---|---|---|
+| `DModemSendFax` | At the end of each fax that the module sends. | `Channel`, `SessionNumber`, `Status`, `Error`, `StatusString`, `Pages`, `Rate`, `Resolution`, `ECM`, `Transport`, `LocalStationID`, `RemoteStationID`, `FileName` |
+| `DModemReceiveFax` | At the end of each fax that the module receives. | The same headers. |
+| `DModemFaxStatus` | With option `s`: at each phase and each page. | `Channel`, `SessionNumber`, `Operation`, `Status` (the phase), `Pages`, `FileName` |
+
+The module sends `DModemSendFax` or `DModemReceiveFax` also when a fax
+cannot start (for example, the file is not there). Then `Status` is
+`FAILED`.
 
 ### T.38
 
@@ -205,9 +420,10 @@ the faxes change to T.38 when the channel changes, as the `SendFAX` and
 `ReceiveFAX` of Asterisk do. `fax_t38 = no` keeps them on the audio.
 
 - `DModemReceiveFax` asks for T.38 immediately (Asterisk sends a
-  re-INVITE). It waits up to 6 s for the answer, with silence on the
-  line. If the other end refuses T.38 or does not answer, the fax goes
-  on the audio.
+  re-INVITE). It waits up to `fax_t38_timeout` ms (6 s) for the answer,
+  with silence on the line. If the other end refuses T.38 or does not
+  answer, the fax goes on the audio (option `T` stops the fax).
+- `DModemSendFax` with option `z` asks for T.38 in the same way.
 - `DModemSendFax` accepts T.38 when the other end asks for it, until the
   first page has gone. After that, the fax stays on the audio. (The same
   rule applies to a receiver.)
@@ -347,6 +563,9 @@ controlling terminal, in raw mode. Its environment has:
 | `DMODEM_CHANNEL` | the Asterisk channel |
 | `DMODEM_PROFILE` | the profile |
 | `DMODEM_RATE` | the connect rate, transmit/receive bit/s |
+| `DMODEM_MODULATION` | the modulation of the connection, as the `Modulation:` line of `CONNECT` gives it: `V34`, `V90`, `V92`, `K56Flex`, `V32bis` and so on |
+| `DMODEM_PROTOCOL` | the error correction of the connection, as the `Protocol:` line of `CONNECT` gives it: `LAPM`, `MNP` or `NONE` (also `X.75`, `V.120` and others on special calls) |
+| `DMODEM_COMPRESSION` | the data compression of the connection, as the `Compression:` line of `CONNECT` gives it: `V42bis`, `V44`, `MNP5` or `NONE` |
 | `DMODEM_CALLERID` | the number of the caller |
 | `DMODEM_DIALED` | the dialled number (the DNID, or if not, the extension) |
 | `DMODEM_CONNECTED` | the time when the modems connected, in Unix time |
@@ -372,6 +591,9 @@ changes to a space), then an empty line, then the bytes of the caller:
 DMODEM_CHANNEL=PJSIP/trunk-00000001
 DMODEM_PROFILE=menu
 DMODEM_RATE=33600/31200
+DMODEM_MODULATION=V34
+DMODEM_PROTOCOL=LAPM
+DMODEM_COMPRESSION=V42bis
 DMODEM_CALLERID=5559999
 DMODEM_DIALED=5551000
 DMODEM_CONNECTED=1791666309
@@ -395,13 +617,13 @@ the modem on a pty and gives the terminal of the pty to the server. It
 does not copy bytes to the server. The header goes on the connection
 with the descriptor attached (`SCM_RIGHTS`). From then on, the server,
 and all that it runs on that terminal (a login session, a shell, pppd),
-is directly on the line of the modem, as on a serial port. The connection carries no more data. It stays open
-while the session continues. When the server closes it, the module
+is directly on the line of the modem, as on a serial port. The connection
+carries no more data. It stays open while the session continues. When the server closes it, the module
 waits until the last data from the server goes out, then hangs up
 (`LOCAL`). When the remote modem goes, the server sees that its end of
 the line closes. The server must expect the descriptor
-(`dmodem-login -serve` and the `handoff` listeners of the BBS do). A server that does
-not expect it gets the header and nothing after it.
+(`dmodem-login -serve` and the `handoff` listeners of the BBS do). A
+server that does not expect it gets the header and nothing after it.
 
 When it returns, `DModem()` sets:
 
@@ -416,6 +638,10 @@ When it returns, `DModem()` sets:
     profile, an `answer` line that did not answer, or no connection to
     a server).
 - `DMODEMRATE`: the connect rate, transmit/receive bit/s.
+- `DMODEMMODULATION`, `DMODEMPROTOCOL` and `DMODEMCOMPRESSION`: the
+  modulation, the error correction and the data compression of the
+  connection, with the same values as `DMODEM_MODULATION`,
+  `DMODEM_PROTOCOL` and `DMODEM_COMPRESSION`.
 
 ## Testing
 
@@ -431,7 +657,7 @@ channel:
 - The calling one (`DModem(term,o)`) sends its data to a script that
   acts as the user.
 - The user reads the banner, sends 20 lines, checks their echoes and
-  logs off. Then the BBS closes, and this hangs up the call.
+  logs out. Then the BBS closes, and this hangs up the call.
 
 ```
 test/run.sh                       # V.34
@@ -449,17 +675,22 @@ is a regular expression. A line of the Asterisk console must match it,
 or the test fails.
 
 A Local channel has no clock. Thus the two modems run sample by sample,
-faster than real time. This causes no problem for them.
+faster than real time. This does not cause problems for the modems.
 
 ### fax.sh and fax_spandsp.sh: faxes on the audio
 
-`test/fax.sh` sends a two-page fax (the test document of
-`dsp/test/fax_doc`) from `DModemSendFax`:
+`test/fax.sh` sends a two-page fax from `DModemSendFax`. The document is
+the test document that the `fax_doc` program writes. CMake builds this
+program from `dsp/test/fax_doc.cpp` into `build/dsp/test/fax_doc`. The fax goes:
 
 1. to `DModem()`, which must identify the fax machine automatically;
 2. to `DModemReceiveFax`.
 
-It compares the received data with the sent data.
+It compares the received data with the sent data. Then it tests the
+fax settings and options (`DMODEMFAXOPT()`, the header line, the lowest
+rate, option `T`), `DModemFaxDetect` (it must hear the CNG of a sender
+that uses V.27ter only, and go to the `fax` extension; with no fax, it
+must set `NONE`), and the CLI commands and AMI.
 
 `test/fax_spandsp.sh` does the same with the fax of Asterisk
 (`res_fax_spandsp`):
@@ -491,14 +722,17 @@ faster), and `DMODEM_DEBUG=3` (the DSP traces in `console.log`).
    (the gateway asks for T.38 when it receives the DIS);
 8. `DModemReceiveFax` to `DModem()`, which accepts its T.38 request
    before the modems connect as a calling fax machine. The two ends are
-   receivers, thus there is no document. The test checks only this.
+   receivers, thus there is no document. The test checks only this;
+9. `SendFAX` with option `z` to `DModemFaxDetect(30,t)`, which must
+   hear the T.38 request and go to the `fax` extension. There,
+   `DModemReceiveFax` receives the fax through T.38.
 
-Each document received in cases 1 to 7 must be the same as the sent
+Each document received in cases 1 to 7 and 9 must be the same as the sent
 document. Variables: `CASES`, `DMODEM_DEBUG=3`, `SIP_LOG=1` (the SIP
 messages in the console) and `FAX_DEBUG=1` (the debug output of
 spandsp).
 
-Before the two gateway cases, `t38.sh` tries the gateway of Asterisk
+Before the two gateway cases, `t38.sh` tests the gateway of Asterisk
 alone (`SendFAX` on the audio through it to `ReceiveFAX` through T.38).
 Asterisk 20.6 of Ubuntu 24.04 sends no fax there. Thus on it, the script
 skips cases 6 and 7, and tells you (`GATEWAY=yes` runs them). CI builds
@@ -582,6 +816,8 @@ modem core, 3 the data pumps also; the lines of libdmodem show at
 verbose level 5, the progress of the call at level 4 and higher). The
 same modem also runs outside Asterisk:
 
-- in `dsp/test/dmodem_test` (two modems of the library back to back);
-- with the original binary library of Smart Link in
-  `dsp/test/smartlink_test` (`interop_call`).
+- in the `dmodem_test` test program (two modems of the library back to
+  back, from `dsp/test/dmodem_test.cpp`);
+- against the original binary library of Smart Link, in the
+  `smartlink_test` test program (from `dsp/test/interop_test.cpp`) or
+  with `interop_call` ([testing-details.md](testing-details.md#interop_call)).

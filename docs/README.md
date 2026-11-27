@@ -42,6 +42,8 @@ measurements, and test lists.
   - [V.90: the digital modem](dsp/v90.md): D-Modem as the 56k server
   - [V.90 and V.92: the analogue modem](dsp/v90a.md): D-Modem as the
     56k modem of the customer
+  - [The 56k client on a SIP line](dsp/sip-client.md): V.90, V.92,
+    K56flex and x2 as the modem of the customer, without hardware
   - [V.92](dsp/v92.md): quick connect, modem-on-hold and faster uploads
   - [V.91](dsp/v91.md): about 62000 bit/s between two digital modems
   - [V.cvm](dsp/vcvm.md): data through mobile phone calls (the
@@ -58,6 +60,8 @@ measurements, and test lists.
   - [Fax](dsp/fax.md): fax modem classes 1, 2 and 2.0, a built-in fax
     machine, and fax over the internet (T.38)
 - [The data link layer](link.md): error correction and compression
+- [Hayes V-series protocols](hayes.md): Hayes ADC compression, the
+  Hayes XID sets, AFT framing and the link rules of Express 96
 - [The x2 upgrade host](x2-upgrade.md): enable x2 in a USRobotics
   Courier that calls in, as the U.S. Robotics host did in 1997
 - [EBCDIC terminals and hosts](ebcdic.md): AT commands and result codes
@@ -75,6 +79,8 @@ measurements, and test lists.
   answers the far modem itself, and sends the data as bytes over the internet
 - [Leased lines and dry pairs](leased.md): private circuits with no
   telephone exchange, and their line tests
+- [The speaker of the modem](speaker.md): hear the call on a sound
+  device of the computer (`--speaker`, `ATM`, `ATL`)
 - ZyXEL compatibility: [encryption (S102, ATCK)](zyxel-des.md),
   [fax mode (class 6)](zyxel-fax.md) and [security](zyxel-security.md)
 
@@ -86,6 +92,11 @@ measurements, and test lists.
 - [FreePBX](freepbx.md): configure D-Modem from the web interface of FreePBX
 - [FreeSWITCH: mod_dmodem](freeswitch.md): a modem module for
   FreeSWITCH
+
+## Programs that use the modem
+
+- [dmodemd as a library](embed.md): the modem in a thread of a program
+  (libdmodem_embed), for the D-Modem desktop app
 
 ## Hardware and operating systems
 

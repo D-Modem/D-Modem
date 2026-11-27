@@ -10,6 +10,7 @@
  */
 
 #include <fcntl.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,7 @@
 #include "dmodem.h"
 #include "portable.h"
 #include "fax_util.h"
+#include "g711.h"
 
 class DmodemFax : public testing::TestWithParam<enum dmodem_law> {};
 
@@ -280,4 +282,124 @@ TEST(DmodemFaxT38, IfpPackets)
 	dmodem_fax_destroy(sender);
 	dmodem_fax_destroy(receiver);
 	EXPECT_TRUE(same_pages(in, out));
+}
+
+/* two files in one call (their names with & between them): the four
+   pages over T.38 (IFP packets), the two of each file in turn, and the
+   error code NO_ERROR at the end */
+TEST(DmodemFaxFiles, SendsEachFileInTurn)
+{
+	std::string a = fax_file("a.tif"), b = fax_file("b.tif");
+	std::string out = fax_file("out.tif"), list = a + "&" + b;
+	struct dmodem_fax_config fc = {};
+	struct dmodem_fax *sender, *receiver;
+	struct dmodem_fax_status ss = {}, rs = {};
+	T38Line ab = { {}, 0, 0 }, ba = { {}, 0, 0 };
+	int n;
+
+	ASSERT_TRUE(write_test_doc(a, true));
+	ASSERT_TRUE(write_test_doc(b, false));
+	dmodem_init();
+	fc.law = DMODEM_LAW_ULAW;
+	fc.t38 = 1;
+	fc.t38_ifp = 1;
+	fc.t38_max_datagram = 400;
+	fc.t38_send = t38_send;
+	fc.dir = DMODEM_FAX_SEND;
+	fc.file = list.c_str();
+	fc.t38_ctx = &ab;
+	sender = dmodem_fax_create(&fc);
+	ASSERT_NE(sender, nullptr);
+	fc.dir = DMODEM_FAX_RECEIVE;
+	fc.file = out.c_str();
+	fc.t38_ctx = &ba;
+	receiver = dmodem_fax_create(&fc);
+	ASSERT_NE(receiver, nullptr);
+	for (n = 0; n < 50 * 900; n++) {
+		std::vector<std::vector<unsigned char>> to_r, to_s;
+		to_r.swap(ab.pkts);
+		to_s.swap(ba.pkts);
+		for (auto &p : to_r)
+			dmodem_fax_t38_rx(receiver, p.data(), (int)p.size());
+		for (auto &p : to_s)
+			dmodem_fax_t38_rx(sender, p.data(), (int)p.size());
+		dmodem_fax_t38_time(sender, 160);
+		dmodem_fax_t38_time(receiver, 160);
+		dmodem_fax_status(sender, &ss);
+		dmodem_fax_status(receiver, &rs);
+		if (ss.done && rs.done)
+			break;
+	}
+	EXPECT_TRUE(ss.ok) << "sender: " << ss.result;
+	EXPECT_TRUE(rs.ok) << "receiver: " << rs.result;
+	EXPECT_EQ(ss.pages, 4);
+	EXPECT_EQ(rs.pages, 4);
+	EXPECT_STREQ(ss.error, "NO_ERROR");
+	EXPECT_STREQ(rs.error, "NO_ERROR");
+	dmodem_fax_destroy(sender);
+	dmodem_fax_destroy(receiver);
+}
+
+/* a list with a file that is not there: no fax at all */
+TEST(DmodemFaxFiles, MissingFileRefused)
+{
+	std::string a = fax_file("a.tif"), list = a + "&/nonexistent/x.tif";
+	struct dmodem_fax_config fc = {};
+
+	ASSERT_TRUE(write_test_doc(a, true));
+	dmodem_init();
+	fc.law = DMODEM_LAW_ULAW;
+	fc.dir = DMODEM_FAX_SEND;
+	fc.file = list.c_str();
+	EXPECT_EQ(dmodem_fax_create(&fc), nullptr);
+	fc.file = "&";
+	EXPECT_EQ(dmodem_fax_create(&fc), nullptr);
+}
+
+/*
+ *    fax detection (dmodem_faxdetect_*)
+ *
+ */
+
+/* ms of the tone of f Hz (0: silence) at amp, 20 ms at a time, into the
+   detector as G.711 (mu-law): 1 when it has heard a fax machine */
+static int detect_feed(struct dmodem_faxdetect *d, double f, double amp,
+		       int ms, long *t)
+{
+	int heard = 0;
+	for (int b = 0; b < ms / 20; b++) {
+		int16_t lin[160];
+		unsigned char g[160];
+		for (int i = 0; i < 160; i++, (*t)++)
+			lin[i] = static_cast<int16_t>(
+				amp * sin(2 * 3.14159265358979 * f * (double)*t / 8000));
+		for (int i = 0; i < 160; i++)
+			g[i] = dsp::g711::encode(0, lin[i]);
+		heard = dmodem_faxdetect_process_g711(d, g, 160);
+	}
+	return heard;
+}
+
+/* CNG (1100 Hz, 0.5 s on, 3 s off): heard within the first burst */
+TEST(DmodemFaxDetect, HearsCng)
+{
+	struct dmodem_faxdetect *d = dmodem_faxdetect_create(DMODEM_LAW_ULAW);
+	long t = 0;
+	ASSERT_NE(d, nullptr);
+	EXPECT_EQ(detect_feed(d, 0, 0, 1000, &t), 0);
+	EXPECT_EQ(detect_feed(d, 1100, 8000, 500, &t), 1);
+	dmodem_faxdetect_destroy(d);
+}
+
+/* silence, a 1700 Hz tone and V.25's 2100 Hz answer tone: no fax */
+TEST(DmodemFaxDetect, NotOtherTones)
+{
+	struct dmodem_faxdetect *d = dmodem_faxdetect_create(DMODEM_LAW_ULAW);
+	long t = 0;
+	ASSERT_NE(d, nullptr);
+	EXPECT_EQ(detect_feed(d, 0, 0, 2000, &t), 0);
+	EXPECT_EQ(detect_feed(d, 2100, 8000, 3000, &t), 0);
+	EXPECT_EQ(detect_feed(d, 1700, 8000, 3000, &t), 0);
+	dmodem_faxdetect_destroy(d);
+	dmodem_faxdetect_destroy(nullptr);
 }

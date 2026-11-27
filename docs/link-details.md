@@ -1,6 +1,6 @@
 # The data link layer: technical details
 
-This page is the technical companion to [The data link layer](link.md), the plain-English overview. Read that page first. This page gives all the details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page is the technical companion to [The data link layer](link.md), the overview in plain English. Read that page first. This page gives all the details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 `link/` is the code between the characters of the DTE and the bits of
 the data pump after a call connects. (The DTE, data terminal equipment,
@@ -71,8 +71,8 @@ It is C++, in `namespace dlink`.
        FCS-32. It accepts the two FCSs until the first FCS-32 comes
        back. Then it accepts only FCS-32.
 
-    An FCS-16 does not find approximately one corrupted frame in 65536.
-    An FCS-32 does not find approximately one in 4 billion. A modem that
+    An FCS-16 does not find about one corrupted frame in 65536.
+    An FCS-32 does not find about one in 4 billion. A modem that
     does not set 17 in its response gets an FCS-16 as before.
 - **MNP 2 to 4** (`Mnp`, `mnp.cpp`), the "alternative procedure" of
   V.42 (Annex A of V.42 (10/96)), for modems that have no LAPM:
@@ -208,19 +208,22 @@ These faults of the old code are removed:
 ## Tests
 
 `link_test` (`ctest -R Link`, GoogleTest) runs the link layer without a
-modem. Most tests connect two `Link`s back to back, bit by bit.
+modem. Most tests connect two `Link`s back to back, bit by bit. The
+tests of MNP 10 are in [MNP 10 and 10EC](#mnp-10-and-10ec), the tests of
+MNP with V.42bis are in [MNP 5](mnp/mnp5.md), and the `UsrFeature` tests
+are in [x2-upgrade-details.md](x2-upgrade-details.md).
 
 | Area | Tests | What they check |
 |---|---|---|
 | Compression | `V44`, `V44Preset`, `Zstd`, `ZstdDict`, `V42bis`, `V42bisStepup` | V.42bis, V.44 and zstd round trips (text, noise, escape characters, repeats, small dictionaries, flushes); V.44's transparent mode; V.cvm's preset dictionary and zstd dictionary; two V.42bis STEPUPs taken and a third a C-ERROR |
 | HDLC | `Hdlc`, `HdlcFcs32`, `BitsMasked` | 200 frames through a bit error; CRC-32's check value, frames with an FCS-32 (runs of 1s among them) to receivers that take FCS-32, FCS-16 or both, and one with a bit error dropped; every item to the pump `nbits` wide with nothing above it, in every mode |
 | LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmFcs32`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; the 32-bit FCS (the caller's XID with and without it, the answerer's response, a SABME with each FCS, FCS-16 when either side has it off, and the data with bit errors); no compression; one direction only; each V.42bis parameter the smaller of the two |
-| HST | `LapmHst` | a recorded Courier's XID command and response: the answerer's response with HST and its turn on the DM; the caller's DM (FCS-16) and its SABME first once HST is up; the starting rate between two Links; without HST, LAPM as before |
+| HST | `LapmHst`, `Hst` | a recorded Courier's XID command and response: the answerer's response with HST and its turn on the DM; the caller's DM (FCS-16) and its SABME first after HST is up; the start rate between two Links; without HST, LAPM as before; the HST link against a Courier's first frames, and between two Links, with the turns of the channels |
 | LAPM faults | `LapmBadFrames`, `LapmNrPastVs`, `LapmUnsolicitedDm`, `LapmBitErrors`, `LapmSlowDte`, `LapmCompressedSlowDte`, `LapmN400` | frames LAPM must drop; an N(R) past V(S) ignored; an unsolicited DM (F = 0) while idle, which asks for the link (8.8/V.42: an SABME, not the link up; ignored after a release); REJ and T401 recovery; a slow DTE (RNR); five retransmissions of an unanswered XID and five polls with the line cut, no more |
-| Detection and async | `DetectHangup`, `AdpCellular`, `Async`, `V14`, `OdpUnanswered`, `LapmCallerAsyncRemote` | a hangup during T400; an originator against a cellular answerer's ADPs, "EM" then "EC" (LAPM) or "EM" alone (async after T400); async; an answerer or caller falling back to async after T400; a LAPM answerer with an async caller |
-| MNP | `MnpLr`, `MnpResponder`, `MnpResponderNoLr`, `Mnp`, `MnpAfterOdp`, `MnpOctets`, `MnpBitErrors`, `MnpSlowDte`, `MnpRequired`, `MnpN400` | our LR octet for octet as the Agere modem's, FCS and all, three of them unanswered, then async; our responder against the Agere modem's LR, then an LA, an LT, an LN (LNA) and an LD as HDLC frames; against SYN DLE STX with no LR after it (async after its wait, nothing sent); MNP first, and after ODPs a V.42 answerer did not answer; framing mode 2 and no optimizations; bit errors in both modes; a slow DTE (no credit); MNP required against a modem without it; N400 with the line cut |
+| Detection and async | `DetectHangup`, `AdpCellular`, `Async`, `V14`, `OdpUnanswered`, `LapmCallerAsyncRemote` | a hangup during T400; an originator against a cellular answerer's ADPs, "EM" then "EC" (LAPM) or "EM" alone (async after T400); async; an answerer or caller that uses async after T400; a LAPM answerer with an async caller |
+| MNP | `MnpLr`, `MnpResponder`, `MnpResponderNoLr`, `Mnp`, `MnpIdleStart`, `MnpAfterOdp`, `MnpOctets`, `MnpBitErrors`, `MnpSlowDte`, `MnpRequired`, `MnpN400` | our LR octet for octet as the Agere modem's, FCS and all, three of them unanswered, then async; our responder against the Agere modem's LR, then an LA, an LT, an LN (LNA) and an LD as HDLC frames; against SYN DLE STX with no LR after it (async after its wait, nothing sent); no data for 20 s, then the LR of the caller again on T404 and the data phase continues; MNP first, and after ODPs a V.42 answerer did not answer; framing mode 2 and no optimizations; bit errors in both modes; a slow DTE (no credit); MNP required against a modem without it; N400 with the line cut |
 | MNP 5 | `Mnp5`, `MnpMnp5` | round trips (text, noise, runs, every value, flushes); the Agere modem's MNP 5 octets decoded and coded again; MNP with MNP 5 both ways |
-| V.76 and H.245 | `H245Messages`, `H245Extensions`, `V76`, `V76Refused`, `V76Voice`, `V76VoiceHeader`, `V76VoiceSilence` | H.245's messages against an ASN.1 compiler's octets, extension additions passed over, messages cut short; the data channel opened, the data both ways with and without bit errors, the DISC; the channels and frames a responder refuses; the voice channel beside the data, each side hearing the other's tone, the audio header's sequence numbers, lost frames concealed, silence sent as SID frames and heard as comfort noise ([v70-details.md](v70-details.md#tests)) |
+| V.76 and H.245 | `H245Messages`, `H245Extensions`, `V76`, `V76Refused`, `V76Voice`, `V76VoiceResponderOpens`, `V76VoiceHeader`, `V76VoiceSilence` | H.245's messages against an ASN.1 compiler's octets, extension additions passed over, messages cut short; the data channel opened, the data both ways with and without bit errors, the DISC; the channels and frames a responder refuses; the voice channel beside the data (also opened by the responder), each side hears the tone of the other, the audio header's sequence numbers, lost frames concealed, silence sent as SID frames and heard as comfort noise ([v70-details.md](v70-details.md#tests)) |
 | V.80 | `V80Transparent`, `V80Shielding`, `V80Framed`, `V80BadFcs`, `V80Abort`, `V80Underrun`, `V80Commands`, `V80SynHunt`, `V80ReceiveOverrun` | transparent octets both ways with the first underrun reported; all twenty shielding codes, and DC1/DC3 with and without flow control; frames with no FCS, FCS-16 and FCS-32, with flags or marks between them; a bad FCS; the DTE's abort; underruns in a frame (an abort, or a flag and `<EM><resume>`'s count); the commands for the core; `<EM><bnum>` reports; the SYN hunt; a receive overrun (`<EM><rover>`) |
 
 ## V.44
@@ -277,7 +280,7 @@ with the text of `link/v44_preset.cpp`
 ## zstd
 
 zstd is a small Zstandard codec that we wrote from RFC 8878
-(`link/zstd_codec.{h,cpp}`, approximately 1700 lines, no libzstd), with
+(`link/zstd_codec.{h,cpp}`, about 1700 lines, no libzstd), with
 its negotiation in XID. Annex F of the V.cvm Recommendation
 (`docs/specs/v_cvm.pdf`) is its specification, but the link also uses it
 outside V.cvm.
@@ -327,7 +330,7 @@ content size and no checksum (LAPM has its FCS), and it never ends.
   codes of the block. The encoder uses the one with the lowest cost.
 - A raw block when coding does not make the data smaller.
 
-On text, it compresses approximately as well as level 3 of libzstd.
+On text, it compresses about as well as level 3 of libzstd.
 
 ### Dictionary
 
@@ -417,7 +420,7 @@ disconnect before.
 | AMR-WB 23.85 (1687 to 2012) | 1.4 to 1.6 | 1.8 and 2.4; 0.6 and 1.0 |
 
 The AMR-WB rates change with the renegotiations that the codec causes.
-After a retrain, two of its three zstd calls went down to 300 bit/s.
+After a retrain, the rate of two of its three zstd calls decreased to 300 bit/s.
 
 ## MNP
 
@@ -533,8 +536,8 @@ the same text (`Link.Mnp5`).
   starts).
 - **Adaptive frequency coding.** The characters have ranks from how
   frequently they came:
-  - A character moves up past the characters with lower counts.
-  - When the top count gets to 255, all counts are divided by 2.
+  - A character goes above the characters with lower counts.
+  - When the top count becomes 255, all counts are divided by 2.
   - Each character goes as the code of its rank: a 3-bit header h, then
     h bits (1 bit for h = 0). Ranks 0 and 1 are `000x`, 2 and 3 `001x`,
     4 to 7 `010xx`, and so on up to 128 to 255 `111xxxxxxx`. Rank 255
@@ -546,7 +549,7 @@ the same text (`Link.Mnp5`).
   (if there were characters after the last flush). The stream continues
   from one LT to the next.
 
-Text becomes approximately two thirds of its size. Noise becomes a
+Text becomes about two thirds of its size. Noise becomes a
 little larger (ranks of 128 and higher use 10 bits). `%C1` and `%C3`
 offer MNP 5 (parameter 9 of the LR).
 
@@ -696,7 +699,7 @@ select their own rate. Only the side that asked starts the shift, and
 the pump of the other side follows. For a change to a different
 modulation, the pumps start again, as the DeskPorte does:
 
-1. The two sides stop sending. The pump stops, and the timers of the
+1. The two sides stop transmission. The pump stops, and the timers of the
    link stop.
 2. The silence lasts S10/8 + 3 s (4 s with 14 in S10), then 250 ms.
    The caller waits 600 ms more.
@@ -762,7 +765,7 @@ these steps:
 - The landline side has a 1500 Hz detector in its bank of tone
   detectors. When the 1500 Hz energy is sufficiently high and is more
   than half of the received energy, it sets bits 0, 2 and 5. Then ETC
-  is on.
+  is enabled.
 - The transmit attenuation is 13 dB from the full scale of the codec for
   `ETC_CELL` (the default) and 20 dB for `ETC_LAND`.
 - In ETC mode, the XID of V.42 gives N401 = 64 octets, not 128, and
@@ -783,7 +786,7 @@ commands do nothing, as before.
   listens for the 1500 Hz tone in the first 10 s of the call
   (`EtcToneDetector` in `core/etc.h`). It measures blocks of 50 ms. Two
   blocks in sequence with more than half of the energy at 1500 Hz, above
-  -43 dBm0, turn ETC on for the call. S116 does not change. The answerer
+  -43 dBm0, enable ETC for the call. S116 does not change. The answerer
   also transmits 6.6 dB lower than the default (the ratio of the two
   gains of the firmware).
 - When S116 is not 0, the link offers N401 = 64 octets, and T401 is 3 s
@@ -936,7 +939,7 @@ To the DTE:
 
 ### Against the other modems
 
-`ctest -R _v80_` ([interop.md](interop-details.md#v80)):
+`ctest -R _v80_` ([interop-details.md](interop-details.md#v80)):
 
 - The Agere and Broadcom modems (which share one V.80 code base) and the
   SM56 modem accept our full frames, with no FCS and with FCS-16. We

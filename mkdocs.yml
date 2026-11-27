@@ -46,6 +46,7 @@ nav:
       - MNP 10: mnp/mnp10.md
       - MNP 10EC: mnp/mnp10ec.md
       - Firmware findings: mnp/firmware-findings.md
+    - Hayes V-series protocols: hayes.md
     - The x2 upgrade host: x2-upgrade.md
     - EBCDIC terminals and hosts: ebcdic.md
     - ZMODEM with zstd: zmodem-zstd.md
@@ -54,6 +55,7 @@ nav:
     - Modem relay (V.150.1): v150.md
     - The V.cvm proposal: vcvm-spec.md
     - Leased lines and dry pairs: leased.md
+    - The speaker of the modem: speaker.md
     - ZyXEL security and call back: zyxel-security.md
     - ZyXEL fax mode (class 6): zyxel-fax.md
   - Phone systems:
@@ -62,6 +64,8 @@ nav:
     - dmodem-ari: ari.md
     - FreePBX: freepbx.md
     - "FreeSWITCH: mod_dmodem": freeswitch.md
+  - Programs that use the modem:
+    - dmodemd as a library: embed.md
   - Hardware and systems:
     - Softmodem hardware: hardware.md
     - The Agere USB 2.0 soft modem: agere-usb.md

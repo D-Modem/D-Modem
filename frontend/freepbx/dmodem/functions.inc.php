@@ -27,3 +27,10 @@ function dmodem_getdestinfo($dest)
 {
 	return \FreePBX::Dmodem()->destinationInfo($dest);
 }
+
+/* what uses destination dest (all if dest is true): the inbound routes
+   whose faxes D-Modem sends there */
+function dmodem_check_destinations($dest = true)
+{
+	return \FreePBX::Dmodem()->didFaxUsage($dest);
+}

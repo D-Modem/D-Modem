@@ -124,6 +124,17 @@ void dmodem_set_clear(struct dmodem *d, int clear);
 int  dmodem_poll_dte(struct dmodem *d);
 /* the call's state now, into *s */
 void dmodem_status(struct dmodem *d, struct dmodem_status *s);
+/* what the modems agreed on, as CONNECT's Modulation:, Protocol: and
+   Compression: lines name it (AT+MS's pump names; LAPM, MNP...; V42bis,
+   V44, MNP5...): "" for what is not known.  Each string ends in a 0 */
+struct dmodem_connection {
+	char modulation[24];            /* V34, V90, V92, K56Flex, V32bis... */
+	char protocol[16];              /* LAPM, MNP, NONE, X.75, V.120... */
+	char compression[16];           /* V42bis, V44, MNP5, NONE... */
+};
+/* the call's connection now, into *c (all "" before the modems are
+   connected) */
+void dmodem_connection(struct dmodem *d, struct dmodem_connection *c);
 /* hang up (as ATH) */
 void dmodem_hangup(struct dmodem *d);
 /* dmodem_status()'s caller_speech_ms and caller_modem from nothing
@@ -183,16 +194,33 @@ void dmodem_set_log(void (*fn)(const char *line));
 
 enum dmodem_fax_dir { DMODEM_FAX_RECEIVE, DMODEM_FAX_SEND };
 
+/* dmodem_fax_config's modems */
+enum { DMODEM_FAX_V27 = 1, DMODEM_FAX_V29 = 2, DMODEM_FAX_V17 = 4 };
+
 /* T.38's UDPTL error recovery (T38FaxUdpEC) for the packets we send */
 enum dmodem_t38_ec { DMODEM_T38_EC_NONE, DMODEM_T38_EC_REDUNDANCY };
 
 struct dmodem_fax_config {
 	enum dmodem_law law;
 	enum dmodem_fax_dir dir;
-	const char *file;               /* the TIFF to send, or to write */
+	const char *file;               /* the TIFF to send, or to write;
+					   to send several, their names
+					   with & between them (the pages
+					   of each in turn) */
 	const char *ident;              /* our number (TSI/CSI), 20 chars */
+	const char *header;             /* sending: the header line's text
+					   (the sender's name) on each
+					   black and white page, with the
+					   date, ident and the page number;
+					   NULL: no header line */
 	int32_t max_bps;                /* 14400 if 0 */
+	int32_t min_bps;                /* no page below this rate (0:
+					   none) */
 	int no_ecm;                     /* without error correction mode */
+	int modems;                     /* the modems that may carry the
+					   pages: of DMODEM_FAX_V27,
+					   DMODEM_FAX_V29, DMODEM_FAX_V17
+					   (0: all three) */
 	/* T.38 instead of audio: our UDPTL packets to t38_send, the other
 	   end's by dmodem_fax_t38_rx() */
 	int t38;
@@ -222,6 +250,10 @@ struct dmodem_fax_status {
 	int fine;
 	char remote_ident[21];
 	const char *result;             /* how it ended (or "in progress") */
+	const char *error;              /* the same as a code: NO_ERROR,
+					   RUNNING, NO_FAX, INCOMPATIBLE,
+					   TRAINING, NO_RESPONSE, PAGE,
+					   HANGUP, DOCUMENT, FILE, HOST */
 	const char *phase;
 	int ecm;                        /* the call has error correction
 					   mode */
@@ -256,6 +288,25 @@ void dmodem_fax_t38_rx(struct dmodem_fax *f, const unsigned char *pkt,
 void dmodem_fax_t38_time(struct dmodem_fax *f, int32_t n);
 /* also closes the received file (none if no page came) */
 void dmodem_fax_destroy(struct dmodem_fax *f);
+
+/*
+ *    fax detection: a fax machine's calling tone (CNG, 1100 Hz) on a
+ *    call's audio, as the answerer hears it
+ */
+
+struct dmodem_faxdetect;
+
+/* the octets of dmodem_faxdetect_process_g711() in law (mu-law if
+   unknown); NULL if there is no memory */
+struct dmodem_faxdetect *dmodem_faxdetect_create(enum dmodem_law law);
+/* n samples of the caller (16 bit linear, 8000 Hz): 1 once a fax
+   machine's CNG has been heard (a burst, or 400 ms of the tone), else 0 */
+int dmodem_faxdetect_process(struct dmodem_faxdetect *d, const int16_t *in,
+			     int32_t n);
+/* the same with G.711 octets */
+int dmodem_faxdetect_process_g711(struct dmodem_faxdetect *d,
+				  const unsigned char *in, int32_t n);
+void dmodem_faxdetect_destroy(struct dmodem_faxdetect *d);
 
 #ifdef __cplusplus
 }

@@ -1,6 +1,6 @@
 # ISDN: the clear 64 kbit/s channel: technical details
 
-This page gives the technical details for [ISDN: the clear 64 kbit/s channel](isdn.md), the plain-English overview. Read the overview first. This page keeps the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [ISDN: the clear 64 kbit/s channel](isdn.md), the overview in plain English. Read the overview first. This page keeps the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 An ISDN B-channel (bearer channel) carries 64 kbit/s: 8000 octets a
 second in each direction. There are two types of call on it:
@@ -36,7 +36,7 @@ ISDN support came in three phases:
 - **No call progress and no answer tone.** `ATD` and `ATA` start the
   pump immediately, as on a leased line. Also, the answer delay (S92) does not
   apply.
-- **`AT+B2` selects the protocol on top**: X.75 by default, or
+- **`AT+B2` selects the protocol on the channel**: X.75 by default, or
   synchronous PPP, or the link layer of the modem itself (refer to
   [AT+B2](#atb2-x75-ppp-or-the-modems-link)).
 - **With V.110** (`AT+CBST`, refer to [below](#atcbst-v110-rate-adaption)),
@@ -83,8 +83,8 @@ as the equivalent G.711 sample:
 
 Thus, hosts that know that a call is clear use A-law for it (refer to the
 hosts below). On a mu-law G.711 call where you set `+MS=CLEAR` manually,
-the pump still runs, and its start-up log line tells that `0x7F` will
-arrive as `0xFF`.
+the pump runs, and its start-up log line tells that `0x7F` arrives as
+`0xFF`.
 
 ### A nailed-up channel
 
@@ -111,6 +111,7 @@ quiet mode, and the timer of the loop test). Thus, they keep those meanings.
 | `0` (default) | X.75 | `CONNECT 64000/X.75` |
 | `5` | synchronous PPP | `CONNECT 64000/PPP` |
 | `7` | the modem's own link: V.42, MNP, or plain characters with `\N0` | as for a modem call |
+| `9` | V.120 (refer to [AT+B2=9](#atb29-v120)) | `CONNECT 64000/V.120` |
 
 ### X.75
 
@@ -137,7 +138,7 @@ mailers expected it.
   expires and the modem polls the link.
 - **Release:** `ATH` sends DISC. A DISC or DM from the far end gives
   `NO CARRIER`.
-- **Not done yet:** V.42bis compression over X.75, which some ISDN
+- **Not done:** V.42bis compression over X.75, which some ISDN
   adapters offered.
 
 ### Synchronous PPP
@@ -155,9 +156,9 @@ is for a PPP stack on the DTE, for example pppd on the serial port of the modem.
   asynchronous control character map).
 - **Bad frames:** D-Modem removes and logs a frame from the DTE with a bad FCS, or a frame longer than
   2048 octets. The retries of PPP itself recover the loss.
-- **Testing:** we tried it between two D-Modems in
-  `dsp/test/clear_call_test.cpp`. We did not try it yet with pppd at
-  each end.
+- **Tests:** we tried it between two D-Modems in
+  `dsp/test/clear_call_test.cpp`. We did not try it with pppd at each
+  end.
 
 ### The modem's link
 
@@ -209,7 +210,7 @@ steps:
 - **RA2:** that intermediate rate fills the first 1, 2, 4 or 8 bits of
   each octet. The remaining bits are ones.
 
-ISDN terminal adapters used V.110, and the circuit switched data of GSM still
+ISDN terminal adapters used V.110, and the circuit switched data of GSM also
 goes on it through the network (Osmocom). `dsp/v110.cpp` builds and
 synchronises the frames, and `dsp/dp_clear.cpp` runs them.
 
@@ -279,7 +280,7 @@ payload (`CLEARMODE/8000`, on a dynamic payload type): the octets without change
 with no codec. dmodemd (`frontend/dmodemd/sip.cpp`) uses it as
 follows.
 
-- **Dialling with `AT+MS=CLEAR`:** the offer gives CLEARMODE first (on
+- **Calls out with `AT+MS=CLEAR`:** the offer gives CLEARMODE first (on
   payload type 97), then PCMA and PCMU. An answer in CLEARMODE is a
   clear call. An answer in PCMA also runs the clear channel (the
   `+MS=CLEAR` of the modem asks for it). This operates if nothing on the path
@@ -287,10 +288,10 @@ follows.
 - **Incoming calls:** dmodemd accepts an offer that gives CLEARMODE before all G.711
   formats as an ISDN data call. dmodemd answers it in CLEARMODE,
   and the modem runs the clear channel pump, independently of `+MS`. An
-  offer with G.711 first gets G.711, as before.
+  offer with G.711 first gets G.711.
 - **No telephone-events:** a CLEARMODE call never uses RFC 4733
   telephone-events, because their tones would be data.
-- **Turning it off:** `SIP_CLEARMODE=no` (also `0`, `off` or `false`)
+- **How to disable it:** `SIP_CLEARMODE=no` (also `0`, `off` or `false`)
   disables CLEARMODE. Then dmodemd does not offer or accept it.
 - **SRTP:** CLEARMODE also goes over SRTP (`SIP_SRTP`, refer to
   [Using dmodemd](usage.md#media-v152-and-srtp)).
@@ -401,9 +402,9 @@ continues as `nobody`, as it does for its pty.
 
 Overlap dialling, supplementary services, and PRI (primary rate) cards.
 
-### Testing
+### Tests
 
-**Untested on real hardware.**
+**We did not test this on real hardware.**
 
 - `frontend/dmodemd/test/misdn_test.py` runs two dmodemd on fake cards
   (`frontend/dmodemd/test/fake_misdn.cpp`, loaded with `LD_PRELOAD`), connected
@@ -415,15 +416,15 @@ Overlap dialling, supplementary services, and PRI (primary rate) cards.
 - `frontend/dmodemd/test/q931_test.cpp` covers Q.931's states, timers and
   messages.
 
-The bit reversal is the same as in the chan_misdn of Asterisk and in LCR, but no real card
-has confirmed it yet.
+The bit reversal is the same as in the chan_misdn of Asterisk and in LCR, but we did
+not confirm it on a real card.
 
 ## app_dmodem: an ISDN data call through Asterisk
 
 You build app_dmodem only for your own Asterisk
 (`-DDMODEM_APP_DMODEM=ON`). Do not give a built copy to other persons: refer to
 [LICENSING.md](../LICENSING.md). dmodem-ari does not accept clear channel
-calls yet.
+calls.
 
 A call that comes to `DModem()` with an unrestricted digital bearer runs
 on the clear channel. This occurs when
@@ -438,13 +439,13 @@ The `clear` option of the profile (in `dmodem.conf`) sets the behavior:
 |---|---|
 | `auto` (default) | clear for a call with a digital bearer |
 | `yes` | every call is clear |
-| `no` | never: digital calls run as G.711 audio, as before |
+| `no` | never: digital calls run as G.711 audio |
 
 The `mod_dmodem` of FreeSWITCH has the same option through the shared bridge
 (`frontend/pbx/dmodem_bridge.c`). There, `auto` operates as `no`, because
 FreeSWITCH does not tell the bearer capability to the module.
 
-**Not yet tried on real ISDN hardware.** We expect that chan_dahdi gives the
+**We did not try this on real ISDN hardware.** We expect that chan_dahdi gives the
 octets of a digital call to the application without changes (with its audio mode
 disabled, and no echo canceller or gain), but we must confirm this on a
 card. The module does not accept the restricted digital bearer (56 kbit/s, North America)
@@ -454,7 +455,7 @@ as clear.
 
 `frontend/asterisk/codec_clearmode.c` adds RFC 4040's codec to Asterisk.
 
-- **Build:** the build builds and installs it each time it finds the headers of Asterisk.
+- **Build:** the build compiles and installs it each time it finds the headers of Asterisk.
   It contains no D-Modem code and is under the
   GPL-2.0-only licence of Asterisk. Thus, you can supply it as any other module.
 - **What it registers:** the `clearmode` codec (8000 octets each second,
@@ -480,7 +481,7 @@ A call that comes to `DModem()` in CLEARMODE is clear, independently of the
 The modem runs the protocol of `AT+B2` on it.
 
 `frontend/asterisk/test/sip.sh` with `CODEC=clearmode` runs the X.75 call of dmodemd
-through Asterisk in CLEARMODE, and makes sure that it connected at
+through Asterisk in CLEARMODE, and makes sure that it connects at
 64000/64000 bit/s.
 
 The idea comes from a gist by 7marcus9. We wrote this module again
@@ -584,7 +585,7 @@ and its NCCI (network control connection identifier) is `0x00010101`.
     16 (telephony) and 1 (speech) that the mask has.
 
   The number of the caller comes from `AT+VCID`. The called number is empty,
-  because there is no MSN selection yet.
+  because there is no MSN selection.
 - **CONNECT_REQ:** the controller sets the B protocol with AT commands (refer to the table
   below). Then `ATD` dials the called number. The `CONNECT` of the modem
   becomes CONNECT_ACTIVE_IND. Then the CONNECT_B3_REQ of the application
@@ -658,10 +659,10 @@ set-up, accepts each plain `RING`, and offers all calls as audio calls.
 ### Limits
 
 - One call at a time.
-- While online, the controller monitors the data for the `NO CARRIER` line of the modem.
+- While online, the controller examines the data for the `NO CARRIER` line of the modem.
   Thus, that line in the data would stop the call.
-- No fax (B1 4 of CAPI) yet.
-- No Windows `capi2032.dll` yet.
+- No fax (B1 4 of CAPI).
+- No Windows `capi2032.dll`.
 
 The `dmodem_ring()` of libdmodem rings a modem, for a program that finds
 calls itself. `frontend/capi/test/capi_test.cpp` uses it.
@@ -676,9 +677,9 @@ covers:
 - calls out over X.75, V.120, frames (sync PPP), V.110 at 9600 bit/s,
   and a modem call (V.42 over V.90 or V.91), with data in the two directions;
 - a call in on a clear channel with the number of the caller, and a second
-  listening application that does not get it;
-- hangups from the two ends, a call that nobody answers, a call that
-  stops ringing, and a B protocol that the controller does not have;
+  application that listens and does not get it;
+- hangups from the two ends, a call that nobody answers, a call whose
+  rings stop, and a B protocol that the controller does not have;
 - the TCP server in the framing of rcapi, against a modem of the test.
 
 ### Tried with libcapi20
@@ -691,17 +692,17 @@ With libcapi20 from isdn4k-utils (its `rcapi` module):
   modem call (V.42 over V.90). Its data came back byte for byte,
   and then it hung up.
 
-Not yet tried: an incoming call through libcapi20, and the applications
+Not tried: an incoming call through libcapi20, and the applications
 themselves (capi4hylafax, chan_capi, capiplugin).
 
-## What comes next
+## The phases of the study
 
 The later phases of the feasibility study use this line mode:
 
 1. **Done:** X.75 and sync PPP (`AT+B2`), and `codec_clearmode`.
-   **Still to come:** V.42bis over X.75, and MSN selection.
+   **Not done:** V.42bis over X.75, and MSN selection.
 2. **Done:** V.110 (`AT+CBST`), V.120 (`AT+B2=9`), and mISDN for BRI
-   cards on Linux (`--misdn`), which still needs a test on a real card.
+   cards on Linux (`--misdn`). We did not test mISDN on a real card.
 3. **CAPI 2.0:** done for data and modem calls (`dmodem-capid`, above).
-   **Still to come:** fax over CAPI, and a Windows `capi2032.dll`.
-   The design of hardware (an S0 USB stick) is in progress.
+   **Not done:** fax over CAPI, and a Windows `capi2032.dll`. We
+   started the design of hardware (an S0 USB stick).

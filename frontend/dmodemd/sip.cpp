@@ -23,7 +23,9 @@
  *    nothing to shrink (a slip the modem can't take): it starts over
  *    only when the far end does (another source, a jump in time), when
  *    its backlog passes 2 s, or when it has run dry with the far end's
- *    packets late (its clock slower than ours).  A packet that never
+ *    packets late (its clock slower than ours).  A start over of the
+ *    same source moves the play-out by a whole number of PCM frames
+ *    (24 samples), so that a 56k modem's receiver keeps its frames.  A packet that never
  *    comes is silence in its place: a modem's receiver takes that as the
  *    error it is (V.42 sends it again), where audio made up to fill it
  *    would pass for data.
@@ -1124,14 +1126,31 @@ private:
 	u32 first_ = 0;         /* the first packet's, since the start */
 	s32 delay_ = 60 * RATE / 1000;  /* (samples) */
 
+	/* PCM modems send frames of 6 samples (V.90, V.92, x2, V.91, and
+	   the robbed bits of the network) or 8 (K56flex): a start over of
+	   the same source moves the play-out by a multiple of both, so
+	   the frames stay where the modem's receiver has them */
+	static const s32 FRAME_SAMPLES = 24;
+
 	/* started over at ts of stream ssrc: empty, playing delay_ behind
-	   it */
+	   it.  For the same source (a jump, a backlog too long, run dry)
+	   the delay is up to 23 samples (3 ms) longer, so that the
+	   play-out moves by a whole number of PCM frames
+	   (FRAME_SAMPLES) */
 	void restart(u32 ssrc, u32 ts)
 	{
+		u32 play = ts - static_cast<u32>(delay_);
+		if (started_ && ssrc == ssrc_) {
+			s32 d = static_cast<s32>(play - play_) %
+				FRAME_SAMPLES;
+			if (d < 0)
+				d += FRAME_SAMPLES;
+			play -= static_cast<u32>(d);
+		}
 		dsp::zero(valid_);
 		started_ = true;
 		ssrc_ = ssrc;
-		play_ = ts - static_cast<u32>(delay_);
+		play_ = play;
 		end_ = first_ = ts;
 	}
 };

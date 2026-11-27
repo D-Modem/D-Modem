@@ -478,8 +478,9 @@ void Modem::at_process()
 			}
 			return false;
 		}
-		if (echo)
-			crlf();
+		/* (the echo ended with S3; the information text and the
+		   result code send their own headers) */
+		text_head_ = true;
 		memcpy(at_cmd_, at_line_, typed);
 		at_cmd_[typed] = '\0';
 		logf("run cmd: %s\n", cmd);
@@ -815,17 +816,8 @@ s16 Modem::at_command(char *cmd)
 				case 'G':
 					if (starts_nocase(p, "+GCI")) {
 						ret = at_GCI(p, &len);
-					} else if (starts_nocase(p, "+GCAP")) {
-						puts("+GCAP: +FCLASS,+MS");
-						crlf();
-						len = 5;
-					} else if (upper(p[2]) == 'M' &&
-						   identity(p[3])) {
-						puts(identity(p[3]));
-						crlf();
-						len = p[4] == '?' ? 5 : 4;
 					} else {
-						ret = -1;
+						ret = at_identity(p, &len);
 					}
 					break;
 				case 'M':
@@ -1244,7 +1236,6 @@ s16 Modem::at_I(char *p, s16 *len)
 			if (i % 8 == 7)
 				crlf();
 		}
-		crlf();
 		break;
 	case 5:
 		puts("Stored Profile 0:");
@@ -1699,6 +1690,45 @@ s16 Modem::at_text(char *p, s16 *len)
 		return 0;
 	}
 	return -1;
+}
+
+/* +GMI, +GMM, +GMR, +GSN, +GOI and +GCAP (V.250 6.1): the action
+   gives the information text, and so does "?" after it (as other
+   modems do); "=?" (the test) gives no text, only OK.  +GSN: the
+   host's serial number, else Options' serial, else the device name; +GOI: the host's object
+   identifier, else no text.  -1 for another +G command */
+s16 Modem::at_identity(char *p, s16 *len)
+{
+	std::string text;
+	s16 n = 4;
+
+	if (starts_nocase(p, "+GCAP")) {
+		text = "+GCAP: +FCLASS,+MS";
+		n = 5;
+	} else if (starts_nocase(p, "+GSN")) {
+		const char *sn = host_.serial_number();
+		text = sn ? sn : serial_ ? serial_ : dev_name_ ? dev_name_ :
+			name_;
+	} else if (starts_nocase(p, "+GOI")) {
+		const char *oid = host_.object_id();
+		text = oid ? oid : "";
+	} else if (upper(p[2]) == 'M' && identity(p[3])) {
+		text = identity(p[3]);
+	} else {
+		return -1;
+	}
+	if (p[n] == '=' && p[n + 1] == '?') {
+		*len = static_cast<s16>(n + 2);
+		return 0;
+	}
+	if (p[n] == '?')
+		n++;
+	*len = n;
+	if (!text.empty()) {
+		puts(text);
+		crlf();
+	}
+	return 0;
 }
 
 /* +GCI?, +GCI=?, +GCI=<hex>: the country by its T.35 code */

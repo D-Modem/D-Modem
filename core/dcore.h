@@ -201,6 +201,12 @@ public:
 	virtual void pulse_dialling(Modem &m, bool on) { (void)m; (void)on; }
 	/* for ATI3 */
 	virtual const char *driver_name() { return nullptr; }
+	/* for +GSN: the serial number of the modem (a USB device's, say);
+	   NULL: the core gives its device name */
+	virtual const char *serial_number() { return nullptr; }
+	/* for +GOI: the global object identifier (ITU-T X.208), in dotted
+	   form ("1.3.6.1.4.1.<n>"); NULL: none, +GOI gives no text */
+	virtual const char *object_id() { return nullptr; }
 	/* the country (-c, +GCI) by its name, at the start and on each
 	   change: a line that sets its own termination and ring detection
 	   (a DAA's registers) sets the country's */
@@ -235,9 +241,28 @@ protected:
 	~VoicePath() = default;
 };
 
+/* the modem's speaker outside the Host (Options::speaker): a program's
+   own audio device that lets the user hear the call, as ATM and ATL
+   set it (on while it dials and trains with ATM1; ATM3 not while it
+   dials; always with ATM2).  The core calls it on the line's thread */
+class SpeakerPath {
+public:
+	/* the speaker's volume as it changes: 0 off, 1 to 3 ATL's; rate,
+	   the line's samples a second */
+	virtual void volume(s16 level, s32 rate) = 0;
+	/* while it is on: n samples of the line, what came (rx) and the
+	   modem's answer (tx); it must not block */
+	virtual void audio(const s16 *rx, const s16 *tx, s32 n) = 0;
+protected:
+	~SpeakerPath() = default;
+};
+
 struct Options {
 	const char *name = "modem";     /* for the log */
 	const char *dev_name = nullptr; /* for ATI3 */
+	/* for +GSN where the Host gives none (Host::serial_number());
+	   NULL: the device name */
+	const char *serial = nullptr;
 	s32 rate = 8000;                /* the line's sample rate */
 	const char *country = nullptr;  /* by name; NULL: USA */
 	/* the program takes a fax machine that calls itself (libdmodem's
@@ -248,6 +273,9 @@ struct Options {
 	/* DSVD's voice path where the Host has none (VoicePath); NULL:
 	   none */
 	VoicePath *dsvd = nullptr;
+	/* the speaker where the Host has none of its own (SpeakerPath);
+	   NULL: none.  Host::speaker() is told all the same */
+	SpeakerPath *speaker = nullptr;
 };
 
 enum class Result {
@@ -412,6 +440,16 @@ public:
 	u32 tx_rate() const { return tx_rate_; }
 	/* (see tx_rate()) */
 	u32 rx_rate() const { return rx_rate_; }
+	/* the call's modulation, as the pump table names it ("V34",
+	   "V90", "K56Flex"): the name of CONNECT's Modulation: line;
+	   NULL when it is not known */
+	const char *modulation_name() const;
+	/* the call's error correction ("LAPM", "MNP", "NONE"...), as
+	   CONNECT's Protocol: line names it */
+	const char *link_protocol() const { return protocol_name(); }
+	/* the call's compression ("V42bis", "V44", "MNP5", "NONE"...), as
+	   CONNECT's Compression: line names it */
+	const char *link_compression() const { return compression_name(); }
 	/* DTE data the remote does not have yet (with V.42: not
 	   acknowledged) */
 	bool tx_pending() const;
@@ -470,7 +508,7 @@ public:
 	void update_status(Status s);
 	/* what XID (or MNP's LRs) agreed */
 	void negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
-			s32 max_string, bool mnp5);
+			s32 max_string, bool mnp5, bool adc = false);
 	/* HST (+MS=HST): the link agreed it in XID at 2400 bit/s, the
 	   forward channel at bps; the call changes to DP_HST */
 	void hst_switch(s32 bps);
@@ -566,6 +604,8 @@ private:
 	s16 online();
 	s16 hook(s16 state);
 	void update_speaker();
+	/* the speaker at volume (0 off): the Host's and Options::speaker */
+	void set_speaker(s16 volume);
 	s16 check_escape(const char *buf, s32 n);
 	void run(s16 *in, s16 *out, s32 n);
 	void dp_process(s16 *in, s16 *out, s32 n);
@@ -678,6 +718,8 @@ private:
 	s16 at_ampZ(char *p, s16 *len);
 	bool sec_unlocked(std::string &arg) const;
 	s16 at_GCI(char *p, s16 *len);
+	/* +GMI, +GMM, +GMR, +GSN, +GOI, +GCAP (see at.cpp) */
+	s16 at_identity(char *p, s16 *len);
 	s16 at_MS(char *p, s16 *len);
 	s16 at_text(char *p, s16 *len);
 	s16 at_PMH(char *p, s16 *len);
@@ -710,6 +752,9 @@ private:
 	/* (see puts(const char *)) */
 	void puts(const std::string &s) { puts(s.c_str()); }
 	void crlf();
+	/* the <CR><LF> before a command line's first information text
+	   (V.250 6.2.6, with ATV1), if it is due */
+	void text_head();
 	/* the modem's own text to the DTE (echo, results, information):
 	   in EBCDIC while the DTE's command text is EBCDIC */
 	void put_text(const char *buf, s32 n);
@@ -724,7 +769,7 @@ private:
 	Host &host_;
 	struct modem *handle_;
 	bool ok_ = false;
-	const char *name_, *dev_name_;
+	const char *name_, *dev_name_, *serial_;
 	s32 srate_;
 	s32 frag_;
 
@@ -800,6 +845,9 @@ private:
 	/* while a command line runs: 1 if its text is EBCDIC, 0 if not;
 	   -1 at other times */
 	s8 line_ebc_ = -1;
+	/* a command line runs and has sent no text: the next information
+	   text starts with <CR><LF> (ATV1); a result code clears it */
+	bool text_head_ = false;
 	ebcdic::CodePage ebc_page_;
 
 	/* rings */
@@ -842,6 +890,7 @@ private:
 		s32 dict_size, max_string;
 		bool v44;               /* V.44 rather than V.42bis */
 		bool zstd;              /* zstd (V.cvm) rather than either */
+		bool adc;               /* Hayes ADC (S46) rather than all */
 		bool mnp5;
 		bool mnp_on;            /* the call has MNP */
 		bool sync;              /* V.80 Synchronous Access Mode */
@@ -1032,6 +1081,8 @@ private:
 	enum class Adapt { Off, Detect, Data, Fax };
 	Adapt adapt_ = Adapt::Off;
 	VoicePath *dsvd_path_ = nullptr;     /* Options::dsvd */
+	SpeakerPath *speaker_path_ = nullptr; /* Options::speaker */
+	s16 speaker_on_ = 0;                 /* set_speaker()'s volume */
 	bool fax_detect_ = false;
 	bool fax_caller_ = false;
 	dsp::CngDetect *cng_ = nullptr;

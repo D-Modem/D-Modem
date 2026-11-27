@@ -837,8 +837,11 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 	cfg.dir = dir;
 	cfg.file = file;
 	cfg.ident = fs->ident;
+	cfg.header = fs->header[0] ? fs->header : NULL;
 	cfg.max_bps = fs->max_bps;
+	cfg.min_bps = fs->min_bps;
 	cfg.no_ecm = !fs->ecm;
+	cfg.modems = fs->modems;
 	switch_channel_set_variable(channel, "dmodem_fax_file", file);
 	f = dmodem_fax_create(&cfg);
 	if (!f) {
@@ -1183,6 +1186,9 @@ SWITCH_STANDARD_APP(dmodem_function)
 				"DMODEM_UUID", switch_core_session_get_uuid(session),
 				"DMODEM_PROFILE", profile,
 				"DMODEM_RATE", c.rate,
+				"DMODEM_MODULATION", c.modulation,
+				"DMODEM_PROTOCOL", c.protocol,
+				"DMODEM_COMPRESSION", c.compression,
 				"DMODEM_CALLERID", cid ? cid : "",
 				"DMODEM_DIALED", dialed ? dialed : "",
 				"DMODEM_CONNECTED", connected,
@@ -1193,6 +1199,12 @@ SWITCH_STANDARD_APP(dmodem_function)
 				 (long long)time(NULL));
 			switch_channel_set_variable(channel, "dmodem_rate",
 						    c.rate);
+			switch_channel_set_variable(channel,
+				"dmodem_modulation", c.modulation);
+			switch_channel_set_variable(channel,
+				"dmodem_protocol", c.protocol);
+			switch_channel_set_variable(channel,
+				"dmodem_compression", c.compression);
 			switch_log_printf(SWITCH_CHANNEL_SESSION_LOG(session),
 					  SWITCH_LOG_INFO,
 					  "dmodem connected at %s bit/s\n", c.rate);

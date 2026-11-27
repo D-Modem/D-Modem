@@ -13,7 +13,7 @@ The files of ZyXEL's `vcnvt` program and the `zyxel` formats of
 `vgetty` (mgetty) use this coder. D-Modem reads and writes the same
 data.
 
-## How to use
+## How to use it
 
 | Command | Coder |
 |---|---|
@@ -21,9 +21,9 @@ data.
 | `AT+VSM=135,9600` | ZyXEL ADPCM, 3 bits a sample |
 | `AT+VSM=136,9600` | ZyXEL ADPCM, 4 bits a sample |
 
-The numbers 134 to 136 are D-Modem's own. ZyXEL's firmware uses
-`+VSM=2`, `3` (or `30`) and `4`. Number 4 is G.711 u-law in V.253, thus
-D-Modem cannot use ZyXEL's numbers.
+The numbers 134 to 136 are numbers of D-Modem. The firmware of ZyXEL uses
+`+VSM=2`, `3` (or `30`) and `4`. In V.253, number 4 is G.711 u-law. Thus,
+D-Modem cannot use the numbers of ZyXEL.
 
 ## The coder
 
@@ -33,8 +33,8 @@ The coder keeps an accumulator `a` and a step `d` (start: `a = 0`,
 1. The sign is the most significant bit of `c`. The magnitude `m` is the
    other bits.
 2. The accumulator leaks: `a = (a * 4093 + 2048) >> 12`.
-3. `v = (2m + 1) * d`. The accumulator moves by `v >> 1`, up or down by
-   the sign. If `d` is odd, `a` increases by 1.
+3. `v = (2m + 1) * d`. The accumulator increases or decreases by
+   `v >> 1`, as the sign tells. If `d` is odd, `a` increases by 1.
 4. The step changes: `d = (d * M[n][m] + 0x2000) >> 14`. The minimum is 5.
 5. The output sample is `4a`, clipped to 16 bits.
 
@@ -49,7 +49,8 @@ sends code 8 in its place.
 
 The encoder takes the difference `e = (x >> 2) - a`. The sign of `e`
 gives the sign bit. The magnitude is the number of steps `d` in `|e|`
-(the remainder above `d`, counted down), at most the largest magnitude.
+(the remainder above `d`, subtracted step by step), at most the largest
+magnitude.
 Then the encoder runs the decoder on the code, so that the two keep the
 same `a` and `d`.
 

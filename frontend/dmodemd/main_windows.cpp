@@ -31,7 +31,6 @@
 #include <memory>
 #include <string>
 
-#include <direct.h>
 #include <dcore.h>
 #include <dsplibs.h>
 #include <log.h>
@@ -43,6 +42,7 @@
 #include "run_loop.h"
 #include "sip.h"
 #include "sip_modem.h"
+#include "speaker_out.h"
 #ifdef DMODEM_USB
 #include "usb_line.h"
 #endif
@@ -78,7 +78,9 @@ std::string data_path(const char *name)
 	if (!base || !*base)
 		return std::string("dmodem-data.") + name;
 	std::string dir = std::string(base) + "\\dmodem";
-	_mkdir(dir.c_str());
+	/* (the Windows function, not msvcrt's _mkdir(): picolibc, the
+	   win32-picolibc build, has no <direct.h>) */
+	CreateDirectoryA(dir.c_str(), nullptr);
 	return dir + "\\data." + name;
 }
 
@@ -138,6 +140,8 @@ int main(int argc, char *argv[])
 	sip::Config cfg;
 	const char *name, *slash;
 	std::unique_ptr<dmd::Dte> dte;
+	/* (before the modems: they turn it off as they go) */
+	dmd::SpeakerOut speaker;
 	std::string where;
 	TrayGuard tray;
 	s16 ret;
@@ -210,6 +214,12 @@ int main(int argc, char *argv[])
 	mo.dev_name = opt.name;
 	mo.rate = RATE;
 	mo.country = opt.country;
+	mo.serial = opt.serial;
+	if (opt.speaker) {
+		if (!speaker.open(opt.speaker))
+			return 255;
+		mo.speaker = &speaker;
+	}
 	/* the modem: on the USB line (the core on it alone), or on SIP */
 	std::unique_ptr<dmd::SipModem> sm;
 	dcore::Modem *m;

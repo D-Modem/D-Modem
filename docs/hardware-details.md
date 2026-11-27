@@ -37,8 +37,8 @@ and for the line monitor.
 
 | Kind | Kernel driver | Codecs |
 |---|---|---|
-| AC'97 modem (MC97, AMR and CNR risers; laptops of approximately 2000 to 2006) | `snd-intel8x0m` (Intel ICH to ICH7, AMD-768/8111, nForce, SiS 7013, ALi), `snd-atiixp-modem` (ATI IXP), `snd-via82xx-modem` (VIA) | all codecs whose hook is the AC'97 modem GPIO: Silicon Labs Si3036/38, Agere, Motorola and others; the SmartDAA of Conexant ([below](#conexant-ac97-codecs)) |
-| HD-audio modem (laptops of approximately 2005 to 2010) | `snd-hda-intel` with `snd-hda-codec-si3054` | Silicon Labs Si3054/3055 (163c:3055, 3155), Agere (11c1:3026, 3055, 3155), Motorola (1057:3055, 3057, 3155), SM56 (1543:3155), LG (1854:0018), the codec of a VIA board (1106:3288) |
+| AC'97 modem (MC97, AMR and CNR risers; laptops of about 2000 to 2006) | `snd-intel8x0m` (Intel ICH to ICH7, AMD-768/8111, nForce, SiS 7013, ALi), `snd-atiixp-modem` (ATI IXP), `snd-via82xx-modem` (VIA) | all codecs whose hook is the AC'97 modem GPIO: Silicon Labs Si3036/38, Agere, Motorola and others; the SmartDAA of Conexant ([below](#conexant-ac97-codecs)) |
+| HD-audio modem (laptops of about 2005 to 2010) | `snd-hda-intel` with `snd-hda-codec-si3054` | Silicon Labs Si3054/3055 (163c:3055, 3155), Agere (11c1:3026, 3055, 3155), Motorola (1057:3055, 3057, 3155), SM56 (1543:3155), LG (1854:0018), the codec of a VIA board (1106:3288) |
 
 The codec shows as one of the PCM devices of the sound card. The
 controls of the card include two switches, "Off-hook Switch" and
@@ -225,7 +225,7 @@ writes with the writes of the library, from the two start states.
 
 For the other types of SSD, the setup is not known. dmodemd reads the
 version of the line side and changes only the hook bits. That holds the
-line only if a different program has set up the line side.
+line only if a different program has configured the line side.
 
 #### The country and the board
 
@@ -276,7 +276,7 @@ the USA, Germany and Canada, from the two start states.
 
 The version of the line side (bits 5:0 of LSD 0x22) changes what the
 library does. Each version had a test with `HSF_LSD_VERSION` in the
-harness:
+harness (the default is version 5, from `dsp/test/hw/smartdaa.hpp`):
 
 | Version | What the library does |
 |---|---|
@@ -346,7 +346,7 @@ The three actions:
   that loads the file for the card of each such codec to
   `/etc/modprobe.d/dmodem-hda-modem.conf`
   (`options snd-hda-intel patch=...`). Before it writes, it checks the
-  configuration of the running kernel for the patch loader and the
+  configuration of the kernel that runs for the patch loader and the
   Si3054 driver. It gives a warning if a different file already gives
   `snd-hda-intel` a `patch=` option, because only one has an effect.
 - **`remove`** deletes the two files.
@@ -395,11 +395,11 @@ the device with a udev rule, for example
 If the kernel driver of Smart Link (`slusb`) is loaded, dmodemd
 detaches it from the device while it runs. The build includes `--usb`
 in dmodemd when pkg-config finds libusb-1.0 (the libusb-1.0-0-dev
-package). `dmodemd --usb list` gives the SmartUSB56s, pico-serial Lines
-and WBs and Agere modems that are there, and if each can open. On
+package). `dmodemd --usb list` gives the USB modems of the six types that are
+there, and if each can open. On
 Windows, dmodemd.exe controls them in the same way, on WinUSB (or on
 libusbK or UsbDk on Windows 7 and 8, whose WinUSB cannot stream)
-([windows.md](windows-details.md#usb-modems---usb)).
+([windows-details.md](windows-details.md#usb-modems---usb)).
 
 The register values and start-up of the ST7554 are those of the Linux
 driver of Smart Link for it (`drivers/st7554.c` of slmodem 2.9.11, under
@@ -519,7 +519,12 @@ a BSD licence). The code is in `frontend/dmodemd/usb_line.cpp`:
   volume, and off at other times:
   - ATM1 (the default): on from dialling or answering until the CONNECT;
   - ATM2: always on;
+  - ATM3: on after the modem dials (or from the answer) until the
+    CONNECT;
   - ATM0, or ATL0: never on.
+
+  To hear the audio of the call, use `--speaker` with or without the
+  buzzer ([speaker.md](speaker.md)).
 
   The Windows driver of Smart Link does this in `SetSpeakerVolume` with
   `Options.Buzzer` (off in the INF of Creative). A buzzer has no volume,
@@ -616,14 +621,14 @@ is the sibling of the Line stick for a **bare copper pair**: a dry
 pair, an alarm or leased circuit, or a pair of your own between
 buildings. It is not for a telephone line. Two WB sticks communicate
 point to point through a wideband transformer, and sample the pair at
-96 kHz instead of 9.6 kHz. They use a band of approximately 4 to 36 kHz.
+96 kHz instead of 9.6 kHz. They use a band of about 4 to 36 kHz.
 
 This is the line for the wideband mode of D-Modem: V.wb, `AT+MS=VWB`
 ([dsp/vwb.md](dsp/vwb.md)), at 48000 Hz and higher (`-r 96000`). It
 runs with `AT&L1`, a leased line with no dial tone or ringing: `ATD`
 calls, and `ATA` or `ATS0=1` answers. In simulation, it carries
-approximately 149 kbit/s in each direction on a short pair, and
-approximately 70 kbit/s on 5 km.
+about 149 kbit/s in each direction on a short pair, and
+about 70 kbit/s on 5 km.
 
 dmodemd controls the stick through libusb, as it controls the Line
 stick, and it does not need a kernel driver. `--usb=auto` finds it
@@ -668,10 +673,10 @@ stick, with the own requests of the WB stick. The code is in
   (`-r 8000` or `9600`).
 - **At start-up**, dmodemd reads the protocol version and board of the
   stick (`GET_INFO`). It refuses a protocol version other than 1 or a
-  board that is not the WB stick. Then it turns off all loopback
+  board that is not the WB stick. Then it disables all loopback
   (`SET_LOOPBACK`), streams the input of the hybrid (`SET_INPUT`: the
   line minus our own signal, not the line itself), sets the rate and the
-  gains, turns off the LINK LED, and tells you if the codec does not run
+  gains, sets the LINK LED off, and tells you if the codec does not run
   (`GET_STATUS`). ATI3 shows `pico-serial WB (TLV320AIC3204)`.
 - **Gains.**
   - `--usb-wb-tx-gain=<dB>` sets the transmit level: the DAC volume of
@@ -679,9 +684,9 @@ stick, with the own requests of the WB stick. The code is in
   - `--usb-wb-rx-gain=<dB>` sets the gain of the hybrid input: its
     MicPGA (`SET_RX_GAIN`), 0 to 47.5 dB.
 
-  The two are 0 by default, the levels of the stick: approximately
+  The two are 0 by default, the levels of the stick: about
   +3 dBm on the line for a full-scale sine. This puts the signal of V.wb
-  (11 dB below full scale) at approximately -8 dBm.
+  (11 dB below full scale) at about -8 dBm.
 - **The LINK LED** shows the carrier of the modem: on while the call is
   online (also through a retrain), off at other times (`SET_CARRIER`).
   At the end, dmodemd gives it back to the stick, which turns it on
@@ -707,7 +712,7 @@ it. These items must still have a check on hardware:
   residue of a real hybrid and the loss of a real pair. On a long pair,
   it is possibly necessary to increase the receive gain.
 - **V.42 through the buffers of the host.** dmodemd sends its samples
-  4672 samples in front at 96 kHz, approximately 50 ms: a frame and a
+  4672 samples in front at 96 kHz, about 50 ms: a frame and a
   half of 20 ms, 15 ms of transfers, and the buffers of the stick. The
   window of LAPM of 15 frames of 128 octets waits a round trip. In
   simulation, with that lead at the two ends, the 148656 bit/s of V.wb
@@ -740,7 +745,7 @@ without root:
 
     SUBSYSTEM=="usb", ATTR{idVendor}=="047e", ATTR{idProduct}=="2892", MODE="0660", GROUP="dialout"
 
-[agere-usb.md](agere-usb-details.md) has all the data, read from the ROM
+[agere-usb-details.md](agere-usb-details.md) has all the data, read from the ROM
 of the device and the drivers of Agere. In summary,
 `frontend/dmodemd/usb_agere.cpp` does these steps:
 
@@ -774,7 +779,7 @@ of the device and the drivers of Agere. In summary,
 
 ATI3 shows `Agere USB 2.0 (Mercury)` for the two codecs. The modem has
 had a test with a fake of it ([below](#testing-without-hardware)), but
-it is not yet reliable on a real one: [agere-usb.md](agere-usb-details.md#bring-up)
+it is not yet reliable on a real one: [agere-usb-details.md](agere-usb-details.md#bring-up)
 tells what to look for, and what to send, after a run.
 
 ### Apple USB Modem
@@ -809,7 +814,9 @@ open it without root:
     SUBSYSTEM=="usb", ATTR{idVendor}=="05ac", ATTR{idProduct}=="1401", MODE="0660", GROUP="dialout"
 
 ATI3 shows `Apple USB Modem (Si3056)`. It has had a test with a fake of
-it ([below](#the-apple-usb-modem)), but not yet on a real one.
+it ([below](#the-apple-usb-modem)). On one real device, an incoming call
+connected at V.34. If `SET_HOOK_STATE` stalls (as on that device),
+dmodemd uses the OH bit of Si3056 register 5 for the hook.
 [apple-usb-modem-details.md](apple-usb-modem-details.md) has the full
 protocol and the source of each part.
 
@@ -871,41 +878,44 @@ module sends, not from a datasheet. It has had a test with a fake bridge
 
 ### Conexant USB HCF modems
 
-Conexant's HCF ("host controlled") USB modems, such as the Phoebe Pocket
-56K (USB `1690:0103`, Conexant's `WINACUSB.sys`), are not soft modems:
-the data pump runs in the modem's own DSP, and the host runs the rest
-(AT commands, V.42, fax). The open driver for them drives that pump from
-D-Modem. Its first step is `dmodem-hcf-probe`, which brings the DSP up
-and says what it found:
+The HCF ("host controlled") USB modems of Conexant are not soft
+modems. An example is the Phoebe Pocket 56K (USB `1690:0103`, with the
+`WINACUSB.sys` driver of Conexant). The data pump runs in the DSP of the
+modem. The host runs the other parts (AT commands, V.42, fax). The open
+driver for these modems controls that pump from D-Modem. Its first step
+is `dmodem-hcf-probe`. This program starts the DSP and shows what it
+found:
 
     dmodem-hcf-probe                          # the pipes, the DSP's ID
     dmodem-hcf-probe --driver WINACUSB.sys    # and its code downloaded
 
-How it works is what `WINACUSB.sys` does, read from the driver (the
-code is ours):
+The procedure is what `WINACUSB.sys` does. We read it from the driver,
+but the code is ours:
 
-- The modem's interface 0 has eight endpoints, used in the order its
-  descriptor lists them: register writes, the line side, the DSP's code,
-  the T-buffer, the data to send, the status, the GPIO and the LEDs.
-- The DSP is the RC-series data pump's register interface. Register
+- Interface 0 of the modem has eight endpoints. The driver uses them in
+  the order that the descriptor gives: register writes, the line side,
+  the code of the DSP, the T-buffer, the data to send, the status, the
+  GPIO and the LEDs.
+- The DSP is the register interface of the RC-series data pump. Register
   writes go as `[tag, register, value]` triples. The status comes as
   records of the registers, then pairs of the status register and a
   received data octet.
-- The start: GPIO mode bit 3 resets the modem interface, then register
-  0x1a bit 7 resets the DSP. Its records then carry its ID block: the
-  signature `0451 49a5` and the chip (`3731` L8371, `3733` L8373,
-  `3734` L8374).
-- The DSP's RAM code is Conexant's and not ours to ship. It is read from
-  the user's own `WINACUSB.sys` by the names its symbols give
-  (`_CTL_DATA_L8371DP`, `_SPX_DATA_L8371DP`, ...), in the driver's
-  "DRAM" form. Each module goes down after ABCODE (register 0x14) 0x4f
-  (CTL) or 0x5f (SPX), with its address in registers 0x16/0x17 and its
-  octets on the code's pipe. The DSP then reports a checksum, which must
-  be the module's.
+- The start: bit 3 of the GPIO mode resets the modem interface. Then bit
+  7 of register 0x1a resets the DSP. Then its records carry its ID
+  block: the signature `0451 49a5` and the chip (`3731` L8371, `3733`
+  L8373, `3734` L8374).
+- The RAM code of the DSP comes from Conexant, and we must not
+  distribute it. The program reads it from the `WINACUSB.sys` of the
+  user, by the names of its symbols (`_CTL_DATA_L8371DP`,
+  `_SPX_DATA_L8371DP` and others), in the "DRAM" form of the driver.
+  The program downloads each module after ABCODE (register 0x14) 0x4f
+  (CTL) or 0x5f (SPX). The address is in registers 0x16/0x17, and the
+  octets go on the pipe of the code. Then the DSP reports a checksum,
+  which must be the checksum of the module.
 
-It has been tested against a fake modem
-([below](#the-conexant-usb-hcf-modem-probe)), not on a real one. The
-dial, the training and the data path are not done yet.
+It has had a test against a fake modem
+([below](#the-conexant-usb-hcf-modem-probe)), but not on a real one.
+The dial, the training and the data path are not done yet.
 
 ### Not covered
 
@@ -933,11 +943,11 @@ The PCI modems of Smart Link are of two types:
 |---|---|
 | `-a <pcm>`, `--alsa=<pcm>` | The line is the PCM of the codec (`hw:1`, `hw:0,6`, `plughw:...`): a telephone line, not SIP. |
 | `--alsa-ctl=<ctl>` | The controls of the codec, if they are not the controls of the card. By default `hw:<card>` for `hw:` and `plughw:` PCMs (`hw:1` for `hw:1,0` or `plughw:1,0`), and the name of the PCM for other PCMs. |
-| `--usb=<dev>` | The line is a SmartUSB56, pico-serial Line or WB, or Agere USB modem: `auto` (the first one), or `<bus>:<address>` as `lsusb` and `--usb list` show it. The line is a telephone line (a bare pair for the WB), not SIP. `--usb list` gives the devices and exits. |
+| `--usb=<dev>` | The line is a SmartUSB56, a pico-serial Line or WB, an Agere USB modem, an Apple USB Modem or a Conexant USB HSF modem: `auto` (the first one), or `<bus>:<address>` as `lsusb` and `--usb list` show it. The line is a telephone line (a bare pair for the WB), not SIP. `--usb list` gives the devices and exits. |
 | `--misdn=<dev>` | The line is an ISDN basic rate interface through the mISDN of Linux (its number, or its name, for example `hfc-pci.1`), not SIP ([isdn.md](isdn.md)). |
 | `--misdn-msn=<msn>` | With `--misdn`: accept calls only for this MSN, and send it as our number. |
 | `--misdn-noflip` | With `--misdn`: use the octets of the B-channel as the card gives them, not bit reversed. |
-| `--usb-leds` | Turn on the carrier and data LEDs of a SmartUSB56 (GPIO 6 and 13), as on the Modem Blaster of Creative. Only for a board that has them. |
+| `--usb-leds` | Control the carrier and data LEDs of a SmartUSB56 (GPIO 6 and 13), as on the Modem Blaster of Creative. Only for a board that has them. |
 | `--usb-wake` | Let a ring wake the computer: arm the USB remote wakeup of the SmartUSB56 (and on Linux, as root, enable the `power/wakeup` of the kernel for it). |
 | `--usb-handset` | Use the handset detector of the SmartUSB56 (GPIO 2): the phone on its PHONE jack off or on hook gives `<DLE>H` and `<DLE>h` in voice mode. |
 | `--usb-voice-codec=<law>` | Use the second codec of the SmartUSB56 (SSI2, alternate setting 3) as a handset: `+VLS=14` and `15` in voice mode. Its octets are `ulaw`, `alaw` or `linear`. |
@@ -946,7 +956,7 @@ The PCI modems of Smart Link are of two types:
 | `--usb-international` | Control the international line controls of the SmartUSB56 (GPIO 8, 10 and 12) as the Windows driver of Smart Link does: the DC bit of the country, the 350 ms of Australia after the off-hook, and the controls of pulse dialling. |
 | `--usb-wb-tx-gain=<dB>` | The transmit level of a pico-serial WB: the volume of its DAC, -63.5 to +24 dB in 0.5 dB steps (0, the default, is the level of the stick). |
 | `--usb-wb-rx-gain=<dB>` | The hybrid input gain of a pico-serial WB: its MicPGA, 0 (the default) to 47.5 dB in 0.5 dB steps. |
-| `-r <Hz>`, `--rate=<Hz>` | The rate of the codec. 9600 (the default) or 8000 for the voice-band data pumps; an Agere USB modem always runs at 8000, and ignores this value. 48000, 96000 or 192000 for the wideband mode on a bare pair (V.wb, [dsp/vwb.md](dsp/vwb.md)), on a line that has the rate: an ALSA codec, or a pico-serial WB (whose default is 96000), but not the SmartUSB56 or the Line stick. At those rates, V.wb is the default modulation (`AT+MS=VWB`), the voice-band pumps are refused (`NO CARRIER`), and `ATD` dials nothing. All other values are refused. |
+| `-r <Hz>`, `--rate=<Hz>` | The rate of the codec. 9600 (the default) or 8000 for the voice-band data pumps; an Agere USB modem always runs at 8000, and a Conexant USB HSF modem at 9600: they ignore this value. 48000, 96000 or 192000 for the wideband mode on a bare pair (V.wb, [dsp/vwb.md](dsp/vwb.md)), on a line that has the rate: an ALSA codec, or a pico-serial WB (whose default is 96000), but not the SmartUSB56 or the Line stick. At those rates, V.wb is the default modulation (`AT+MS=VWB`), the voice-band pumps are refused (`NO CARRIER`), and `ATD` dials nothing. All other values are refused. |
 
 You can give only one of `-a`, `--usb` and `--misdn`.
 
@@ -972,7 +982,7 @@ The ALSA line is `frontend/dmodemd/alsa_line.cpp`:
 - **The hook.** Off hook (a call, or voice), the "Off-hook Switch" is on
   and the "Caller ID Switch" is off. On hook, the hook switch is off and
   the line monitor is on, thus the codec receives the line: rings and
-  caller ID. A hook flash (`AT+VTS=!`) turns off the hook switch for the
+  caller ID. A hook flash (`AT+VTS=!`) sets the hook switch off for the
   length of the flash.
 - **Rings.** On hook, each sample goes through `dsp::RingDetect`. The
   ring signal, received through the line monitor, is a large wave of 15
@@ -985,7 +995,7 @@ The ALSA line is `frontend/dmodemd/alsa_line.cpp`:
   - a ring counts in `S1` for 8 s.
 
   All countries of the list of the ITU ring in this way
-  (`ring_tones_test`, [interop.md](interop-details.md#the-line-rung)).
+  (`ring_tones_test`, [interop-details.md](interop-details.md#the-line-rung)).
 - **Caller ID.** At the first ring, the core runs its caller ID receiver
   (`AT#CID`) on the samples of the monitor for 4 s.
 - **Dialling.** The modem itself dials the number, in DTMF, or in
@@ -996,7 +1006,7 @@ The ALSA line is `frontend/dmodemd/alsa_line.cpp`:
 - **Pulse dialling.** The call progress pump times the pulses from the
   table of the country (`-c`, `AT+GCI`):
   - the break and the make: 64 and 36 ms for the USA, 67 and 33 ms for
-    New Zealand, approximately 60 and 40 ms for most of Europe;
+    New Zealand, about 60 and 40 ms for most of Europe;
   - the gap between digits: 800 ms;
   - the digit pattern: n pulses for n and ten for 0; n + 1 in Sweden;
     10 - n in New Zealand.
@@ -1014,10 +1024,10 @@ The ALSA line is `frontend/dmodemd/alsa_line.cpp`:
   side, and not the ringing tone of the country. A country with neither
   would use the limits of on and off times of the table, or 0.2 to
   0.8 s.
-- **Voice mode.** In voice mode, `ATD` waits 2 s, dials, then thinks
-  that the call is answered when the ringing tone ends (`+VRA`), or
+- **Voice mode.** In voice mode, `ATD` waits 2 s and dials. Then it
+  accepts that the call is answered when the ringing tone ends (`+VRA`), or
   after `+VRN` if there is no ringing tone (V.253 9.1.1).
-- **Modulations.** The core thinks that the line is an analogue line
+- **Modulations.** The core treats the line as an analogue line
   (`Host::analog_line()`): the modem is the analogue end of the call.
   - V.90 and V.92 (the default) of `+MS` run PCM as the analogue modem
     at 9600 Hz (`-r 9600`, the default): up to 56000 bit/s down and
@@ -1177,7 +1187,7 @@ as events. In addition to the calls, it checks:
 ### The pico-serial WB
 
 `frontend/dmodemd/test/pico_wb_test.py` (`dmodemd_pico_wb` of ctest, labels
-`alsa` and `quick`; approximately 20 s) runs two pico-serial WB sticks on
+`alsa` and `quick`; about 20 s) runs two pico-serial WB sticks on
 a bare pair instead of an exchange:
 
 - `frontend/dmodemd/test/fake_pico_wb.cpp` is a stick (1209:0003) that

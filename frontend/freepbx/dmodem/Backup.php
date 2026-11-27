@@ -17,7 +17,8 @@ class Backup extends Base\BackupBase
 	public function runBackup($id, $transaction)
 	{
 		$data = $this->FreePBX->Dmodem->exportData();
-		$this->log(sprintf(_('D-Modem: %d profiles'), count($data['profiles'])));
+		$this->log(sprintf(_('D-Modem: %d profiles, %d fax recipients'),
+				   count($data['profiles']), count($data['recipients'])));
 		$this->addConfigs($data);
 	}
 }

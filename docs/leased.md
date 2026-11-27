@@ -9,7 +9,7 @@ example between two buildings. D-Modem can use the two types.
 For the full technical description, refer to
 [the technical details](leased-details.md).
 
-## Getting started
+## How to start
 
 Select the type of circuit:
 
@@ -68,13 +68,13 @@ counts in `AT+TNUM?`).
 ## Simulated carrier (S48)
 
 On a 4-wire line, the signal does not stop. Thus, the far computer does
-not see the "carrier detect" light go off between bursts of data. Some
+not see the "carrier detect" light change to off between bursts of data. Some
 equipment must have this. `ATS48=1` enables the simulated carrier of
 V.13. This tells the far end when data starts and stops. Thus, its
-carrier detect goes on and off, as on an old half-duplex line. Set it on
+carrier detect changes between on and off, as on an old half-duplex line. Set it on
 the two ends.
 
-## Testing it
+## Tests
 
 A test program operates two modems on a simulated circuit. It does a
 check of each standard, the speed fallback, interruptions, noise, the

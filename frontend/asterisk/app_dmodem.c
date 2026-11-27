@@ -33,13 +33,16 @@
 
 #include "asterisk/app.h"
 #include "asterisk/channel.h"
+#include "asterisk/cli.h"
 #include "asterisk/config.h"
 #include "asterisk/format_cache.h"
 #include "asterisk/transcap.h"
 #include "asterisk/frame.h"
 #include "asterisk/indications.h"
 #include "asterisk/localtime.h"
+#include "asterisk/linkedlists.h"
 #include "asterisk/logger.h"
+#include "asterisk/manager.h"
 #include "asterisk/max_forwards.h"
 #include "asterisk/module.h"
 #include "asterisk/pbx.h"
@@ -108,6 +111,9 @@
 					<value name="ERROR">Configuration or system error.</value>
 				</variable>
 				<variable name="DMODEMRATE">The connect rate, transmit/receive bit/s.</variable>
+				<variable name="DMODEMMODULATION">The modulation of the connection: V34, V90, V92, K56Flex...</variable>
+				<variable name="DMODEMPROTOCOL">The error correction of the connection: LAPM, MNP or NONE.</variable>
+				<variable name="DMODEMCOMPRESSION">The data compression of the connection: V42bis, V44, MNP5 or NONE.</variable>
 			</variablelist>
 		</description>
 	</application>
@@ -214,6 +220,142 @@ static void load_fax_settings(struct dmbridge_fax *f)
 	if (cfg)
 		ast_config_destroy(cfg);
 }
+
+/*
+ *    DMODEMFAXOPT(): a channel's own fax settings, over [general]'s and a
+ *    profile's.  They are the channel variables DMODEMFAXOPT_<ITEM>
+ *    (DMODEMFAXOPT_MINRATE and the others), which dmodem-ari reads too
+ */
+
+/* the channel variable of a setting: DMODEMFAXOPT_ and the item in
+   capitals */
+static void faxopt_var(const char *item, char *buf, size_t len)
+{
+	size_t k, n = snprintf(buf, len, "DMODEMFAXOPT_");
+
+	for (k = 0; item[k] && n + 1 < len; k++)
+		buf[n++] = toupper((unsigned char)item[k]);
+	buf[n < len ? n : len - 1] = 0;
+}
+
+/* the channel's DMODEMFAXOPT_<ITEM> variables over *f (one that is not
+   valid is left out, with a warning) */
+static void faxopt_apply(struct ast_channel *chan, struct dmbridge_fax *f)
+{
+	char var[64];
+	const char *v;
+	size_t k;
+
+	ast_channel_lock(chan);
+	for (k = 0; dmbridge_faxopt_items[k]; k++) {
+		faxopt_var(dmbridge_faxopt_items[k], var, sizeof(var));
+		v = pbx_builtin_getvar_helper(chan, var);
+		if (!ast_strlen_zero(v) &&
+		    dmbridge_faxopt(&host, f, dmbridge_faxopt_items[k], v))
+			ast_log(LOG_WARNING, "%s: %s: not valid: '%s'\n",
+				ast_channel_name(chan), var, v);
+	}
+	ast_channel_unlock(chan);
+}
+
+/* the results DMODEMFAXOPT() reads: its item, the channel variable */
+static const struct {
+	const char *item;
+	const char *var;
+} faxopt_results[] = {
+	{ "status", "DMODEMFAXSTATUS" },
+	{ "statusstr", "DMODEMFAXRESULT" },
+	{ "error", "DMODEMFAXERROR" },
+	{ "pages", "DMODEMFAXPAGES" },
+	{ "rate", "DMODEMFAXRATE" },
+	{ "resolution", "DMODEMFAXRESOLUTION" },
+	{ "remotestationid", "DMODEMFAXREMOTE" },
+	{ "sessionid", "DMODEMFAXSESSION" },
+	{ "filenames", "DMODEMFAXFILE" },
+};
+
+/* DMODEMFAXOPT(item) read: a setting as the next fax will have it, or
+   a result of the last one */
+static int faxopt_read(struct ast_channel *chan, const char *cmd,
+		       char *data, char *buf, size_t len)
+{
+	struct dmbridge_fax f;
+	const char *v;
+	size_t k;
+
+	*buf = 0;
+	if (!chan || ast_strlen_zero(data))
+		return -1;
+	for (k = 0; k < ARRAY_LEN(faxopt_results); k++) {
+		if (strcasecmp(data, faxopt_results[k].item))
+			continue;
+		ast_channel_lock(chan);
+		v = pbx_builtin_getvar_helper(chan, faxopt_results[k].var);
+		ast_copy_string(buf, S_OR(v, ""), len);
+		ast_channel_unlock(chan);
+		return 0;
+	}
+	if (!strcasecmp(data, "filename")) {
+		/* the first file of the last fax */
+		char *amp;
+		ast_channel_lock(chan);
+		v = pbx_builtin_getvar_helper(chan, "DMODEMFAXFILE");
+		ast_copy_string(buf, S_OR(v, ""), len);
+		ast_channel_unlock(chan);
+		if ((amp = strchr(buf, '&')))
+			*amp = 0;
+		return 0;
+	}
+	load_fax_settings(&f);
+	faxopt_apply(chan, &f);
+	if (!strcasecmp(data, "ecm"))
+		ast_copy_string(buf, f.ecm ? "yes" : "no", len);
+	else if (!strcasecmp(data, "maxrate"))
+		snprintf(buf, len, "%d", f.max_bps);
+	else if (!strcasecmp(data, "minrate"))
+		snprintf(buf, len, "%d", f.min_bps);
+	else if (!strcasecmp(data, "t38timeout"))
+		snprintf(buf, len, "%d", f.t38_timeout);
+	else if (!strcasecmp(data, "localstationid"))
+		ast_copy_string(buf, f.ident, len);
+	else if (!strcasecmp(data, "headerinfo"))
+		ast_copy_string(buf, f.header, len);
+	else if (!strcasecmp(data, "modems"))
+		dmbridge_fax_modems_text(f.modems, buf, len);
+	else {
+		ast_log(LOG_WARNING, "DMODEMFAXOPT: unknown item '%s'\n",
+			data);
+		return -1;
+	}
+	return 0;
+}
+
+/* DMODEMFAXOPT(item)=value: a setting for the channel's next faxes, in
+   its variable DMODEMFAXOPT_<ITEM> once it is valid */
+static int faxopt_write(struct ast_channel *chan, const char *cmd,
+			char *data, const char *value)
+{
+	struct dmbridge_fax f;
+	char var[64];
+
+	if (!chan || ast_strlen_zero(data) || !value)
+		return -1;
+	dmbridge_fax_defaults(&f, "");
+	if (dmbridge_faxopt(&host, &f, data, value)) {
+		ast_log(LOG_WARNING, "DMODEMFAXOPT(%s): cannot set '%s'\n",
+			data, value);
+		return -1;
+	}
+	faxopt_var(data, var, sizeof(var));
+	pbx_builtin_setvar_helper(chan, var, value);
+	return 0;
+}
+
+static struct ast_custom_function faxopt_function = {
+	.name = "DMODEMFAXOPT",
+	.read = faxopt_read,
+	.write = faxopt_write,
+};
 
 /* [name] of dmodem.conf into *p (fax: [general]'s, then the profile's
    own); -1 if there is no such profile or it lacks host and port (tcp)
@@ -336,7 +478,6 @@ static void fax_file_name(struct ast_channel *chan, const char *dir,
  *    frames (the UDPTL the channel's), as res_fax has them
  */
 
-#define T38_ASK_MS 6000         /* our request's answer waited for */
 #define T38_TICK_MS 20          /* the fax machine's time in steps of */
 
 /* our side of T.38: version, the longest IFP packet we take, the fax's
@@ -430,19 +571,544 @@ static void fax_audio(struct ast_channel *chan, struct ast_format *fmt,
 	ast_write(chan, &wf);
 }
 
+/* how a fax call runs: the applications' options */
+struct fax_run {
+	int debug;              /* d: each phase in the log */
+	int audio_only;         /* F: no T.38 */
+	int ask_t38;            /* z: ask for T.38 (a receiver always asks) */
+	int need_t38;           /* T: T.38 or no fax */
+	int status_events;      /* s: AMI DModemFaxStatus events */
+};
+
+AST_APP_OPTIONS(fax_app_options, BEGIN_OPTIONS
+	AST_APP_OPTION('d', 1 << 0),
+	AST_APP_OPTION('f', 1 << 1),
+	AST_APP_OPTION('F', 1 << 2),
+	AST_APP_OPTION('z', 1 << 3),
+	AST_APP_OPTION('T', 1 << 4),
+	AST_APP_OPTION('s', 1 << 5),
+END_OPTIONS);
+
+static int fax_session_seq;     /* the last fax session's number */
+
+/*
+ *    the fax sessions: the ones that run (for the CLI and AMI), and the
+ *    totals since the module loaded
+ */
+
+/* a fax that runs: what "dmodem fax show session" tells */
+struct fax_session {
+	int id;
+	char channel[AST_CHANNEL_NAME];
+	char file[1024];
+	int sending;
+	struct timeval start;
+	struct dmodem_fax_status st;    /* the last status (st.result and
+					   st.phase point into libdmodem's
+					   constant strings) */
+	char remote[21];
+	char local[21];
+	int t38;
+	AST_LIST_ENTRY(fax_session) list;
+};
+
+static AST_LIST_HEAD_STATIC(fax_sessions, fax_session);
+
+/* the totals, with fax_sessions locked */
+static struct {
+	int tx_attempts, rx_attempts;
+	int completed, failed;
+	/* the failures by code (DMODEMFAXERROR) */
+	struct {
+		char code[16];
+		int n;
+	} reasons[16];
+} fax_stats;
+
+/* a new session in the list (NULL when out of memory: the fax runs,
+   not in the list) */
+static struct fax_session *fax_session_add(struct ast_channel *chan, int id,
+					   int sending, const char *file,
+					   const char *local)
+{
+	struct fax_session *fs = ast_calloc(1, sizeof(*fs));
+
+	if (!fs)
+		return NULL;
+	fs->id = id;
+	ast_copy_string(fs->channel, ast_channel_name(chan),
+			sizeof(fs->channel));
+	ast_copy_string(fs->file, file, sizeof(fs->file));
+	ast_copy_string(fs->local, S_OR(local, ""), sizeof(fs->local));
+	fs->sending = sending;
+	fs->start = ast_tvnow();
+	fs->st.result = "in progress";
+	AST_LIST_LOCK(&fax_sessions);
+	AST_LIST_INSERT_TAIL(&fax_sessions, fs, list);
+	if (sending)
+		fax_stats.tx_attempts++;
+	else
+		fax_stats.rx_attempts++;
+	AST_LIST_UNLOCK(&fax_sessions);
+	return fs;
+}
+
+/* the session's status now (fs may be NULL) */
+static void fax_session_update(struct fax_session *fs,
+			       const struct dmodem_fax_status *st, int t38)
+{
+	if (!fs)
+		return;
+	AST_LIST_LOCK(&fax_sessions);
+	fs->st = *st;
+	ast_copy_string(fs->remote, st->remote_ident, sizeof(fs->remote));
+	fs->t38 = t38;
+	AST_LIST_UNLOCK(&fax_sessions);
+}
+
+/* a failure of the code counted */
+static void fax_stats_reason(const char *code)
+{
+	size_t k;
+
+	for (k = 0; k < ARRAY_LEN(fax_stats.reasons); k++) {
+		if (!fax_stats.reasons[k].code[0])
+			ast_copy_string(fax_stats.reasons[k].code, code,
+					sizeof(fax_stats.reasons[k].code));
+		if (!strcmp(fax_stats.reasons[k].code, code)) {
+			fax_stats.reasons[k].n++;
+			return;
+		}
+	}
+}
+
+/* the session out of the list, its result in the totals (fs may be
+   NULL: the result counted all the same) */
+static void fax_session_end(struct fax_session *fs, int ok, const char *error)
+{
+	AST_LIST_LOCK(&fax_sessions);
+	if (ok) {
+		fax_stats.completed++;
+	} else {
+		fax_stats.failed++;
+		fax_stats_reason(S_OR(error, "UNKNOWN"));
+	}
+	if (fs)
+		AST_LIST_REMOVE(&fax_sessions, fs, list);
+	AST_LIST_UNLOCK(&fax_sessions);
+	ast_free(fs);
+}
+
+/* the seconds since the session started */
+static long fax_session_secs(const struct fax_session *fs)
+{
+	return (long)(ast_tvdiff_ms(ast_tvnow(), fs->start) / 1000);
+}
+
+/* "dmodem fax show sessions": one line for each fax that runs */
+static char *cli_fax_sessions(struct ast_cli_entry *e, int cmd,
+			      struct ast_cli_args *a)
+{
+	struct fax_session *fs;
+	int n = 0;
+
+	if (cmd == CLI_INIT) {
+		e->command = "dmodem fax show sessions";
+		e->usage = "Usage: dmodem fax show sessions\n"
+			"       The DModem faxes that run now.\n";
+		return NULL;
+	}
+	if (cmd == CLI_GENERATE)
+		return NULL;
+	if (a->argc != 4)
+		return CLI_SHOWUSAGE;
+	ast_cli(a->fd, "%-6s %-32s %-4s %-5s %-5s %-6s %-6s %s\n", "ID",
+		"Channel", "Dir", "T.38", "Pages", "Rate", "Secs", "Phase");
+	AST_LIST_LOCK(&fax_sessions);
+	AST_LIST_TRAVERSE(&fax_sessions, fs, list) {
+		ast_cli(a->fd, "%-6d %-32.32s %-4s %-5s %-5d %-6d %-6ld %s\n",
+			fs->id, fs->channel, fs->sending ? "TX" : "RX",
+			fs->t38 ? "yes" : "no", fs->st.pages,
+			(int)fs->st.bps, fax_session_secs(fs),
+			S_OR(fs->st.phase, ""));
+		n++;
+	}
+	AST_LIST_UNLOCK(&fax_sessions);
+	ast_cli(a->fd, "%d active DModem fax session%s\n", n, n == 1 ? "" : "s");
+	return CLI_SUCCESS;
+}
+
+/* "dmodem fax show session <id>": the details of one fax */
+static char *cli_fax_session(struct ast_cli_entry *e, int cmd,
+			     struct ast_cli_args *a)
+{
+	struct fax_session *fs;
+	int id, found = 0;
+
+	if (cmd == CLI_INIT) {
+		e->command = "dmodem fax show session";
+		e->usage = "Usage: dmodem fax show session <id>\n"
+			"       The details of a DModem fax that runs now.\n";
+		return NULL;
+	}
+	if (cmd == CLI_GENERATE)
+		return NULL;
+	if (a->argc != 5)
+		return CLI_SHOWUSAGE;
+	id = atoi(a->argv[4]);
+	AST_LIST_LOCK(&fax_sessions);
+	AST_LIST_TRAVERSE(&fax_sessions, fs, list) {
+		if (fs->id != id)
+			continue;
+		found = 1;
+		ast_cli(a->fd, "Session:          %d\n", fs->id);
+		ast_cli(a->fd, "Channel:          %s\n", fs->channel);
+		ast_cli(a->fd, "Direction:        %s\n",
+			fs->sending ? "send" : "receive");
+		ast_cli(a->fd, "File:             %s\n", fs->file);
+		ast_cli(a->fd, "Transport:        %s\n",
+			fs->t38 ? "T.38" : "audio");
+		ast_cli(a->fd, "Phase:            %s\n",
+			S_OR(fs->st.phase, ""));
+		ast_cli(a->fd, "Pages:            %d\n", fs->st.pages);
+		ast_cli(a->fd, "Rate:             %d\n", (int)fs->st.bps);
+		ast_cli(a->fd, "ECM:              %s\n",
+			fs->st.ecm ? "yes" : "no");
+		ast_cli(a->fd, "Resolution:       %s\n",
+			fs->st.fine ? "fine" : "standard");
+		ast_cli(a->fd, "Local station:    %s\n", fs->local);
+		ast_cli(a->fd, "Remote station:   %s\n", fs->remote);
+		ast_cli(a->fd, "Seconds:          %ld\n",
+			fax_session_secs(fs));
+		break;
+	}
+	AST_LIST_UNLOCK(&fax_sessions);
+	if (!found)
+		ast_cli(a->fd, "No DModem fax session %d\n", id);
+	return CLI_SUCCESS;
+}
+
+/* "dmodem fax show stats": the totals since the module loaded */
+static char *cli_fax_stats(struct ast_cli_entry *e, int cmd,
+			   struct ast_cli_args *a)
+{
+	struct fax_session *fs;
+	int active = 0;
+	size_t k;
+
+	if (cmd == CLI_INIT) {
+		e->command = "dmodem fax show stats";
+		e->usage = "Usage: dmodem fax show stats\n"
+			"       The DModem fax totals since the module loaded.\n";
+		return NULL;
+	}
+	if (cmd == CLI_GENERATE)
+		return NULL;
+	if (a->argc != 4)
+		return CLI_SHOWUSAGE;
+	AST_LIST_LOCK(&fax_sessions);
+	AST_LIST_TRAVERSE(&fax_sessions, fs, list)
+		active++;
+	ast_cli(a->fd, "Current sessions:      %d\n", active);
+	ast_cli(a->fd, "Transmit attempts:     %d\n", fax_stats.tx_attempts);
+	ast_cli(a->fd, "Receive attempts:      %d\n", fax_stats.rx_attempts);
+	ast_cli(a->fd, "Completed faxes:       %d\n", fax_stats.completed);
+	ast_cli(a->fd, "Failed faxes:          %d\n", fax_stats.failed);
+	for (k = 0; k < ARRAY_LEN(fax_stats.reasons) &&
+	     fax_stats.reasons[k].code[0]; k++)
+		ast_cli(a->fd, "  %-20s %d\n", fax_stats.reasons[k].code,
+			fax_stats.reasons[k].n);
+	AST_LIST_UNLOCK(&fax_sessions);
+	return CLI_SUCCESS;
+}
+
+/* "dmodem fax show settings": the [general] fax settings */
+static char *cli_fax_settings(struct ast_cli_entry *e, int cmd,
+			      struct ast_cli_args *a)
+{
+	struct dmbridge_fax f;
+
+	if (cmd == CLI_INIT) {
+		e->command = "dmodem fax show settings";
+		e->usage = "Usage: dmodem fax show settings\n"
+			"       The fax settings of dmodem.conf [general].\n";
+		return NULL;
+	}
+	if (cmd == CLI_GENERATE)
+		return NULL;
+	if (a->argc != 4)
+		return CLI_SHOWUSAGE;
+	load_fax_settings(&f);
+	ast_cli(a->fd, "Receive in DModem():   %s\n", f.on ? "yes" : "no");
+	ast_cli(a->fd, "Fax directory:         %s\n", f.dir);
+	ast_cli(a->fd, "Local station:         %s\n", f.ident);
+	ast_cli(a->fd, "Maximum rate:          %d\n", f.max_bps);
+	ast_cli(a->fd, "Minimum rate:          %d\n", f.min_bps);
+	ast_cli(a->fd, "ECM:                   %s\n", f.ecm ? "yes" : "no");
+	{
+		char m[32];
+		dmbridge_fax_modems_text(f.modems, m, sizeof(m));
+		ast_cli(a->fd, "Modems:                %s\n", m);
+	}
+	ast_cli(a->fd, "Header:                %s\n", f.header);
+	ast_cli(a->fd, "T.38:                  %s\n", f.t38 ? "yes" : "no");
+	ast_cli(a->fd, "T.38 timeout (ms):     %d\n", f.t38_timeout);
+	ast_cli(a->fd, "res_fax variables:     %s\n",
+		f.res_vars ? "yes" : "no");
+	return CLI_SUCCESS;
+}
+
+/* "dmodem fax show capabilities": what the fax machine can do */
+static char *cli_fax_capabilities(struct ast_cli_entry *e, int cmd,
+				  struct ast_cli_args *a)
+{
+	if (cmd == CLI_INIT) {
+		e->command = "dmodem fax show capabilities";
+		e->usage = "Usage: dmodem fax show capabilities\n"
+			"       What the DModem fax machine can do.\n";
+		return NULL;
+	}
+	if (cmd == CLI_GENERATE)
+		return NULL;
+	if (a->argc != 4)
+		return CLI_SHOWUSAGE;
+	ast_cli(a->fd, "Technology:   DModem (libdmodem T.30)\n");
+	ast_cli(a->fd, "Directions:   send, receive\n");
+	ast_cli(a->fd, "Transports:   audio (G.711), T.38 (versions 0 to 3)\n");
+	ast_cli(a->fd, "Modems:       V.17, V.29, V.27ter, 2400 to 14400 bit/s\n");
+	ast_cli(a->fd, "ECM:          yes\n");
+	ast_cli(a->fd, "Coding:       MH, MR, MMR, T.85 (with ECM)\n");
+	ast_cli(a->fd, "Files:        TIFF (several in one fax)\n");
+	return CLI_SUCCESS;
+}
+
+static struct ast_cli_entry fax_cli[] = {
+	AST_CLI_DEFINE(cli_fax_sessions, "Show the DModem faxes that run"),
+	AST_CLI_DEFINE(cli_fax_session, "Show one DModem fax"),
+	AST_CLI_DEFINE(cli_fax_stats, "Show the DModem fax totals"),
+	AST_CLI_DEFINE(cli_fax_settings, "Show the DModem fax settings"),
+	AST_CLI_DEFINE(cli_fax_capabilities, "Show what the DModem fax can do"),
+};
+
+/* a session's fields in an AMI event or response (fax_sessions
+   locked) */
+static void ami_session_fields(struct mansession *s, const char *id_text,
+			       const struct fax_session *fs)
+{
+	astman_append(s, "%sSessionNumber: %d\r\nChannel: %s\r\n"
+		      "Operation: %s\r\nTransport: %s\r\nFileName: %s\r\n"
+		      "Pages: %d\r\nRate: %d\r\nECM: %s\r\n"
+		      "LocalStationID: %s\r\nRemoteStationID: %s\r\n"
+		      "Phase: %s\r\nSeconds: %ld\r\n",
+		      id_text, fs->id, fs->channel,
+		      fs->sending ? "send" : "receive",
+		      fs->t38 ? "T.38" : "audio", fs->file, fs->st.pages,
+		      (int)fs->st.bps, fs->st.ecm ? "yes" : "no", fs->local,
+		      fs->remote, S_OR(fs->st.phase, ""),
+		      fax_session_secs(fs));
+}
+
+/* the ActionID header as text for the responses */
+static void ami_id_text(const struct message *m, char *buf, size_t len)
+{
+	const char *id = astman_get_header(m, "ActionID");
+	*buf = 0;
+	if (!ast_strlen_zero(id))
+		snprintf(buf, len, "ActionID: %s\r\n", id);
+}
+
+/* AMI DModemFaxSessions: a DModemFaxSessionsEntry for each fax that
+   runs, then DModemFaxSessionsComplete */
+static int ami_fax_sessions(struct mansession *s, const struct message *m)
+{
+	struct fax_session *fs;
+	char id_text[256];
+	int n = 0;
+
+	ami_id_text(m, id_text, sizeof(id_text));
+	astman_send_listack(s, m, "DModemFaxSessionsEntry event list will follow",
+			    "Start");
+	AST_LIST_LOCK(&fax_sessions);
+	AST_LIST_TRAVERSE(&fax_sessions, fs, list) {
+		astman_append(s, "Event: DModemFaxSessionsEntry\r\n");
+		ami_session_fields(s, id_text, fs);
+		astman_append(s, "\r\n");
+		n++;
+	}
+	AST_LIST_UNLOCK(&fax_sessions);
+	astman_send_list_complete_start(s, m, "DModemFaxSessionsComplete", n);
+	astman_send_list_complete_end(s);
+	return 0;
+}
+
+/* AMI DModemFaxSession (SessionNumber): the details of one fax */
+static int ami_fax_session(struct mansession *s, const struct message *m)
+{
+	const char *num = astman_get_header(m, "SessionNumber");
+	struct fax_session *fs;
+	char id_text[256];
+	int id, found = 0;
+
+	if (ast_strlen_zero(num)) {
+		astman_send_error(s, m, "SessionNumber is required");
+		return 0;
+	}
+	id = atoi(num);
+	ami_id_text(m, id_text, sizeof(id_text));
+	AST_LIST_LOCK(&fax_sessions);
+	AST_LIST_TRAVERSE(&fax_sessions, fs, list) {
+		if (fs->id != id)
+			continue;
+		found = 1;
+		astman_send_ack(s, m, NULL);
+		astman_append(s, "Event: DModemFaxSession\r\n");
+		ami_session_fields(s, id_text, fs);
+		astman_append(s, "\r\n");
+		break;
+	}
+	AST_LIST_UNLOCK(&fax_sessions);
+	if (!found)
+		astman_send_error(s, m, "No such session");
+	return 0;
+}
+
+/* AMI DModemFaxStats: the totals since the module loaded */
+static int ami_fax_stats(struct mansession *s, const struct message *m)
+{
+	struct fax_session *fs;
+	char id_text[256];
+	int active = 0;
+
+	ami_id_text(m, id_text, sizeof(id_text));
+	astman_send_ack(s, m, NULL);
+	AST_LIST_LOCK(&fax_sessions);
+	AST_LIST_TRAVERSE(&fax_sessions, fs, list)
+		active++;
+	astman_append(s, "Event: DModemFaxStats\r\n%sCurrentSessions: %d\r\n"
+		      "TransmitAttempts: %d\r\nReceiveAttempts: %d\r\n"
+		      "CompletedFAXes: %d\r\nFailedFAXes: %d\r\n\r\n",
+		      id_text, active, fax_stats.tx_attempts,
+		      fax_stats.rx_attempts, fax_stats.completed,
+		      fax_stats.failed);
+	AST_LIST_UNLOCK(&fax_sessions);
+	return 0;
+}
+
+/* AMI events DModemFaxStatus (option s: a phase or a page) */
+static void ami_fax_status(struct ast_channel *chan, int session,
+			   int sending, const struct dmodem_fax_status *st,
+			   const char *file)
+{
+	ast_manager_event(chan, EVENT_FLAG_CALL, "DModemFaxStatus",
+			  "Channel: %s\r\nSessionNumber: %d\r\n"
+			  "Operation: %s\r\nStatus: %s\r\nPages: %d\r\n"
+			  "FileName: %s\r\n",
+			  ast_channel_name(chan), session,
+			  sending ? "send" : "receive", S_OR(st->phase, ""),
+			  st->pages, file);
+}
+
+/* AMI events DModemSendFax and DModemReceiveFax: the result at the end
+   of a fax */
+static void ami_fax_result(struct ast_channel *chan, int session,
+			   int sending, const struct dmbridge_fax *fs,
+			   const struct dmodem_fax_status *st, int t38,
+			   const char *file)
+{
+	ast_manager_event(chan, EVENT_FLAG_CALL,
+			  sending ? "DModemSendFax" : "DModemReceiveFax",
+			  "Channel: %s\r\nSessionNumber: %d\r\n"
+			  "Status: %s\r\nError: %s\r\nStatusString: %s\r\n"
+			  "Pages: %d\r\nRate: %d\r\nResolution: %s\r\n"
+			  "ECM: %s\r\nTransport: %s\r\n"
+			  "LocalStationID: %s\r\nRemoteStationID: %s\r\n"
+			  "FileName: %s\r\n",
+			  ast_channel_name(chan), session,
+			  st->ok ? "SUCCESS" : "FAILED",
+			  S_OR(st->error, "UNKNOWN"), S_OR(st->result, ""),
+			  st->pages, (int)st->bps,
+			  st->fine ? "8040x7700" : "8040x3850",
+			  st->ecm ? "yes" : "no", t38 ? "T.38" : "audio",
+			  fs->ident, st->remote_ident, file);
+}
+
+/* the fax's results in the channel's variables: DMODEMFAX*, and
+   res_fax's (FAXSTATUS and the rest) with res_vars */
+static void fax_variables(struct ast_channel *chan,
+			  const struct dmbridge_fax *fs,
+			  const struct dmodem_fax_status *st, int t38,
+			  int session)
+{
+	char pages[16], rate[16], id[16];
+	const char *status = st->ok ? "SUCCESS" : "FAILED";
+	const char *res = st->fine ? "8040x7700" : "8040x3850";
+	const char *error = S_OR(st->error, "UNKNOWN");
+	const char *result = S_OR(st->result, "");
+
+	snprintf(pages, sizeof(pages), "%d", st->pages);
+	snprintf(rate, sizeof(rate), "%d", st->bps);
+	snprintf(id, sizeof(id), "%d", session);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS", status);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXRESULT", result);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXERROR", error);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXPAGES", pages);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXRATE", rate);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXRESOLUTION", res);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXREMOTE", st->remote_ident);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXECM", st->ecm ? "yes" : "no");
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXT38", t38 ? "yes" : "no");
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXSESSION", id);
+	if (!fs->res_vars)
+		return;
+	pbx_builtin_setvar_helper(chan, "FAXSTATUS", status);
+	pbx_builtin_setvar_helper(chan, "FAXSTATUSSTRING", result);
+	pbx_builtin_setvar_helper(chan, "FAXERROR", error);
+	pbx_builtin_setvar_helper(chan, "FAXPAGES", pages);
+	pbx_builtin_setvar_helper(chan, "FAXBITRATE", rate);
+	pbx_builtin_setvar_helper(chan, "FAXRESOLUTION", res);
+	pbx_builtin_setvar_helper(chan, "REMOTESTATIONID", st->remote_ident);
+	pbx_builtin_setvar_helper(chan, "LOCALSTATIONID", fs->ident);
+}
+
+/* a fax that did not start or stopped (error the code, result its
+   text): the variables, the totals and the AMI event; sess (or NULL)
+   out of the list */
+static void fax_failed(struct ast_channel *chan, const struct dmbridge_fax *fs,
+		       const char *error, const char *result, int session,
+		       int sending, const char *file, struct fax_session *sess)
+{
+	struct dmodem_fax_status st = { 0 };
+	st.error = error;
+	st.result = result;
+	fax_variables(chan, fs, &st, 0, session);
+	if (!sess) {
+		/* (an attempt all the same) */
+		AST_LIST_LOCK(&fax_sessions);
+		if (sending)
+			fax_stats.tx_attempts++;
+		else
+			fax_stats.rx_attempts++;
+		AST_LIST_UNLOCK(&fax_sessions);
+	}
+	fax_session_end(sess, 0, error);
+	ami_fax_result(chan, session, sending, fs, &st, 0, file);
+}
+
 /* a fax call on the channel until it ends; -1 if the channel hung up.
 
    With fax_t38 on a channel that can (T.38 not refused), the fax goes
    over to T.38 when the channel does, before a page has gone (the fax
    machine anew on IFP packets, its time by the clock): a receiver asks
-   for it as ReceiveFAX does, and waits for the answer (T38_ASK_MS at
-   most, silence on the line) before it starts on the audio; a sender
-   takes it when the other end asks.  A request that came before (the
-   channel negotiating) is had again, and answered */
+   for it as ReceiveFAX does, and waits for the answer (fax_t38_timeout
+   ms at most, silence on the line) before it starts on the audio; a
+   sender does the same with option z, else takes it when the other end
+   asks.  A request that came before (the channel negotiating) is had
+   again, and answered.  ro: the options (F no T.38, T T.38 or no fax, d
+   the phases in the log) */
 static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 		   enum dmodem_law law, enum dmodem_fax_dir dir,
 		   const char *file, const struct dmbridge_fax *fs,
-		   unsigned char *out)
+		   const struct fax_run *ro, unsigned char *out)
 {
 	struct dmodem_fax_config cfg = { 0 };
 	struct dmodem_fax_status st = { 0 };
@@ -451,28 +1117,41 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	enum ast_t38_state ts = ast_channel_get_t38_state(chan);
 	struct timeval t0 = { 0 }, asked = { 0 };
 	long long samples = 0;
-	char buf[32];
-	int res = 0, t38 = 0, asking = 0, our_version = 0;
-	int may_switch = fs->t38 && (ts == T38_STATE_UNKNOWN ||
-				     ts == T38_STATE_NEGOTIATING);
+	const char *phase = NULL;
+	struct fax_session *sess = NULL;
+	int res = 0, t38 = 0, asking = 0, our_version = 0, pages = 0;
+	int session = ast_atomic_fetchadd_int(&fax_session_seq, 1) + 1;
+	int may_switch = fs->t38 && !ro->audio_only &&
+		(ts == T38_STATE_UNKNOWN || ts == T38_STATE_NEGOTIATING);
 
 	cfg.law = law;
 	cfg.dir = dir;
 	cfg.file = file;
 	cfg.ident = fs->ident;
+	cfg.header = fs->header[0] ? fs->header : NULL;
 	cfg.max_bps = fs->max_bps;
+	cfg.min_bps = fs->min_bps;
 	cfg.no_ecm = !fs->ecm;
+	cfg.modems = fs->modems;
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXFILE", file);
+	if (ro->need_t38 && !may_switch) {
+		ast_log(LOG_WARNING, "%s: DModem fax: T.38 needed, and the "
+			"channel cannot have it\n", name);
+		fax_failed(chan, fs, "T38", "no T.38", session,
+			   dir == DMODEM_FAX_SEND, file, NULL);
+		return 0;
+	}
 	f = dmodem_fax_create(&cfg);
 	if (!f) {
 		ast_log(LOG_WARNING, "%s: cannot %s fax file %s\n", name,
 			dir == DMODEM_FAX_SEND ? "read" : "use", file);
-		pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS", "FAILED");
-		pbx_builtin_setvar_helper(chan, "DMODEMFAXRESULT",
-					  "no document");
+		fax_failed(chan, fs, "DOCUMENT", "no document", session,
+			   dir == DMODEM_FAX_SEND, file, NULL);
 		return 0;
 	}
-	ast_verb(3, "%s: DModem fax: %s %s\n", name,
+	sess = fax_session_add(chan, session, dir == DMODEM_FAX_SEND, file,
+			       fs->ident);
+	ast_verb(3, "%s: DModem fax %d: %s %s\n", name, session,
 		 dir == DMODEM_FAX_SEND ? "sending" : "receiving", file);
 	if (may_switch && ts == T38_STATE_NEGOTIATING) {
 		/* the other end's request again, to answer */
@@ -481,7 +1160,13 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 		if (ast_indicate_data(chan, AST_CONTROL_T38_PARAMETERS, &t,
 				      sizeof(t)) != AST_T38_REQUEST_PARMS)
 			may_switch = 0;
-	} else if (may_switch && dir == DMODEM_FAX_RECEIVE) {
+		else if (ro->need_t38) {
+			/* T.38 or no fax: the fax machine waits for it */
+			asking = 1;
+			asked = ast_tvnow();
+		}
+	} else if (may_switch && (dir == DMODEM_FAX_RECEIVE ||
+				  ro->ask_t38 || ro->need_t38)) {
 		struct ast_control_t38_parameters t;
 		t38_ours(&t, 0, fs->max_bps, AST_T38_REQUEST_NEGOTIATE);
 		if (!ast_indicate_data(chan, AST_CONTROL_T38_PARAMETERS, &t,
@@ -501,8 +1186,19 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 			res = -1;
 			break;
 		}
-		if (asking && ast_tvdiff_ms(ast_tvnow(), asked) > T38_ASK_MS)
+		if (asking && ast_tvdiff_ms(ast_tvnow(), asked) >
+		    fs->t38_timeout)
 			asking = 0;
+		if (ro->need_t38 && !t38 && !asking) {
+			/* no T.38: no fax (option T) */
+			ast_log(LOG_WARNING, "%s: DModem fax: no T.38\n", name);
+			if (fr)
+				ast_frfree(fr);
+			dmodem_fax_destroy(f);
+			fax_failed(chan, fs, "T38", "no T.38", session,
+				   dir == DMODEM_FAX_SEND, file, sess);
+			return 0;
+		}
 		if (!fr) {
 			/* nothing from the line: on alone, on silence */
 			if (!t38) {
@@ -545,8 +1241,10 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 						"file %s\n", name,
 						dir == DMODEM_FAX_SEND ? "read" :
 						"use", file);
-					pbx_builtin_setvar_helper(chan,
-						"DMODEMFAXSTATUS", "FAILED");
+					fax_failed(chan, fs, "DOCUMENT",
+						   "no document", session,
+						   dir == DMODEM_FAX_SEND,
+						   file, sess);
 					ast_frfree(fr);
 					t38_stop(chan);
 					return 0;
@@ -600,6 +1298,19 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 			}
 		}
 		dmodem_fax_status(f, &st);
+		fax_session_update(sess, &st, t38);
+		if (st.phase && (!phase || strcmp(phase, st.phase) ||
+				 st.pages != pages)) {
+			if (ro->debug)
+				ast_verb(3, "%s: DModem fax %d: %s\n", name,
+					 session, st.phase);
+			if (ro->status_events)
+				ami_fax_status(chan, session,
+					       dir == DMODEM_FAX_SEND, &st,
+					       file);
+			phase = st.phase;
+			pages = st.pages;
+		}
 		if (may_switch && (st.pages || st.complete))
 			/* a page has gone on audio: it stays */
 			may_switch = 0;
@@ -610,20 +1321,14 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	dmodem_fax_destroy(f);
 	if (t38 && res == 0)
 		t38_stop(chan);
-	ast_verb(3, "%s: DModem fax %s: %s, %d pages at %d bit/s%s%s, remote '%s'\n",
-		 name, dir == DMODEM_FAX_SEND ? "sent" : "received", st.result,
-		 st.pages, st.bps, st.ecm ? " (ECM)" : "",
+	ast_verb(3, "%s: DModem fax %d %s: %s, %d pages at %d bit/s%s%s, remote '%s'\n",
+		 name, session, dir == DMODEM_FAX_SEND ? "sent" : "received",
+		 st.result, st.pages, st.bps, st.ecm ? " (ECM)" : "",
 		 t38 ? " over T.38" : "", st.remote_ident);
-	pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS",
-				  st.ok ? "SUCCESS" : "FAILED");
-	pbx_builtin_setvar_helper(chan, "DMODEMFAXRESULT", st.result);
-	snprintf(buf, sizeof(buf), "%d", st.pages);
-	pbx_builtin_setvar_helper(chan, "DMODEMFAXPAGES", buf);
-	snprintf(buf, sizeof(buf), "%d", st.bps);
-	pbx_builtin_setvar_helper(chan, "DMODEMFAXRATE", buf);
-	pbx_builtin_setvar_helper(chan, "DMODEMFAXREMOTE", st.remote_ident);
-	pbx_builtin_setvar_helper(chan, "DMODEMFAXECM", st.ecm ? "yes" : "no");
-	pbx_builtin_setvar_helper(chan, "DMODEMFAXT38", t38 ? "yes" : "no");
+	fax_variables(chan, fs, &st, t38, session);
+	fax_session_end(sess, st.ok, st.error);
+	ami_fax_result(chan, session, dir == DMODEM_FAX_SEND, fs, &st, t38,
+		       file);
 	return res;
 }
 
@@ -1015,6 +1720,9 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 				"DMODEM_CHANNEL", name,
 				"DMODEM_PROFILE", args.profile,
 				"DMODEM_RATE", c.rate,
+				"DMODEM_MODULATION", c.modulation,
+				"DMODEM_PROTOCOL", c.protocol,
+				"DMODEM_COMPRESSION", c.compression,
 				"DMODEM_CALLERID",
 				S_COR(ast_channel_caller(chan)->id.number.valid,
 				      ast_channel_caller(chan)->id.number.str, ""),
@@ -1029,8 +1737,15 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 				 (long long)time(NULL));
 			peer_address(chan, peer, sizeof(peer));
 			pbx_builtin_setvar_helper(chan, "DMODEMRATE", c.rate);
-			ast_verb(3, "%s: DModem connected at %s bit/s\n", name,
-				 c.rate);
+			pbx_builtin_setvar_helper(chan, "DMODEMMODULATION",
+						  c.modulation);
+			pbx_builtin_setvar_helper(chan, "DMODEMPROTOCOL",
+						  c.protocol);
+			pbx_builtin_setvar_helper(chan, "DMODEMCOMPRESSION",
+						  c.compression);
+			ast_verb(3, "%s: DModem connected at %s bit/s (%s %s/%s)\n",
+				 name, c.rate, c.modulation, c.protocol,
+				 c.compression);
 			ev = dmbridge_call_serve(&c, env);
 		}
 		if (ev == DMBRIDGE_FAX) {
@@ -1041,8 +1756,10 @@ static int dmodem_exec(struct ast_channel *chan, const char *data)
 			fax_file_name(chan, p.fax.dir, path, sizeof(path));
 			ast_verb(3, "%s: DModem: a fax machine is calling%s\n",
 				 name, t38_fax ? " (T.38)" : "");
+			struct fax_run ro = { 0 };
+			faxopt_apply(chan, &p.fax);
 			if (run_fax(chan, fmt, law, DMODEM_FAX_RECEIVE, path,
-				    &p.fax, out) < 0)
+				    &p.fax, &ro, out) < 0)
 				res = -1;
 			break;
 		}
@@ -1065,18 +1782,33 @@ out:
 static const char app_send[] = "DModemSendFax";
 static const char send_synopsis[] = "Send a fax (TIFF file) with DModem's fax";
 static const char send_descrip[] =
-	"  DModemSendFax(file[,ident]): sends the TIFF file as a group 3 fax\n"
-	"on a call placed to a fax machine (it waits for the machine's DIS).\n"
-	"ident: our number (TSI), else fax_ident of dmodem.conf [general].\n"
+	"  DModemSendFax(file[&file2...][,ident[,options]]): sends the TIFF\n"
+	"files as one group 3 fax on a call placed to a fax machine (it waits\n"
+	"for the machine's DIS).  ident: our number (TSI), else\n"
+	"DMODEMFAXOPT(localstationid), else fax_ident of dmodem.conf\n"
+	"[general].  Each page has a header line (date, time, the header text,\n"
+	"ident and page number) when DMODEMFAXOPT(headerinfo) or fax_header\n"
+	"of [general] has a text.\n"
+	"  Options: d - each phase in the log; f - audio when T.38 fails (the\n"
+	"default); F - audio only, no T.38; z - ask for T.38 first; T - T.38\n"
+	"or no fax; s - AMI DModemFaxStatus events.\n"
 	"  Sets DMODEMFAXSTATUS (SUCCESS or FAILED), DMODEMFAXRESULT,\n"
-	"DMODEMFAXPAGES, DMODEMFAXRATE, DMODEMFAXREMOTE, DMODEMFAXECM (yes\n"
-	"when the call had error correction mode), DMODEMFAXFILE.\n";
+	"DMODEMFAXERROR, DMODEMFAXPAGES, DMODEMFAXRATE, DMODEMFAXRESOLUTION,\n"
+	"DMODEMFAXREMOTE, DMODEMFAXECM, DMODEMFAXT38, DMODEMFAXSESSION,\n"
+	"DMODEMFAXFILE; also res_fax's FAXSTATUS, FAXSTATUSSTRING, FAXERROR,\n"
+	"FAXPAGES, FAXBITRATE, FAXRESOLUTION, REMOTESTATIONID and\n"
+	"LOCALSTATIONID (unless fax_res_vars = no).  DMODEMFAXOPT() sets\n"
+	"ecm, maxrate, minrate, t38timeout, localstationid, headerinfo and\n"
+	"modems first.\n";
 static const char app_recv[] = "DModemReceiveFax";
 static const char recv_synopsis[] = "Receive a fax into a TIFF file with DModem's fax";
 static const char recv_descrip[] =
-	"  DModemReceiveFax(file[,ident]): answers the call as a group 3 fax\n"
-	"machine and writes what it receives to the TIFF file (none if no page\n"
-	"came).  ident: our number (CSI), else fax_ident of [general].\n"
+	"  DModemReceiveFax(file[,ident[,options]]): answers the call as a\n"
+	"group 3 fax machine and writes what it receives to the TIFF file\n"
+	"(none if no page came).  ident: our number (CSI), else\n"
+	"DMODEMFAXOPT(localstationid), else fax_ident of [general].\n"
+	"  Options: d, f, F, T and s as for DModemSendFax (it always asks for\n"
+	"T.38 when the channel can have it).\n"
 	"  Sets the same variables as DModemSendFax.  DModem() receives faxes\n"
 	"by itself when a fax machine calls (fax = yes, the default).\n";
 
@@ -1085,8 +1817,11 @@ static const char recv_descrip[] =
 static int fax_exec(struct ast_channel *chan, const char *data,
 		    enum dmodem_fax_dir dir)
 {
-	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(file); AST_APP_ARG(ident););
+	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(file); AST_APP_ARG(ident);
+			     AST_APP_ARG(options););
 	struct dmbridge_fax fs;
+	struct fax_run ro = { 0 };
+	struct ast_flags opts = { 0 };
 	enum dmodem_law law;
 	struct ast_format *fmt;
 	unsigned char out[AST_FRIENDLY_OFFSET + LINE_MAX_SAMPLES];
@@ -1100,8 +1835,29 @@ static int fax_exec(struct ast_channel *chan, const char *data,
 		return 0;
 	}
 	load_fax_settings(&fs);
+	faxopt_apply(chan, &fs);
 	if (!ast_strlen_zero(args.ident))
 		ast_copy_string(fs.ident, args.ident, sizeof(fs.ident));
+	if (!ast_strlen_zero(args.options) &&
+	    ast_app_parse_options(fax_app_options, &opts, NULL, args.options)) {
+		ast_log(LOG_WARNING, "%s: bad options '%s'\n",
+			dir == DMODEM_FAX_SEND ? app_send : app_recv,
+			args.options);
+		pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS", "FAILED");
+		return 0;
+	}
+	ro.debug = ast_test_flag(&opts, 1 << 0);
+	/* (f, audio after a failed T.38, is what happens anyway) */
+	ro.audio_only = ast_test_flag(&opts, 1 << 2);
+	ro.ask_t38 = ast_test_flag(&opts, 1 << 3);
+	ro.need_t38 = ast_test_flag(&opts, 1 << 4);
+	ro.status_events = ast_test_flag(&opts, 1 << 5);
+	if (ro.audio_only && ro.need_t38) {
+		ast_log(LOG_WARNING, "%s: options F and T together\n",
+			dir == DMODEM_FAX_SEND ? app_send : app_recv);
+		pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS", "FAILED");
+		return 0;
+	}
 	law = channel_law(chan);
 	fmt = law == DMODEM_LAW_ALAW ? ast_format_alaw : ast_format_ulaw;
 	if (ast_channel_state(chan) != AST_STATE_UP && ast_answer(chan))
@@ -1112,7 +1868,7 @@ static int fax_exec(struct ast_channel *chan, const char *data,
 		pbx_builtin_setvar_helper(chan, "DMODEMFAXSTATUS", "FAILED");
 		return 0;
 	}
-	return run_fax(chan, fmt, law, dir, args.file, &fs, out);
+	return run_fax(chan, fmt, law, dir, args.file, &fs, &ro, out);
 }
 
 /* DModemSendFax() */
@@ -1125,6 +1881,166 @@ static int send_exec(struct ast_channel *chan, const char *data)
 static int recv_exec(struct ast_channel *chan, const char *data)
 {
 	return fax_exec(chan, data, DMODEM_FAX_RECEIVE);
+}
+
+static const char app_detect[] = "DModemFaxDetect";
+static const char detect_synopsis[] = "Detect a fax machine that calls, and go to the fax extension";
+static const char detect_descrip[] =
+	"  DModemFaxDetect([seconds[,options]]): answers the call and listens\n"
+	"for up to seconds (default 4) for a fax machine: its calling tone\n"
+	"(CNG, 1100 Hz) or its request for T.38.  When it hears one, it sets\n"
+	"DMODEMFAXDETECTED (CNG or T38) and DMODEMFAXEXTEN (the extension\n"
+	"that the call was on), and goes to the fax extension of the context\n"
+	"if there is one.  Else it sets DMODEMFAXDETECTED to NONE, and the\n"
+	"dialplan continues.\n"
+	"  Options: c - the CNG only; t - the T.38 request only; n - do not\n"
+	"answer (early media); r - ringing to the caller while it listens;\n"
+	"x - do not go to the fax extension (the dialplan reads\n"
+	"DMODEMFAXDETECTED).\n";
+
+AST_APP_OPTIONS(detect_app_options, BEGIN_OPTIONS
+	AST_APP_OPTION('c', 1 << 0),
+	AST_APP_OPTION('t', 1 << 1),
+	AST_APP_OPTION('n', 1 << 2),
+	AST_APP_OPTION('r', 1 << 3),
+	AST_APP_OPTION('x', 1 << 4),
+END_OPTIONS);
+
+/* listens on chan (read in fmt, law) for up to ms: "CNG" when the
+   detector heard a fax machine's tone (unless no_cng), "T38" when the
+   other end asked for T.38 (unless no_t38; the request is not answered
+   here: the fax application answers it), "NONE" when the time ended,
+   NULL when the channel hung up */
+static const char *fax_listen(struct ast_channel *chan,
+			      enum dmodem_law law, long ms, int no_cng,
+			      int no_t38)
+{
+	struct dmodem_faxdetect *d = dmodem_faxdetect_create(law);
+	struct timeval start = ast_tvnow();
+	const char *what = "NONE";
+
+	if (!d)
+		return "NONE";
+	if (!no_t38 && ast_channel_get_t38_state(chan) == T38_STATE_NEGOTIATING)
+		what = "T38";
+	while (!strcmp(what, "NONE")) {
+		const struct ast_control_t38_parameters *tp;
+		struct ast_frame *fr;
+		long left = ms - ast_tvdiff_ms(ast_tvnow(), start);
+		int n;
+
+		if (left <= 0)
+			break;
+		n = ast_waitfor(chan, left > IDLE_MS ? IDLE_MS : left);
+		if (n < 0 || (n > 0 && !(fr = ast_read(chan)))) {
+			what = NULL;
+			break;
+		}
+		if (n == 0)
+			continue;
+		if (fr->frametype == AST_FRAME_VOICE && !no_cng &&
+		    fr->samples > 0 && fr->datalen >= fr->samples &&
+		    dmodem_faxdetect_process_g711(d, fr->data.ptr,
+						  fr->samples))
+			what = "CNG";
+		else if ((tp = t38_frame(fr)) && !no_t38 &&
+			 tp->request_response == AST_T38_REQUEST_NEGOTIATE)
+			what = "T38";
+		ast_frfree(fr);
+	}
+	dmodem_faxdetect_destroy(d);
+	return what;
+}
+
+/* DModemFaxDetect(): a fax machine heard, the call to the fax
+   extension; or NONE, the dialplan on */
+static int detect_exec(struct ast_channel *chan, const char *data)
+{
+	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(seconds);
+			     AST_APP_ARG(options););
+	struct ast_flags opts = { 0 };
+	struct ast_format *fmt, *old_fmt;
+	enum dmodem_law law;
+	const char *what;
+	char *parse = ast_strdupa(S_OR(data, ""));
+	double secs = 4;
+	int ringing = 0;
+
+	AST_STANDARD_APP_ARGS(args, parse);
+	if (!ast_strlen_zero(args.seconds) &&
+	    (sscanf(args.seconds, "%lf", &secs) != 1 || secs <= 0)) {
+		ast_log(LOG_WARNING, "%s: bad time '%s'\n", app_detect,
+			args.seconds);
+		secs = 4;
+	}
+	if (!ast_strlen_zero(args.options) &&
+	    ast_app_parse_options(detect_app_options, &opts, NULL,
+				  args.options)) {
+		ast_log(LOG_WARNING, "%s: bad options '%s'\n", app_detect,
+			args.options);
+		return 0;
+	}
+	if (ast_test_flag(&opts, 1 << 0) && ast_test_flag(&opts, 1 << 1)) {
+		ast_log(LOG_WARNING, "%s: options c and t together\n",
+			app_detect);
+		return 0;
+	}
+	if (!ast_test_flag(&opts, 1 << 2) &&
+	    ast_channel_state(chan) != AST_STATE_UP && ast_answer(chan))
+		return -1;
+	law = channel_law(chan);
+	fmt = law == DMODEM_LAW_ALAW ? ast_format_alaw : ast_format_ulaw;
+	old_fmt = ao2_bump(ast_channel_readformat(chan));
+	if (ast_set_read_format(chan, fmt)) {
+		ast_log(LOG_WARNING, "%s: cannot set %s\n",
+			ast_channel_name(chan), ast_format_get_name(fmt));
+		ao2_cleanup(old_fmt);
+		return 0;
+	}
+	if (ast_test_flag(&opts, 1 << 3)) {
+		struct ast_tone_zone_sound *ts =
+			ast_get_indication_tone(ast_channel_zone(chan), "ring");
+		if (ts) {
+			ringing = !ast_playtones_start(chan, 0, ts->data, 0);
+			ast_tone_zone_sound_unref(ts);
+		}
+	}
+	what = fax_listen(chan, law, (long)(secs * 1000),
+			  ast_test_flag(&opts, 1 << 1),
+			  ast_test_flag(&opts, 1 << 0));
+	if (ringing)
+		ast_playtones_stop(chan);
+	if (!what) {
+		ao2_cleanup(old_fmt);
+		return -1;
+	}
+	if (old_fmt)
+		ast_set_read_format(chan, old_fmt);
+	ao2_cleanup(old_fmt);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXDETECTED", what);
+	if (!strcmp(what, "NONE")) {
+		ast_verb(3, "%s: DModem fax detect: no fax\n",
+			 ast_channel_name(chan));
+		return 0;
+	}
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXEXTEN",
+				  ast_channel_exten(chan));
+	if (ast_test_flag(&opts, 1 << 4)) {
+		ast_verb(3, "%s: DModem fax detect: %s\n",
+			 ast_channel_name(chan), what);
+	} else if (strcmp(ast_channel_exten(chan), "fax") &&
+	    ast_exists_extension(chan, ast_channel_context(chan), "fax", 1,
+		S_COR(ast_channel_caller(chan)->id.number.valid,
+		      ast_channel_caller(chan)->id.number.str, NULL))) {
+		ast_verb(3, "%s: DModem fax detect: %s, to the fax extension\n",
+			 ast_channel_name(chan), what);
+		ast_explicit_goto(chan, NULL, "fax", 1);
+	} else {
+		ast_verb(3, "%s: DModem fax detect: %s (no fax extension in "
+			 "%s)\n", ast_channel_name(chan), what,
+			 ast_channel_context(chan));
+	}
+	return 0;
 }
 
 /* libdmodem's log level: debug of [general] (0 if none) */
@@ -1142,16 +2058,24 @@ static void load_general(void)
 	ast_config_destroy(cfg);
 }
 
-/* the three applications unregistered */
+/* the four applications, DMODEMFAXOPT(), the CLI commands and the AMI
+   actions unregistered */
 static int unload_module(void)
 {
 	int r = ast_unregister_application(app);
 	r |= ast_unregister_application(app_send);
 	r |= ast_unregister_application(app_recv);
+	r |= ast_unregister_application(app_detect);
+	r |= ast_custom_function_unregister(&faxopt_function);
+	ast_cli_unregister_multiple(fax_cli, ARRAY_LEN(fax_cli));
+	r |= ast_manager_unregister("DModemFaxSessions");
+	r |= ast_manager_unregister("DModemFaxSession");
+	r |= ast_manager_unregister("DModemFaxStats");
 	return r;
 }
 
-/* the log hook, the pumps, [general], the three applications */
+/* the log hook, the pumps, [general], the four applications,
+   DMODEMFAXOPT(), the fax CLI commands and AMI actions */
 static int load_module(void)
 {
 	dmodem_set_log(log_line);
@@ -1163,7 +2087,17 @@ static int load_module(void)
 	    ast_register_application(app_send, send_exec, send_synopsis,
 				     send_descrip) ||
 	    ast_register_application(app_recv, recv_exec, recv_synopsis,
-				     recv_descrip)) {
+				     recv_descrip) ||
+	    ast_register_application(app_detect, detect_exec,
+				     detect_synopsis, detect_descrip) ||
+	    ast_custom_function_register(&faxopt_function) ||
+	    ast_cli_register_multiple(fax_cli, ARRAY_LEN(fax_cli)) ||
+	    ast_manager_register("DModemFaxSessions", EVENT_FLAG_REPORTING,
+				 ami_fax_sessions, "List the DModem faxes") ||
+	    ast_manager_register("DModemFaxSession", EVENT_FLAG_REPORTING,
+				 ami_fax_session, "Show one DModem fax") ||
+	    ast_manager_register("DModemFaxStats", EVENT_FLAG_REPORTING,
+				 ami_fax_stats, "Show the DModem fax totals")) {
 		unload_module();
 		return AST_MODULE_LOAD_DECLINE;
 	}

@@ -1,21 +1,20 @@
 # The x2 upgrade host: technical details
 
-Written in ASD-STE100 Simplified Technical English.
-
 This document gives the protocol between a USRobotics Courier and the
-x2 upgrade host, the source of each fact, and the tests. For the setup,
-see [the x2 upgrade host](x2-upgrade.md).
+x2 upgrade host, the source of each fact, and the tests. For the
+configuration, refer to [the x2 upgrade host](x2-upgrade.md).
 
 ## 1. Sources
 
 - "x2: Understanding the Issues / Troubleshooting Problems", version
-  1.0, 19 June 1997 (`x2shoot4.pdf` in courier-emu's `docs/x2/`).
+  1.0, 19 June 1997 (`x2shoot4.pdf` in the `docs/x2/` folder of
+  [courier-emu](https://github.com/D-Modem/courier-emu)).
   Appendix B gives the procedure for a Courier V.Everything: load the
   x2 code, "call U.S. Robotics host to enable x2", send `AT&F1S0=0&W`,
   and set the power switch of the modem to OFF, then to ON.
 - The Courier firmware. U.S. Robotics did not publish the host side.
-  The modem side is in the supervisor code of the Courier. These images
-  were examined:
+  The modem side is in the supervisor code of the Courier. We examined
+  these images:
 
 | Image | Supervisor | Use |
 | --- | --- | --- |
@@ -114,7 +113,7 @@ offset plus `80000`.
 | --- | --- |
 | `cd32` | The control frame queue. `cc00` reads the address and control. |
 | `cd6b` | U frames. The table at `cb86` selects `c515` for UI. |
-| `c515` | UI. P = 1 stops the frame (`c290`). Type `08` has a different function, which was not examined. |
+| `c515` | UI. P = 1 stops the frame (`c290`). Type `08` has a different function, which we did not examine. |
 | `c53e` | Type `0a`. The message number selects an entry of the table at `c559`. |
 | `c565` | Message 0: send the records, with commas, to the local output routines (probably to the DTE). |
 | `c593` | Message 1: set the flag at RAM `0b7e`. |
@@ -198,7 +197,7 @@ sends `X2UP=2,<enable>,<disable>` on the control channel.
 connects, a model of the Courier code answers the host. The test
 examines five calls: `ENABLED` (015 to 031, and the frame
 `01 03 0a 02 25`), `ALREADY`, `REFUSED` (the model does not keep the
-change), `NO REPLY` (six asks, then the end), and `QUERIED`.
+change), `NO REPLY` (six requests, then the end), and `QUERIED`.
 
 `Link.UsrFeatureSwitches` examines the switches: `DISABLED` (031 to 019,
 with the frames `01 03 0a 05 23` and `01 03 0a 05 24`), `CHANGED` (019
@@ -260,7 +259,7 @@ place of `28 0f 12` (15). A new start of the emulated Courier from that
 image showed `000,000,030,007,031,000` for `ATY14`. Before the call,
 it showed `000,000,030,007,015,000`.
 
-In the `REFUSED` call, the first two asks after the set got no answer,
+In the `REFUSED` call, the first two requests after the set got no answer,
 and the third got one. The retries are thus necessary. The cause of the
 lost answers is not known. Errors in the upstream of the emulated
 Courier are a possible cause.
@@ -269,7 +268,7 @@ Courier are a possible cause.
 
 A full call with 7.1.4 in courier-emu did not connect. The 7.1.4
 Courier did not send the x2 marker, and the V.34 start-up between it
-and D-Modem failed. Thus, for 7.1.4, the handler was run offline. The
+and D-Modem failed. Thus, for 7.1.4, we ran the handler offline. The
 real 80186 code ran from `cd32` with the frame in RAM and a record of
 15 at RAM `0748`. The EEPROM writer at `da13` was stopped before the
 hardware access.

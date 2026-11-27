@@ -38,7 +38,7 @@ training, in G.711 octets:
 | J words | 1200 | the 12 bit word 09B0 99 times, then 099F, scrambled, at ±0x31 |
 | Ones | 6000 | scrambled ones at ±0x41 |
 | Alignment | 1152 | `9e 28 a1 21 a8 1e`, frame f turned f places left |
-| Sync | ≥ 10002 | mapped frames of ones (levels A), until the MP of the client, ending on a frame |
+| Sync | ≥ 10002 | mapped frames of ones (levels A), until the MP of the client; it ends at the end of a frame |
 | Record | whole records | the record of the server, until the E of the client |
 | Start | 4086 | one frame of ones in levels A, then ones in the data levels |
 | Data | | mapped data frames |
@@ -81,7 +81,7 @@ significant bit first), select the level of each position in mixed radix.
 The first position is the lowest digit. The levels are sorted largest
 first. The MD signs go to the positions of the smallest levels (for equal
 levels, the first), in their order. Each sign is sent as a change from the
-last sign that was sent in that mode (starting from positive).
+last sign that was sent in that mode (the first reference is positive).
 
 Where the lists of the positions are different, the level is important,
 not the digit. With this rule, the ones of the I-modem after a rate change
@@ -100,7 +100,7 @@ This agrees with all frames that the I-modem sent, and D-Modem uses this
 rule.
 
 In the data levels, we do not know the rule, and the client does not
-need it. In the emulator, we used the octets of the I-modem and changed
+use it. In the emulator, we used the octets of the I-modem and changed
 only these signs. The Courier then sent exactly the same data. The rule
 does not use only the frame. The I-modem sends the sign negative through
 the first frames of the start segment. Then it sets the sign against a
@@ -202,10 +202,10 @@ next sync. Thus, D-Modem accepts 20 ones after a frame as E. The error
 bursts of the upstream can occur on E. On lines 8.5 to 10 dB down, with
 the frame interrupt of courier-emu that follows the timer of the DSP, a
 burst hit the frame before E and E itself in all three calls that we
-tried. Thus, D-Modem did not find E. It waited for the end of the
-renegotiation, and dropped the call 5 s later.
+tried. Without the rule that follows, D-Modem did not find E. It waited
+for the end of the renegotiation, and dropped the call 5 s later.
 
-Now, after an MP', D-Modem accepts the 20 bits after a frame as E if 17 or
+After an MP', D-Modem accepts the 20 bits after a frame as E if 17 or
 more are ones and the zero of the sync is not among them. (In those
 calls, 2 bits were in error.) It also does this after a frame with a bad
 CRC. With this change, the calls at 8.5, 9.5 and 10 dB continue to the
@@ -241,7 +241,7 @@ of the Courier two times in its first 14. V.42 recovers by
 retransmission. About one RR in ten is lost.
 
 The detection of V.42 starts immediately after E. In the first tenth of a
-second, the receiver of D-Modem is still settling into the 320 point
+second, the receiver of D-Modem is not yet stable on the 320 point
 constellation. It can decode an unwanted HDLC flag. The detection accepts
 two flags in a row as V.42. Thus, it waits for the ODPs of the Courier and
 answers them.
@@ -289,181 +289,222 @@ without a change, and the codec of the network changes them into the
 nearest A-law octets. With these levels, the Courier reported a 3 dB pad
 and used the levels of the Quad for it. It got to LAPM, and cleared down
 the call about 2 s later. A-law with a Courier is not complete. A client
-that knows A-law can possibly need the method of the Quad.
+that supports A-law possibly needs the method of the Quad.
 
 ## The client: D-Modem as the analogue modem
 
-D-Modem is also x2's client, the role of the Courier: on an analogue
-line (9600 Hz, `dmodemd -a`), with `AT+MS=X2`, calling an x2 server.
-`DSP_X2C=0` leaves it out (V.90 then). It follows the K56flex client
-(`dsp/v34_k56.h`'s client states and `K56Rx`, see
-[K56flex's client](k56flex-details.md#6-the-client-d-modem-as-the-analogue-modem)):
-V.90's analogue modem's interpolator to 16 000 Hz, its T/2 equaliser,
-least squares solution and timing loop (`PcmEqualizer`), and an echo
-canceller. The receiver is `X2Rx` (`dsp/x2_rx.h`), the states the
-client's in `dsp/v34_x2.h` (`XC2_MARK` to `XC5_E`).
+D-Modem can also be the x2 client, which is the role of the Courier. It
+operates on an analogue line (9600 Hz, `dmodemd -a`) with `AT+MS=X2`,
+and calls an x2 server. `DSP_X2C=0` disables it (the call is then V.90).
 
-What the client sends is the Courier's, as courier-emu's calls show it
-(the times from the server's log of a Courier calling D-Modem, a line
-6 dB down). What it receives is the server's of the sections above,
-which D-Modem's own server (`X2Train`, `X2Map`) makes octet for octet
-as the I-modem does.
+The client has the same design as the K56flex client (the client states
+of `dsp/v34_k56.h` and `K56Rx`; refer to
+[the K56flex client](k56flex-details.md#6-the-client-d-modem-as-the-analogue-modem)).
+It uses these parts of the V.90 analogue modem:
+
+- the interpolator to 16 000 Hz;
+- the T/2 equaliser, its least squares solution and its timing loop
+  (`PcmEqualizer`);
+- an echo canceller.
+
+The receiver is `X2Rx` (`dsp/x2_rx.h`). The states of the client are in
+`dsp/v34_x2.h` (`XC2_MARK` to `XC5_E`).
+
+The client sends what the Courier sends in the calls of courier-emu.
+(The times come from the log of the server in a call from a Courier to
+D-Modem, on a line 6 dB down.) The client receives the signals of the
+server that the sections above give. The server of D-Modem (`X2Train`,
+`X2Map`) makes them octet for octet, as the I-modem does.
 
 ### Phases 1 and 2
 
-- V.8 as the caller, V.34 alone (no PCM octet, as the Courier's CM).
-  The server turns its carrier over between its JMs; the client does
-  not look for it.
-- Our INFO0 is V.34's, with power reduction (bit 20) set, as the
-  Courier's INFO0c has it. The server is x2 when its INFO0 has bit 23
-  (a symbol rate difference of 4 or more) and bit 24 (CME) set. Else
-  the call is V.34.
-- The probing as V.34's caller up to the server's L1. Then, 170 ms
-  after the L1 began, instead of our L1, L2 and INFO1c: two symbols
-  of our tone and the marker, an INFO frame (V.34's fill, sync and
-  CRC) with the 7 bits `4d` (bit 0 the carrier, 1 high; bits 1 to 3
-  6; bits 4 to 6 our symbol rate, 3200 baud).
-- The server sends nothing back: it is silent until our J.
+- V.8 is as for a V.34 caller, with only V.34 (no PCM octet, as in the
+  CM of the Courier). The server turns over its carrier between its JMs.
+  The client does not look for this.
+- Our INFO0 is the INFO0 of V.34, with power reduction (bit 20) set, as
+  in the INFO0c of the Courier. The server is an x2 server when its INFO0
+  has bit 23 (a symbol rate difference of 4 or more) and bit 24 (CME)
+  set. If not, the call is V.34.
+- The probing is as for a V.34 caller, up to the L1 of the server. Then,
+  170 ms after the start of that L1, we do not send L1, L2 and INFO1c.
+  In their place, we send two symbols of our tone and then the marker.
+  The marker is an INFO frame (with the fill, sync and CRC of V.34) that
+  holds the 7 bits `4d`:
+  - bit 0: the carrier (1 is high);
+  - bits 1 to 3: 6;
+  - bits 4 to 6: our symbol rate (3200 baud).
+- The server sends nothing back. It is silent until our J.
 
 ### Phase 3
 
-- 70 ms after the marker we send V.34's S, S-bar, PP, TRN (5120
-  symbols) and J (`89B0`: phase 4 at 16 points) at 3200 baud on the
-  high carrier, with the answerer's scrambler (GPA). The echo canceller
-  trains on them. J goes on until the preamble has been there 150 ms,
-  then we are silent.
-- `X2Rx` finds the preamble: its lag-22 correlation (at 8000 Hz) over
-  44 samples above 0.8 for 88 samples, then the turn, where the
-  correlation over the last 11 samples goes to -1 (code 362). That
-  gives the code grid; the best correlation with TRN's first 96 codes
-  (within 20 samples at 16 kHz) centres it.
-- From there the server's codes are known up to the sync segment
-  (`X2Train`'s). The equaliser is solved by least squares on 1020 codes
-  of TRN, follows NLMS on the known codes, and is solved again once
-  the timing loop has locked (6000 codes on).
-- TRN's signs go through GPC's descrambler, and the J words are
-  decoded from them: `09B0` 99 times, then `099F`. With fewer than 90
-  good, or no `099F`, the call falls back.
+- 70 ms after the marker, we send the S, S-bar, PP, TRN (5120 symbols)
+  and J (`89B0`: phase 4 at 16 points) of V.34. We send them at
+  3200 baud on the high carrier, with the scrambler of the answerer
+  (GPA). The echo canceller trains on them. J continues until the
+  preamble of the server has been present for 150 ms. Then we are silent.
+- `X2Rx` finds the preamble. Its lag-22 correlation (at 8000 Hz) over
+  44 samples must be above 0.8 for 88 samples. Then the receiver finds
+  the turn, where the correlation over the last 11 samples goes to -1
+  (code 362). This gives the code grid. The best correlation with the
+  first 96 codes of TRN (in 20 samples at 16 kHz) centres it.
+- From there, the codes of the server are known up to the sync segment
+  (as `X2Train` makes them). The receiver solves the equaliser by least
+  squares on 1020 codes of TRN. Then NLMS follows the known codes. The
+  receiver solves the equaliser again when the timing loop is locked
+  (from code 6000).
+- The signs of TRN go through the GPC descrambler, and the receiver
+  decodes the J words from them: `09B0` 99 times, then `099F`. If fewer
+  than 90 words are correct, or if `099F` does not come, the call falls
+  back to V.34.
 
 ### Phase 4
 
-- At the J words (code 20367) we send our phase 4 at 16 points: S,
-  S-bar, TRN (5120 symbols), then our MP, `0344 03FE 0000 0500`: the
-  start-up's rate index 1 (as the Courier, whatever it measured), 13
-  in bits 6 to 9 (the Courier's), the mask up to 24000 bit/s, the pad
-  measured, 5 signs. Behind a pad words 2 and 3 are `8888 0588`, as
-  the Courier's. Each MP has 2 zeros after it (104 bits, whole 16 point
-  symbols). It repeats until the server's record has been decoded.
-- The receiver runs on through the ones and the alignment pattern,
-  still known, and from code 28719 decides the sync frames: levels A
-  in every position, decoded by `X2Map`'s inverse (each position's
-  digit, the signs of the 5 smallest levels as changes, the B bits
-  mixed radix, then GPC's descrambler). 24 frames of ones in a row are
-  the check.
-- The pad is measured as our phase 4 TRN ends, from the sync frames
-  so far (about 700): see [the pad](#the-pad).
-- After our MP the server's record follows in the same levels: 17
-  ones, a zero, its 3 words (`F33C 7FFF 0000`) with their CRC. Then our
-  MP' (the acknowledge bit set), and E (20 ones, 5 symbols) after a
-  whole one.
-- After our E each frame is decoded both ways, in levels A and in the
-  start-up's data levels; the first that the data levels decode to
-  ones (with half the error of levels A or less) is the start's first
-  in them. 680 frames of ones later the data begins.
+- At the J words (code 20367), we send our phase 4 at 16 points: S,
+  S-bar, TRN (5120 symbols), then our MP, `0344 03FE 0000 0500`. The MP
+  holds:
+  - the rate index 1 of the start-up (as the Courier sends, whatever it
+    measured);
+  - 13 in bits 6 to 9 (as the Courier sends);
+  - the rate mask up to 24000 bit/s;
+  - the pad that we measured;
+  - 5 signs.
+
+  Behind a pad, words 2 and 3 are `8888 0588`, as the Courier sends.
+  Each MP has 2 zeros after it (104 bits, which is a whole number of
+  16 point symbols). The MP repeats until the receiver has decoded the
+  record of the server.
+- The receiver continues through the ones and the alignment pattern,
+  which are known. From code 28719, it decides the sync frames: levels A
+  in all positions, decoded by the inverse of `X2Map`. (That is: the
+  digit of each position, the signs of the 5 smallest levels as changes,
+  the B bits in mixed radix, then the GPC descrambler.) The check is 24
+  frames of ones in sequence.
+- The receiver measures the pad at the end of our phase 4 TRN, from the
+  sync frames that it has at that time (about 700). Refer to
+  [The pad](#the-pad).
+- After our MP, the record of the server follows in the same levels: 17
+  ones, a zero, its 3 words (`F33C 7FFF 0000`) and their CRC. Then we
+  send our MP' (the acknowledge bit set), and E (20 ones, 5 symbols)
+  after a whole MP'.
+- After our E, the receiver decodes each frame in two ways: in levels A
+  and in the data levels of the start-up. The first frame that the data
+  levels decode to ones (with half the error of levels A or less) is the
+  first frame of the start segment in those levels. The data starts 680
+  frames of ones later.
 
 ### Data mode
 
-- Each frame's six codes are decided to the nearest level of their
-  position's list, then the inverse mapper and the descrambler give
-  MD + B bits for V.42. The equaliser and the timing follow the
-  decisions.
-- Upstream: V.34's data encoder at the highest rate of our mask the
-  record allows (12 at most: 24000 bit/s with our first mask), with GPA,
-  expanded shaping, the 64-state code and non-linear encoding (theta
-  0.3125), as D-Modem's server expects.
+- The receiver decides each of the six codes of a frame to the nearest
+  level in the list of its position. Then the inverse mapper and the
+  descrambler give MD + B bits for V.42. The equaliser and the timing
+  follow the decisions.
+- Upstream is the data encoder of V.34 at the highest rate of our mask
+  that the record of the server permits (a maximum of 12: 24000 bit/s
+  with our first mask). It uses GPA, expanded shaping, the 64-state code
+  and non-linear encoding (theta 0.3125), as the server of D-Modem
+  expects.
 
 ### Our renegotiation
 
-- 12.7 s into the data (`DSP_X2C_RENEG=<ms>`, 0 none), as the Courier,
-  we renegotiate: S in data mode, S-bar, TRN (512 symbols, 4 points),
-  then our MP with the rate index we measured (word 0's bits 2 to 5;
-  `DSP_X2C_DOWN=<n>` for another) and the mask `1FFE`.
-- The receiver waits for the server's answer: 4 frames of the marker
-  (`+++---`, each position at its largest level), then its last
-  (`---+++`). From there the descrambler is from zero, the sign
-  reference positive, the levels the start-up's. The records follow
-  (`733C` 10 times, `F33C` 33 times); at the first we send MP', then E,
-  and our upstream goes on at 28800 bit/s.
-- After the records (170 frames or more) a frame of ones, then the
-  next rate's ones: the rate taken is the one whose levels decode them
-  to ones (the one we asked for first, then the rest from 15 down), so
-  a marker of the server's own, at a rate we did not ask for, is
-  followed too. Its data begins 681 frames on.
+- 12.7 s into the data, we renegotiate, as the Courier does
+  (`DSP_X2C_RENEG=<ms>` sets the time, and 0 disables it). We send S in
+  data mode, S-bar, TRN (512 symbols, 4 points), then our MP. The MP has
+  the rate index that we measured (bits 2 to 5 of word 0;
+  `DSP_X2C_DOWN=<n>` sets a different index) and the mask `1FFE`.
+- The receiver waits for the answer of the server: 4 frames of the
+  marker (`+++---`, each position at its largest level), then the last
+  frame of the marker (`---+++`). From there, the descrambler starts
+  from zero, the sign reference is positive, and the levels are the
+  levels of the start-up. The records follow (`733C` 10 times, `F33C`
+  33 times). At the first record, we send MP', then E. Our upstream then
+  continues at 28800 bit/s.
+- After the records (170 frames or more), the server sends a frame of
+  ones, then ones at the next rate. The receiver selects the rate whose
+  levels decode them to ones. It tries the rate that we asked for first,
+  then the other rates from 15 down. Thus, the receiver also follows a
+  marker that the server starts itself, at a rate that we did not ask
+  for. The data at the new rate starts 681 frames later.
 
-### The rate index we take
+### The selection of the rate index
 
-The decisions' error of the data at the start-up's rate (or, before
-the data, of the sync frames) gives the noise at the receiver. For
-each n from 15 down, the smallest distance between two of its values
-(as received, after the equaliser's gain; and a value's distance from
-its negative) is compared with that noise; we take the highest n
-where half that distance is at least 5.5 standard deviations (an
-error rate under 1e-7 a decision). The sync frames alone are not
-enough behind a pad: there the equaliser is still settling on the
-pad's levels (the error 22 rms at first, 2 rms 10 s later). That is
-our own rule: the Courier's (its E2DD metric against a table of 15
-thresholds) is in its firmware, and the server takes any n.
+The error of the decisions on the data at the rate of the start-up (or,
+before the data, on the sync frames) gives the noise at the receiver.
+For each n from 15 down, the receiver finds the smallest distance
+between two of its values. (It uses the values as received, after the
+gain of the equaliser, and also the distance of a value from its
+negative.) We select the highest n where half that distance is a
+minimum of 5.5 standard deviations of the noise (an error rate of less
+than 1e-7 for each decision).
+
+Behind a pad, the sync frames alone are not sufficient, because the
+equaliser is not yet stable on the levels of the pad (the error is
+22 rms at first, and 2 rms 10 s later).
+
+This rule is our own. The rule of the Courier (its E2DD metric against
+a table of 15 thresholds) is in its firmware. The server accepts any n.
 
 ### The pad
 
-The equaliser's gain takes up the line's loss, so a pad is found by the
-shape of the levels, not their size: the mean magnitude of each of the
-nine levels A in the sync frames, fitted with one gain to each of three
-candidates (levels A across no pad, a 3 dB pad and a 6 dB pad, each
-requantized in µ-law, and scaled by TRN's octet `b1`'s gain across the
-same pad, which the equaliser took). The best fit (least squares, the
-residual to the means' power: some 1e-8 for the right pad, 1e-4 for the
-others) is word 0's bits 11 to 14 (0, 1, 2), and the levels decided from
-there on are `x2_rates[mode]`'s (the received `lv`, at that gain).
-The Courier fits four candidates in the same way (its search at
-`f632`); which four is not known.
+The gain of the equaliser removes the loss of the line. Thus, the
+receiver finds a pad from the shape of the levels, not from their size:
+
+1. It calculates the mean magnitude of each of the nine levels A in the
+   sync frames.
+2. It fits these means, with one gain, to each of three candidates: the
+   levels A through no pad, through a 3 dB pad and through a 6 dB pad.
+   Each candidate is quantised again in µ-law, and scaled by the gain of
+   the TRN octet `b1` through the same pad (the equaliser removed that
+   gain).
+3. The best fit (least squares) gives the pad. The residual against the
+   power of the means is about 1e-8 for the correct pad and 1e-4 for the
+   others.
+
+The pad goes into bits 11 to 14 of word 0 (0, 1 or 2). From then on, the
+receiver decides on the levels of `x2_rates[mode]` (the received `lv`,
+at that gain). The Courier fits four candidates in the same way (its
+search at `f632`). We do not know which four.
 
 ### Tests
 
-- `x2_rx_test`: `X2Rx` on `X2Train`'s codes through a simulated line
-  (a short channel, a gain, noise; at 8000 Hz, and at 9600 Hz through a
-  resampler a fraction of a sample late): the preamble found, the J
-  words decoded, the sync frames' ones, the server's record, the start,
-  3000 frames of data back bit for bit; behind 3 dB and 6 dB pads the
-  pad found and the data in its levels; the rate taken falling with the
-  noise.
+- `x2_rx_test`: `X2Rx` on the codes of `X2Train` through a simulated
+  line (a short channel, a gain and noise, at 8000 Hz, and at 9600 Hz
+  through a resampler a fraction of a sample late). It checks these
+  items:
+  - the preamble, the J words, the ones of the sync frames, the record
+    of the server and the start;
+  - 3000 frames of data, which come back bit for bit;
+  - behind 3 dB and 6 dB pads, the pad and the data in its levels;
+  - a lower rate when the noise increases.
 - `interop_test` (`open_x2*`): the open modem as the client (9600 Hz)
-  calls the open server (8000 Hz) on netsim, both `AT+MS=X2`: connect
-  at 24000/32000, the renegotiation to 28800/56000, 300 000 octets each
-  way; with `NET_PAD=6` (the pad found, 56000), `NET_FLOOR=20` (44000)
-  and `NET_PPM=100` with `NET_PHASE=0.3` (the timing loop at +100 ppm).
-- courier-emu: D-Modem's client (`courier_peer` with
+  calls the open server (8000 Hz) on netsim, with `AT+MS=X2` on the two
+  modems. The call connects at 24000/32000, and the renegotiation goes
+  to 28800/56000. Up to 300 000 octets go in each direction. Other tests
+  use `NET_PAD=6` (the receiver finds the pad), `NET_FLOOR=20` (a lower
+  rate) and `NET_PPM=100` with `NET_PHASE=0.3` (the timing loop finds
+  +100 ppm).
+- courier-emu: the client of D-Modem (`courier_peer` with
   `COURIER_PEER_ANALOG=1`, the modem at 9600 Hz behind a resampling
-  codec, and `COURIER_PEER_DIAL`) against the emulated I-modem
-  (Ie030002) answering, with the settings and the timing of the
-  Courier calls that it answered with x2 (`S54=0S58=48&A3&B1Q0`, the
-  call at 95 M instructions, `ATA` after it). It does not offer x2 to
-  us: its INFO0a has no x2 mark (a difference of 0, CME 0), so our
-  client goes on as V.34 and the call connects at 31200/33600. The
-  I-modem's DSP is given the same commands as in the Courier's calls,
-  and our CM is the Courier's octet for octet (`e0 c1 45 10 10 0d`).
-  Our INFO0c first had power reduction clear and the Courier's has it
-  set; with it set the I-modem still answers V.34. What else in the
-  Courier's phase 1 tells the I-modem that it is an x2 client is not
-  known. courier-emu's own client (`v90_engine_peer`) did not get x2
-  from it either. The client's x2 parts are so far tested only against
-  D-Modem's server.
+  codec, and `COURIER_PEER_DIAL`) calls the emulated I-modem (Ie030002).
+  The I-modem answers with the settings and the timing of the Courier
+  calls that it answered with x2 (`S54=0S58=48&A3&B1Q0`, the call at
+  95 M instructions, `ATA` after it). It does not offer x2 to us: its
+  INFO0a has no x2 mark (a difference of 0, CME 0). Thus, our client
+  continues as V.34, and the call connects at 31200/33600.
 
-### Not done
+In the courier-emu calls, the DSP of the I-modem gets the same commands
+as in the calls of the Courier. Our CM is the CM of the Courier, octet
+for octet (`e0 c1 45 10 10 0d`). Our INFO0c has power reduction set, as
+the INFO0c of the Courier has. With these items, the I-modem still
+answers with V.34. We do not know what else in phase 1 of the Courier
+tells the I-modem that the Courier is an x2 client. The own client of
+courier-emu (`v90_engine_peer`) also did not get x2 from it. Thus, we
+tested the x2 parts of the client only against the server of D-Modem.
 
-- A-law (no x2 client is known to have done it; see
+### Not implemented
+
+- A-law (we do not know of an x2 client that used A-law; refer to
   [A-law](#a-law)).
-- Robbed bits: the Courier's measurement of them is not known.
-- Symmetric x2 (both ends digital).
-- Our own renegotiation more than once, or a retrain: a call whose
-  line changes stays at the rate it took.
+- Robbed bits: we do not know how the Courier measures them.
+- Symmetric x2 (two digital ends).
+- More than one renegotiation of our own, or a retrain. If the line of
+  a call changes, the call stays at the rate that it selected.

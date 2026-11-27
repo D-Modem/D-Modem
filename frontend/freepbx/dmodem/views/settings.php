@@ -110,13 +110,89 @@ foreach (Config::FAX_RATES as $r)
 	     _('A destination "D-Modem: receive a fax" that answers as a fax machine.'));
 	$row('fax_dir', _('Fax directory'), $text('fax_dir', $s['fax_dir']),
 	     _('Where received faxes go, as TIFF files: <date>-<time>-<caller>-<uniqueid>.tif. Asterisk must be able to write there.'));
+	$row('fax_keep_days', _('Keep faxes'), $text('fax_keep_days', $s['fax_keep_days']),
+	     _('Days that a received fax stays in the Faxes list and in the fax directory. 0: all are kept.'));
+	$list = function ($k, $v) {
+		return '<textarea class="form-control" rows="4" id="' . $k . '" name="' . $k . '">' .
+			D::h($v) . '</textarea>';
+	};
+	$row('fax_block', _('Block faxes from'), $list('fax_block', $s['fax_block']),
+	     _('One caller ID on each line: a number, a prefix with * at the end (for example 1900*), or anonymous for a call without a number. Text after # is a comment. A blocked fax is kept in the Faxes list as BLOCKED, and it does not go by email or to UCP.'));
+	$row('fax_allow', _('Never block faxes from'), $list('fax_allow', $s['fax_allow']),
+	     _('The same form. A caller ID on this list is never blocked.'));
+	$row('fax_allow_only', _('Only the allow list'), $check('fax_allow_only', $s['fax_allow_only']),
+	     _('Block each fax from a caller ID that is not on the "Never block" list.'));
 	$row('fax_ident', _('Our fax number'), $text('fax_ident', $s['fax_ident']),
 	     _('Sent to the other fax machine (CSI/TSI): up to 20 digits, + and spaces.'));
+	$row('fax_header', _('Fax header'), $text('fax_header', $s['fax_header']),
+	     _('A header line on the top of each page that D-Modem sends: the date, the time, this text, our fax number and the page number. Empty: no header line.'));
 	$row('fax_max_rate', _('Fastest fax rate'), $select('fax_max_rate', $s['fax_max_rate'], $rates),
 	     _('Lower it for lines that drop pages at 14400.'));
+	$minrates = [0 => _('None')] + $rates;
+	$row('fax_min_rate', _('Slowest fax rate'), $select('fax_min_rate', $s['fax_min_rate'], $minrates),
+	     _('A fax that cannot go at this rate or faster is not taken. None: as slow as the other machine goes.'));
 	$row('fax_ecm', _('Error correction (ECM)'), $check('fax_ecm', $s['fax_ecm']),
 	     _('Offered to the other machine: pages come through line hits undamaged.'));
 	$row('fax_t38', _('T.38'), $check('fax_t38', $s['fax_t38']),
 	     _('Faxes over T.38 when the channel has it (a PJSIP endpoint with T.38 on).'));
+	?>
+	<h2><?php echo _('Sending faxes'); ?></h2>
+	<?php
+	$row('fax_retries', _('Tries again'), $select('fax_retries', $s['fax_retries'], [0 => '0', 1 => '1', 2 => '2', 3 => '3']),
+	     _('The tries after the first, when a fax is not sent. The send page can change it for each fax.'));
+	$row('fax_retry_delay', _('Minutes between tries'), $text('fax_retry_delay', $s['fax_retry_delay']),
+	     _('From 1 to 120.'));
+	$row('fax_notify', _('Email the result'), $select('fax_notify', $s['fax_notify'], [
+		     'never' => _('Never'),
+		     'always' => _('Always'),
+		     'success' => _('When it is sent'),
+		     'failure' => _('When it is not sent'),
+	     ]),
+	     _('The default of the send page.'));
+	$row('fax_notify_email', _('Result to'), $text('fax_notify_email', $s['fax_notify_email']),
+	     _('The default address for the result.'));
+	$row('fax_ghostscript', _('Ghostscript'), $text('fax_ghostscript', $s['fax_ghostscript']),
+	     _('The gs program, which makes the fax pages from PDF files (on FreePBX: yum or apt install ghostscript).'));
+	$row('fax_office', _('LibreOffice'), $text('fax_office', $s['fax_office']),
+	     _('The soffice program, which makes PDF files from Office documents (Word, Excel, PowerPoint, OpenDocument, RTF, text). Empty: only PDF and TIFF files.'));
+	$row('fax_api', _('Send API'), $check('fax_api', $s['fax_api']),
+	     _('Programs send faxes and get their state through ajax.php?module=dmodem&command=sendfax and faxstatus, with the token in the X-Dmodem-Token header.'));
+	$row('fax_api_token', _('Send API token'), $text('fax_api_token', '', 'password'),
+	     ($s['fax_api_token'] !== '' ? _('A token is set. Empty: keep it.') . ' ' : '') .
+	     _('32 to 128 letters, digits, _ and -. For example, make one with: openssl rand -hex 32'));
+	$row('fax_cover_name', _('Cover page: company'), $text('fax_cover_name', $s['fax_cover_name']),
+	     _('Your company name, on the top of the cover page.'));
+	$row('fax_cover_address', _('Cover page: address'),
+	     '<textarea class="form-control" rows="3" id="fax_cover_address" name="fax_cover_address">' .
+	     D::h($s['fax_cover_address']) . '</textarea>',
+	     _('Up to 5 lines.'));
+	$row('fax_cover_phone', _('Cover page: telephone'), $text('fax_cover_phone', $s['fax_cover_phone']),
+	     _('For example "Tel. +1 555 0100, fax +1 555 0101".'));
+	$row('fax_cover_web', _('Cover page: web site'), $text('fax_cover_web', $s['fax_cover_web']), '');
+	$row('fax_cover_footer', _('Cover page: footer'), $text('fax_cover_footer', $s['fax_cover_footer']),
+	     _('A line on the bottom of the cover page, for example a confidentiality notice.'));
+	?>
+	<h2><?php echo _('Fax to email'); ?></h2>
+	<p class="text-muted"><?php echo _('A fax to a recipient\'s destination (the Fax recipients tab) goes to the recipient\'s email address when the call ends. In the subject and the text, these fields are replaced: {cid} {cidname} {remote} {pages} {status} {date} {recipient} {file}.'); ?></p>
+	<?php
+	$row('fax_attach', _('Attach'), $select('fax_attach', $s['fax_attach'], [
+		     'pdf' => _('A PDF file'),
+		     'tiff' => _('The TIFF file'),
+		     'both' => _('Both'),
+	     ]),
+	     _('What goes with the message. A recipient can have its own.'));
+	$row('fax_paper', _('PDF paper size'), $select('fax_paper', $s['fax_paper'], [
+		     'letter' => _('Letter'),
+		     'a4' => _('A4'),
+	     ]),
+	     _('Each page of the PDF file is of this size.'));
+	$row('fax_email_from', _('From'), $text('fax_email_from', $s['fax_email_from']),
+	     _('The sender of the message: an address, or Name <address>. Empty: the mail system\'s.'));
+	$row('fax_email_subject', _('Subject'), $text('fax_email_subject', $s['fax_email_subject']),
+	     _('The subject of the message.'));
+	$row('fax_email_body', _('Text'),
+	     '<textarea class="form-control" rows="4" id="fax_email_body" name="fax_email_body">' .
+	     D::h($s['fax_email_body']) . '</textarea>',
+	     _('The text of the message.'));
 	?>
 </form>

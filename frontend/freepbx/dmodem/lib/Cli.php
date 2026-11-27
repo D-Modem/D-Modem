@@ -4,15 +4,19 @@
 //
 // Cli.php - fwconsole dmodem's subcommands (Console/Dmodem.class.php
 // hands them here, so they work, and are tested, without Symfony):
-// dial, profiles, export, import.
+// dial, profiles, export, import, fax2mail (a received fax into the fax
+// log, and to a recipient's email address: the hangup handler of
+// Dialplan::mailHandler()), faxes (the fax log), sendfax, faxqueue,
+// faxjobs, faxcancel and faxsent (the faxes that D-Modem sends: FaxSend).
 
 namespace FreePBX\modules\Dmodem;
 
 class Cli
 {
 	/* subcommand args (a list) on module m, options opts (callerid,
-	   keep), its lines to say(); 0 if it went through, 1 if not, 2 for
-	   bad arguments */
+	   keep; send: the mail system for fax2mail, as FaxMail::send() has
+	   it, for the tests), its lines to say(); 0 if it went through, 1 if
+	   not, 2 for bad arguments */
 	public static function run($m, array $args, array $opts, callable $say)
 	{
 		$cmd = isset($args[0]) ? $args[0] : '';
@@ -61,13 +65,85 @@ class Cli
 			foreach ($r['settings'] as $f => $why)
 				$say(sprintf(_('setting %s not imported: %s'), $f, $why));
 			foreach ($r['skipped'] as $name => $why)
-				$say(sprintf(_('profile %s not imported: %s'), $name,
+				$say(sprintf(_('%s not imported: %s'), $name,
 					     implode('; ', $why)));
-			$say(sprintf(_('%d profiles imported; run fwconsole reload'),
-				     count($r['imported'])));
+			$say(sprintf(_('%d profiles and %d fax recipients imported; run fwconsole reload'),
+				     count($r['imported']), count($r['recipients'])));
 			return $r['ok'] ? 0 : 1;
+		case 'fax2mail':
+			if (count($args) < 3 || count($args) > 9) {
+				$say(_('Usage: fwconsole dmodem fax2mail <recipient|""> <uniqueid> [status] [pages] [cid] [remote] [cidname] [rate]'));
+				return 2;
+			}
+			$v = [];
+			foreach (FaxLog::VARS as $i => $k)
+				$v[$k] = isset($args[$i + 3]) ? (string)$args[$i + 3] : '';
+			$r = $m->faxReceived($args[1], $args[2], $v,
+				isset($opts['send']) ? $opts['send'] : null);
+			$say($r[1]);
+			return $r[0] ? 0 : 1;
+		case 'faxes':
+			foreach ($m->getFaxes() as $u => $e)
+				$say(sprintf('%s  %-16s %-8s %3d  %-16s %s', date('Y-m-d H:i', $e['time']),
+					     $u, FaxLog::status($e), $e['pages'], $e['cid'],
+					     $e['recipient']));
+			return 0;
+		case 'sendfax':
+			if (count($args) < 2) {
+				$say(_('Usage: fwconsole dmodem sendfax <number> [file...] [--cover] [--to=...] [--from=...] [--message=...] [--retries=n] [--notify=...] [--email=...]'));
+				return 2;
+			}
+			$docs = [];
+			foreach (array_slice($args, 2) as $f) {
+				$b = is_file($f) && is_readable($f) ? file_get_contents($f) : false;
+				if ($b === false) {
+					$say(sprintf(_('Cannot read %s'), $f));
+					return 1;
+				}
+				$docs[] = [basename($f), $b];
+			}
+			$in = ['number' => $args[1],
+			       'cover' => !empty($opts['cover']) ? 'yes' : ''];
+			foreach (['to', 'from', 'message', 'retries', 'notify', 'email'] as $k)
+				if (isset($opts[$k]))
+					$in[$k] = $opts[$k];
+			$r = $m->queueFax($in, $docs, null, isset($opts['run']) ? $opts['run'] : null);
+			$say($r['message'] . ($r['ok'] ? ' [' . $r['id'] . ']' : ''));
+			if (!$r['ok'])
+				return 1;
+			foreach ($m->runFaxQueue() as $l)
+				$say($l);
+			return 0;
+		case 'faxqueue':
+			foreach ($m->runFaxQueue() as $l)
+				$say($l);
+			return 0;
+		case 'faxjobs':
+			foreach ($m->getFaxJobs() as $id => $j)
+				$say(sprintf('%s  %-16s %-8s %d/%d  %s  %s', $id, $j['number'], $j['state'],
+					     $j['attempts'], $j['retries'] + 1,
+					     date('Y-m-d H:i', $j['next']), $j['last']));
+			return 0;
+		case 'faxcancel':
+			if (count($args) !== 2) {
+				$say(_('Usage: fwconsole dmodem faxcancel <job>'));
+				return 2;
+			}
+			$r = $m->cancelFax($args[1]);
+			$say($r[1]);
+			return $r[0] ? 0 : 1;
+		case 'faxsent':
+			if (count($args) < 4 || count($args) > 8) {
+				$say(_('Usage: fwconsole dmodem faxsent <job> <uniqueid> <status> [pages] [rate] [error] [remote]'));
+				return 2;
+			}
+			$a = array_pad($args, 8, '');
+			$r = $m->faxSent($a[1], $a[2], $a[3], (int)$a[4], (int)$a[5], $a[6], $a[7],
+					 isset($opts['send']) ? $opts['send'] : null);
+			$say($r[1]);
+			return $r[0] ? 0 : 1;
 		default:
-			$say(_('Usage: fwconsole dmodem dial <profile> <number> | profiles | export [file] | import <file>'));
+			$say(_('Usage: fwconsole dmodem dial <profile> <number> | profiles | export [file] | import <file> | fax2mail <recipient> <uniqueid> ... | faxes | sendfax <number> [file...] | faxqueue | faxjobs | faxcancel <job> | faxsent ...'));
 			return 2;
 		}
 	}

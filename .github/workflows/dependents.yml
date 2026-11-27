@@ -1,0 +1,54 @@
+# Dependents: tells the repositories that build D-Modem into their apps
+# that main changed. Each push to main sends a repository_dispatch event
+# of type "d-modem-main" to each repository in the matrix. The D-Modem
+# bump workflow of that repository (.github/workflows/d-modem-bump.yml)
+# then moves its D-Modem submodule to this commit, builds and tests it in
+# a pull request, and merges the pull request when its checks pass. Its
+# nightly release then has the new build.
+#
+# - D-Modem/app: the Android and iOS apps (external/d-modem-re).
+# - D-Modem/gui: the Linux, Windows and macOS apps with the built-in
+#   modem (external/D-Modem).
+#
+# Every push to main sends the event, also a push that changes only
+# documentation: the app copies the AT command reference from docs/at.
+#
+# It needs the DMODEM_BUMP_TOKEN secret (an organization secret, which
+# the bump workflows of app and gui also use): a fine-grained personal
+# access token with Contents: read and write on D-Modem/app and
+# D-Modem/gui (a repository_dispatch needs that permission). The workflow's own
+# GITHUB_TOKEN cannot send an event to a different repository. Without
+# the secret, the run gives a warning and sends nothing. The daily
+# schedule of each bump workflow then moves the submodule.
+name: Dependents
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        repo: [D-Modem/app, D-Modem/gui]
+    steps:
+      - name: Send d-modem-main to ${{ matrix.repo }}
+        env:
+          GH_TOKEN: ${{ secrets.DMODEM_BUMP_TOKEN }}
+          REPO: ${{ matrix.repo }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::No DMODEM_BUMP_TOKEN secret (see this workflow's header): $REPO is not told"
+            exit 0
+          fi
+          gh api "repos/$REPO/dispatches" \
+            -f event_type=d-modem-main \
+            -f "client_payload[sha]=$GITHUB_SHA"
+          echo "Sent d-modem-main (${GITHUB_SHA:0:7}) to $REPO"

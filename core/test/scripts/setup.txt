@@ -120,7 +120,6 @@ A ATW3\r
 A AT&G3\r
 A AT\\Q4\r
 A AT-V90=0\r
-A AT+GSN\r
 A AT&V\r
 A AT&Z\r
 A AT&T1\r

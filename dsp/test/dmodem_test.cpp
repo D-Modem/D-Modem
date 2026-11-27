@@ -464,7 +464,7 @@ INSTANTIATE_TEST_SUITE_P(V91, DmodemPair, testing::Values(
 	v91("v91_pad", "+MS=91", NET_PAD, 60000),
 	v91("v91_xlaw", "+MS=91", NET_XLAW, 60000),
 	alaw(v91("v91_alaw", "+MS=91", NET_G711, 62666)),
-	bulk(v91("v91_bulk", "+MS=92", NET_G711, 62666, 60), 200000),
+	bulk(v91("v91_bulk", "+MS=91", NET_G711, 62666, 60), 200000),
 	v91("ms56", "+MS=56", NET_G711, 0),
 	v91("v91_retrain", "+MS=91", NET_G711, 0, 30,
 	    { { "DSP_V91_RETRAIN", "3000c" } }),
@@ -636,9 +636,9 @@ TEST(DmodemCxx, CommandLines)
 	dm::Modem m = make("modem", d, "ATE0\r");
 	d.read_all();
 	EXPECT_TRUE(m.command("ATS7?"));
-	EXPECT_EQ(d.read_all(), "60\r\nOK\r\n");
+	EXPECT_EQ(d.read_all(), "\r\n60\r\n\r\nOK\r\n");
 	EXPECT_TRUE(m.command("ATS7=45"));
-	EXPECT_EQ(d.read_all(), "OK\r\n");
+	EXPECT_EQ(d.read_all(), "\r\nOK\r\n");
 	EXPECT_EQ(m.status().link, DMODEM_IDLE);
 	/* what the bridge's answer option runs */
 	EXPECT_TRUE(m.command("ATS0=0A"));
@@ -717,15 +717,15 @@ TEST(DmodemCxx, VoiceTones)
 
 	d.read_all();
 	ASSERT_TRUE(m.command("AT+FCLASS=8"));
-	EXPECT_EQ(d.read_all(), "OK\r\n");
+	EXPECT_EQ(d.read_all(), "\r\nOK\r\n");
 	ASSERT_TRUE(m.command("AT+VLS=1"));
 	run(10);
-	ASSERT_EQ(dte, "OK\r\n");
+	ASSERT_EQ(dte, "\r\nOK\r\n");
 
 	/* a tone of 440 Hz that ends mid-cycle, 200 ms of silence, digits */
 	ASSERT_TRUE(m.command("AT+VTS=[440,0,13],[0,0,20],1,5,5,#,{a,10},*"));
 	run(12 * 50);
-	EXPECT_EQ(dte, "OK\r\n");
+	EXPECT_EQ(dte, "\r\nOK\r\n");
 	std::string keys;
 	char prev = ' ';
 	for (char c : labels) {
@@ -751,20 +751,20 @@ TEST(DmodemCxx, VoiceTones)
 	/* a string with an element it cannot play: ERROR, and nothing */
 	ASSERT_TRUE(m.command("AT+VTS=5,X"));
 	run(25);
-	EXPECT_EQ(dte, "ERROR\r\n");
+	EXPECT_EQ(dte, "\r\nERROR\r\n");
 	EXPECT_EQ(labels.find_first_not_of(' '), std::string::npos) << labels;
 	ASSERT_TRUE(m.command("AT+VTS={5,6001}"));
 	run(25);
-	EXPECT_EQ(dte, "ERROR\r\n");
+	EXPECT_EQ(dte, "\r\nERROR\r\n");
 	EXPECT_EQ(labels.find_first_not_of(' '), std::string::npos) << labels;
 
 	/* +VTD=10: a bare digit, {} (silence), [440] and {9} last 100 ms */
 	ASSERT_TRUE(m.command("AT+VTD=10"));
 	run(1);
-	EXPECT_EQ(dte, "OK\r\n");
+	EXPECT_EQ(dte, "\r\nOK\r\n");
 	ASSERT_TRUE(m.command("AT+VTS=7,{},[440],{9}"));
 	run(50);
-	EXPECT_EQ(dte, "OK\r\n");
+	EXPECT_EQ(dte, "\r\nOK\r\n");
 	/* the blocks of each element (a block at each end may be shared) */
 	auto blocks = [&](char c) {
 		return std::count(labels.begin(), labels.end(), c);
@@ -827,19 +827,19 @@ TEST(DmodemCxx, VoiceHookFlash)
 		ASSERT_TRUE(m.command("AT+FCLASS=8"));
 		ASSERT_TRUE(m.command("AT+VLS=1"));
 		run(5);
-		ASSERT_EQ(d.read_all() + dte, "OK\r\nOK\r\n");
+		ASSERT_EQ(d.read_all() + dte, "\r\nOK\r\n\r\nOK\r\n");
 		ASSERT_TRUE(m.command("AT+VTD=10"));
 		run(1);
 		ASSERT_TRUE(m.command("AT+VTS=1,!,{!,30},2"));
 		run(60);
 		if (!with) {
-			EXPECT_EQ(dte, "ERROR\r\n");
+			EXPECT_EQ(dte, "\r\nERROR\r\n");
 			EXPECT_EQ(labels.find_first_not_of(' '),
 				  std::string::npos) << labels;
 			EXPECT_TRUE(flashes.empty());
 			continue;
 		}
-		EXPECT_EQ(dte, "OK\r\n");
+		EXPECT_EQ(dte, "\r\nOK\r\n");
 		EXPECT_EQ(flashes, (std::vector<unsigned>{ 100, 300 }));
 		size_t one = labels.find_last_of('1'), two = labels.find('2');
 		ASSERT_NE(one, std::string::npos) << labels;
@@ -938,7 +938,7 @@ TEST(DmodemCxx, VoiceDtmfDetect)
 	ASSERT_TRUE(m.command("AT+FCLASS=8"));
 	ASSERT_TRUE(m.command("AT+VLS=1"));
 	feed(dtmf_tone(0, 100));
-	ASSERT_EQ(d.read_all() + dte, "OK\r\nOK\r\n");
+	ASSERT_EQ(d.read_all() + dte, "\r\nOK\r\n\r\nOK\r\n");
 
 	/* digits of 100 ms with pauses of 60 ms, the same twice among
 	   them (a pause of 50 ms) */
@@ -977,7 +977,7 @@ TEST(DmodemCxx, VoiceDtmfDetect)
 	feed(cat({ dtmf_tone(0, 200), dtmf_tone('7', 200),
 		   dtmf_tone(0, 200) }));
 	std::string data, codes;
-	ASSERT_EQ(dte.compare(0, 9, "CONNECT\r\n"), 0) << dte.substr(0, 20);
+	ASSERT_EQ(dte.compare(0, 11, "\r\nCONNECT\r\n"), 0) << dte.substr(0, 20);
 	size_t on = dte.find("\x10" "7"), off = dte.find("\x10~");
 	ASSERT_NE(on, std::string::npos);
 	ASSERT_NE(off, std::string::npos);
@@ -1050,7 +1050,7 @@ TEST(DmodemCxx, VoiceDuplex)
 	run(5);
 	ASSERT_TRUE(m.command("AT+VTR"));
 	run(1);
-	ASSERT_EQ(dte.compare(0, 9, "CONNECT\r\n"), 0) << dte;
+	ASSERT_EQ(dte.compare(0, 11, "\r\nCONNECT\r\n"), 0) << dte;
 	sent.clear();
 
 	/* 300 samples, a <DLE><DLE> (one 0x10 sample), <DLE><ETX> and
@@ -1095,10 +1095,12 @@ TEST(DmodemCxx, VoiceDuplex)
 	run(2);
 	size_t etx = dte.find("\x10\x03");
 	ASSERT_NE(etx, std::string::npos) << dle_codes(dte);
-	EXPECT_EQ(dte.substr(etx), "\x10\x03OK\r\n");
+	EXPECT_EQ(dte.substr(etx), "\x10"
+"\x03"
+"\r\nOK\r\n");
 	ASSERT_TRUE(m.command("AT+VLS?"));
 	run(1);
-	EXPECT_EQ(dte, "+VLS=1\r\nOK\r\n");
+	EXPECT_EQ(dte, "\r\n+VLS=1\r\n\r\nOK\r\n");
 	ASSERT_TRUE(m.command("AT+VLS=0"));
 }
 
@@ -1146,7 +1148,7 @@ TEST(DmodemCxx, VoiceFormats)
 		ASSERT_TRUE(m.command("AT+VTR"));
 		dte.clear();
 		run(1);
-		ASSERT_EQ(dte.compare(0, 9, "CONNECT\r\n"), 0) << dte;
+		ASSERT_EQ(dte.compare(0, 11, "\r\nCONNECT\r\n"), 0) << dte;
 		dte.erase(0, 9);
 		sent.clear();
 

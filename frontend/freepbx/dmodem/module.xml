@@ -2,7 +2,7 @@
 	<rawname>dmodem</rawname>
 	<repo>unsupported</repo>
 	<name>D-Modem</name>
-	<version>16.0.2</version>
+	<version>16.0.8</version>
 	<publisher>D-Modem Authors</publisher>
 	<license>AGPLv3</license>
 	<licenselink>https://www.gnu.org/licenses/agpl-3.0.txt</licenselink>
@@ -14,9 +14,27 @@
 	</description>
 	<more-info>https://github.com/D-Modem/D-Modem</more-info>
 	<changelog>
+		*16.0.8* A send API (sendfax, faxstatus with a token), Office documents through LibreOffice
+		*16.0.7* Junk fax control: a block list and an allow list of caller IDs, a Block button on the Faxes tab
+		*16.0.6* A Fax widget in UCP (inbox, sent, failed, outgoing, send, forward, browser notification), its rights in User Manager
+		*16.0.5* Send fax: PDF and TIFF files, a cover page, tries again, the result by email, a queue, fwconsole dmodem sendfax
+		*16.0.4* The fax log: a Faxes tab (view as PDF, download, delete), Keep faxes, fwconsole dmodem faxes
+		*16.0.3* Fax recipients (fax to email: PDF, TIFF or both), fax detection on inbound routes, the slowest fax rate, the fax header, the fax capabilities on the line check
 		*16.0.2* Dialling out with a profile (page and fwconsole dmodem dial), Backup and Restore, fwconsole dmodem export/import
 		*16.0.1* Profiles as destinations, dmodem.conf, a fax destination, dmodem-ari as an engine, the line check
 	</changelog>
+	<hooks>
+		<core class="Core" namespace="FreePBX\modules">
+			<method callingMethod="hookTabs" class="Dmodem" namespace="FreePBX\modules">didFaxTab</method>
+		</core>
+		<ucp class="Ucp">
+			<method callingMethod="constructModuleConfigPages" class="Dmodem" namespace="FreePBX\modules">ucpConfigPage</method>
+			<method callingMethod="addUser" class="Dmodem" namespace="FreePBX\modules">ucpAddUser</method>
+			<method callingMethod="updateUser" class="Dmodem" namespace="FreePBX\modules">ucpUpdateUser</method>
+			<method callingMethod="addGroup" class="Dmodem" namespace="FreePBX\modules">ucpAddGroup</method>
+			<method callingMethod="updateGroup" class="Dmodem" namespace="FreePBX\modules">ucpUpdateGroup</method>
+		</ucp>
+	</hooks>
 	<console>
 		<command>
 			<name>dmodem</name>

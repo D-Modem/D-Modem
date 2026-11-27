@@ -332,6 +332,26 @@ int dmodem_poll_dte(struct dmodem *d)
 	return n;
 }
 
+/* src into dst (size octets, a 0 at the end), "" for NULL */
+static void copy_name(char *dst, size_t size, const char *src)
+{
+	snprintf(dst, size, "%s", src ? src : "");
+}
+
+/* the core's modulation, error correction and compression into *c,
+   all "" while the call is not online */
+void dmodem_connection(struct dmodem *d, struct dmodem_connection *c)
+{
+	dcore::Modem *m = d->m;
+	memset(c, 0, sizeof(*c));
+	if (m->link_state() != dcore::LinkState::Online)
+		return;
+	copy_name(c->modulation, sizeof(c->modulation), m->modulation_name());
+	copy_name(c->protocol, sizeof(c->protocol), m->link_protocol());
+	copy_name(c->compression, sizeof(c->compression),
+		  m->link_compression());
+}
+
 /* the core's state into *s: tx_pending one more while V.42 has frames
    unacknowledged; fax_caller latched by a CNG burst (or 0.4 s of one),
    or the core's finding (its CNG detector, a V.8 CM of a fax call) */

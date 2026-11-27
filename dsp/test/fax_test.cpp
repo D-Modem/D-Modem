@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "../fax.h"
+#include "../fax_header.h"
 #include "fax_util.h"
 #include "t30.h"
 #include "t4.h"
@@ -1120,3 +1121,209 @@ INSTANTIATE_TEST_SUITE_P(Mcf, T30Lost, testing::Values(
 	[](const testing::TestParamInfo<Lost> &i) {
 		return std::string(i.param.name);
 	});
+
+/*
+ *    the lowest rate (t30_config's min_bps)
+ *
+ */
+
+/* a sender (its rates up to tx_max, none below tx_min, on the modems
+   of tx_modems) to a receiver (up to rx_max, none below rx_min, on
+   rx_modems), audio through G.711 mu-law: the two results when both end
+   (10 minutes of line at most) */
+static void rate_call(s32 tx_max, s32 tx_min, u16 tx_modems, s32 rx_max,
+		      s32 rx_min, u16 rx_modems, t30_status *sa,
+		      t30_status *sb)
+{
+	std::string in = fax_file("min_in.tif"), out = fax_file("min_out.tif");
+	Doc tx, rx;
+	struct t30_config c = {};
+	short ab[160] = { 0 }, ba[160] = { 0 }, oa[160], ob[160];
+
+	ASSERT_TRUE(write_test_doc(in, true));
+	ASSERT_EQ(tx.in.open(in.c_str()), 0);
+	ASSERT_EQ(rx.out.open(out.c_str()), 0);
+	c.srate = 8000;
+	c.sending = 1;
+	c.max_bps = tx_max;
+	c.min_bps = tx_min;
+	c.modems = tx_modems;
+	c.ident = "+1 555 0100";
+	c.next_page = next_page;
+	c.ctx = &tx;
+	T30 *a = t30_create(&c);
+	c.sending = 0;
+	c.max_bps = rx_max;
+	c.min_bps = rx_min;
+	c.modems = rx_modems;
+	c.ident = "+1 555 0199";
+	c.next_page = NULL;
+	c.page_received = page_received;
+	c.ctx = &rx;
+	T30 *b = t30_create(&c);
+	for (long n = 0; n < 8000L * 600; n += 160) {
+		t30_process(a, ba, oa, 160);
+		t30_process(b, ab, ob, 160);
+		for (int i = 0; i < 160; i++) {
+			ab[i] = g711_ulaw(oa[i]);
+			ba[i] = g711_ulaw(ob[i]);
+		}
+		t30_get_status(a, sa);
+		t30_get_status(b, sb);
+		if (sa->result != T30_RUNNING && sb->result != T30_RUNNING)
+			break;
+	}
+	rx.out.close();
+	tx.in.close();
+	t30_free(a);
+	t30_free(b);
+}
+
+/* (rate_call() on all the modems) */
+static void min_rate_call(s32 tx_max, s32 tx_min, s32 rx_max, s32 rx_min,
+			  t30_status *sa, t30_status *sb)
+{
+	rate_call(tx_max, tx_min, 0, rx_max, rx_min, 0, sa, sb);
+}
+
+/* the sender's lowest rate above all the receiver has: nothing in
+   common, no page */
+TEST(T30MinRate, SenderMinAboveReceiverMax)
+{
+	t30_status sa = {}, sb = {};
+	min_rate_call(14400, 9600, 4800, 0, &sa, &sb);
+	EXPECT_EQ(sa.result, T30_ERR_INCOMPATIBLE)
+		<< t30_result_text(sa.result);
+	EXPECT_EQ(sa.pages, 0);
+	EXPECT_EQ(sb.pages, 0);
+}
+
+/* the receiver's lowest rate above the sender's top rate: the DCS is
+   refused, no page */
+TEST(T30MinRate, ReceiverMinAboveSenderMax)
+{
+	t30_status sa = {}, sb = {};
+	min_rate_call(4800, 0, 14400, 9600, &sa, &sb);
+	EXPECT_EQ(sb.result, T30_ERR_TRAINING) << t30_result_text(sb.result);
+	EXPECT_NE(sa.result, T30_OK);
+	EXPECT_EQ(sb.pages, 0);
+}
+
+/* a lowest rate both can do: the document goes through at a rate not
+   below it */
+TEST(T30MinRate, DocumentAtOrAboveMin)
+{
+	t30_status sa = {}, sb = {};
+	min_rate_call(14400, 9600, 14400, 9600, &sa, &sb);
+	EXPECT_EQ(sa.result, T30_OK) << t30_result_text(sa.result);
+	EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+	EXPECT_EQ(sa.pages, 2);
+	EXPECT_GE(sa.bps, 9600);
+}
+
+/*
+ *    the modems (t30_config's modems)
+ *
+ */
+
+/* the sender on V.27ter only: the pages at 4800 bit/s */
+TEST(T30Modems, SenderV27Only)
+{
+	t30_status sa = {}, sb = {};
+	rate_call(14400, 0, T30_MODEM_V27, 14400, 0, 0, &sa, &sb);
+	EXPECT_EQ(sa.result, T30_OK) << t30_result_text(sa.result);
+	EXPECT_EQ(sa.pages, 2);
+	EXPECT_EQ(sa.bps, 4800);
+}
+
+/* the receiver on V.29 only: its DIS offers V.29, the pages at 9600 */
+TEST(T30Modems, ReceiverV29Only)
+{
+	t30_status sa = {}, sb = {};
+	rate_call(14400, 0, 0, 14400, 0, T30_MODEM_V29, &sa, &sb);
+	EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+	EXPECT_EQ(sb.pages, 2);
+	EXPECT_EQ(sb.bps, 9600);
+}
+
+/* the receiver on V.17 and V.27ter (its DIS must offer V.29 too): the
+   sender's V.17 goes */
+TEST(T30Modems, ReceiverV17V27)
+{
+	t30_status sa = {}, sb = {};
+	rate_call(14400, 0, 0, 14400, 0, T30_MODEM_V17 | T30_MODEM_V27, &sa,
+		  &sb);
+	EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+	EXPECT_EQ(sb.bps, 14400);
+}
+
+/* the sender on V.29 only, the receiver on V.17 and V.27ter: the
+   sender's V.29 gets FTT, then no rate is left: no page */
+TEST(T30Modems, NoModemInCommon)
+{
+	t30_status sa = {}, sb = {};
+	rate_call(14400, 0, T30_MODEM_V29, 14400, 0,
+		  T30_MODEM_V17 | T30_MODEM_V27, &sa, &sb);
+	EXPECT_NE(sa.result, T30_OK);
+	EXPECT_EQ(sa.pages, 0);
+	EXPECT_EQ(sb.pages, 0);
+}
+
+/*
+ *    the header line (fax_header.h)
+ *
+ */
+
+/* the black pels of rows [from, to) of a page */
+static long black_pels(const T4Page &p, s32 from, s32 to)
+{
+	s16 stride = T4_STRIDE(p.width);
+	long n = 0;
+	for (s32 r = from; r < to; r++)
+		for (s16 b = 0; b < stride; b++)
+			for (unsigned v = p.bits[(size_t)r * stride + b]; v;
+			     v &= v - 1)
+				n++;
+	return n;
+}
+
+/* the header rows come above the page's own rows, which stay as they
+   were; text in them, more for more characters; in fine twice the rows */
+TEST(FaxHeader, RowsAboveThePage)
+{
+	T4Page p, q;
+	unsigned char row[T4_STRIDE(T4_WIDTH)];
+
+	memset(row, 0xf0, sizeof(row));
+	ASSERT_EQ(p.init(T4_WIDTH, 0), 0);
+	for (int r = 0; r < 100; r++)
+		p.add_row(row);
+	ASSERT_EQ(fax_header_add(&p, "26-NOV-2026 12:00  ACME  +1 555 0100  P.1"), 0);
+	EXPECT_EQ(p.rows, 100 + fax_header_rows(0));
+	EXPECT_GT(black_pels(p, 0, fax_header_rows(0)), 0);
+	EXPECT_EQ(black_pels(p, fax_header_rows(0), p.rows), 100L * 864);
+	/* the first and last rows of the header blank */
+	EXPECT_EQ(black_pels(p, 0, 2), 0);
+	EXPECT_EQ(black_pels(p, fax_header_rows(0) - 2, fax_header_rows(0)), 0);
+
+	ASSERT_EQ(q.init(T4_WIDTH, 1), 0);
+	ASSERT_EQ(fax_header_add(&q, "a"), 0);
+	EXPECT_EQ(q.rows, fax_header_rows(1));
+	EXPECT_EQ(fax_header_rows(1), 2 * fax_header_rows(0));
+	/* a small letter as its capital, at twice the rows */
+	T4Page a;
+	ASSERT_EQ(a.init(T4_WIDTH, 0), 0);
+	ASSERT_EQ(fax_header_add(&a, "A"), 0);
+	EXPECT_EQ(black_pels(q, 0, q.rows), 2 * black_pels(a, 0, a.rows));
+}
+
+/* a colour page stays as it is (no header line) */
+TEST(FaxHeader, ColourPageUnchanged)
+{
+	T4Page p;
+	ASSERT_EQ(p.init(T4_WIDTH, 0), 0);
+	p.add_row(nullptr);
+	p.comps = 3;
+	ASSERT_EQ(fax_header_add(&p, "X"), 0);
+	EXPECT_EQ(p.rows, 1);
+}

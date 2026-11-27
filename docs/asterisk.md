@@ -88,7 +88,15 @@ The module is also a fax machine:
 - `DModem()` finds when a fax machine calls in place of a modem. Then it
   receives the fax to a file.
 - `DModemReceiveFax(file)` answers a call as a fax machine.
-- `DModemSendFax(file)` sends a fax.
+- `DModemSendFax(file)` sends a fax (one or more files).
+- `DModemFaxDetect(seconds)` listens for a fax machine on an incoming
+  call, and sends the call to the `fax` extension when it hears one.
+- `DMODEMFAXOPT()` sets the fax settings of a call, as `FAXOPT()` of
+  Asterisk does. The applications have the options of `SendFAX` and
+  `ReceiveFAX`, and also set their variables (`FAXSTATUS` and the
+  other variables).
+- `dmodem fax show sessions` and `dmodem fax show stats` show the faxes
+  and the totals. The AMI has the events and actions for the faxes.
 
 Faxes can go through the audio. On SIP calls, they can go through T.38
 (fax over the internet), which is more reliable.

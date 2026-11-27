@@ -15,6 +15,7 @@ This page gives all the options of `dmodemd`, from its option table (`frontend/d
 | `-v`, `--version` |  |  |  | The version, and exit. |
 | `-c`, `--country` | text | `USA` |  | The country's rules (--countrylist) |
 | `--countrylist` |  |  |  | The countries -c takes, and exit. |
+| `--serial` | text | `the modem's name` |  | The serial number that AT+GSN gives. |
 | `-g`, `--group` | text | `dialout` | not Windows | The pty's group. |
 | `-p`, `--perm` | number | `0660` | not Windows | The pty's mode, in octal. |
 | `-n`, `--nortpriority` |  |  |  | No realtime scheduling (on Windows: normal priority, not high) |
@@ -37,6 +38,7 @@ This page gives all the options of `dmodemd`, from its option table (`frontend/d
 | `--misdn-msn` | text | `any` | not Windows | --misdn: take calls for this MSN alone (and send it as ours) |
 | `--misdn-noflip` |  |  | not Windows | --misdn: the B-channel's octets as the card gives them, not bit reversed. |
 | `-r`, `--rate` | number | `9600` |  | The codec's rate with -a or --usb (8000 or 9600; 48000, 96000 or 192000 for the wideband mode, AT+MS=VWB: a pico-serial WB's 96000 unless given) |
+| `--speaker` | text | `none` |  | The modem's speaker (ATM, ATL) on a sound device: the call's audio; Linux an ALSA PCM (default, plughw:0), Windows a waveOut device (default, its number or a part of its name), Haiku default. |
 | `--dsvd-audio` | text | `none` | not Windows | DSVD's voice (AT+DSVD=1) through this command while its voice channel is open: the far end's speech on its stdin, ours from its stdout (raw 16 bit little-endian, 8000 Hz, mono); a SmartUSB56's handset (--usb-voice-codec) is used before it. |
 | `--com` | text | `none` | Windows | The DTE a COM port (COM5: one end of a com0com pair) |
 | `--pipe` | text | `none` | Windows | The DTE a named pipe dmodemd makes (\\.\pipe\&lt;name&gt;, or &lt;name&gt;) |

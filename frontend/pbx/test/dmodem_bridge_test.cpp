@@ -373,6 +373,12 @@ static void run_call(Call *k)
 		dmodem_poll_dte(a);
 		ev = dmbridge_call_step(&c, FRAME);
 		if (ev == DMBRIDGE_CONNECTED) {
+			/* the connection's modulation and error correction
+			   known with the rate */
+			if (!c.modulation[0] || !c.protocol[0] ||
+			    !c.compression[0])
+				k->failures.push_back("no modulation, protocol "
+						      "or compression");
 			snprintf(buf, sizeof(buf), "%s", c.rate);
 			env[3] = buf;
 			ev = dmbridge_call_serve(&c, env);
@@ -938,4 +944,46 @@ TEST_F(Bridge, ExecControlChannel)
 	dmodem_destroy(a);
 	close(sa[0]);
 	close(sa[1]);
+}
+
+/* the modem lists of fax_modems and DMODEMFAXOPT(modems): res_fax's
+   names, back as text */
+TEST(BridgeFax, ModemLists)
+{
+	char t[32];
+	EXPECT_EQ(dmbridge_fax_modems(""), 0);
+	EXPECT_EQ(dmbridge_fax_modems("all"), 0);
+	EXPECT_EQ(dmbridge_fax_modems("v17,v27,v29"),
+		  DMODEM_FAX_V17 | DMODEM_FAX_V27 | DMODEM_FAX_V29);
+	EXPECT_EQ(dmbridge_fax_modems("V29 v27"),
+		  DMODEM_FAX_V27 | DMODEM_FAX_V29);
+	EXPECT_EQ(dmbridge_fax_modems("v17,v34"), DMODEM_FAX_V17);
+	EXPECT_EQ(dmbridge_fax_modems("v34"), -1);
+	EXPECT_EQ(dmbridge_fax_modems("v22"), -1);
+	dmbridge_fax_modems_text(DMODEM_FAX_V17 | DMODEM_FAX_V29, t,
+				 sizeof(t));
+	EXPECT_STREQ(t, "v17,v29");
+	dmbridge_fax_modems_text(0, t, sizeof(t));
+	EXPECT_STREQ(t, "v17,v27,v29");
+	dmbridge_fax_modems_text(DMODEM_FAX_V27, t, sizeof(t));
+	EXPECT_STREQ(t, "v27");
+}
+
+/* DMODEMFAXOPT(): the new items, a value not valid refused */
+TEST(BridgeFax, FaxoptItems)
+{
+	struct dmbridge_fax f;
+	dmbridge_fax_defaults(&f, "/tmp");
+	EXPECT_EQ(dmbridge_faxopt(&host, &f, "modems", "v27"), 0);
+	EXPECT_EQ(f.modems, DMODEM_FAX_V27);
+	EXPECT_EQ(dmbridge_faxopt(&host, &f, "modems", "v99"), -1);
+	EXPECT_EQ(f.modems, DMODEM_FAX_V27);
+	EXPECT_EQ(dmbridge_faxopt(&host, &f, "headerinfo", "ACME | LTD"), 0);
+	EXPECT_STREQ(f.header, "ACME | LTD");
+	EXPECT_EQ(dmbridge_faxopt(&host, &f, "headerinfo",
+				  std::string(64, 'x').c_str()), -1);
+	EXPECT_EQ(dmbridge_fax_option(&host, &f, "fax_modems", "v17,v29"), 1);
+	EXPECT_EQ(f.modems, DMODEM_FAX_V17 | DMODEM_FAX_V29);
+	EXPECT_EQ(dmbridge_fax_option(&host, &f, "fax_header", "X"), 1);
+	EXPECT_STREQ(f.header, "X");
 }

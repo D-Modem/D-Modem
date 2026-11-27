@@ -47,7 +47,7 @@ modem on a call that FreeSWITCH made, for example
 
 ## People and modems on one number
 
-A profile with a `voice` setting listens for some seconds before it answers
+A profile with a `voice` param listens for some seconds before it answers
 (`voice-listen`, 3 by default). If the caller is a person, the call goes
 to that extension (on a loopback leg), for example an IVR or a
 voicemail box:
@@ -65,14 +65,14 @@ voicemail box:
 The person stays there until the extension hangs up, or until
 the modem of the caller asks for data (its calling tone). Then the modem
 answers as usual. Some modems send no calling tone (the modems of most
-countries wait in silence). A caller with such a modem stays with the extension until the extension
-hangs up. Thus, give an IVR a method to stop, for example a menu selection that hangs
-up.
+countries wait in silence). A caller with such a modem stays with the
+extension until the extension hangs up. Thus, give an IVR a method to
+stop, for example a menu selection that hangs up.
 
-A modem can carry voice and data at the same time (V.70 DSVD or V.61 ASVD).
-The module can also send the voice channel of such a modem to the extension while the data
-continues. To do this, set `voice-dsvd` to `yes` (the caller opens the channel) or
-`open` (our modem opens it). The channel closes when the extension hangs up,
+Some modems send voice and data at the same time (V.70 DSVD or V.61
+ASVD). The module can also send the voice channel of such a modem to the
+extension while the data continues. To do this, set `voice-dsvd` to
+`true` (the caller opens the channel) or `open` (our modem opens it). The channel closes when the extension hangs up,
 and the data continues.
 
 ## What the modem can do
@@ -98,4 +98,5 @@ You must have an installed FreeSWITCH that `pkg-config` can find:
     sudo cmake --install build --component freeswitch
     fs_cli -x "load mod_dmodem"
 
-To load the module at start-up, add `<load module="mod_dmodem"/>` to `modules.conf.xml`.
+To load the module when FreeSWITCH starts, add `<load module="mod_dmodem"/>`
+to `modules.conf.xml`.

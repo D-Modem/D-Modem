@@ -13,7 +13,7 @@ built.
 For the generated files, the code and the tests, refer to
 [the technical details](freepbx-details.md).
 
-## Installing
+## Installation
 
 1. Install [dmodem-ari](ari.md) next to Asterisk. Add an ARI user in
    **Settings > Asterisk REST Interface Users**. Then enable its systemd
@@ -40,22 +40,44 @@ For the generated files, the code and the tests, refer to
        sudo fwconsole ma installlocal dmodem
        sudo fwconsole reload
 
-## Using it
+## Use
 
 - **Profiles.** A profile tells where the data of a modem call goes: a BBS
   server, a program (for example `pppd`), or a login. Each profile is a
   destination ("D-Modem") that you can select in inbound routes, IVRs,
   time conditions and other items.
-- **Persons and modems on one number.** Give a profile a **Voice
+- **People and modems on one number.** Give a profile a **Voice
   extension** (an IVR, a voicemail box or a telephone). If a person calls
   the profile, the call goes to that extension. If a modem calls, the
-  modem answers as usual. The modem answers when the extension hangs up,
-  or when the modem of the caller asks for data. **Modem voice** sends the
+  modem answers when the extension hangs up, or when the modem of the
+  caller asks for data. **Modem voice** sends the
   voice channel of a DSVD or ASVD modem to the same extension while the
   data continues.
 - **Fax.** With the fax destination, D-Modem answers as a fax machine and
   saves faxes to a folder. The fax destination is enabled. You can
   disable it in the settings.
+- **Fax to email.** A **fax recipient** is a destination that receives a
+  fax and sends it by email, as a PDF file, the TIFF file or both. The
+  address is the address of the recipient, or of a User Manager user. The
+  mail system of the machine must send mail.
+- **Send fax.** The **Send fax** tab sends PDF, TIFF and Office files
+  with an optional cover page. A fax that fails is tried again, and the
+  result can go by email. Ghostscript must be installed, and
+  LibreOffice for Office files. Scripts can use `fwconsole dmodem
+  sendfax`, and programs can use the send API with a token.
+- **Faxes.** The **Faxes** tab shows each received and sent fax. You can view it
+  as a PDF file, download the TIFF file or delete it. The module can
+  delete old faxes.
+- **Junk fax control.** A block list and an allow list of caller IDs.
+  A blocked fax stays in the **Faxes** tab as `BLOCKED`. It does not go
+  by email or to UCP. A **Block** button adds the caller of a fax.
+- **Fax in UCP.** Users see their faxes in a **Fax** widget in the User
+  Control Panel. With the send right, they also send and forward faxes.
+  You give the rights in User Manager.
+- **Fax detection.** The **D-Modem fax** tab of an inbound route
+  listens for a fax machine on each call. A fax goes to the fax
+  destination (for example a fax recipient). Other calls go to the
+  destination of the route.
 - **Dial out.** Make D-Modem call a remote modem (a BBS or a provider)
   with a profile, from the page or from a script:
 
@@ -63,17 +85,17 @@ For the generated files, the code and the tests, refer to
 
 - **Line check.** Shows the settings on your trunks and extensions that
   can cause problems for a modem call (refer to the subsequent section).
-- **Backup.** The Backup & Restore of FreePBX includes the settings and
-  profiles of D-Modem. `fwconsole dmodem export` and `import` do the same
+- **Backup.** The Backup & Restore of FreePBX includes the settings,
+  profiles, fax recipients and fax detection of D-Modem. `fwconsole dmodem export` and `import` do the same
   from the command line.
 
 After you change an item, click **Apply Config**. If you use dmodem-ari,
 restart it after this (`sudo systemctl restart dmodem-ari`). It then
 reads the new settings.
 
-## Getting good modem calls
+## Good modem calls
 
-For fast modem calls (specially V.90), the audio of the call must get to
+For fast modem calls (for example V.90), the audio of the call must get to
 the modem with no changes. In FreePBX, do these steps:
 
 - On the trunk and the extension of the modem, allow **one** codec only:

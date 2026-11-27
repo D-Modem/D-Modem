@@ -1,17 +1,17 @@
 # V.92: technical details
 
-This page gives the technical details for [V.92](v92.md), the plain-English overview. Read the overview first. This page keeps the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
+This page gives the technical details for [V.92](v92.md). Read that overview first. This page gives the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
 This page is about V.92 on the side of the digital modem: quick connect, modem-on-hold, and PCM upstream with its rate renegotiation and fast parameter exchange. The start-up and modem-on-hold are in `dsp/dp_v34.cpp`. PCM upstream is `V92Up` in `dsp/v92.cpp`.
 
 Terms that this page uses:
 
-- The **digital modem** is our side (the server, on a G.711 network at 8000 Hz). The **analogue modem** is the client on the phone line.
+- The **digital modem** is our side (the server, on a G.711 network at 8000 Hz). The **analogue modem** is the client on the telephone line.
 - **INFO0d / INFO1d** are the phase 2 frames of the digital modem. **INFO0a / INFO1a** are the phase 2 frames of the analogue modem.
 - **drn** is the upstream rate code: (drn + 17) × 8000 / 6 bit/s. Thus, drn 14 is 41333 bit/s.
 - **mse** is the mean squared error of the receiver.
 
-## Switching V.92 on and off
+## How to enable and disable V.92
 
 With `AT+MS=92` (the default) on an 8000 Hz line, the digital modem announces V.92 in INFO0d (bit 27) and sends the INFO1d of V.92. INFO1d offers PCM upstream (bit 70; refer to [PCM upstream](#v92-pcm-upstream)). Without the offer, the analogue modem asks for V.90 or V.34 upstream, and the call continues as V.90.
 
@@ -28,7 +28,7 @@ The PCM upstream variables are in [PCM upstream](#v92-pcm-upstream).
 
 ## V.92 quick connect
 
-### Short phase 1 (9.2.4/V.92), answering
+### Short phase 1 (9.2.4/V.92), as the answerer
 
 The analogue modem starts with **QC1a** before its CM. QC1a is its frame on V.21(L), and it carries the Ucode of QTS and LAPM. We answer:
 
@@ -42,7 +42,7 @@ If TONEq does not come in 2 s, the call continues with V.8.
 
 The analogue modem can come to phase 2 after our INFO0d is complete (the original library does this). After its INFO0a arrives, INFO0d goes out again with the acknowledgement, as in the INFO0 recovery of phase 2 (refer to [V.8 and V.34](v34-details.md)).
 
-### Catching QC1a and TONEq
+### Detection of QC1a and TONEq
 
 QC1a comes two times, and the analogue modem continues with CM after it until it hears QCA1d. The first QC1a starts when the V.21 receiver starts to receive the carrier. Thus, its sync comes with fewer than its ten leading ones. When our QCA1d came only after the second QC1a, the Agere modem (at some line delays) continued to send CM.
 
@@ -99,12 +99,12 @@ We stop data mode as for a retrain, send tone B for 600 ms, then send MHreq agai
 
 - **MHack:** we stay silent (the remote is on hold) for those seconds, or until 2 s before its T1. Then we take it back. The remote sends ANSam through its T1 (9.10.2.1/V.92). When its ANSam has been present for 200 ms (`MOH_BACK`), we run V.8 as the call modem (CM), phases 2 to 4, and the data continues. If no ANSam comes in 5 s, the remote is gone and we disconnect.
 - **MHnack:** we send MHfrr (for 300 ms), then ANSam and phase 1. With `=0` seconds in `DSP_V92_MOH_REQ`, we send MHcda and disconnect instead.
-- **The tone A of the remote reversed (or its INFO0a):** the remote thought that our tone was the tone of a retrain, which it can do (9.10.1.1/V.92). We follow it into phase 2 immediately. Tone B is long (600 ms, where 50 ms would be sufficient). Thus, this occurs before MHreq, because the remote would think that the phase steps of MHreq are our reversal.
+- **The tone A of the remote reversed (or its INFO0a):** the remote identified our tone as the tone of a retrain, which it can do (9.10.1.1/V.92). We follow it into phase 2 immediately. Tone B is long (600 ms, where 50 ms would be sufficient). Thus, this occurs before MHreq, because the remote would identify the phase steps of MHreq as our reversal.
 - **Nothing in 2.5 s** after the tone: a retrain.
 
 Neither the original library nor the Agere modem answers MHreq. The two modems retrain. The library frames our MH sequences, but as INFO0 in its retrain, with a bad CRC. It looks for MH only in its own requests. `smartlink_v92_moh_request` (with PCM upstream) and `agere_v92_moh_request` (V.90) ask for it during the data (`MIDCALL_B`), and make sure that the call continues.
 
-### Testing MHack and MHnack with netsim
+### Tests of MHack and MHnack with netsim
 
 For the MHack and MHnack branches, netsim replaces an analogue modem that answers: `NET_MOH=ack[:<T1 code>]@<s>` or `NET_MOH=nack@<s>`. From s seconds into the line, when our tone B has been present for 50 ms, netsim disconnects the modem in the two directions and sends tone A, then MHack or MHnack, until we go silent (on hold) or send ANSam. Then it gives the line back.
 
@@ -160,7 +160,7 @@ Our CPd makes the precoder of the analogue modem do what the decision feedback o
 - **The receiver.** It keeps the feed forward taps (fitted again by least squares to the TRN2u decisions, with the feedback that the precoder takes) and the points themselves. There is no decision feedback, and thus no error propagation, and the points are in sequence for the trellis code. A Viterbi decoder (the 64 state code of V.34 on pairs of symbols, 6.4.4/V.92) decides them before their classes.
 - **The remaining parts of CPd.** The same modulus M on all 12 data frame intervals; one constellation of points (2j + 1) × 16, as many as the precoder must have (M (1 + sum |b|) positive points); the prefilter z2(0) = 1; and G for an output of unit power.
 - **The rate.** The fastest rate in the DIL descriptor of the analogue modem whose half distance between points is a minimum of sqrt(8) times the rms error of the fit.
-- **Shrinking the feedback.** The feedback taps can be made smaller (b_j g^j) when this lets a faster rate fit in 128 points.
+- **Smaller feedback.** The feedback taps can be made smaller (b_j g^j) when this lets a faster rate fit in 128 points.
 
 | At 36000 / 38667 bit/s (µ-law) | B1u | Data |
 |---|---|---|
@@ -168,11 +168,11 @@ Our CPd makes the precoder of the analogue modem do what the decision feedback o
 | precoding only | 0 errors at 33333 | 14 HDLC errors at 33333 |
 | no precoding | fails at 33333 | |
 
-### Falling back
+### Fallback
 
 The call retrains without the offer, to V.90 with V.34 upstream, in these conditions:
 
-- the analogue modem retrains instead of sending INFO1a;
+- the analogue modem retrains and does not send INFO1a;
 - our phase 3 or 4 fails, or does not get to data mode in 40 s; or
 - B1u does not come through (more than 5 % of its bits incorrect, without its first four frames).
 
@@ -225,18 +225,18 @@ Through netsim, that gives 38666 bit/s with µ-law, and 40000 to 41333 with A-la
 
 The design is correct only while the transmitter of the analogue modem keeps its timing against the codec of the network. The timing of the original library slips:
 
-- It locks its transmitter to its estimate of our clock, which has an error of some hundredths of a ppm. The "Timing Offset" in its log is +0.02 to -0.05 ppm, but netsim has no offset. Thus, its signal moves by approximately 0.005 samples in 40 s.
+- It locks its transmitter to its estimate of our clock, which has an error of some hundredths of a ppm. The "Timing Offset" in its log is +0.02 to -0.05 ppm, but netsim has no offset. Thus, its signal moves by about 0.005 samples in 40 s.
 - When the channel is fitted to the data symbols, it changes by that shift (about 1 % by 40 s), and the samples of the network codec move away from the levels. At levels 300 to 1000, 9 % of them come out on a neighbouring level at the start, and 44 % after 40 s.
-- That occurs before the quantizer of the network. Thus, nothing in our receiver can correct it. More taps, faster LMS and taps on the output of the precoder did not help.
-- The grid mse increases from about 0.012 to 0.09 in approximately 40 s, without errors.
+- That occurs before the quantizer of the network. Thus, nothing in our receiver can correct it. More taps, faster LMS and taps on the output of the precoder did not correct it.
+- The grid mse increases from about 0.012 to 0.09 in about 40 s, without errors.
 
 Thus, the receiver follows the slip, and the design is done again for it, at the same rate, in a fast parameter exchange. `DSP_V92_SLIP=0` disables that.
 
-**Measuring the slip.** In data mode, the receiver makes the line signal again from its decisions (the output of the precoder through the prefilter). It fits the residual of the received samples against the output of the channel to two things: a gain, and the derivative of the channel (band limited, from its taps), which is the slip. The fit forgets over one second.
+**Measurement of the slip.** In data mode, the receiver makes the line signal again from its decisions (the output of the precoder through the prefilter). It fits the residual of the received samples against the output of the channel to two things: a gain, and the derivative of the channel (band limited, from its taps), which is the slip. The fit forgets over one second.
 
 The codec of the network passes a small change of its input only when the noise moves it across a threshold between two levels. Thus, the terms of each sample are weighed by the mean slope of the codec at that point (the steps of the levels below a Gaussian of the rms of the noise). Without the weights, the fit reads the slip at about 0.6 of its true value, and the design is not sufficient.
 
-**Starting the exchange.** We start a fast parameter exchange when all of these conditions are true:
+**Start of the exchange.** We start a fast parameter exchange when all of these conditions are true:
 
 - the grid mse (over one second) is 0.02 above its value 3 s after the design;
 - the fit has a slip of 0.001 samples or more (`V92_SLIP_MIN`); and
@@ -257,7 +257,7 @@ The original library uses the new coefficients when it gets our CPd (its log sho
 - no renegotiation and no retrain;
 - the residual back at its start value (5.4 rms) after each exchange.
 
-The slip comes from the original library itself, and it is steady: -0.00015 samples/s (approximately five times that after a retrain of the library). A renegotiation down is still necessary for a line that changes, for example by noise, which the fit does not see.
+The slip comes from the original library itself, and it is steady: -0.00015 samples/s (about five times that after a retrain of the library). A renegotiation down is still necessary for a line that changes, for example by noise, which the fit does not see.
 
 **RM with a slip.** With the slip, the line signal of RM (a large signal of period 4) comes in one full point off, in the same direction in each frame (A-law at a slip of 0.003: `0 34 1 35` for `35 35 0 0`). Random data only gets a larger mse. Thus, after our Rf, the receiver accepts RM with each class in one point of it, and at all times with 9 of the 11 exact. If not, the receiver does not see the exchange of the original library, and the library retrains.
 
@@ -272,15 +272,15 @@ In data mode, the tone A of the analogue modem starts a retrain.
 
 The echo canceller is the echo canceller of the V.34 pump, at 8000 Hz. It trains while we send Sd to Jd. It must remove the echo of the hybrid at the line of the analogue modem.
 
-That echo comes in before the network codec, and PCM upstream must have the points of the analogue modem on the levels of the codec. With echo, the codec quantizes the sum. After the canceller removes the echo, the codec error on it stays: about one level step divided by the square root of 12, independently of the level of the echo. That is approximately 26 rms at 33333 bit/s with the echo already 30 dB down, compared with 5 without echo.
+That echo comes in before the network codec, and PCM upstream must have the points of the analogue modem on the levels of the codec. With echo, the codec quantizes the sum. After the canceller removes the echo, the codec error on it stays: about one level step divided by the square root of 12, independently of the level of the echo. That is about 26 rms at 33333 bit/s with the echo already 30 dB down, compared with 5 without echo.
 
 The channel fit on TRN2u (not on the levels) does not see that. Thus, the simulation of the network codec in the design adds the echo (Gaussian, of the power that the canceller removes) before the codec, removes it after the codec, and adds the part of it that the canceller leaves. Then its grid mse is the same as in data mode (0.042 simulated against 0.043, and 0.039 against 0.038, with the echo 30 and 20 dB down), and the rate is also the same.
 
-The receiver accepts Su only after we stop sending Sd to TRN1d. The analogue modem sends Su after it has heard Jd. Before that, a tone is the echo of our own Sd. A long echo delay brings it back after the canceller has started, but before the canceller has found the far echo.
+The receiver accepts Su only after the end of our Sd to TRN1d. The analogue modem sends Su after it has heard Jd. Before that, a tone is the echo of our own Sd. A long echo delay brings it back after the canceller has started, but before the canceller has found the far echo.
 
 | Test (`hsf_v92_echo`, HSF modem) | Result |
 |---|---|
-| its hybrid's echo 10 dB down after 50 ms (`NET_ECHO=-10:50`) | the canceller takes 34 dB away; V.92 connect 52000/29333 (28000 to 34666 at 20 ms; 30666 to 33333 with the echo 20 to 30 dB down; without echo the same line gives 41333 to 42666) |
+| its hybrid's echo 10 dB down after 50 ms (`NET_ECHO=-10:50`) | the canceller takes 34 dB away; V.92 connect 52000/29333 (28000 to 34666 at 20 ms; 30666 to 33333 with the echo 20 to 30 dB down; without echo the same line gives 41333) |
 
 ### Rate renegotiation (9.8/V.92)
 
@@ -321,7 +321,7 @@ A fast parameter exchange sets new rates without training, all in the modulation
 
 `DSP_V92_FPE=<ms>[:<drn>]` starts one at that time into data mode (to that rate), one time, when no exchange is in progress.
 
-**Receiving it.**
+**Reception of the exchange.**
 
 1. The receiver finds the RM and RM' of the analogue modem among the decided classes (Table 25/V.92: the largest and the smallest, in pairs).
 2. It takes SUVu, CPu, SUVu' and E2u from the data decoder, with its descrambler and sign started from zero again.
@@ -335,7 +335,7 @@ At B1u, the analogue modem starts its scrambler, modulus encoder, convolutional 
 
 **Results.**
 
-- `open_v92a_fpe_precoder` has FB1u and B1u without errors. Before the rebuild, one call in two had tens of errors in the first frames of B1u.
+- `open_v92a_fpe_precoder` has FB1u and B1u without errors. Without the rebuild, one call in two had tens of errors in the first frames of B1u.
 - Against the original library, ours takes 0.5 s (a renegotiation takes about 2 s): B1d without errors, and B1u with some errors in its first two frames, as after a renegotiation.
 - Our rate changes go up by fast parameter exchange (the same line with less noise) and down by renegotiation (train again).
 
@@ -392,4 +392,4 @@ If the analogue modem starts a renegotiation during our fast parameter exchange,
 
 The V.90 training of the Agere modem failed at some line delays, in a pattern that repeats each 48 samples (the blocks of its codec), when the line gave it our PCM values without changes, sample for sample. Through an analogue loop (`NET_LOOP` of netsim: a fraction of a sample of delay and a high pass), it trains at all delays. The Agere tests use that, with 0.45 of a sample.
 
-The value is not 0.5, because with no clock offset and no noise, our sample instants then fall exactly between the samples of the Agere. At some alignments of the call to the blocks of its codec (`AGERE_SYNC_PHASE` 96 and 288 of 4800), it judges TRN2d badly and selects 33333 bit/s downstream instead of 53333. At 0.45 and 0.55, all alignments get 53333 or 54666, and at 0.3 they get 52000. The signal is the same. Thus, this is a tie in the receiver of the Agere, not in our receiver. `agere_v90_phase96` keeps that alignment.
+The value is not 0.5, because with no clock offset and no noise, our sample instants then fall exactly between the samples of the Agere. At some alignments of the call to the blocks of its codec (`AGERE_SYNC_PHASE` 96 and 288 of 4800), it makes a bad measurement of TRN2d and selects 33333 bit/s downstream instead of 53333. At 0.45 and 0.55, all alignments get 53333 or 54666, and at 0.3 they get 52000. The signal is the same. Thus, this is a tie in the receiver of the Agere, not in our receiver. `agere_v90_phase96` keeps that alignment.

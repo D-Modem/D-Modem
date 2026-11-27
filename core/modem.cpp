@@ -269,7 +269,7 @@ struct LinkOwner final : public dlink::Owner {
 	/* what XID or MNP's LRs agreed */
 	void negotiated(const dlink::Config &c) override {
 		m_.negotiated(c.comp, c.v44, c.zstd, c.dict_size,
-			      c.max_string, c.mnp5);
+			      c.max_string, c.mnp5, c.adc);
 	}
 	/* MNP 10's rate shifts (mnp.h) */
 	u32 mnp10_mods() override { return m_.mnp10_mods(); }
@@ -364,12 +364,14 @@ struct LinkOwner final : public dlink::Owner {
 Modem::Modem(Host &host, const Options &opt)
 	: host_(host), handle_(new struct modem()),
 	  name_(opt.name ? opt.name : "modem"), dev_name_(opt.dev_name),
+	  serial_(opt.serial),
 	  srate_(opt.rate), frag_(opt.rate / 200 > 0 ? opt.rate / 200 : 1),
 	  min_rate_(MODEM_MIN_RATE), max_rate_(MODEM_MAX_RATE)
 {
 	handle_->self = this;
 	fax_detect_ = opt.fax_detect;
 	dsvd_path_ = opt.dsvd;
+	speaker_path_ = opt.speaker;
 	cng_ = new dsp::CngDetect();
 	cng_->init(srate_);
 	link_owner_ = new LinkOwner(*this);
@@ -469,7 +471,8 @@ void Modem::sregs_init()
 		{ SREG_MNP10_CELLULAR, 0 }, { SREG_MNP10_LEVEL, 0 },
 		{ SREG_MNP10_START, 0 }, { SREG_MNP10_T19, 1 },
 		{ SREG_MNP10, 3 }, { SREG_MNP_V42BIS, 0 },
-		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 }, { SREG_ZYX_DES, 0 },
+		{ SREG_ZYX_PEER, 0 }, { SREG_ETC, 0 }, { SREG_PCM_END, 0 }, { SREG_ZYX_DES, 0 },
+		{ SREG_HAYES_PROTOCOL, 0 },
 	};
 	for (const auto &d : defaults)
 		sregs_[d.reg] = d.val;
@@ -739,8 +742,11 @@ s16 Modem::start_call(bool keep_line)
 	dsp::zero(dp_stats_);
 	setup_config();
 	set_state(DP_ESTAB);
-	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
-		host_.speaker(*this, sregs_[SREG_SPEAKER_VOLUME]);
+	/* ATM1 on now; ATM3 on now for an answer, for a call we dial
+	   when its number is dialled (MDMPRM_DIAL_DONE) */
+	if (sregs_[SREG_SPEAKER_CONTROL] == 1 ||
+	    (sregs_[SREG_SPEAKER_CONTROL] == 3 && !caller_))
+		set_speaker(sregs_[SREG_SPEAKER_VOLUME]);
 	/* (loop 3 keeps the line as it is: the pump hears itself) */
 	if (!loop3_ && set_hook(MODEM_HOOK_OFF))
 		return fail("cannot go off hook");
@@ -820,7 +826,7 @@ s16 Modem::stop_call()
 	}
 	set_hook(MODEM_HOOK_ON);
 	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
-		host_.speaker(*this, 0);
+		set_speaker(0);
 	caller_ = false;
 	dialed_ = false;
 	voice_held_ = false;
@@ -1066,6 +1072,8 @@ s16 Modem::link_init()
 	c.zstd_dict = dsz[1] ? dlink::ZSTD_DICT_ID : 0;
 	c.sync = cfg_.sync;
 	c.hst = hst_offer();
+	/* S46: the Hayes private sets in XID, and ADC with them */
+	c.hayes = c.ec ? static_cast<u8>(sregs_[SREG_HAYES_PROTOCOL]) : 0;
 	/* +X2UP: the remote feature upgrade, with LAPM */
 	c.usr_feature = static_cast<dlink::UsrMode>(kept("+X2UP")[0]);
 	c.usr_enable = static_cast<u8>(kept("+X2UP")[1]);
@@ -1387,9 +1395,10 @@ void Modem::shift_end(bool ok)
 
 /* what XID or MNP's LRs agreed: the call's compression */
 void Modem::negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
-		       s32 max_string, bool mnp5)
+		       s32 max_string, bool mnp5, bool adc)
 {
 	cfg_.comp = comp;
+	cfg_.adc = adc;
 	cfg_.v44 = v44;
 	cfg_.zstd = zstd;
 	cfg_.dict_size = dict_size;
@@ -1397,9 +1406,17 @@ void Modem::negotiated(s16 comp, bool v44, bool zstd, s32 dict_size,
 	cfg_.mnp5 = mnp5;
 	logf("negotiated: compression %d%s, %" PRId32 " codewords, strings of %"
 	     PRId32 "%s\n",
-	     comp, zstd ? " (zstd)" : v44 ? " (V.44)" : "", dict_size,
+	     comp, adc ? " (ADC)" : zstd ? " (zstd)" : v44 ? " (V.44)" : "",
+	     dict_size,
 	     max_string,
 	     mnp5 ? ", MNP 5" : "");
+}
+
+/* the call's modulation (dcore.h): the pump table's name of the
+   pump the statistics report, else of the pump that runs */
+const char *Modem::modulation_name() const
+{
+	return dp_name(modulation(dp_stats_, dp_));
 }
 
 /* the call's error correction, as CONNECT and ATI11 name it */
@@ -1426,7 +1443,8 @@ const char *Modem::compression_name() const
 	if (cfg_.mnp_on)
 		return cfg_.comp ? "V42bis" : cfg_.mnp5 ? "MNP5" : "NONE";
 	if (cfg_.ec && cfg_.comp)
-		return cfg_.zstd ? "ZSTD" : cfg_.v44 ? "V44" : "V42bis";
+		return cfg_.adc ? "ADC" : cfg_.zstd ? "ZSTD" :
+			cfg_.v44 ? "V44" : "V42bis";
 	return "NONE";
 }
 
@@ -1564,7 +1582,7 @@ void Modem::update_status(Status s)
 			dp_stats_.renegs_remote;
 		sync_rate_due_ = false;
 		if (sregs_[SREG_SPEAKER_CONTROL] & 1)
-			host_.speaker(*this, 0);
+			set_speaker(0);
 		break;
 	case ST_EC_RELEASE:
 	case ST_EC_ERROR:
@@ -1891,7 +1909,6 @@ void Modem::sync_command(dlink::SyncCommand c, u8 tx, u8 rx)
 			break;
 		link_->sync_indicate(dlink::v80::ECS);
 		set_state(COMMAND_ONLINE);
-		crlf();
 		report(Result::Ok);
 		command_ = true;
 		commands_due_ = xmit_count_ > 0;
@@ -2030,16 +2047,32 @@ const ebcdic::CodePage &Modem::ebcdic_page()
 	return ebc_page_;
 }
 
-/* a string to the DTE */
+/* a string to the DTE, after the information text's header if it is
+   due */
 void Modem::puts(const char *s)
 {
+	text_head();
 	put_text(s, static_cast<s32>(strlen(s)));
 }
 
-/* the end of a line to the DTE: S3, S4 */
+/* the end of a line to the DTE: S3, S4 (after the information text's
+   header if it is due) */
 void Modem::crlf()
 {
+	text_head();
 	put_text(reinterpret_cast<const char *>(&sregs_[SREG_CR_CHAR]), 2);
+}
+
+/* V.250 6.2.6: with ATV1, information text starts with S3 S4; with
+   ATV0 it does not.  Once for each command line */
+void Modem::text_head()
+{
+	if (!text_head_)
+		return;
+	text_head_ = false;
+	if (sregs_[SREG_VERBOSE])
+		put_text(reinterpret_cast<const char *>(&sregs_[SREG_CR_CHAR]),
+			 2);
 }
 
 /* the escape (+++): this input (online) after the last one's, as the
@@ -2116,6 +2149,8 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 	log_data(this, LOG_RX_SAMPLES, scratch_, 2 * n);
 	run(scratch_, out, n);
 	log_data(this, LOG_TX_SAMPLES, out, 2 * n);
+	if (speaker_on_ > 0 && speaker_path_)
+		speaker_path_->audio(in, out, n);
 	if (stats_.connected && !stats_.ended && !stats_.fax &&
 	    (state_ == ONLINE || state_ == COMMAND_ONLINE)) {
 		for (s32 i = 0; i < n; i++) {
@@ -2981,8 +3016,21 @@ s16 Modem::set_mode(enum MODEM_MODE mode)
 /* ATL, ATM: the speaker on at S30 with ATM2, else off */
 void Modem::update_speaker()
 {
-	host_.speaker(*this, sregs_[SREG_SPEAKER_CONTROL] == 2 ?
-		      sregs_[SREG_SPEAKER_VOLUME] : 0);
+	set_speaker(sregs_[SREG_SPEAKER_CONTROL] == 2 ?
+		    sregs_[SREG_SPEAKER_VOLUME] : 0);
+}
+
+/* the speaker at volume (0 off): the Host told, and the program's
+   speaker (Options::speaker) when the volume changes, which then has
+   the line's samples in process() */
+void Modem::set_speaker(s16 volume)
+{
+	const s16 was = speaker_on_;
+
+	speaker_on_ = volume;
+	host_.speaker(*this, volume);
+	if (speaker_path_ && volume != was)
+		speaker_path_->volume(volume, srate_);
 }
 
 /* the network's G.711 law, for this call's pumps and the next ones' */
@@ -3019,11 +3067,17 @@ void Modem::vcvm_refresh()
 
 /* result r to the DTE (unless ATQ1), in words (ATV1) or as a number; a
    CONNECT after the lines AT&A asks for, with the receive rate in data
-   mode (unless ATX0) and AT\V's protocol */
+   mode (unless ATX0) and AT\V's protocol.  V.250 6.2.6: in words,
+   <CR><LF> before the result and after it (S3 S4); as a number, the
+   number and S3 only */
 void Modem::report(Result r)
 {
 	bool verbose = sregs_[SREG_VERBOSE] != 0;
 	std::string line;
+
+	/* (the result has its own header: the information text's is not
+	   due now) */
+	text_head_ = false;
 
 	/* (a configurator on the DTE's screen ends first: a RING) */
 	conf_close();
@@ -3036,6 +3090,8 @@ void Modem::report(Result r)
 	logf("result: %s\n", result_text[static_cast<s16>(r)]);
 	if (sregs_[SREG_QUIET])
 		return;
+	if (verbose)
+		crlf();
 	if (r == Result::Connect) {
 		u16 a = sregs_[SREG_CONNNECT_MSG_FORMAT];
 		s16 m = modulation(dp_stats_, dp_);
@@ -3077,7 +3133,8 @@ void Modem::report(Result r)
 				line = "Compression: " + std::string(c);
 			else
 				line = dec(c == "MNP5" ? 66 : c == "V42bis" ? 67 :
-					   c == "V44" ? 68 : c == "ZSTD" ? 70 : 69);
+					   c == "V44" || c == "ADC" ? 68 :
+					   c == "ZSTD" ? 70 : 69);
 			puts(line);
 			crlf();
 		}
@@ -3119,7 +3176,11 @@ void Modem::report(Result r)
 			   r == Result::Vcon ? 90 : static_cast<s16>(r));
 	}
 	puts(line);
-	crlf();
+	if (verbose)
+		crlf();
+	else
+		put_text(reinterpret_cast<const char *>(
+				 &sregs_[SREG_CR_CHAR]), 1);
 }
 
 /* ATI11: the last call's statistics (or this one's), a row each: its
@@ -3887,8 +3948,6 @@ void Modem::events(u16 ev)
 		} else {
 			ring_count_ = 0;
 			sregs_[SREG_RING_COUNTER]++;
-			if (sregs_[SREG_RING_COUNTER] == 1)
-				crlf();
 			report(Result::Ring);
 			if (sregs_[SREG_RINGS_TO_AUTO_ANSWER] && !started_ &&
 			    sregs_[SREG_RING_COUNTER] >=
@@ -3909,7 +3968,6 @@ void Modem::events(u16 ev)
 			char c;
 			while (get_chars(&c, 1) == 1)
 				esc_held_ += c;
-			crlf();
 			report(Result::Ok);
 			command_ = true;
 		}
@@ -4062,8 +4120,6 @@ void Modem::ring_signal(bool on)
 	if (state_ != IDLE || started_)
 		return;
 	sregs_[SREG_RING_COUNTER]++;
-	if (sregs_[SREG_RING_COUNTER] == 1)
-		crlf();
 	report(Result::Ring);
 	if (!cid_msg_.empty()) {
 		/* voice mode's report is a packet, as on the line */

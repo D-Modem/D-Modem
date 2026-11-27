@@ -23,7 +23,7 @@ instead.
 
 ## Protocols on the channel
 
-ISDN equipment used a protocol on top of the raw 64 kbit/s. `AT+B2`
+ISDN equipment used a protocol on the raw 64 kbit/s. `AT+B2`
 selects the protocol. Thus, D-Modem can communicate with old ISDN terminal adapters and
 software:
 
@@ -32,7 +32,7 @@ software:
 | `AT+B2=0` (default) | X.75 | most European ISDN adapters and BBS software |
 | `AT+B2=5` | synchronous PPP | internet connections over ISDN |
 | `AT+B2=9` | V.120 | North American ISDN adapters |
-| `AT+CBST=...` | V.110 | slower rates inside the 64 kbit/s, as GSM mobile data still uses |
+| `AT+CBST=...` | V.110 | slower rates inside the 64 kbit/s, as GSM mobile data uses |
 
 The error correction of the modem (V.42) can also operate on the clear
 channel.
@@ -49,7 +49,7 @@ On X.75 and V.120, `ATS102` sets the encryption of the ZyXEL Elite 2864I
   calls (SRTP).
 - **With an ISDN card on Linux.** `dmodemd --misdn 0` operates a basic
   rate ISDN card (HFC-S, AVM Fritz!Card and others) through the
-  mISDN drivers of Linux. We must still test this on a real card.
+  mISDN drivers of Linux. We did not test this on a real card.
 - **Through Asterisk.** An Asterisk phone system with an ISDN line can
   send data calls to the Asterisk module of D-Modem. A separate Asterisk
   module, `codec_clearmode`, lets Asterisk carry CLEARMODE over SIP.
@@ -69,9 +69,9 @@ Then, on the computer where the applications run, put this line in `/etc/capi20.
 
     REMOTE rcapi localhost 6000
 
-## What is still to come
+## Items that are not done
 
 - V.42bis compression over X.75, and the selection of the number (MSN) to answer.
 - A test of the mISDN support on a real ISDN card.
 - Fax over CAPI, and a Windows version of the CAPI interface.
-- An ISDN USB stick. Its design is in progress.
+- An ISDN USB stick. We started its design.

@@ -6,6 +6,25 @@
 #   1. DModemSendFax calls DModem(bbs), which sees the CNG and receives
 #      the fax into fax_dir by itself
 #   2. DModemSendFax calls DModemReceiveFax(file)
+#   3. DMODEMFAXOPT(): two files in one fax at 9600 bit/s without ECM,
+#      the receiver's lowest rate 9600, options d and F; res_fax's
+#      variables (FAXSTATUS and the rest) set too; then
+#      DMODEMFAXOPT(headerinfo): page 1 has the header line's rows more
+#   4. the receiver's lowest rate 9600 and the sender's top rate 4800:
+#      no fax (FAXERROR TRAINING)
+#   5. option T on a Local channel (no T.38): no fax (FAXERROR T38);
+#      DModemFaxDetect() hears the CNG of a sender on V.27ter only
+#      (DMODEMFAXOPT(modems)) and goes to the fax extension; with no
+#      fax it sets NONE
+#   6. the CLI: dmodem fax show stats, settings, sessions and
+#      capabilities; the AMI actions registered; AMI (ami_events.py on
+#      AMI_PORT, default 15038): DModemFaxStatus (option s), the
+#      DModemSendFax and DModemReceiveFax events, DModemFaxStats
+# With ARI=1, 3 to 5 set the channel variables DMODEMFAXOPT_<ITEM> in
+# place of DMODEMFAXOPT() (ari_env.sh), and DMODEMFAXOPT()'s results are
+# not checked (app_dmodem only); 6 checks dmodem-ari's user events
+# (AMI UserEvent) and its SIGUSR1 report in place of the CLI and the
+# AMI actions
 # The document is the two page test file of dsp/test/fax_doc;
 # the received ones must be the same.  ARI=1: DModem's side of the
 # calls through dmodem-ari instead (ari_env.sh).
@@ -52,6 +71,17 @@ astrundir => $run/run
 astlogdir => $run/log
 [options]
 EOT
+ami_port=${AMI_PORT:-15038}
+cat > "$run/etc/manager.conf" <<EOT
+[general]
+enabled = yes
+bindaddr = 127.0.0.1
+port = $ami_port
+[test]
+secret = test
+read = all
+write = all
+EOT
 ast="asterisk -C $run/etc/asterisk.conf"
 $ast -f -n -vvvvv > "$run/console.log" 2>&1 &
 pid=$!
@@ -84,6 +114,163 @@ wait_for " SEND DMODEMFAXSTATUS" 2 && wait_for " RECV DMODEMFAXSTATUS" 1
 grep -E " RECV DMODEM" "$run/console.log"
 grep -E " SEND DMODEM" "$run/console.log" | tail -1
 "$t4" compare "$run/doc.tif" "$run/received.tif" || r=1
+
+# checks that the console has the line, else fails (r=1)
+has() {
+	if grep -qE "$1" "$run/console.log"; then
+		echo "PASS: $2"
+	else
+		echo "FAIL: $2"; r=1
+	fi
+}
+# the rows of the first page of the TIFF file $1 (its first IFD's
+# ImageLength), or 0
+tiff_rows() {
+	python3 -I -c '
+import struct, sys
+try:
+    d = open(sys.argv[1], "rb").read()
+    e = "<" if d[:2] == b"II" else ">"
+    at = struct.unpack(e + "I", d[4:8])[0]
+    n = struct.unpack(e + "H", d[at:at + 2])[0]
+    for k in range(n):
+        tag, typ, cnt, val = struct.unpack(e + "HHI4s", d[at + 2 + 12 * k:at + 14 + 12 * k])
+        if tag == 257:
+            print(struct.unpack(e + ("H" if typ == 3 else "I"), val[:2 if typ == 3 else 4])[0])
+            break
+    else:
+        print(0)
+except Exception:
+    print(0)
+' "$1"
+}
+# the results of DMODEMFAXOPT() read, as the console has them: empty
+# with ARI=1 (the variables DMODEMFAXOPT_PAGES and the others are none)
+if [ -z "$ARI" ]; then
+	opt_pages="pages=4 error=NO_ERROR"
+	opt_file="filename=$run/doc.tif session=[0-9]+"
+else
+	opt_pages="pages= error="
+	opt_file="filename= session="
+fi
+python3 -I "$here/ami_events.py" "$ami_port" "$run/ami.txt" &
+sleep 1
+if true; then
+	rm -f "$run/received.tif"
+	$ast -rx "dialplan set global FAXMIN 9600" >/dev/null
+	$ast -rx "dialplan set global FAXMAX 9600" >/dev/null
+	$ast -rx "channel originate Local/s@faxopt-recv/n extension s@faxopt-send"
+	wait_for " SENDOPT " 1 && wait_for " RECVOPT " 1
+	grep -E " (ROPT|SOPT|RECVOPT|SENDOPT) " "$run/console.log"
+	has " ROPT minrate=9600 localstationid=\+1 555 0177" "DMODEMFAXOPT() read back"
+	has " SOPT maxrate=9600 ecm=no" "DMODEMFAXOPT() maxrate, ecm"
+	has " SENDOPT FAXSTATUS=SUCCESS FAXERROR=NO_ERROR FAXPAGES=4 FAXBITRATE=9600 DMODEMFAXECM=no $opt_file" "two files at 9600 bit/s without ECM"
+	has " RECVOPT FAXSTATUS=SUCCESS FAXERROR=NO_ERROR FAXPAGES=4 FAXBITRATE=9600 LOCALSTATIONID=\+1 555 0177 REMOTESTATIONID=\+1 555 0100 $opt_pages" "res_fax's variables, receiver"
+	if [ -z "$ARI" ]; then
+		has "DModem fax [0-9]+: " "option d: the phases in the log"
+	else
+		ari_log "$run" > "$run/ari-lines.txt"
+		grep -qE "dmodem fax [0-9]+: " "$run/ari-lines.txt" &&
+			echo "PASS: option d: the phases in the log" ||
+			{ echo "FAIL: option d: the phases in the log"; r=1; }
+	fi
+
+	plain_rows=$(tiff_rows "$run/received.tif")
+
+	rm -f "$run/received.tif"
+	$ast -rx "dialplan set global FAXHDR ACME-Ltd" >/dev/null
+	$ast -rx "channel originate Local/s@faxopt-recv/n extension s@faxopt-send"
+	wait_for " SENDOPT " 2 && wait_for " RECVOPT " 2
+	header_rows=$(tiff_rows "$run/received.tif")
+	echo "rows of page 1: $plain_rows without, $header_rows with the header"
+	if [ "$plain_rows" -gt 0 ] &&
+	   [ "$header_rows" -gt "$plain_rows" ]; then
+		echo "PASS: DMODEMFAXOPT(headerinfo): a header line above the page"
+	else
+		echo "FAIL: DMODEMFAXOPT(headerinfo): a header line above the page"; r=1
+	fi
+
+	$ast -rx "dialplan set global FAXMAX 4800" >/dev/null
+	$ast -rx "channel originate Local/s@faxopt-recv/n extension s@faxopt-send"
+	wait_for " SENDOPT " 3 && wait_for " RECVOPT " 3
+	grep -E " RECVOPT " "$run/console.log" | tail -1
+	has " RECVOPT FAXSTATUS=FAILED FAXERROR=TRAINING FAXPAGES=0" "the lowest rate refused"
+
+	$ast -rx "channel originate Local/s@faxopt-t38only/n application Wait 20"
+	wait_for " T38ONLY " 1
+	grep -E " T38ONLY " "$run/console.log"
+	has " T38ONLY FAXSTATUS=FAILED FAXERROR=T38" "option T without T.38"
+
+	$ast -rx "dialplan set global DETECTSECS 10" >/dev/null
+	$ast -rx "channel originate Local/s@faxdetect-in/n extension s@faxdetect-send"
+	wait_for " DSEND " 1
+	grep -E " (DETECTED|DSEND|DSOPT) " "$run/console.log"
+	has " DETECTED CNG from s" "DModemFaxDetect(): CNG heard, to the fax extension"
+	has " DSEND FAXSTATUS=SUCCESS FAXBITRATE=4800 FAXPAGES=2" "DMODEMFAXOPT(modems)=v27: the pages at 4800 bit/s"
+	if [ -z "$ARI" ]; then
+		has " DSOPT modems=v27" "DMODEMFAXOPT(modems) read back"
+	fi
+
+	$ast -rx "dialplan set global DETECTSECS 2" >/dev/null
+	$ast -rx "channel originate Local/s@faxdetect-in/n application Wait 10"
+	wait_for " DETECTED NONE in s" 1
+	has " DETECTED NONE in s" "DModemFaxDetect(): no fax, the dialplan on"
+fi
+if [ -z "$ARI" ]; then
+
+	$ast -rx "dmodem fax show stats" > "$run/stats.txt"
+	cat "$run/stats.txt"
+	if grep -qE "Completed faxes: +[0-9]+" "$run/stats.txt" &&
+	   grep -qE "Failed faxes: +[1-9]" "$run/stats.txt" &&
+	   grep -qE "T38 +1" "$run/stats.txt" &&
+	   grep -qE "Current sessions: +0" "$run/stats.txt"; then
+		echo "PASS: dmodem fax show stats"
+	else
+		echo "FAIL: dmodem fax show stats"; r=1
+	fi
+	if $ast -rx "dmodem fax show settings" | grep -q "Fax directory: *$run/fax" &&
+	   $ast -rx "dmodem fax show sessions" | grep -q "0 active DModem fax sessions" &&
+	   $ast -rx "dmodem fax show capabilities" | grep -q "T.38"; then
+		echo "PASS: dmodem fax show settings, sessions, capabilities"
+	else
+		echo "FAIL: dmodem fax show settings, sessions, capabilities"; r=1
+	fi
+fi
+# the AMI events (app_dmodem's, or dmodem-ari's UserEvents)
+sleep 1
+if [ -z "$ARI" ]; then
+	evs="Event: DModemFaxStatus|Event: DModemReceiveFax|Event: DModemSendFax|ActionID: stats1"
+else
+	evs="UserEvent: DModemFaxStatus|UserEvent: DModemReceiveFax|UserEvent: DModemSendFax"
+fi
+evs="$evs|Error: TRAINING|Error: T38|Status: SUCCESS"
+echo "$evs" | tr '|' '\n' | while read -r e; do
+	grep -q "^$e" "$run/ami.txt" || echo "$e" >> "$run/ami-missing.txt"
+done
+if [ -s "$run/ami-missing.txt" ]; then
+	sed 's/^/FAIL: AMI /' "$run/ami-missing.txt"; r=1
+else
+	echo "PASS: AMI events"
+fi
+if [ -n "$ARI" ]; then
+	kill -USR1 "$ari_pid"
+	sleep 1
+	if grep -qE "dmodem-ari: fax: 0 now; transmit attempts [0-9]+, receive attempts [0-9]+, completed [0-9]+, failed [1-9]" "$run/dmodem-ari.log" &&
+	   grep -q "dmodem-ari: fax: failed T38: 1" "$run/dmodem-ari.log"; then
+		echo "PASS: dmodem-ari's SIGUSR1 report"
+	else
+		echo "FAIL: dmodem-ari's SIGUSR1 report"; r=1
+	fi
+fi
+if [ -z "$ARI" ]; then
+	for a in DModemFaxSessions DModemFaxSession DModemFaxStats; do
+		if $ast -rx "manager show command $a" | grep -q "$a"; then
+			echo "PASS: AMI action $a"
+		else
+			echo "FAIL: AMI action $a"; r=1
+		fi
+	done
+fi
 [ -z "$ARI" ] || ari_log "$run"
 $ast -rx "core stop now" >/dev/null 2>&1
 exit $r

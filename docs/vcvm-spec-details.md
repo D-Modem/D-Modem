@@ -1,8 +1,8 @@
 # The V.cvm proposal: technical details
 
 This is the technical companion to
-[The V.cvm proposal](vcvm-spec.md), the overview in simple words. Start
-there. This page is a guide to the proposal
+[The V.cvm proposal](vcvm-spec.md), the overview in simple words. Read
+that page first. This page is a guide to the proposal
 ([specs/v_cvm.pdf](specs/v_cvm.pdf), LaTeX source in
 [cellular/](cellular/v_cvm.tex)), clause by clause. It gives the
 important values of each clause and the source file that holds the
@@ -308,21 +308,20 @@ The AT commands are:
 
 | Command | Function |
 |---|---|
-| `+MS=V_CVM,1` | Selects V.cvm, with automode fallback to V.22 and V.21 |
+| `+MS=V_CVM,1` | Selects V.cvm, with automode to V.22 and V.21 when V.cvm is not available |
 | `+CVM=<modes>[,<rate>[,<report>]]` | Sets the modes permitted: 1 robust, 2 narrowband, 4 wideband, 8 8-DPSK, 16 amplitude rings, 32 parametric |
 | `+CVM?` | Shows the settings and, during a call, the rates, tones, code rate, renegotiations and erasures |
 | `+CVMR: <raw>,<coded>` | Unsolicited result code on each renegotiation |
 | `CONNECT <rate>/CVM` | The coded rate |
 | S44, S45 | The tones loaded and the renegotiations of the last call |
 
-D-Modem uses `AT+MS=VCVM` for the `+MS` value.
+D-Modem accepts `AT+MS=V_CVM` and `AT+MS=VCVM`.
 
 ## Clauses 13 and 14: interworking and performance
 
 Interworking (clause 13):
 
-- With a PSTN modem through a gateway, the call falls back to V.22 or
-  V.21. A DCE must not show modulations above V.22 in CM, if it knows
+- With a PSTN modem through a gateway, the call uses V.22 or V.21. A DCE must not show modulations above V.22 in CM, if it knows
   that a codec is in the path.
 - Two codecs in tandem are one channel for the probing.
 - Fax goes through Annex D.

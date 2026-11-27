@@ -45,7 +45,7 @@
 #include "cx_country.h"
 #include "cx_daa.h"
 #include "hda_codec.h"
-#include "pty.h"
+#include "dte.h"
 #include "run_loop.h"
 #include "si3054.h"
 
@@ -53,8 +53,9 @@ namespace dmd {
 
 class AlsaLine final : public AnalogHook<AlsaLine> {
 public:
-	/* the line of pty's modem, not yet open */
-	explicit AlsaLine(Pty &pty) : pty_(pty) {}
+	/* the line of the modem on dte (a pty's, or a socket's when the
+	   modem is in an app: dmodem_embed.h), not yet open */
+	explicit AlsaLine(Dte &dte) : dte_(dte) {}
 	~AlsaLine();
 	AlsaLine(const AlsaLine &) = delete;
 	AlsaLine &operator=(const AlsaLine &) = delete;
@@ -86,9 +87,9 @@ public:
 	void country(dcore::Modem &m, const char *name) override;
 	/* for ATI3 */
 	const char *driver_name() override { return "ALSA"; }
-	/* the modem's characters to the pty: how many it took */
+	/* the modem's characters to the DTE: how many it took */
 	s32 dte_write(dcore::Modem &, const char *buf, s32 n) override {
-		return pty_.write(buf, n);
+		return dte_.write(buf, n);
 	}
 
 	/* the control's name for PCM pcm: hw:<card> for hw:<card>,<dev> or
@@ -130,7 +131,7 @@ private:
 	   one (an error logged) */
 	void hook_switch(bool off);
 
-	Pty &pty_;
+	Dte &dte_;
 	snd_pcm_t *cap_ = nullptr, *play_ = nullptr;
 	snd_ctl_t *ctl_ = nullptr;
 	Switch off_hook_, caller_id_;

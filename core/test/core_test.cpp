@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -51,6 +52,12 @@ struct Line final : public dcore::Host {
 	int fail_start = 0, fail_hook = 0;
 	int starts = 0, stops = 0, last_hook = -1, volume = -1;
 	int delay = 0, delay_change = 0;
+	/* +GSN's and +GOI's (serial_number(), object_id()); NULL: none */
+	const char *serial = nullptr, *oid = nullptr;
+	/* (see serial) */
+	const char *serial_number() override { return serial; }
+	/* (see oid) */
+	const char *object_id() override { return oid; }
 	/* counted; fail_start fails it */
 	s16 start(Modem &) override {
 		starts++;
@@ -190,13 +197,16 @@ struct Line final : public dcore::Host {
 	}
 };
 
-/* a modem on l at 8000 Hz, in country (NULL: USA) */
-static Modem *make(Line &l, const char *name, const char *country = nullptr)
+/* a modem on l at 8000 Hz, in country (NULL: USA), with the program's
+   speaker spk (NULL: none) */
+static Modem *make(Line &l, const char *name, const char *country = nullptr,
+		   dcore::SpeakerPath *spk = nullptr)
 {
 	dcore::Options o;
 	o.name = name;
 	o.rate = 8000;
 	o.country = country;
+	o.speaker = spk;
 	return new Modem(l, o);
 }
 
@@ -256,13 +266,13 @@ TEST(Core, EbcdicCommands)
 	Line l;
 	Modem *m = make(l, "ebcdic");
 	EXPECT_EQ(cmd(m, l, ebc("ATI7\r").c_str()),
-		  ebc("ATI7\r\r\nCountry: USA\r\nOK\r\n"));
+		  ebc("ATI7\r\r\nCountry: USA\r\n\r\nOK\r\n"));
 	EXPECT_EQ(cmd(m, l, "AT\r"), "AT\r\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, ebc("at+debc?\r").c_str()),
-		  ebc("at+debc?\r\r\n+DEBC: 1,0,37\r\nOK\r\n"));
+		  ebc("at+debc?\r\r\n+DEBC: 1,0,37\r\n\r\nOK\r\n"));
 	/* A/ in EBCDIC: the last line again */
 	EXPECT_EQ(cmd(m, l, ebc("A/").c_str()),
-		  ebc("At+debc?\r\r\n+DEBC: 1,0,37\r\nOK\r\n"));
+		  ebc("At+debc?\r\r\n+DEBC: 1,0,37\r\n\r\nOK\r\n"));
 	/* a backspace (S5, EBCDIC 0x16) and an unknown code page */
 	EXPECT_EQ(cmd(m, l, ebc("ATX\b\r").c_str()),
 		  ebc("ATX\b \b\r\r\nOK\r\n"));
@@ -277,7 +287,7 @@ TEST(Core, EbcdicCommands)
 		  "AT+DEBC=2,0,1047\r\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT\r").find("OK"), std::string::npos);
 	EXPECT_EQ(cmd(m, l, ebc("AT+DEBC?\r", 1047).c_str()),
-		  ebc("AT+DEBC?\r\r\n+DEBC: 2,0,1047\r\nOK\r\n", 1047));
+		  ebc("AT+DEBC?\r\r\n+DEBC: 2,0,1047\r\n\r\nOK\r\n", 1047));
 	/* ATZ: +DEBC=1 again */
 	EXPECT_EQ(cmd(m, l, ebc("ATZ\r", 1047).c_str()),
 		  ebc("ATZ\r\r\nOK\r\n", 1047));
@@ -288,16 +298,48 @@ TEST(Core, EbcdicCommands)
 	delete m;
 }
 
+/* +GSN: the Host's serial number, else Options' serial, else the
+   device name, else the name; +GOI: the Host's identifier, else no
+   text; "=?" on them gives no text */
+TEST(Core, SerialAndObjectId)
+{
+	Line l;
+	dcore::Options o;
+	o.name = "modem7";
+	o.rate = 8000;
+	std::unique_ptr<Modem> m(new Modem(l, o));
+	cmd(m.get(), l, "ATE0\r");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN\r"), "\r\nmodem7\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GOI\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN=?\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GOI=?\r"), "\r\nOK\r\n");
+
+	o.dev_name = "ttyDM7";
+	m.reset(new Modem(l, o));
+	cmd(m.get(), l, "ATE0\r");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN\r"), "\r\nttyDM7\r\n\r\nOK\r\n");
+
+	o.serial = "DM-0001";
+	m.reset(new Modem(l, o));
+	cmd(m.get(), l, "ATE0\r");
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN?\r"), "\r\nDM-0001\r\n\r\nOK\r\n");
+
+	l.serial = "USB1234";
+	l.oid = "1.3.6.1.4.1.99999";
+	EXPECT_EQ(cmd(m.get(), l, "AT+GSN;+GOI\r"),
+		  "\r\nUSB1234\r\n1.3.6.1.4.1.99999\r\n\r\nOK\r\n");
+}
+
 /* the country, ATI7, S-registers out of range, an idle modem */
 TEST(Core, Options)
 {
 	Line l;
 	Modem *m = make(l, "uk", "UK");
 	EXPECT_TRUE(m->ok());
-	EXPECT_EQ(cmd(m, l, "ATI7\r"), "ATI7\r\r\nCountry: UK\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATI7\r"), "ATI7\r\r\nCountry: UK\r\n\r\nOK\r\n");
 	delete m;
 	m = make(l, "xx", "NOWHERE");
-	EXPECT_EQ(cmd(m, l, "ATE0I7\r"), "ATE0I7\r\r\nCountry: USA\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATE0I7\r"), "ATE0I7\r\r\nCountry: USA\r\n\r\nOK\r\n");
 	EXPECT_EQ(m->sreg(SREG_ECHO), 0);
 	EXPECT_EQ(m->set_sreg(300, 1), -1);
 	EXPECT_EQ(m->sreg(300), -1);
@@ -314,14 +356,14 @@ TEST(Core, Countries)
 {
 	Line l;
 	Modem *m = make(l, "uk", "united kingdom");
-	EXPECT_EQ(cmd(m, l, "ATE0I7\r"), "ATE0I7\r\r\nCountry: UK\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATE0I7\r"), "ATE0I7\r\r\nCountry: UK\r\n\r\nOK\r\n");
 	delete m;
 	m = make(l, "fj", "Fiji");
 	EXPECT_EQ(cmd(m, l, "ATE0I7\r"),
-		  "ATE0I7\r\r\nCountry: FIJI (USA line)\r\nOK\r\n");
+		  "ATE0I7\r\r\nCountry: FIJI (USA line)\r\n\r\nOK\r\n");
 	delete m;
 	m = make(l, "de", "GERMANY");
-	EXPECT_EQ(cmd(m, l, "ATE0I7\r"), "ATE0I7\r\r\nCountry: GERMANY\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATE0I7\r"), "ATE0I7\r\r\nCountry: GERMANY\r\n\r\nOK\r\n");
 	delete m;
 }
 
@@ -333,20 +375,20 @@ TEST(Core, FailingLine)
 	l.fail_start = -1;
 	/* the call ends at once (NO CARRIER), the command fails */
 	EXPECT_EQ(cmd(m, l, "ATE0X3D\r"),
-		  "ATE0X3D\r\r\nNO CARRIER\r\nERROR\r\n");
+		  "ATE0X3D\r\r\nNO CARRIER\r\n\r\nERROR\r\n");
 	EXPECT_TRUE(!m->started());
 	EXPECT_EQ(m->link_state(), LinkState::Idle);
 	l.fail_start = 0;
 	l.fail_hook = 1;
-	EXPECT_EQ(cmd(m, l, "ATA\r"), "NO CARRIER\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "ATA\r"), "\r\nNO CARRIER\r\n\r\nERROR\r\n");
 	EXPECT_TRUE(!m->started());
-	EXPECT_EQ(cmd(m, l, "ATH1\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "ATH1\r"), "\r\nERROR\r\n");
 	l.fail_hook = 0;
-	EXPECT_EQ(cmd(m, l, "ATH1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATH1\r"), "\r\nOK\r\n");
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
-	EXPECT_EQ(cmd(m, l, "ATH\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATH\r"), "\r\nOK\r\n");
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
-	EXPECT_EQ(cmd(m, l, "ATM2L2\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATM2L2\r"), "\r\nOK\r\n");
 	EXPECT_EQ(l.volume, 2);
 	delete m;
 }
@@ -384,7 +426,7 @@ TEST(Core, AdaptiveAnswer)
 	EXPECT_EQ(modem_get_param(m->handle(), MDMPRM_ADAPTIVE), 1);
 	l.out.clear();
 	EXPECT_EQ(m->t38_start(300), 0);
-	EXPECT_EQ(l.out, "FAX\r\n");
+	EXPECT_EQ(l.out, "\r\nFAX\r\n");
 	EXPECT_EQ(m->mode(), MODEM_MODE_FAX);
 	EXPECT_TRUE(m->fax_caller());
 	EXPECT_TRUE(!m->adaptive_answering());
@@ -473,21 +515,21 @@ TEST(Core, ModemOnHold)
 {
 	Line l;
 	Modem *m = make(l, "moh");
-	EXPECT_EQ(cmd(m, l, "ATE0+PMH?\r"), "ATE0+PMH?\r\r\n+PMH: 0\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+PMHT?\r"), "+PMHT: 5\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATE0+PMH?\r"), "ATE0+PMH?\r\r\n+PMH: 0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMHT?\r"), "\r\n+PMHT: 5\r\n\r\nOK\r\n");
 	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 5);
-	EXPECT_EQ(cmd(m, l, "AT+PMHT=?\r"), "+PMHT: (0-13)\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+PMHT=9\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMHT=?\r"), "\r\n+PMHT: (0-13)\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMHT=9\r"), "\r\nOK\r\n");
 	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 9);
-	EXPECT_EQ(cmd(m, l, "AT+PMHT=14\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+PMH=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMHT=14\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMH=1\r"), "\r\nOK\r\n");
 	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 0);
-	EXPECT_EQ(cmd(m, l, "AT+PMH=2\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMH=2\r"), "\r\nERROR\r\n");
 	/* without a call */
-	EXPECT_EQ(cmd(m, l, "AT+PMHR\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+PMHR\r"), "\r\nERROR\r\n");
 	EXPECT_EQ(m->get_param(MDMPRM_MOH_REQ), 0);
 	/* ATZ: granted again, 1 min */
-	EXPECT_EQ(cmd(m, l, "ATZ\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATZ\r"), "\r\nOK\r\n");
 	EXPECT_EQ(m->get_param(MDMPRM_MOH_T1), 5);
 	delete m;
 }
@@ -605,7 +647,7 @@ TEST(Core, VoiceLineGone)
 	/* the line taken, then cmd's result after a block */
 	auto taken = [&](const char *c) {
 		cmd(m, l, "AT+VLS=1\r");
-		EXPECT_EQ(run(1), "OK\r\n");
+		EXPECT_EQ(run(1), "\r\nOK\r\n");
 		cmd(m, l, c);
 		return run(1);
 	};
@@ -618,30 +660,36 @@ TEST(Core, VoiceLineGone)
 	EXPECT_EQ(cmd(m, l, "ATE0+FCLASS=8\r"), "ATE0+FCLASS=8\r\r\nOK\r\n");
 	/* the command state */
 	cmd(m, l, "AT+VLS=1\r");
-	EXPECT_EQ(run(1), "OK\r\n");
+	EXPECT_EQ(run(1), "\r\nOK\r\n");
 	EXPECT_EQ(gone(), "\x10l");
 	EXPECT_FALSE(m->started());
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=0\r\n\r\nOK\r\n");
 
-	EXPECT_EQ(taken("AT+VRX\r").substr(0, 9), "CONNECT\r\n");
-	EXPECT_EQ(gone(), "\x10l\x10\x03OK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT\r"), "OK\r\n");
+	EXPECT_EQ(taken("AT+VRX\r").substr(0, 9), "\r\nCONNECT");
+	EXPECT_EQ(gone(), "\x10"
+"l\x10"
+"\x03"
+"\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT\r"), "\r\nOK\r\n");
 
-	EXPECT_EQ(taken("AT+VTX\r"), "CONNECT\r\n");
+	EXPECT_EQ(taken("AT+VTX\r"), "\r\nCONNECT\r\n");
 	EXPECT_EQ(gone(), "\x10l");
 	EXPECT_EQ(cmd(m, l, "AT\rx\x10\x10\x10~"), "");
-	EXPECT_EQ(cmd(m, l, "\x10\x03" "AT+VLS?\r"), "OK\r\n+VLS=0\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "\x10\x03" "AT+VLS?\r"), "\r\nOK\r\n\r\n+VLS=0\r\n\r\nOK\r\n");
 
-	EXPECT_EQ(taken("AT+VTR\r").substr(0, 9), "CONNECT\r\n");
+	EXPECT_EQ(taken("AT+VTR\r").substr(0, 9), "\r\nCONNECT");
 	EXPECT_EQ(gone(), "\x10l");
 	EXPECT_EQ(cmd(m, l, "AT\r\x10\x03\x10!"), "");
-	EXPECT_EQ(cmd(m, l, "\x10^AT\r"), "\x10\x03OK\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "\x10^AT\r"), "\x10"
+"\x03"
+"\r\nOK\r\n\r\nOK\r\n");
 
 	cmd(m, l, "AT+VLS=1\r");
 	run(1);
 	cmd(m, l, "AT+VTS=[440,0,100]\r");
 	EXPECT_EQ(run(2), "");
-	EXPECT_EQ(gone(), "\x10lERROR\r\n");
+	EXPECT_EQ(gone(), "\x10"
+"l\r\nERROR\r\n");
 
 	/* a voice dial the line fails (FAILED 404, its socket's end) */
 	cmd(m, l, "AT+VRN=20\r");
@@ -650,10 +698,10 @@ TEST(Core, VoiceLineGone)
 	l.out.clear();
 	m->line_failed(Result::NoCarrier);
 	m->line_dropped();
-	EXPECT_EQ(l.out, "ERROR\r\n");
+	EXPECT_EQ(l.out, "\r\nERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "ATD5551000\r"), "");
-	EXPECT_EQ(gone(), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=0\r\nOK\r\n");
+	EXPECT_EQ(gone(), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=0\r\n\r\nOK\r\n");
 	delete m;
 }
 
@@ -678,58 +726,58 @@ TEST(Core, VoiceHashDialect)
 		return l.out;
 	};
 
-	EXPECT_EQ(cmd(m, l, "ATE0#CLS=?\r"), "ATE0#CLS=?\r\r\n0,1,2,8\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATE0#CLS=?\r"), "ATE0#CLS=?\r\r\n0,1,2,8\r\n\r\nOK\r\n");
 	/* settings in data mode too, as vgetty's Rockwell driver sends
 	   them before #CLS=8 */
-	EXPECT_EQ(cmd(m, l, "AT#VSP=55#VSD=0#VTD=3F,3F,3F#VSS=1\r"), "OK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VTD?\r"), "3F,3F,3F\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VSP?;#VSS=?\r"), "55\r\n(0-3)\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VSS=4\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#TL=8000\r"), "OK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VTX\r"), "ERROR\r\n");  /* not in voice */
-	EXPECT_EQ(cmd(m, l, "AT#CLS=8\r"), "OK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#CLS?;+FCLASS?\r"), "8\r\n8\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VLS=?\r"), "0,4\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VLS=2\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSP=55#VSD=0#VTD=3F,3F,3F#VSS=1\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VTD?\r"), "\r\n3F,3F,3F\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSP?;#VSS=?\r"), "\r\n55\r\n(0-3)\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSS=4\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#TL=8000\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VTX\r"), "\r\nERROR\r\n");  /* not in voice */
+	EXPECT_EQ(cmd(m, l, "AT#CLS=8\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#CLS?;+FCLASS?\r"), "\r\n8\r\n8\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VLS=?\r"), "\r\n0,4\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VLS=2\r"), "\r\nERROR\r\n");
 
 	/* the sample format */
-	EXPECT_EQ(cmd(m, l, "AT#VBS?;#VSR?\r"), "8\r\n8000\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VBS=2\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VBS=4\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VBS=16#VSR=7200\r"), "OK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "+VSM=129,7200,0,0\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VSM=128,8000\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VSM=129,8000#VBS=4\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS?;#VSR?\r"), "\r\n8\r\n8000\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS=2\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS=4\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS=16#VSR=7200\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "\r\n+VSM=129,7200,0,0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSM=128,8000\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSM=129,8000#VBS=4\r"), "\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT#VBS=?;#VSM?\r"),
-		  "4,8,16\r\n129,8000\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "+VSM=133,8000,0,0\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VSR=7200\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT#VBS=8\r"), "OK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "+VSM=1,8000,0,0\r\nOK\r\n");
+		  "\r\n4,8,16\r\n129,8000\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "\r\n+VSM=133,8000,0,0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VSR=7200\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#VBS=8\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "\r\n+VSM=1,8000,0,0\r\n\r\nOK\r\n");
 
 	/* the line taken: VCON, as a number with ATV0 */
 	EXPECT_EQ(cmd(m, l, "AT#VLS=0A\r"), "");
-	EXPECT_EQ(run(1), "VCON\r\n");
+	EXPECT_EQ(run(1), "\r\nVCON\r\n");
 	EXPECT_TRUE(m->started());
 	EXPECT_EQ(cmd(m, l, "AT#VTX\r"), "");
-	EXPECT_EQ(run(1), "CONNECT\r\n");
+	EXPECT_EQ(run(1), "\r\nCONNECT\r\n");
 	EXPECT_EQ(cmd(m, l, "\x10\x03"), "");
-	EXPECT_EQ(run(1), "OK\r\n");
+	EXPECT_EQ(run(1), "\r\nOK\r\n");
 	/* [f1,f2,d]: d in 100 ms, so 0.3 s */
 	EXPECT_EQ(cmd(m, l, "AT#VTS=[440,0,3]\r"), "");
 	EXPECT_EQ(run(10), "");
-	EXPECT_EQ(run(10), "OK\r\n");
-	EXPECT_EQ(cmd(m, l, "ATH0\r"), "OK\r\n");
+	EXPECT_EQ(run(10), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATH0\r"), "\r\nOK\r\n");
 	EXPECT_FALSE(m->started());
-	EXPECT_EQ(cmd(m, l, "AT#CLS?\r"), "0\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "ATV0#CLS=8\r"), "0\r\n");
+	EXPECT_EQ(cmd(m, l, "AT#CLS?\r"), "\r\n0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATV0#CLS=8\r"), "0\r");
 	EXPECT_EQ(cmd(m, l, "ATA\r"), "");
-	EXPECT_EQ(run(1), "90\r\n");
-	EXPECT_EQ(cmd(m, l, "ATV1H0\r"), "OK\r\n");
+	EXPECT_EQ(run(1), "90\r");
+	EXPECT_EQ(cmd(m, l, "ATV1H0\r"), "\r\nOK\r\n");
 
 	/* +FCLASS=8: V.253's OK for the line taken */
 	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8;+VLS=1\r"), "");
-	EXPECT_EQ(run(1), "OK\r\n");
+	EXPECT_EQ(run(1), "\r\nOK\r\n");
 	delete m;
 }
 
@@ -753,8 +801,7 @@ TEST(Core, LocalPhone)
 	EXPECT_EQ(change(false), "");
 	EXPECT_EQ(cmd(m, l, "ATE0+FCLASS=8\r"), "ATE0+FCLASS=8\r\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VLS=?\r"),
-		  "0,\"\",00800000,00800000,90800000\r\n"
-		  "1,\"T\",0B843060,0B843060,0B843060\r\nOK\r\n");
+		  "\r\n0,\"\",00800000,00800000,90800000\r\n1,\"T\",0B843060,0B843060,0B843060\r\n\r\nOK\r\n");
 	EXPECT_EQ(change(true), "\x10H");
 	EXPECT_EQ(change(true), "");            /* no change */
 	EXPECT_EQ(change(false), "\x10h");
@@ -868,7 +915,7 @@ TEST(Core, CallerIdBeforeRing)
 	std::vector<u8> bad = msg;
 	bad.back() ^= 1;
 	EXPECT_EQ(idle(fsk(bad, 1300, 2100)), "");
-	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "\r\nOK\r\n");
 	EXPECT_EQ(idle(fsk(msg, 1300, 2100)), "");
 	delete m;
 }
@@ -943,7 +990,7 @@ TEST(Core, CallerIdOnTheCall)
 	EXPECT_EQ(cmd(m, l, "ATE0+FCLASS=8;+VCID=1\r"),
 		  "ATE0+FCLASS=8;+VCID=1\r\r\nOK\r\n");
 	cmd(m, l, "AT+VLS=1\r");
-	EXPECT_EQ(run(std::vector<s16>(160)), "OK\r\n");
+	EXPECT_EQ(run(std::vector<s16>(160)), "\r\nOK\r\n");
 	sent.clear();
 	EXPECT_EQ(run(cas), "");
 	EXPECT_EQ(key(0, sent.size()), 'A');
@@ -952,7 +999,7 @@ TEST(Core, CallerIdOnTheCall)
 		  std::string::npos) << got;
 
 	/* +VCID=0: no acknowledgement, no report */
-	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "\r\nOK\r\n");
 	sent.clear();
 	EXPECT_EQ(run(cas), "");
 	EXPECT_EQ(key(0, sent.size()), ' ');
@@ -975,7 +1022,7 @@ TEST(Core, CallerIdFromLine)
 		std::string first = l.out;
 		l.out.clear();
 		m->ring_signal(true);
-		EXPECT_EQ(l.out, "RING\r\n");
+		EXPECT_EQ(l.out, "\r\nRING\r\n");
 		m->ring_signal(false);
 		return first;
 	};
@@ -990,14 +1037,14 @@ TEST(Core, CallerIdFromLine)
 	EXPECT_EQ(ring("", "5551000", ""),
 		  "\r\nRING\r\n\r\nNMBR = 5551000\r\nNAME = O\r\n");
 	/* 0x80, 13 octets: 0x02 "5551000", 0x08 'O'; the checksum */
-	EXPECT_EQ(cmd(m, l, "AT+VCID=2\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VCID=2\r"), "\r\nOK\r\n");
 	EXPECT_EQ(ring("", "5551000", ""),
 		  "\r\nRING\r\n\r\nMESG = 800C0207353535313030300801"
 		  "4FB3\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "\r\nOK\r\n");
 	EXPECT_EQ(ring("10301043", "5551000", "Bob"), "\r\nRING\r\n");
 	/* voice mode: the packet */
-	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8;+VCID=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8;+VCID=1\r"), "\r\nOK\r\n");
 	std::string v = ring("", "5551000", "Bob");
 	EXPECT_NE(v.find("\x10XNMBR = 5551000\r\nNAME = Bob\r\n\x10."),
 		  std::string::npos) << v;
@@ -1027,47 +1074,44 @@ TEST(Core, VoiceHandset)
 	};
 
 	EXPECT_EQ(cmd(m, l, "ATE0+FCLASS=8\r"), "ATE0+FCLASS=8\r\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VLS=14\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VLS=15\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VLS=2\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=14\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=15\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=2\r"), "\r\nERROR\r\n");
 	EXPECT_TRUE(l.routes.empty());
 	l.handset = true;
 	EXPECT_EQ(cmd(m, l, "AT+VLS=?\r"),
-		  "0,\"\",00000000,00000000,90000000\r\n"
-		  "1,\"T\",0B043060,0B043060,0B043060\r\n"
-		  "14,\"H\",08000000,08000000,08000000\r\n"
-		  "15,\"HT\",0B043060,0B043060,0B043060\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VLS=13\r"), "ERROR\r\n");
+		  "\r\n0,\"\",00000000,00000000,90000000\r\n1,\"T\",0B043060,0B043060,0B043060\r\n14,\"H\",08000000,08000000,08000000\r\n15,\"HT\",0B043060,0B043060,0B043060\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=13\r"), "\r\nERROR\r\n");
 
 	l.last_hook = -1;
 	cmd(m, l, "AT+VLS=14\r");
-	EXPECT_EQ(run(1), "OK\r\n");
+	EXPECT_EQ(run(1), "\r\nOK\r\n");
 	EXPECT_TRUE(m->started());
 	EXPECT_EQ(l.last_hook, -1);             /* still on hook */
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=14\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=14\r\n\r\nOK\r\n");
 	cmd(m, l, "AT+VRX\r");
-	EXPECT_EQ(run(1).substr(0, 9), "CONNECT\r\n");
+	EXPECT_EQ(run(1).substr(0, 9), "\r\nCONNECT");
 	run(5);
 	cmd(m, l, "x");
 	run(1);
-	EXPECT_NE(l.out.find("\x10\x03OK\r\n"), std::string::npos);
-	EXPECT_EQ(cmd(m, l, "AT+VLS=15\r"), "OK\r\n");
+	EXPECT_NE(l.out.find("\x10\x03\r\nOK\r\n"), std::string::npos);
+	EXPECT_EQ(cmd(m, l, "AT+VLS=15\r"), "\r\nOK\r\n");
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=15\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VLS=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=15\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=1\r"), "\r\nOK\r\n");
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
-	EXPECT_EQ(cmd(m, l, "AT+VLS=14\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=14\r"), "\r\nOK\r\n");
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
 	EXPECT_TRUE(m->started());
-	EXPECT_EQ(cmd(m, l, "AT+VLS=0\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS=0\r"), "\r\nOK\r\n");
 	EXPECT_FALSE(m->started());
 	EXPECT_EQ(l.routes, (std::vector<unsigned>{ 14, 15, 1, 14, 1 }));
 
 	l.routes.clear();
 	cmd(m, l, "AT+VLS=15\r");
-	EXPECT_EQ(run(1), "OK\r\n");
+	EXPECT_EQ(run(1), "\r\nOK\r\n");
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
-	EXPECT_EQ(cmd(m, l, "ATH\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATH\r"), "\r\nOK\r\n");
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
 	EXPECT_EQ(l.routes, (std::vector<unsigned>{ 15, 1 }));
 	delete m;
@@ -1083,19 +1127,18 @@ TEST(Core, VoiceEvents)
 	Modem *m = make(l, "events");
 
 	EXPECT_EQ(cmd(m, l, "ATE0+VEM?\r"), "ATE0+VEM?\r\r\nERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8\r"), "\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VLS=?\r"),
-		  "0,\"\",00000000,00000000,90000000\r\n"
-		  "1,\"T\",0B043060,0B043060,0B043060\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "+VLS=0\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=0\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM=?\r"), "+VEM=0-1\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM=1\r"), "OK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=1\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM=2\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=1\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VIP\r"), "OK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "+VEM=0\r\nOK\r\n");
+		  "\r\n0,\"\",00000000,00000000,90000000\r\n1,\"T\",0B043060,0B043060,0B043060\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n+VEM=0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM=?\r"), "\r\n+VEM=0-1\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM=1\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n+VEM=1\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM=2\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n+VEM=1\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VIP\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n+VEM=0\r\n\r\nOK\r\n");
 	delete m;
 }
 
@@ -1106,10 +1149,12 @@ struct Pair {
 	std::vector<int16_t> ia, ib, oa, ob;
 	std::string got_a, got_b;       /* what each DTE received */
 	static const int BLOCK = 160;
-	/* two modems, ATE0X3 and the modulation command ms */
-	Pair(const char *ms) {
-		a = make(la, "A");
-		b = make(lb, "B");
+	/* two modems, ATE0X3 and the modulation command ms; the
+	   program's speakers sa and sb (NULL: none) */
+	Pair(const char *ms, dcore::SpeakerPath *sa = nullptr,
+	     dcore::SpeakerPath *sb = nullptr) {
+		a = make(la, "A", nullptr, sa);
+		b = make(lb, "B", nullptr, sb);
 		ia.assign(BLOCK, 0);
 		ib = oa = ob = ia;
 		std::string s = std::string("ATE0X3") + ms + "\r";
@@ -1267,7 +1312,7 @@ TEST(Core, EbcdicCall)
 	Pair p("+MS=22");
 	std::string s = ebc("AT+DEBC=1,1\r");
 	p.a->dte_input(s.data(), s.size());
-	EXPECT_EQ(p.la.out, ebc("OK\r\n"));
+	EXPECT_EQ(p.la.out, ebc("\r\nOK\r\n"));
 	p.la.out.clear();
 	EXPECT_EQ(p.b->answer(), 0);
 	EXPECT_EQ(p.a->dial(""), 0);
@@ -1359,7 +1404,7 @@ TEST(Core, VoiceFaxCall)
 			p.got_b.clear();
 			p.b->dte_input("AT+FCLASS=1\r", 12);
 			p.step();
-			EXPECT_EQ(p.got_b, "OK\r\n");
+			EXPECT_EQ(p.got_b, "\r\nOK\r\n");
 			EXPECT_TRUE(p.b->started());
 			EXPECT_EQ(p.b->mode(), MODEM_MODE_FAX);
 			p.b->dte_input("ATA\r", 4);
@@ -1383,9 +1428,9 @@ TEST(Core, VoiceFaxCall)
 	cmd(m, l, "ATE0+FCLASS=8;+VLS=1\r");
 	m->process(in, out, 160);
 	EXPECT_TRUE(m->started());
-	EXPECT_EQ(cmd(m, l, "AT+FCLASS=0\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FCLASS=0\r"), "\r\nOK\r\n");
 	EXPECT_TRUE(m->started());
-	EXPECT_EQ(cmd(m, l, "ATH\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATH\r"), "\r\nOK\r\n");
 	EXPECT_TRUE(!m->started());
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_ON);
 	delete m;
@@ -1503,12 +1548,12 @@ static std::string v80_received(const std::string &got)
 TEST(Core, V80)
 {
 	Pair p("+MS=132;+ES=6,,8;+ESA=,,,,1;+ITF=383,128,0");
-	EXPECT_EQ(cmd(p.a, p.la, "AT+ES?\r"), "+ES: 6,0,8\r\nOK\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ES?\r"), "\r\n+ES: 6,0,8\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(p.a, p.la, "AT+ESA?\r"),
-		  "+ESA: 0,0,0,0,1,0,255,255\r\nOK\r\n");
-	EXPECT_EQ(cmd(p.a, p.la, "AT+ITF=10,20\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(p.a, p.la, "AT+ES=5\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(p.a, p.la, "AT+ESA=3\r"), "ERROR\r\n");
+		  "\r\n+ESA: 0,0,0,0,1,0,255,255\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ITF=10,20\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ES=5\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+ESA=3\r"), "\r\nERROR\r\n");
 	p.la.out.clear();
 
 	EXPECT_EQ(p.b->answer(), 0);
@@ -1662,7 +1707,7 @@ TEST(Core, RetrainOnRequest)
 			return q.got_a.find("OK") != std::string::npos; },
 			2000));
 		if (!strcmp(o, "ATO1\r")) {
-			EXPECT_EQ(cmd(p.a, p.la, "ATO2\r"), "ERROR\r\n");
+			EXPECT_EQ(cmd(p.a, p.la, "ATO2\r"), "\r\nERROR\r\n");
 		}
 		EXPECT_TRUE(cmd(p.a, p.la, o).find("CONNECT") !=
 			    std::string::npos);
@@ -1731,6 +1776,105 @@ TEST(Core, Mnp10Climbs)
 	EXPECT_TRUE(p.a->carrier() && p.b->carrier());
 	dcore::log_level = 0;
 	dcore::log_set_hook(nullptr);
+}
+
+/* the program's speaker (Options::speaker): the volumes it was told,
+   the rate, and the samples it had (what came, what was sent) */
+struct Speaker final : public dcore::SpeakerPath {
+	std::vector<int> levels;
+	s32 rate = 0;
+	long samples = 0;
+	double tx_pow = 0;
+	/* kept */
+	void volume(s16 level, s32 r) override {
+		levels.push_back(level);
+		rate = r;
+	}
+	/* counted, tx's power added up */
+	void audio(const s16 *, const s16 *tx, s32 n) override {
+		samples += n;
+		for (s32 i = 0; i < n; i++)
+			tx_pow += static_cast<double>(tx[i]) * tx[i];
+	}
+};
+
+/* the two modems of p online (V.22's handshake) */
+static bool online(Pair &p)
+{
+	return p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 20000);
+}
+
+/* ATM1 (the default): on at ATL's volume while the call starts, both
+   ends, the line's samples meanwhile; off when it is connected, and
+   no samples after.  The Host is told too */
+TEST(Core, SpeakerUntilConnect)
+{
+	Speaker sa, sb;
+	Pair p("+MS=V22", &sa, &sb);
+	p.a->dte_input("ATL2\r", 5);
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(online(p));
+	EXPECT_EQ(sa.levels, (std::vector<int>{ 2, 0 }));
+	EXPECT_EQ(sb.levels, (std::vector<int>{ 3, 0 }));
+	EXPECT_EQ(sa.rate, 8000);
+	EXPECT_EQ(p.la.volume, 0);
+	EXPECT_GT(sa.samples, 8000);            /* the handshake's, 1 s+ */
+	EXPECT_GT(sb.tx_pow, 0.0);              /* the answer tone */
+	long heard = sa.samples;
+	p.run_until([](Pair &) { return false; }, 1000);
+	EXPECT_EQ(sa.samples, heard);
+}
+
+/* ATM3: not while the number is dialled (an analogue line's DTMF),
+   then on until the call is connected; ATM1 at once */
+TEST(Core, SpeakerAfterDialling)
+{
+	for (const char *m : { "ATM3\r", "ATM1\r" }) {
+		SCOPED_TRACE(m);
+		Speaker sa;
+		Pair p("+MS=V22", &sa);
+		p.la.analog = true;
+		p.a->dte_input(m, 5);
+		EXPECT_EQ(p.b->answer(), 0);
+		EXPECT_EQ(p.a->dial("123"), 0);
+		p.step();
+		if (m[3] == '3') {
+			EXPECT_TRUE(sa.levels.empty());
+		} else {
+			EXPECT_EQ(sa.levels, (std::vector<int>{ 3 }));
+		}
+		/* (three digits: well over 300 ms) */
+		p.run_until([](Pair &) { return false; }, 200);
+		if (m[3] == '3') {
+			EXPECT_TRUE(sa.levels.empty());
+		}
+		ASSERT_TRUE(online(p));
+		EXPECT_EQ(sa.levels, (std::vector<int>{ 3, 0 }));
+		EXPECT_GT(sa.samples, 0);
+	}
+}
+
+/* ATM2: on at once, and through the call; ATM0: never on */
+TEST(Core, SpeakerAlwaysAndNever)
+{
+	Speaker sa, sb;
+	Pair p("+MS=V22", &sa, &sb);
+	p.a->dte_input("ATM2\r", 5);
+	p.b->dte_input("ATM0\r", 5);
+	EXPECT_EQ(sa.levels, (std::vector<int>{ 3 }));
+	EXPECT_TRUE(sb.levels.empty());
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(online(p));
+	long heard = sa.samples;
+	p.run_until([](Pair &) { return false; }, 500);
+	EXPECT_GT(sa.samples, heard);
+	EXPECT_EQ(sa.levels, (std::vector<int>{ 3 }));
+	EXPECT_TRUE(sb.levels.empty());
+	EXPECT_EQ(sb.samples, 0);
 }
 
 /* +MS's highest rate holds on V.34 as well (each MP asks for no more,
@@ -1886,13 +2030,14 @@ TEST_P(CoreFax2, TwoPages)
 		m->dte_input("AT+FNR=1,1,1,0\r", 15);
 	}
 	p.step();
-	EXPECT_EQ(p.got_a, "OK\r\nOK\r\n");
-	EXPECT_EQ(p.got_b, "OK\r\nOK\r\n");
+	EXPECT_EQ(p.got_a, "\r\nOK\r\n\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "\r\nOK\r\n\r\nOK\r\n");
 	p.got_a.clear();
 	p.got_b.clear();
 	p.a->dte_input("AT+FCLASS?;+FNR?\r", 17);
 	p.step();
-	EXPECT_EQ(p.got_a, std::string(c.cls) + "\r\n1,1,1,0\r\nOK\r\n");
+	EXPECT_EQ(p.got_a, "\r\n" + std::string(c.cls) +
+		  "\r\n1,1,1,0\r\n\r\nOK\r\n");
 	p.got_a.clear();
 
 	p.b->dte_input("ATA\r", 4);
@@ -1911,7 +2056,7 @@ TEST_P(CoreFax2, TwoPages)
 	}
 	EXPECT_EQ(br(p.got_a), "+" + nm("FCON", "FCO") + "\r\n+" +
 		  nm("FCSI", "FCI") + ":\"Fax B 222\"\r\n+" + nm("FDIS", "FIS") +
-		  ":1,5,0,2,0," + (c.ec ? "2" : "0") + ",0,0\r\nOK\r\n");
+		  ":1,5,0,2,0," + (c.ec ? "2" : "0") + ",0,0\r\n\r\nOK\r\n");
 	EXPECT_EQ(p.got_b, "");
 	p.got_a.clear();
 	/* the DCS goes with +FDT: then B's ATA has its OK */
@@ -1921,7 +2066,7 @@ TEST_P(CoreFax2, TwoPages)
 	}, 20000)) << "A [" << p.got_a << "] B [" << p.got_b << "]";
 	EXPECT_EQ(br(p.got_b), "+" + nm("FCON", "FCO") + "\r\n+" +
 		  nm("FTSI", "FTI") + ":\"Fax A 111\"\r\n+" + nm("FDCS", "FCS") +
-		  ":1,5,0,2,0," + (c.ec ? "2" : "0") + ",0,0\r\nOK\r\n");
+		  ":1,5,0,2,0," + (c.ec ? "2" : "0") + ",0,0\r\n\r\nOK\r\n");
 	p.got_b.clear();
 
 	for (int page = 0; page < 2; page++) {
@@ -1947,7 +2092,7 @@ TEST_P(CoreFax2, TwoPages)
 		ASSERT_TRUE(until([&] { return ok_after(p.got_a, "CONNECT"); },
 				  5000)) << page << ": A [" << p.got_a << "]";
 		/* (class 2: an XON for the data) */
-		EXPECT_EQ(has(p.got_a, "CONNECT\r\n\x11OK"), c2) << p.got_a;
+		EXPECT_EQ(has(p.got_a, "CONNECT\r\n\x11\r\nOK"), c2) << p.got_a;
 		p.got_a.clear();
 		std::string fet = std::string("AT+FET=") + (page ? "2" : "0") +
 			"\r";
@@ -1965,21 +2110,21 @@ TEST_P(CoreFax2, TwoPages)
 		EXPECT_TRUE(has(p.got_b, "\x10\x03+" + nm("FPTS", "FPS") +
 				":1," + std::to_string(pg.rows) +
 				",0,0,0\r\n+FET:" + (page ? "2" : "0") +
-				"\r\nOK\r\n")) << page;
+				"\r\n\r\nOK\r\n")) << page;
 		p.got_b.clear();
 
 		ASSERT_TRUE(until([&] { return ok_after(p.got_a, "+F"); },
 				  30000)) << page << ": A [" << p.got_a << "]";
 		EXPECT_EQ(p.got_a, "+" + nm("FPTS", "FPS") + ":1,0,0,0,0\r\n" +
 			  (page ? "+" + nm("FHNG", "FHS") + ":" +
-			   (c2 ? "0" : "00") + "\r\n" : "") + "OK\r\n");
+			   (c2 ? "0" : "00") + "\r\n" : "") + "\r\nOK\r\n");
 		p.got_a.clear();
 	}
 	p.b->dte_input("AT+FDR\r", 7);
 	ASSERT_TRUE(until([&] { return has(p.got_b, "OK\r\n"); }, 20000))
 		<< "B [" << p.got_b << "]";
 	EXPECT_EQ(p.got_b, "+" + nm("FHNG", "FHS") + ":" + (c2 ? "0" : "00") +
-		  "\r\nOK\r\n");
+		  "\r\n\r\nOK\r\n");
 	EXPECT_TRUE(until([&] {
 		return !p.a->started() && !p.b->started();
 	}, 2000));
@@ -1988,7 +2133,8 @@ TEST_P(CoreFax2, TwoPages)
 		<< p.la.t38_sent << " " << p.lb.t38_sent;
 	p.a->dte_input("AT+FHS?\r", 8);
 	p.step();
-	EXPECT_EQ(p.got_a, std::string(c2 ? "0" : "00") + "\r\nOK\r\n");
+	EXPECT_EQ(p.got_a, "\r\n" + std::string(c2 ? "0" : "00") +
+		  "\r\n\r\nOK\r\n");
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -2037,8 +2183,8 @@ TEST(Core, Fax2Abort)
 		return p.got_a.find("OK\r\n") != std::string::npos &&
 			p.got_b.find("NO CARRIER") != std::string::npos;
 	}, 20000)) << "A [" << p.got_a << "] B [" << p.got_b << "]";
-	EXPECT_EQ(p.got_a, "+FHS:02\r\nOK\r\n");
-	EXPECT_EQ(p.got_b, "+FHS:70\r\nNO CARRIER\r\n");
+	EXPECT_EQ(p.got_a, "+FHS:02\r\n\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "+FHS:70\r\n\r\nNO CARRIER\r\n");
 	EXPECT_TRUE(until([&] {
 		return !p.a->started() && !p.b->started();
 	}, 2000));
@@ -2079,32 +2225,30 @@ TEST(Core, Fax2Poll)
 	type(p.a, "AT+FPI=\"Poller A\"\r");
 	type(p.b, "AT+FCLASS=2.0;+FLI=\"Polled B\";+FLP=1\r");
 	p.step();
-	EXPECT_EQ(p.got_a, "OK\r\nOK\r\n");
-	EXPECT_EQ(p.got_b, "OK\r\n");
+	EXPECT_EQ(p.got_a, "\r\nOK\r\n\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "\r\nOK\r\n");
 	p.got_a.clear();
 	p.got_b.clear();
 	type(p.b, "ATA\r");
 	type(p.a, "ATD\r");
 	ASSERT_TRUE(until([&] { return has(p.got_a, "OK\r\n"); }, 30000))
 		<< "A [" << p.got_a << "]";
-	EXPECT_EQ(p.got_a, "+FCO\r\n+FCI:\"Polled B\"\r\n"
-		  "+FIS:1,5,0,2,0,0,0,0\r\n+FPO\r\nOK\r\n");
+	EXPECT_EQ(p.got_a, "+FCO\r\n+FCI:\"Polled B\"\r\n+FIS:1,5,0,2,0,0,0,0\r\n+FPO\r\n\r\nOK\r\n");
 	p.got_a.clear();
 	type(p.a, "AT+FDR\r");
 	p.step();
-	EXPECT_EQ(p.got_a, "ERROR\r\n");
+	EXPECT_EQ(p.got_a, "\r\nERROR\r\n");
 	p.got_a.clear();
 	type(p.a, "AT+FSP=1;+FDR\r");
 	ASSERT_TRUE(until([&] { return has(p.got_b, "OK\r\n"); }, 20000))
 		<< "B [" << p.got_b << "]";
-	EXPECT_EQ(p.got_b, "+FCO\r\n+FPI:\"Poller A\"\r\n"
-		  "+FTC:1,5,0,2,0,0,0,0\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "+FCO\r\n+FPI:\"Poller A\"\r\n+FTC:1,5,0,2,0,0,0,0\r\n\r\nOK\r\n");
 	p.got_b.clear();
 
 	type(p.b, "AT+FDT\r");
 	ASSERT_TRUE(until([&] { return has(p.got_b, "CONNECT"); }, 20000))
 		<< "B [" << p.got_b << "]";
-	EXPECT_TRUE(has(p.got_b, "+FCS:1,5,0,2,0,0,0,0\r\nCONNECT")) <<
+	EXPECT_TRUE(has(p.got_b, "+FCS:1,5,0,2,0,0,0,0\r\n\r\nCONNECT")) <<
 		p.got_b;
 	while (sent < d.size()) {
 		int n = p.b->dte_space();
@@ -2121,22 +2265,22 @@ TEST(Core, Fax2Poll)
 	ASSERT_TRUE(until([&] { return has(p.got_a, "CONNECT"); }, 60000))
 		<< "A [" << p.got_a << "]";
 	EXPECT_TRUE(has(p.got_a, "+FTI:\"Polled B\"\r\n+FCS:1,5,0,2,0,0,0,0"
-			"\r\nCONNECT")) << p.got_a;
+			"\r\n\r\nCONNECT")) << p.got_a;
 	type(p.a, "\x12");
 	ASSERT_TRUE(until([&] { return ok_after(p.got_a, "+FET:"); }, 5000))
 		<< "A [" << p.got_a << "]";
 	dsp::T4Page rx = fax2_decode(p.got_a, false, true);
 	EXPECT_EQ(rx.rows, pg.rows);
 	EXPECT_TRUE(rx.bits == pg.bits);
-	EXPECT_TRUE(has(p.got_a, "+FET:2\r\nOK\r\n")) << p.got_a;
+	EXPECT_TRUE(has(p.got_a, "+FET:2\r\n\r\nOK\r\n")) << p.got_a;
 	p.got_a.clear();
 	ASSERT_TRUE(until([&] { return ok_after(p.got_b, "+FHS"); }, 30000))
 		<< "B [" << p.got_b << "]";
-	EXPECT_EQ(p.got_b, "+FPS:1,0,0,0,0\r\n+FHS:00\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "+FPS:1,0,0,0,0\r\n+FHS:00\r\n\r\nOK\r\n");
 	type(p.a, "AT+FDR\r");
 	ASSERT_TRUE(until([&] { return has(p.got_a, "OK\r\n"); }, 20000))
 		<< "A [" << p.got_a << "]";
-	EXPECT_EQ(p.got_a, "+FHS:00\r\nOK\r\n");
+	EXPECT_EQ(p.got_a, "+FHS:00\r\n\r\nOK\r\n");
 }
 
 /* class 2.0 polling on V.34 half-duplex: +FSP=1 before the call, so
@@ -2180,8 +2324,8 @@ TEST(Core, Fax2PollV34)
 	type(p.b, "AT+FCLASS=2.0;+FLI=\"Polled B\";+FLP=1;"
 		  "+FIS=1,13,0,2,0,2,0,0\r");
 	p.step();
-	EXPECT_EQ(p.got_a, "OK\r\nOK\r\n");
-	EXPECT_EQ(p.got_b, "OK\r\n");
+	EXPECT_EQ(p.got_a, "\r\nOK\r\n\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "\r\nOK\r\n");
 	p.got_a.clear();
 	p.got_b.clear();
 	type(p.b, "ATA\r");
@@ -2189,7 +2333,7 @@ TEST(Core, Fax2PollV34)
 	ASSERT_TRUE(until([&] { return has(p.got_a, "OK\r\n"); }, 30000))
 		<< "A [" << p.got_a << "]";
 	EXPECT_GE(br_after(p.got_a, "+FIS:1,"), 8) << p.got_a;
-	EXPECT_TRUE(has(p.got_a, "+FPO\r\nOK\r\n")) << p.got_a;
+	EXPECT_TRUE(has(p.got_a, "+FPO\r\n\r\nOK\r\n")) << p.got_a;
 	p.got_a.clear();
 	type(p.a, "AT+FDR\r");
 	ASSERT_TRUE(until([&] { return has(p.got_b, "OK\r\n"); }, 20000))
@@ -2225,11 +2369,11 @@ TEST(Core, Fax2PollV34)
 	p.got_a.clear();
 	ASSERT_TRUE(until([&] { return ok_after(p.got_b, "+FHS"); }, 30000))
 		<< "B [" << p.got_b << "]";
-	EXPECT_EQ(p.got_b, "+FPS:1,0,0,0,0\r\n+FHS:00\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "+FPS:1,0,0,0,0\r\n+FHS:00\r\n\r\nOK\r\n");
 	type(p.a, "AT+FDR\r");
 	ASSERT_TRUE(until([&] { return has(p.got_a, "OK\r\n"); }, 20000))
 		<< "A [" << p.got_a << "]";
-	EXPECT_EQ(p.got_a, "+FHS:00\r\nOK\r\n");
+	EXPECT_EQ(p.got_a, "+FHS:00\r\n\r\nOK\r\n");
 }
 
 /* a text telephone call: each side's commands, the rate A and B
@@ -2526,13 +2670,13 @@ TEST_F(CoreSms, SubmitsThenReleases)
 		  ":010005912143F500000AE8329BFD4697D9EC37\r");
 	ASSERT_TRUE(until_idle(30000))
 		<< "A [" << p.got_a << "] B [" << p.got_b << "]";
-	EXPECT_EQ(p.got_a, "ERROR\r\nOK\r\nOK\r\nOK\r\nNO CARRIER\r\n");
+	EXPECT_EQ(p.got_a, "ERROR\r\nOK\r\nOK\r\nOK\r\n\r\nNO CARRIER\r\n");
 	EXPECT_EQ(p.got_b,
 		  "+SUBMIT: \"+4412345\"\r\nHello [world]\r\n"
 		  "+SUBMIT: \"0800\"\r\n"
 		  "\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB2\xD0\xB5\xD1\x82\r\n"
 		  "+SUBMIT: \"+12345\"\r\nhellohello\r\n"
-		  "NO CARRIER\r\n");
+		  "\r\nNO CARRIER\r\n");
 }
 
 /* the service centre's side: a delivery from a name, stamped now */
@@ -2542,7 +2686,7 @@ TEST_F(CoreSms, Delivers)
 	type(p.a, "<Centre,Your code is 1234\r");
 	ASSERT_TRUE(until_idle(30000))
 		<< "A [" << p.got_a << "] B [" << p.got_b << "]";
-	EXPECT_EQ(p.got_a, "OK\r\nNO CARRIER\r\n");
+	EXPECT_EQ(p.got_a, "OK\r\n\r\nNO CARRIER\r\n");
 	EXPECT_EQ(p.got_b.rfind("+CMT: \"Centre\",,\"", 0), 0u) << p.got_b;
 	EXPECT_TRUE(has(p.got_b, "+00\"\r\nYour code is 1234\r\n"))
 		<< p.got_b;
@@ -2554,8 +2698,8 @@ TEST_F(CoreSms, NothingToSend)
 	call();
 	ASSERT_TRUE(until_idle(10000))
 		<< "A [" << p.got_a << "] B [" << p.got_b << "]";
-	EXPECT_EQ(p.got_a, "NO CARRIER\r\n");
-	EXPECT_EQ(p.got_b, "NO CARRIER\r\n");
+	EXPECT_EQ(p.got_a, "\r\nNO CARRIER\r\n");
+	EXPECT_EQ(p.got_b, "\r\nNO CARRIER\r\n");
 }
 
 /* V.150.1's modem relay: B answers a relayed call (DP_RELAY at once), A
@@ -2667,8 +2811,8 @@ static std::vector<std::string> v8bis_call(const char *a8e_a,
 	});
 	dcore::log_level = 2;
 	dsplibs_debug_level = 2;
-	EXPECT_EQ(cmd(p.a, p.la, a8e_a), "OK\r\n");
-	EXPECT_EQ(cmd(p.b, p.lb, a8e_b), "OK\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, a8e_a), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(p.b, p.lb, a8e_b), "\r\nOK\r\n");
 	EXPECT_EQ(p.b->answer(), 0);
 	EXPECT_EQ(p.a->dial(""), 0);
 	EXPECT_TRUE(p.run_until([](Pair &q) {
@@ -2764,18 +2908,16 @@ TEST(Core, A8e)
 {
 	Line l;
 	Modem *m = make(l, "A");
-	EXPECT_EQ(cmd(m, l, "AT+A8E?\r"), "AT+A8E?\r\r\n+A8E: 1,1,0,0\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+A8E=?\r"), "AT+A8E=?\r\r\n+A8E: (1),(1),(0),"
-		  "(0,1)\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+A8E?\r"), "AT+A8E?\r\r\n+A8E: 1,1,0,0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+A8E=?\r"), "AT+A8E=?\r\r\n+A8E: (1),(1),(0),(0,1)\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+A8E=1,1,,1\r"), "AT+A8E=1,1,,1\r\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+A8E?\r"), "AT+A8E?\r\r\n+A8E: 1,1,0,1\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+A8E?\r"), "AT+A8E?\r\r\n+A8E: 1,1,0,1\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+A8E=,,,2\r"), "AT+A8E=,,,2\r\r\nERROR\r\n");
 	/* +DSVD, D-Modem's own: DSVD offered in V.8 bis */
-	EXPECT_EQ(cmd(m, l, "AT+DSVD?\r"), "AT+DSVD?\r\r\n+DSVD: 0\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+DSVD=?\r"), "AT+DSVD=?\r\r\n+DSVD: (0,1)\r\n"
-		  "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+DSVD?\r"), "AT+DSVD?\r\r\n+DSVD: 0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+DSVD=?\r"), "AT+DSVD=?\r\r\n+DSVD: (0,1)\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+DSVD=1\r"), "AT+DSVD=1\r\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+DSVD?\r"), "AT+DSVD?\r\r\n+DSVD: 1\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+DSVD?\r"), "AT+DSVD?\r\r\n+DSVD: 1\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+DSVD=2\r"), "AT+DSVD=2\r\r\nERROR\r\n");
 	delete m;
 }
@@ -2820,8 +2962,8 @@ TEST(Core, DsvdBoth)
 	});
 	dcore::log_level = 2;
 	dsplibs_debug_level = 2;
-	EXPECT_EQ(cmd(p.a, p.la, "AT+A8E=1,1,,1+DSVD=1\r"), "OK\r\n");
-	EXPECT_EQ(cmd(p.b, p.lb, "AT+A8E=1,1,,1+DSVD=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+A8E=1,1,,1+DSVD=1\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(p.b, p.lb, "AT+A8E=1,1,,1+DSVD=1\r"), "\r\nOK\r\n");
 	EXPECT_EQ(p.b->answer(), 0);
 	EXPECT_EQ(p.a->dial(""), 0);
 	ASSERT_TRUE(p.run_until([](Pair &q) {
@@ -2897,8 +3039,8 @@ TEST(Core, DsvdVoice)
 	p.la.dsvd = p.lb.dsvd = true;
 	p.la.tone = 440;
 	p.lb.tone = 700;
-	EXPECT_EQ(cmd(p.a, p.la, "AT+A8E=1,1,,1+DSVD=1\r"), "OK\r\n");
-	EXPECT_EQ(cmd(p.b, p.lb, "AT+A8E=1,1,,1+DSVD=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+A8E=1,1,,1+DSVD=1\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(p.b, p.lb, "AT+A8E=1,1,,1+DSVD=1\r"), "\r\nOK\r\n");
 	EXPECT_EQ(p.b->answer(), 0);
 	EXPECT_EQ(p.a->dial(""), 0);
 	ASSERT_TRUE(p.run_until([](Pair &q) {
@@ -3006,8 +3148,8 @@ TEST(Core, AsvdVoice)
 	p.la.dsvd = p.lb.dsvd = true;
 	p.la.tone = 440;
 	p.lb.tone = 700;
-	EXPECT_EQ(cmd(p.a, p.la, "AT+A8E=1,1,,1+ASVD=1\r"), "OK\r\n");
-	EXPECT_EQ(cmd(p.b, p.lb, "AT+A8E=1,1,,1+ASVD=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd(p.a, p.la, "AT+A8E=1,1,,1+ASVD=1\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(p.b, p.lb, "AT+A8E=1,1,,1+ASVD=1\r"), "\r\nOK\r\n");
 	EXPECT_EQ(p.b->answer(), 0);
 	EXPECT_EQ(p.a->dial(""), 0);
 	ASSERT_TRUE(p.run_until([](Pair &q) {
@@ -3170,7 +3312,7 @@ TEST(Core, ModelListing)
 	EXPECT_EQ(rows[0][2], std::to_string(settings));
 	/* in any state: off hook */
 	cmd(m, l, "ATH1\r");
-	EXPECT_EQ(cmd(m, l, "AT!M\r").substr(0, 8), "model\t1\t");
+	EXPECT_EQ(cmd(m, l, "AT!M\r").substr(0, 8), "\r\nmodel\t");
 	/* nothing after M */
 	EXPECT_EQ(cmd(m, l, "ATH0!MX\r").find("ERROR"), std::string::npos)
 		<< "!M takes the rest of the line as further commands";
@@ -3182,10 +3324,10 @@ TEST(Core, InitString)
 {
 	Line l;
 	Modem *m = make(l, "r");
-	EXPECT_EQ(cmd(m, l, "AT!R\r"), "AT!R\r\r\nAT\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT!R\r"), "AT!R\r\r\nAT\r\n\r\nOK\r\n");
 	cmd(m, l, "ATS0=2L1\\N0+MS=34,1,1200,28800+GCI=B4\r");
 	EXPECT_EQ(cmd(m, l, "AT!R\r"),
-		  "AT!R\r\r\nAT+GCI=B4;+MS=34,1,1200,28800;\\N0L1S0=2+ES=1,0,1\r\nOK\r\n");
+		  "AT!R\r\r\nAT+GCI=B4;+MS=34,1,1200,28800;\\N0L1S0=2+ES=1,0,1\r\n\r\nOK\r\n");
 	/* the string reproduces the settings on a modem at its defaults */
 	Line l2;
 	Modem *m2 = make(l2, "r2");
@@ -3194,7 +3336,7 @@ TEST(Core, InitString)
 	/* in any state: off hook */
 	cmd(m, l, "ATE0H1\r");
 	EXPECT_EQ(cmd(m, l, "AT!R\r"),
-		  "AT+GCI=B4;+MS=34,1,1200,28800;\\N0E0L1S0=2+ES=1,0,1\r\nOK\r\n");
+		  "\r\nAT+GCI=B4;+MS=34,1,1200,28800;\\N0E0L1S0=2+ES=1,0,1\r\n\r\nOK\r\n");
 	/* a long one in lines of 63 characters at most */
 	cmd(m, l, "ATH0S6=9S7=99S9=9S10=99S11=99S12=99S24=99S18=9S92=9X3V0Q0&C1&H3\r");
 	std::string r = cmd(m, l, "AT!R\r");
@@ -3202,6 +3344,9 @@ TEST(Core, InitString)
 	size_t from = 0, lines = 0;
 	while (from < r.size()) {
 		size_t e = r.find("\r\n", from);
+		/* (ATV0: the result code ends with S3 alone) */
+		if (e == std::string::npos)
+			e = r.size();
 		EXPECT_LE(e - from, 63u) << r;
 		from = e + 2;
 		lines++;
@@ -3265,18 +3410,18 @@ TEST(Core, ConfigCli)
 	s = cmd(m, l, "exit\r");
 	EXPECT_NE(s.find("OK\r\n"), std::string::npos) << s;
 	/* back to AT commands */
-	EXPECT_EQ(cmd(m, l, "ATS0?\r"), "3\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATS0?\r"), "\r\n3\r\n\r\nOK\r\n");
 	/* the rest of the line after AT!CT is not read; what comes after
 	   exit is a command */
 	s = cmd(m, l, "AT!CT\rexit\rATS0?\r");
-	EXPECT_NE(s.find("OK\r\n3\r\nOK"), std::string::npos) << s;
+	EXPECT_NE(s.find("OK\r\n\r\n3\r\n\r\nOK"), std::string::npos) << s;
 	/* off hook: ERROR (AT!R still works) */
 	cmd(m, l, "ATV1H1\r");
-	EXPECT_EQ(cmd(m, l, "AT!CT\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT!C\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT!CF\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT!CX\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT!R\r").substr(0, 2), "AT");
+	EXPECT_EQ(cmd(m, l, "AT!CT\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT!C\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT!CF\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT!CX\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT!R\r").substr(0, 2), "\r\n");
 	cmd(m, l, "ATH0\r");
 	/* a RING ends it, with no OK */
 	cmd(m, l, "AT!CT\r");
@@ -3285,7 +3430,7 @@ TEST(Core, ConfigCli)
 	EXPECT_NE(l.out.find("RING"), std::string::npos) << l.out;
 	EXPECT_EQ(l.out.find("OK"), std::string::npos) << l.out;
 	m->ring_signal(false);
-	EXPECT_EQ(cmd(m, l, "AT\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT\r"), "\r\nOK\r\n");
 	delete m;
 }
 
@@ -3391,23 +3536,23 @@ TEST(Core, EtcSettings)
 	Modem *m = make(l, "A");
 	EXPECT_EQ(cmd(m, l, "ATE0\r"), "ATE0\r\r\nOK\r\n");
 	EXPECT_EQ(m->sreg(SREG_ETC), 0);
-	EXPECT_EQ(cmd(m, l, "AT&F5\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT&F5\r"), "\r\nOK\r\n");
 	EXPECT_EQ(m->sreg(SREG_ETC), 0xEE);
 	EXPECT_EQ(m->sreg(SREG_DP), DP_V32BIS);
 	EXPECT_EQ(m->sreg(SREG_EC), 2);
 	EXPECT_EQ(m->sreg(SREG_CARRIER_LOSS_DISCONNECT_TIME), 40);
 	EXPECT_EQ(m->sreg(SREG_WAIT_CARRIER_AFTER_DIAL), 90);
-	EXPECT_EQ(cmd(m, l, "AT+ES?\r"), "+ES: 3,2,4\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT&F6\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+ES?\r"), "\r\n+ES: 3,2,4\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT&F6\r"), "\r\nOK\r\n");
 	EXPECT_EQ(m->sreg(SREG_ETC), 0xB0);
 	EXPECT_EQ(m->sreg(SREG_EC), 3);
-	EXPECT_EQ(cmd(m, l, "ATS116=0\r"), "OK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATS116=0\r"), "\r\nOK\r\n");
 	EXPECT_EQ(m->sreg(SREG_ETC), 0);
-	EXPECT_EQ(cmd(m, l, "AT+EF?\r"), "+EF: 5\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+EF=?\r"), "+EF: (0-10)\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+EF=2\r"), "OK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+EF?\r"), "+EF: 2\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+EF=11\r"), "ERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+EF?\r"), "\r\n+EF: 5\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+EF=?\r"), "\r\n+EF: (0-10)\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+EF=2\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+EF?\r"), "\r\n+EF: 2\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+EF=11\r"), "\r\nERROR\r\n");
 	delete m;
 }
 
@@ -3632,18 +3777,18 @@ TEST_P(CoreZfax, TwoPages)
 	std::string sb = "AT+FCLASS=6#B" + std::to_string(zb) + "#P5552222\r";
 	p.b->dte_input(sb.data(), sb.size());
 	p.step();
-	EXPECT_EQ(p.got_a, "OK\r\n");
-	EXPECT_EQ(p.got_b, "OK\r\n");
+	EXPECT_EQ(p.got_a, "\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "\r\nOK\r\n");
 	p.got_a.clear();
 	p.got_b.clear();
 	p.a->dte_input("AT+FCLASS?;+FCLASS=?\r", 21);
 	p.step();
-	EXPECT_EQ(p.got_a, "6\r\n0,1,1.0,2,2.0,6,8\r\nOK\r\n");
+	EXPECT_EQ(p.got_a, "\r\n6\r\n0,1,1.0,2,2.0,6,8\r\n\r\nOK\r\n");
 	p.got_a.clear();
 
 	p.b->dte_input("ATA\r", 4);
 	p.a->dte_input("ATD\r", 4);
-	ASSERT_TRUE(until([&] { return has(p.got_a, "\r\n"); }, 60000))
+	ASSERT_TRUE(until([&] { return has(p.got_a, id_b + "\r\n"); }, 60000))
 		<< "A [" << p.got_a << "] B [" << p.got_b << "]";
 	EXPECT_EQ(p.got_a, "CONNECT FAX/S1440V1T0R0L2C7P" + id_b + "\r\n");
 	p.got_a.clear();
@@ -3703,7 +3848,7 @@ TEST_P(CoreZfax, TwoPages)
 	}
 	ASSERT_TRUE(until([&] { return has(p.got_b, id_a + "\r\n"); }, 5000));
 	EXPECT_EQ(p.got_b.substr(end), "DISCONNECT0P" + id_a + "\r\n");
-	ASSERT_TRUE(until([&] { return has(p.got_a, "\r\n"); }, 30000))
+	ASSERT_TRUE(until([&] { return has(p.got_a, id_b + "\r\n"); }, 30000))
 		<< "A [" << p.got_a << "]";
 	EXPECT_EQ(p.got_a, "DISCONNECT0P" + id_b + "\r\n");
 	EXPECT_TRUE(until([&] {
@@ -3712,7 +3857,7 @@ TEST_P(CoreZfax, TwoPages)
 	p.got_a.clear();
 	p.a->dte_input("AT+FCLASS?\r", 11);
 	p.step();
-	EXPECT_EQ(p.got_a, "6\r\nOK\r\n");
+	EXPECT_EQ(p.got_a, "\r\n6\r\n\r\nOK\r\n");
 }
 
 INSTANTIATE_TEST_SUITE_P(Zb, CoreZfax, testing::Values(0, 1),
@@ -3731,14 +3876,14 @@ TEST(Core, ZfaxCommands)
 		p.step();
 		return p.got_a;
 	};
-	EXPECT_EQ(cmd("AT#F#B1#V0#T1#R2#L1#C5&N32\r"), "OK\r\n");
-	EXPECT_EQ(cmd("AT#B2\r"), "OK\r\n");
-	EXPECT_EQ(cmd("AT#B4\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd("AT#V2\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd("AT#C8\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd("AT#P" + std::string(25, '1') + "\r"), "OK\r\n");
-	EXPECT_EQ(cmd("AT#P" + std::string(26, '1') + "\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd("AT#CID=1\r"), "OK\r\n");
+	EXPECT_EQ(cmd("AT#F#B1#V0#T1#R2#L1#C5&N32\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd("AT#B2\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd("AT#B4\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd("AT#V2\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd("AT#C8\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd("AT#P" + std::string(25, '1') + "\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd("AT#P" + std::string(26, '1') + "\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd("AT#CID=1\r"), "\r\nOK\r\n");
 }
 
 /* ZyXEL's encryption: ATCK needs '<' (the key to '>' or the line's end,
@@ -3752,11 +3897,11 @@ TEST(Core, ZyxelAtck)
 		p.step();
 		return p.got_a;
 	};
-	EXPECT_EQ(cmd("ATCKsecret\r"), "ERROR\r\n");
-	EXPECT_EQ(cmd("ATCK<secret>S102=7\r"), "OK\r\n");
-	EXPECT_EQ(cmd("ATS102?\r"), "7\r\nOK\r\n");
-	EXPECT_EQ(cmd("ATCK<to the end\r"), "OK\r\n");
-	EXPECT_EQ(cmd("ATC1\r"), "OK\r\n");
+	EXPECT_EQ(cmd("ATCKsecret\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd("ATCK<secret>S102=7\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd("ATS102?\r"), "\r\n7\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd("ATCK<to the end\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd("ATC1\r"), "\r\nOK\r\n");
 }
 
 /* #B3, the ring cadence meter: its two lines; a burst of ring pulses
@@ -3775,8 +3920,7 @@ TEST(Core, ZfaxRingCadence)
 	};
 	p.b->dte_input("AT#B3\r", 6);
 	p.step();
-	EXPECT_EQ(p.got_b, "\r\nStart to measure ring cadence...\r\n"
-		  "Hit any key to stop!\r\n");
+	EXPECT_EQ(p.got_b, "\r\n\r\nStart to measure ring cadence...\r\nHit any key to stop!\r\n");
 	p.got_b.clear();
 	run(1000, false);
 	run(2000, true);
@@ -3792,7 +3936,7 @@ TEST(Core, ZfaxRingCadence)
 	p.got_b.clear();
 	p.b->dte_input("x", 1);
 	p.step();
-	EXPECT_EQ(p.got_b, "OK\r\n");
+	EXPECT_EQ(p.got_b, "\r\nOK\r\n");
 	p.got_b.clear();
 	run(2000, true);
 	run(3000, false);
@@ -3832,16 +3976,15 @@ TEST(Core, ZfaxPoll)
 	type(p.a, "AT+FCLASS=6#B2#P5551111\r");
 	type(p.b, "AT+FCLASS=2.0;+FLI=\"Polled B\";+FLP=1\r");
 	p.step();
-	EXPECT_EQ(p.got_a, "OK\r\n");
-	EXPECT_EQ(p.got_b, "OK\r\n");
+	EXPECT_EQ(p.got_a, "\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "\r\nOK\r\n");
 	p.got_a.clear();
 	p.got_b.clear();
 	type(p.b, "ATA\r");
 	type(p.a, "ATD\r");
 	ASSERT_TRUE(until([&] { return has(p.got_b, "OK\r\n"); }, 30000))
 		<< "B [" << p.got_b << "] A [" << p.got_a << "]";
-	EXPECT_EQ(p.got_b, "+FCO\r\n+FPI:\"5551111\"\r\n"
-		  "+FTC:1,5,0,2,0,0,0,0\r\nOK\r\n");
+	EXPECT_EQ(p.got_b, "+FCO\r\n+FPI:\"5551111\"\r\n+FTC:1,5,0,2,0,0,0,0\r\n\r\nOK\r\n");
 	p.got_b.clear();
 	type(p.b, "AT+FDT\r");
 	ASSERT_TRUE(until([&] { return has(p.got_b, "CONNECT"); }, 20000))

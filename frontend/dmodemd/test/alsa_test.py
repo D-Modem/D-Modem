@@ -12,7 +12,9 @@
 #   (its ring signal heard on hook), shows the caller ID between the
 #   first two rings (AT#CID=1), answers at the second (ATS0=2); both
 #   CONNECT, and a line of text goes each way; 1001 hangs up (+++ ATH),
-#   1002 NO CARRIER;
+#   1002 NO CARRIER.  1001's speaker (--speaker, ATM1) is a PCM of
+#   alsa-lib's file plugin: it has the call's audio until CONNECT, and
+#   nothing after;
 # - 1001 stopped for 0.6 s (SIGSTOP): its codec overruns, the line
 #   starts again (its log says so), and it goes on;
 # - 1002 off hook (ATH1), 1001 dials it again: BUSY (the busy tone);
@@ -54,6 +56,13 @@ with open(conf, "w") as f:
         s = os.path.join(tmp, n + ".sock")
         f.write('pcm.line%s { type dmline socket "%s" }\n' % (n, s))
         f.write('ctl.line%s { type dmline socket "%s" }\n' % (n, s))
+    # 1001's speaker: its samples to a raw file (made here: the plugin
+    # opens it after dmodemd has gone on as nobody)
+    speaker_raw = os.path.join(tmp, "speaker.raw")
+    open(speaker_raw, "wb").close()
+    os.chmod(speaker_raw, 0o666)
+    f.write('pcm.speaker { type file slave.pcm { type null } file "%s" format "raw" }\n'
+            % speaker_raw)
 
 procs = []
 def cleanup():
@@ -184,7 +193,7 @@ try:
               not o.logged(b"fake hda: node", 1))
         o.stop()
 
-    a = Modem("1001", "dmodem41")
+    a = Modem("1001", "dmodem41", args=["--speaker", "speaker"])
     b = Modem("1002", "dmodem42")
     check("no hwdep device: the kernel driver's line settings",
           a.logged(b"line settings: the kernel driver's (no HD-audio codec device", 5))
@@ -208,11 +217,25 @@ try:
     check("both CONNECT", ca and cb and ca.group(1).startswith(b"CONNECT")
           and cb.group(1).startswith(b"CONNECT"))
     check("the exchange heard 1002 dialled", "1001 dialled 1002" in events)
+    # (the speaker's samples: 16 bit, the codec's rate)
+    heard = os.path.getsize(speaker_raw) if os.path.exists(speaker_raw) else 0
+    peak = 0
+    if heard:
+        raw = open(speaker_raw, "rb").read()
+        peak = max(abs(int.from_bytes(raw[i:i + 2], "little", signed=True))
+                   for i in range(0, len(raw) - 1, 2))
+    print("1001's speaker: %d samples, peak %d" % (heard // 2, peak))
+    check("1001's speaker had the call until CONNECT (ATM1)",
+          heard // 2 > int(rate) and peak > 1000)
+    check("1001's log: the speaker on and off",
+          a.logged(b"speaker: on, ATL3", 1) and a.logged(b"speaker: off", 1))
     os.write(a.fd, b"hello from 1001\r\n")
     check("1002 gets 1001's line", b.expect(rb"hello from 1001", 10))
     os.write(b.fd, b"hello from 1002\r\n")
     check("1001 gets 1002's line", a.expect(rb"hello from 1002", 10))
     time.sleep(1.2)
+    check("1001's speaker silent online",
+          os.path.getsize(speaker_raw) == heard)
     os.write(a.fd, b"+++")
     check("1001 +++ OK", a.expect(rb"OK\r\n", 5))
     check("1001 ATH", a.cmd(b"ATH"))
@@ -260,7 +283,7 @@ try:
     check("1002 caller ID packet with 1001",
           cid and b"NMBR = 1001\r\n" in cid.group(1))
     check("1002 answers: +VLS=1", b.cmd(b"AT+VLS=1", t=5))
-    m = a.expect(rb"(\x10r)?(OK|BUSY|NO ANSWER|ERROR)\r\n", 30)
+    m = a.expect(rb"(\x10r)?(?:\r\n)?(OK|BUSY|NO ANSWER|ERROR)\r\n", 30)
     print("1001 voice dial: %s in %.1f s" % (m and m.group(2).decode(), time.time() - t))
     check("1001 heard the ringing tone and OK", m and m.group(1) and m.group(2) == b"OK")
     check("1001 +VTS=5", a.cmd(b"AT+VTS=5"))

@@ -836,6 +836,7 @@ the terms that are less frequent.
 \cmdl[hashCLS]{\#CLS} & Data, fax or voice (Rockwell, US Robotics). & \cmdl[hashV]{\#V\ldots} & Voice, Rockwell's and US Robotics' commands. \\ \hline
 \cmdl[mnp10]{-C, -K, -Q} & \std{MNP~10}. & \cmdl[mnp10]{)M, @M, *H, :T19} & \std{MNP~10}. \\ \hline
 \cmdl[plusMS]{+MS} & Modulation. & \cmdl[plusGMI]{+GMI, +GMM, +GMR} & Identification. \\ \hline
+\cmdl[plusGSN]{+GSN} & Serial number. & \cmdl[plusGOI]{+GOI} & Object identifier. \\ \hline
 \cmdl[plusGCAP]{+GCAP} & Capabilities. & \cmdl[plusGCI]{+GCI} & Country. \\ \hline
 \cmdl[plusES]{+ES} & Error control. & \cmdl[plusESA]{+ESA} & \std{V.80} synchronous access. \\ \hline
 \cmdl[plusITF]{+ITF} & \std{V.80} transmit buffer. & \cmdl[plusDS]{+DS} & \std{V.42bis}. \\ \hline
@@ -979,8 +980,9 @@ the two forms.
 \end{results}
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{V\p{n} Commands}
   {\thd{Command} & \thd{Function}}
-V0 & Numbers, each on a separate line. \\ \hline
-V1 & Words (\emph{default}). \\ \hline
+V0 & Numbers.  A carriage return goes after each number. \\ \hline
+V1 & Words (\emph{default}).  A carriage return and a line feed go
+  before each word and after it. \\ \hline
 \end{vtable}
 \end{command}
 
@@ -1473,7 +1475,32 @@ these two lines are not there.  The analogue modem (\texttt{dmodemd -a},
 These commands give the manufacturer (\rc{D-Modem project}), the model
 (\cmd{D-Modem}) and the revision (\rc{1.0.0}, the version of the build).
 With \cmdr{?} after them (\cmdl[plusGMI]{AT+GMI?}), they give the same
-data.
+data.  With \cmdr{=?} after them (\cmdl[plusGMI]{AT+GMI=?}), they give
+no data.
+\begin{results}
+\res{\rc{OK}}{Always.}
+\end{results}
+\end{command}
+
+\begin{command}{plusGSN}{+GSN}{Serial Number}
+This command gives the serial number of the modem.  The modem uses the
+first value that it has, in this sequence:
+\begin{enumerate}
+\item The serial number that the line gives.
+\item The \texttt{--serial} option of \texttt{dmodemd}.
+\item The name of the modem (for example, \rc{dmodem0}).
+\end{enumerate}
+With \cmdr{?} after it, it gives the same data.  With \cmdr{=?} after
+it, it gives no data.
+\begin{results}
+\res{\rc{OK}}{Always.}
+\end{results}
+\end{command}
+
+\begin{command}{plusGOI}{+GOI}{Global Object Identifier}
+This command gives the global object identifier (ITU-T X.208) of the
+modem, if the line gives one.  D-Modem does not have an identifier of
+its own.  Thus, usually the command gives no data.
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}
@@ -1481,7 +1508,7 @@ data.
 
 \begin{command}{plusGCAP}{+GCAP}{Capabilities}
 This command lists the command sets of the modem: \rc{+GCAP:
-+FCLASS,+MS}.
++FCLASS,+MS}.  With \cmdr{=?} after it, it gives no data.
 \begin{results}
 \res{\rc{OK}}{Always.}
 \end{results}
@@ -1986,10 +2013,15 @@ RING
 \section{Speaker, Line and Country}\label{sec:line}
 
 \begin{command}{L}{L\p{n}}{Speaker Volume}
-This command sets the volume of the speaker (\sreg{30}).  A \std{SIP} line
-has no speaker: the modem only keeps the setting.  A SmartUSB56 with
-\texttt{dmodemd --usb-buzzer} operates its buzzer while the speaker is
-on, at all volumes except \cmdl[L]{L0}.
+This command sets the volume of the speaker (\sreg{30}).  With
+\texttt{dmodemd --speaker=}\p{device}, the speaker is a sound device of
+the computer, on all lines (\std{SIP}, \texttt{-a}, \texttt{--usb},
+\texttt{--misdn}): Linux an ALSA PCM, Windows a waveOut device, Haiku
+\texttt{default}.  You hear the signal that comes from the line and the
+signal that the modem sends.  Without \texttt{--speaker}, the modem only
+keeps the setting.  A SmartUSB56 with \texttt{dmodemd --usb-buzzer}
+operates its buzzer while the speaker is on, at all volumes except
+\cmdl[L]{L0}.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--3.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -1997,14 +2029,15 @@ on, at all volumes except \cmdl[L]{L0}.
 \begin{vtable}{2}{|C{0.16\textwidth}|L{0.7\textwidth}|}{L\p{n} Commands}
   {\thd{Command} & \thd{Function}}
 L0 & Off. \\ \hline
-L1 & Low volume. \\ \hline
-L2 & Medium volume. \\ \hline
-L3 & High volume (\emph{default}). \\ \hline
+L1 & Low volume ($-12$~dB). \\ \hline
+L2 & Medium volume ($-6$~dB). \\ \hline
+L3 & High volume, 0~dB (\emph{default}). \\ \hline
 \end{vtable}
 \end{command}
 
 \begin{command}{M}{M\p{n}}{Speaker Control}
-This command sets when the speaker is on (\sreg{29}).
+This command sets when the speaker is on (\sreg{29}).  Refer to
+\cmdl[L]{L} for the speaker of \texttt{dmodemd}.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--3.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -2014,7 +2047,10 @@ This command sets when the speaker is on (\sreg{29}).
 M0 & Speaker always off. \\ \hline
 M1 & Speaker on until the call is connected (\emph{default}). \\ \hline
 M2 & Speaker always on. \\ \hline
-M3 & As \cmdl[M]{M1} (on other modems: not during dialing). \\ \hline
+M3 & Speaker off while the modem dials, then on until the call is
+  connected.  When the modem answers, as \cmdl[M]{M1}.  On \std{SIP}
+  and ISDN, the modem dials no digits: the speaker comes on at the start
+  of the call. \\ \hline
 \end{vtable}
 \end{command}
 
@@ -2105,7 +2141,10 @@ This command sets these items:
 \begin{itemize}
 \item The modulation that the modem uses to call or to answer.
 \item If the modem can use a slower modulation (\p{automode} 1, as
-  \cmdl[N]{N1}.  \sreg{31}).
+  \cmdl[N]{N1}.  \sreg{31}).  With \p{automode} 0, the \std{V.8}
+  CM and JM of the modem give only the modulation of \p{mod}, on all
+  lines: no \std{V.32bis}, \std{V.22bis}, \std{V.23} or \std{V.21}.
+  K56flex (56) and x2 (57) then do not offer \std{V.90}.
 \item The rates at which the modem can connect, \p{min} to \p{max}
   bit/s.
 \end{itemize}
@@ -2168,11 +2207,22 @@ directions (the modem sends it in its \std{MP} sequences).
 202 & B202, BELL202 & Bell 202 & \std{1200} bit/s \std{FSK} in the two directions, 4-wire leased. \\ \hline
 208 & B208, BELL208 & Bell 208 & \std{4800} bit/s 8-phase \std{DPSK}, 4-wire leased. \\ \hline
 34 & V34 & \std{ITU} \std{V.34} & \std{2400} to \std{33600} bit/s, after \std{V.8}. \\ \hline
-90 & V90 & \std{ITU} \std{V.90} & As the digital modem, after \std{V.8}. \\ \hline
-91 & V91 & \std{ITU} \std{V.91} & Two digital modems, after \std{V.8}. \\ \hline
+90 & V90 & \std{ITU} \std{V.90} & After \std{V.8}.  On a digital line, the digital
+  modem or the analogue modem (\std{V.8} selects the end, \sreg{117}).  On an
+  analogue line, the analogue modem. \\ \hline
+91 & V91 & \std{ITU} \std{V.91} & Two digital modems, after \std{V.8}.  The calling
+  modem must select it. \\ \hline
 92 & V92 & \std{ITU} \std{V.92} & \std{V.90} with quick connect, \std{PCM} upstream and
   modem-on-hold (\emph{default}). \\ \hline
-56 & K56 & K56flex & Not available: the modem uses \std{V.90}. \\ \hline
+56 & K56 & K56flex & After \std{V.8 bis} and \std{V.8}.  When it answers on a digital
+  line, the modem is the server: it answers a K56flex modem with K56flex, and other
+  modems with \std{V.90}.  When it calls (on an analogue line or a digital line), it
+  is the analogue modem: it calls with K56flex when the server answers with K56flex,
+  and with \std{V.90} when not (only with automode). \\ \hline
+57 & X2 & USRobotics x2 & When it answers on a digital line, the modem is the server:
+  it answers an x2 modem with x2, and other modems with \std{V.34}.  When it calls
+  (on an analogue line or a digital line), it is the client: it calls an x2 server
+  with x2. \\ \hline
 150 & VCVM & \std{V.cvm} & Data on mobile speech paths, \std{175} to \std{3500}
   bit/s, after \std{V.8} (\cmdl[plusCVM]{+CVM}). \\ \hline
 200 & VWB & \std{V.wb} & Wideband \std{DMT} on a dry pair, at 48000 Hz or more,
@@ -2262,9 +2312,12 @@ Refer to \texttt{docs/dsp/fastpos.md}.
 are available as the \emph{digital} modem (the side of the server, as on
 a \std{G.711} VoIP line), on an 8000 Hz \std{G.711} line.  Analogue
 \std{V.90} and \std{V.92} modems that call can connect at up to
-\std{56000} bit/s downstream.  90 and 92 also offer \std{V.91}, which two
-digital modems use, and \std{V.34} for the other modems.  On a line at a
-different sample rate, they are \std{V.34}.  With automode, \std{V.8}
+\std{56000} bit/s downstream.  When the modem answers, 90 and 92 also
+offer \std{V.91}, which two digital modems use, and \std{V.34} for the
+other modems.  On a line at a
+different sample rate, they are \std{V.34}.  On a digital line, they are
+also available as the \emph{analogue} modem (refer to
+\hyperref[sec:digitalclient]{the client on a digital line}).  With automode, \std{V.8}
 and the \std{V.34} modem change to \std{V.32bis} (and its \std{V.22bis}
 and \std{V.22}) for a modem without \std{V.34}.  For a modem without
 \std{V.8}, the answering modem tries \std{V.23} and Bell 103.
@@ -2275,6 +2328,27 @@ modem is the analogue end of the call.  \std{V.90} and \std{V.92} operate
 as the analogue modem with a \std{V.90} or \std{V.92} server (at 9600~Hz.
 Refer to \texttt{docs/hardware.md}).  \std{V.91} and \cmd{CLEAR} must
 have a digital line, thus they operate as \std{V.34}.
+
+\paragraph{The Client on a Digital Line.}\label{sec:digitalclient}  On a
+digital line (\std{SIP}, or the line of a telephone system), the modem
+can also be the analogue end of the call, with no modem hardware.  It
+calls the 56k server of a provider with \std{V.92}, \std{V.90} (90 and
+92), K56flex (56) or x2 (57).  When the modem calls, its \std{V.8} CM
+gives only the mode of \cmdl[plusMS]{+MS}: the two ends of \std{V.90}
+or \std{V.92} without \std{V.91}, or \std{V.91} with \cmd{+MS=V91}.  When it
+answers, it offers the two ends and \std{V.91}, and the CM selects one:
+\begin{itemize}
+\item Against a server, the modem is the analogue modem.
+\item Against an analogue modem, the modem is the digital modem.
+\item Against another D-Modem that calls with \cmd{+MS=V91}, the two
+  modems use \std{V.91}.
+\item If the two modems offer the two ends, the calling modem is the
+  analogue modem.
+\end{itemize}
+\sreg{117} selects the end on a digital line.
+The path must be \std{G.711} from end to end, with no transcoding.  The
+quick connect of \std{V.92} is not used as the analogue modem on a
+digital line.  Refer to \texttt{docs/dsp/sip-client.md}.
 
 \paragraph{V.cvm.}  \cmd{VCVM} is the proposed Recommendation of
 \cmd{docs/v\_cvm.pdf}.  It is for calls whose speech path uses a mobile
@@ -2422,7 +2496,8 @@ B15, B16 & Accepted (other modems: \std{V.21} or Bell 103 at \std{300} bit/s). \
 This command sets if the modems can find their best common modulation,
 from the modulation that \cmdl[plusMS]{+MS} selected and lower
 (\sreg{31}).  It is the same as the second parameter of
-\cmdl[plusMS]{+MS}.
+\cmdl[plusMS]{+MS}.  With \cmd{N0}, the \std{V.8} CM and JM give only
+the modulation of \cmdl[plusMS]{+MS}, on all lines.
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0 or 1.}
 \res{\rc{ERROR}}{Otherwise.}
@@ -3306,6 +3381,19 @@ The modem answers each command line with a result code, as a word
 (\cmdl[V]{V1}) or a number (\cmdl[V]{V0}).  Each result code is on a
 separate line.  \cmdl[Q]{Q1} sets the result codes off.
 
+The modem uses the line format of ITU-T V.250.  This format does not
+change when echo is off (\cmdl[E]{E0}):
+\begin{itemize}
+\item \cmdl[V]{V1}: a carriage return and a line feed (\sreg{3} and
+  \sreg{4}) go before each word result code and after it.  The same
+  pair goes before the first line of a response and after each line of
+  it.  Thus, \cmdr{ATE0} and then \cmdr{AT} give
+  \texttt{<CR><LF>OK<CR><LF>}.
+\item \cmdl[V]{V0}: a carriage return (\sreg{3}) goes after each
+  number.  Thus, \cmdr{AT} gives \texttt{0<CR>}.  Each line of a
+  response ends with a carriage return and a line feed.
+\end{itemize}
+
 \begin{vtable}{3}{|L{0.26\textwidth}|C{0.1\textwidth}|L{0.48\textwidth}|}{Result Codes}
   {\thd{Result code} & \thd{Number} & \thd{Description}}
 \rc{OK} & 0 & The modem did the command line. \\ \hline
@@ -3396,6 +3484,7 @@ value, but it has no other effect.
 \hyperlink{sreg:39}{S39} & Line quality (kept). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:44}{S44} & \std{V.cvm}: tones loaded (read only). & 0--255 & tones & 0 \\ \hline
 \hyperlink{sreg:45}{S45} & \std{V.cvm}: renegotiations (read only). & 0--255 & -- & 0 \\ \hline
+\hyperlink{sreg:46}{S46} & Hayes sets and \std{ADC} in \std{V.42}. & 0--255 & -- & 0 \\ \hline
 \hyperlink{sreg:47}{S47} & Leased line (\cmdl[ampL]{\&L}). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:48}{S48} & \std{V.13} simulated carrier. & 0, 1 & -- & 0 \\ \hline
 \hyperlink{sreg:49}{S49} & Point of sale fast connect. & 0, 1, 3 & -- & 0 \\ \hline
@@ -3412,6 +3501,7 @@ value, but it has no other effect.
 \hyperlink{sreg:106}{S106} & Protocol in \rc{CONNECT} (\cmdl[bsV]{\bs V}). & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:114}{S114} & \std{V.42bis} offered in an \std{MNP} call. & 0, 1 & -- & 0 \\ \hline
 \hyperlink{sreg:116}{S116} & \std{ETC} flags (\cmdl[etc]{\&F5, \&F6}). & 0--255 & -- & 0 \\ \hline
+\hyperlink{sreg:117}{S117} & \std{PCM} end on a digital line. & 0--2 & -- & 0 \\ \hline
 \hyperlink{sreg:161}{S161} & \cmdl[Y]{Y} (kept). & 0--3 & -- & 0 \\ \hline
 \end{vtable}
 
@@ -3535,7 +3625,8 @@ The setting of \cmdl[L]{L}.
 
 \sregdef{31}{Automode}
 The setting of \cmdl[N]{N}, and the second parameter of
-\cmdl[plusMS]{+MS}.
+\cmdl[plusMS]{+MS}.  0: the \std{V.8} CM and JM give only the
+modulation of \cmdl[plusMS]{+MS}, with no slower modulation.
 \facts{0, 1}{1}{none}
 
 \sregdef{32}{Modulation}
@@ -3554,6 +3645,17 @@ last \std{V.cvm} call (\cmdl[plusCVM]{+CVM}).  Read only.
 
 \sregdef{45}{V.cvm Renegotiations}
 The number of renegotiations of the last \std{V.cvm} call.  Read only.
+\facts{0--255}{0}{none}
+
+\sregdef{46}{Hayes Protocol Selection}
+Not 0: the \std{XID} of a \std{V.42} call has the private sets of the Hayes
+V-series modems (\std{AFT} and \std{HMP}).  The value has the coding of the
+Hayes S46: 136 \std{LAP-M}, 138 \std{LAP-M} with compression (bit 1).  When
+the two modems agree on the compression and not on \std{V.42bis}, the call
+uses Hayes \std{ADC} in the two directions, and \rc{CONNECT} shows
+\rc{COMPRESSION: ADC} (68).  When the two modems send the sets and one of
+them does not agree on the compression, the call has no compression.
+0: no Hayes sets.
 \facts{0--255}{0}{none}
 
 \sregdef{47}{Leased Line}
@@ -3657,6 +3759,17 @@ The \std{ETC} flags, with the bits of the 3Com firmware: 238 (0xEE) for
 the cellular side, 176 (0xB0) for the landline side, 0 for off.  Refer to
 \cmdl[etc]{\&F5, \&F6}.
 \facts{0--255}{0}{none}
+
+\sregdef{117}{PCM End on a Digital Line}
+The end of \std{V.90} and \std{V.92} that the modem offers in \std{V.8}
+on a digital line (refer to
+\hyperref[sec:digitalclient]{the client on a digital line}).  0: automatic.
+The modem offers the two ends, and \std{V.8} selects one.  When it
+answers, it also offers \std{V.91}.  1: the digital modem (the server)
+only.  2: the analogue modem (the client) only.  With 1 and 2, the modem
+does not offer \std{V.91}.  \cmd{+MS=V91} ignores this register.  On an
+analogue line, the modem is always the analogue modem.
+\facts{0--2}{0}{none}
 
 \sregdef{161}{Long Space Disconnect}
 The setting of \cmdl[Y]{Y}, kept.  \cmdl[Z]{ATZ} does not change it.
@@ -4918,11 +5031,19 @@ then makes a new pty (\cmd{/dev/ttyDM0} follows it).
 \item The numeric results (\cmdl[V]{V0}) and the number of \rc{CONNECT}
   for each rate are specific to D-Modem.  The numbers of the USRobotics
   and Conexant modems are different.
-\item \std{MNP} is classes 2 to 5 (\cmdl[bsN]{\bs N}, \cmdl[pctC]{\%C}):
-  there is no \std{MNP~10} or 10EC.  A modem with \std{MNP~10EC} connects
-  with \std{V.42} (the modem ignores its ``EM'' detection patterns).
+\item \std{MNP} is classes 2 to 5 (\cmdl[bsN]{\bs N}, \cmdl[pctC]{\%C})
+  and \std{MNP~10} (\cmdl[mnp10]{-K}).  The cellular modulations of
+  \std{MNP~10EC} are not available.  A modem with \std{MNP~10EC} connects
+  with \std{V.42} or with \std{MNP~10} (the modem ignores its ``EM''
+  detection patterns).
   Refer to \texttt{docs/link.md}, \std{MNP}.
-\item K56flex is not available: \cmdl[plusMS]{+MS=56} uses \std{V.90}.
+\item K56flex (\cmdl[plusMS]{+MS=56}) is tested against the Motorola SM56
+  soft modem and against this modem.  It is not tested against a hardware
+  K56flex modem.  Refer to \texttt{docs/dsp/k56flex.md}.
+\item The analogue modem on a digital line (\std{SIP},
+  \hyperref[sec:digitalclient]{the client on a digital line}) is tested
+  only against this modem, on a simulated network.  It is not tested
+  against the server of a real provider.
 \end{itemize}
 
 \subsection{Not Available}
@@ -4933,7 +5054,7 @@ These commands are \rc{ERROR}: \cmdl[ampV]{\&V2} and higher, \cmdr{\&Z}
 \cmdl[I]{ATI10}, \cmdl[I]{ATI13} and higher, \cmd{-V90}
 (\cmdl[plusMS]{+MS} selects the modulation), \cmdr{+MA}, \cmdr{+MSC},
 \cmdr{+EB}, \cmdr{+ESR}, \cmdr{+ETBM}, \cmdr{+EWIND}, \cmdr{+EFRAM},
-\cmdr{+A8M}, \cmdr{+A8T}, \cmdr{+PMHF}, \cmdr{+GSN} and \cmdr{+GOI}.  The
+\cmdr{+A8M}, \cmdr{+A8T} and \cmdr{+PMHF}.  The
 names of \cmdl[plusMS]{+MS} for modulations that the modem does not have
 (\cmd{V23S}, \cmd{V27} \ldots) are also \rc{ERROR}.
 
@@ -5011,7 +5132,7 @@ names of \cmdl[plusMS]{+MS} for modulations that the modem does not have
 \textbf{Init string} & A command line that sets the modem for a program.  \cmdl[bangR]{!R} shows an init string for the settings now. \\ \hline
 \textbf{\stdb{ISDN}} & Integrated Services Digital Network.  Digital telephone lines with \std{64000}~bit/s channels. \\ \hline
 \textbf{ITU-T} & International Telecommunication Union, Telecommunication Standardization Sector.  The standards organization that writes the V.\ldots{} recommendations (modems), the T.\ldots{} recommendations (fax) and other series. \\ \hline
-\textbf{K56flex} & The \std{56000}~bit/s modulation of Rockwell and Lucent, before \std{V.90}.  This modem uses \std{V.90} in its place. \\ \hline
+\textbf{K56flex} & The \std{56000}~bit/s modulation of Rockwell and Lucent, before \std{V.90}.  \cmdl[plusMS]{+MS=56} selects it. \\ \hline
 \textbf{Kissoff} & The tone (1400~Hz for 900~ms) that the receiver of Contact ID sends to confirm a message. \\ \hline
 \textbf{\stdb{LAPB}} & Link Access Procedure, Balanced.  The \std{HDLC} procedure of \std{X.25} and \std{X.75}. \\ \hline
 \textbf{Loop test} & A test in which the data goes back to its source.  A local loop tests this modem.  A remote loop tests the line and the far end (\std{V.54}, \cmdl[ampT]{\&T}). \\ \hline

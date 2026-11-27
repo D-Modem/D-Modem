@@ -61,10 +61,10 @@ K56flex is an older 56k standard from before V.90. It operates at the two
 ends. D-Modem answers a K56flex modem with it, and calls a K56flex server
 with it. Refer to [its own page](k56flex.md).
 
-x2 of USRobotics is the other early 56k standard. The work on it is not
-complete. D-Modem answers an x2 modem as the server, and the start-up
-completes. But the x2 modem does not accept the data now. Refer to
-[its own page](x2.md).
+x2 of USRobotics is the other early 56k standard. D-Modem answers an x2
+modem as the server, and a Courier connects with error correction at up
+to 56000 bit/s down. D-Modem is also an x2 client. We tested the client
+only against the server of D-Modem. Refer to [its own page](x2.md).
 
 ## The two ends of a 56k call
 
@@ -81,6 +81,9 @@ D-Modem can be **the two ends**:
   (refer to [V.90](v90.md)).
 - The analogue modem on a real telephone line, through modem hardware
   (refer to [V.90 analogue modem](v90a.md)).
+- The analogue modem on a SIP line, when it calls the server of a provider
+  (refer to [The 56k client on a SIP line](sip-client.md)). V.8 selects
+  the end.
 
 ## Testing
 

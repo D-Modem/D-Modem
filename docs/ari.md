@@ -19,7 +19,7 @@ combine that licence with the licence of D-Modem. A separate program that only c
 Asterisk does not have that problem. Thus, `dmodem-ari` is the method to supply
 D-Modem for Asterisk. Asterisk does not load a part of D-Modem.
 
-## Setting up
+## Installation
 
 1. Enable the web server of Asterisk and make an ARI user, in `http.conf`
    and `ari.conf`:
@@ -73,7 +73,7 @@ D-Modem for Asterisk. Asterisk does not load a part of D-Modem.
 
    To change the options or the user, use `systemctl edit dmodem-ari`.
 
-If the connection to Asterisk drops, `dmodem-ari` connects again one second later.
+If the connection to Asterisk stops, `dmodem-ari` connects again one second later.
 The calls that are in progress continue.
 
 ## People and modems on one number
@@ -92,8 +92,11 @@ the extension hangs up or when the modem of the caller asks for data.
 
 ## Limits of the prototype
 
-- It must run on the same machine as Asterisk (or on a trusted network),
-  because it communicates with Asterisk over plain HTTP.
+- It must run on the same machine as Asterisk, because the audio of each
+  call (RTP) uses 127.0.0.1.
+- It communicates with Asterisk over plain HTTP. Thus, use it only on the
+  same machine or on a trusted network.
 - It uses one thread for each call.
 - It does not accept ISDN data calls yet.
-- It does not send some of the error-protection options of T.38.
+- It does not send the forward error correction (FEC) of UDPTL, the
+  transport of T.38. It sends redundancy packets.
