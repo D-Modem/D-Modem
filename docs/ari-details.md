@@ -169,11 +169,11 @@ For each call that comes into the app, `dmodem-ari` does these steps:
 The fax machine is the same as that of `app_dmodem`: T.30 on V.17, V.29
 and V.27ter, with error correction mode (ECM) and TIFF files (refer to
 [asterisk.md](asterisk.md#fax)). Its settings come from the `[general]`
-section of `dmodem.conf`: `fax_ident`, `fax_header`, `fax_max_rate`, `fax_min_rate`,
+section of `dmodem.conf`: `fax_ident`, `fax_header`, `fax_modems`, `fax_max_rate`, `fax_min_rate`,
 `fax_ecm`, `fax_t38`, `fax_t38_timeout`, `fax_res_vars`, and `fax_dir` for the faxes that
 the modem profiles receive (default `/var/spool/asterisk/fax`).
 
-### Three ways to fax
+### Four ways to fax
 
 - **A fax machine calls a modem profile.** When the profile has `fax`
   enabled (the default), the fax goes into
@@ -187,6 +187,19 @@ the modem profiles receive (default `/var/spool/asterisk/fax`).
 - **`Stasis(dmodem,sendfax,<file>[&<file2>...][,<ident>[,<options>]])`**
   sends one or more TIFF files (all TIFFs of 1 bit pels, as
   `DModemSendFax` accepts) on a call to a fax machine.
+
+- **`Stasis(dmodem,faxdetect[,<seconds>[,<options>]])`** listens for a
+  fax machine, as `DModemFaxDetect` does (refer to
+  [asterisk-details.md](asterisk-details.md#fax-detection)). It has the
+  same options and sets the same variables. When it hears a fax
+  machine and the context has a `fax` extension, the call continues
+  there. Else the call continues at the next priority.
+
+  It hears a T.38 request only with the SIP side (`t38 = yes`). Unlike
+  `DModemFaxDetect`, it accepts the T.38 request on its own leg (it
+  cannot keep the request open for a later leg). The caller then stays
+  on T.38 with Asterisk, and the fax application asks for T.38 again on
+  its own leg. Option `r` plays `tone:ring` on the channel.
 
 `<ident>` is our own number. It replaces `fax_ident`.
 
@@ -209,6 +222,7 @@ each fax, also for a fax machine that calls a modem profile:
 | `DMODEMFAXOPT_MINRATE` | `DMODEMFAXOPT(minrate)` |
 | `DMODEMFAXOPT_T38TIMEOUT` | `DMODEMFAXOPT(t38timeout)` |
 | `DMODEMFAXOPT_LOCALSTATIONID` | `DMODEMFAXOPT(localstationid)` |
+| `DMODEMFAXOPT_MODEMS` | `DMODEMFAXOPT(modems)` |
 | `DMODEMFAXOPT_HEADERINFO` | `DMODEMFAXOPT(headerinfo)` (refer to [asterisk-details.md](asterisk-details.md#page-header-line)) |
 
 Example:

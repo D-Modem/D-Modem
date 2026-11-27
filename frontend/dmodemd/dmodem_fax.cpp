@@ -5,7 +5,8 @@
  *    dmodem_fax.cpp - fax calls of the library (dmodem.h): a T.30 fax
  *                   machine (dsp/t30.cpp) that sends a TIFF file or
  *                   receives into one, on audio or over T.38 (its IFP
- *                   packets in UDPTL, dsp/t38.cpp)
+ *                   packets in UDPTL, dsp/t38.cpp); fax detection (a
+ *                   fax machine's CNG, dsp.h's CngDetect)
  *
  */
 
@@ -20,6 +21,7 @@
 #include "dm_types.h"
 #include "dmodem.h"
 #include "dmodem_g711.h"
+#include "dsp.h"
 #include "fax_header.h"
 #include "reinit.h"
 #include "t30.h"
@@ -252,6 +254,9 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 	c.ident = cfg->ident;
 	c.max_bps = cfg->max_bps ? cfg->max_bps : 14400;
 	c.min_bps = cfg->min_bps > 0 ? cfg->min_bps : 0;
+	c.modems = static_cast<u16>(cfg->modems & (DMODEM_FAX_V27 |
+						    DMODEM_FAX_V29 |
+						    DMODEM_FAX_V17));
 	c.ecm = !cfg->no_ecm;
 	c.srate = DMODEM_RATE;
 	c.next_page = next_page;
@@ -366,4 +371,64 @@ void dmodem_fax_destroy(struct dmodem_fax *f)
 	if (f->out_open)
 		f->out.close();
 	delete f;
+}
+
+/*
+ *    fax detection
+ */
+
+/* a CNG detector at 8000 Hz, and the law of its octets */
+struct dmodem_faxdetect {
+	CngDetect cng;
+	enum dmodem_law law;
+	s16 heard;
+};
+
+/* a detector that has heard nothing */
+struct dmodem_faxdetect *dmodem_faxdetect_create(enum dmodem_law law)
+{
+	auto *d = new (std::nothrow) dmodem_faxdetect();
+	if (!d)
+		return nullptr;
+	d->cng.init(DMODEM_RATE);
+	d->law = law;
+	return d;
+}
+
+/* the samples to the CNG detector: 1 once it has heard a burst, or a
+   tone of 400 ms that goes on */
+int dmodem_faxdetect_process(struct dmodem_faxdetect *d, const s16 *in,
+			     s32 n)
+{
+	for (s32 i = 0; i < n && !d->heard; i++) {
+		d->cng.sample(in[i]);
+		if (d->cng.bursts > 0 || d->cng.run_ms() >= 400)
+			d->heard = 1;
+	}
+	return d->heard;
+}
+
+/* G.711 octets, 160 at a time, to dmodem_faxdetect_process() */
+int dmodem_faxdetect_process_g711(struct dmodem_faxdetect *d,
+				  const unsigned char *in, s32 n)
+{
+	unsigned char out[160];
+	s32 done = 0;
+	auto process = [d](const s16 *li, s16 *lo, s16 k) {
+		memset(lo, 0, sizeof(*lo) * static_cast<size_t>(k));
+		dmodem_faxdetect_process(d, li, k);
+	};
+	while (done < n) {
+		s32 k = n - done > 160 ? 160 : n - done;
+		dmodem_g711_blocks(d->law == DMODEM_LAW_ALAW, in + done, out, k,
+				   process);
+		done += k;
+	}
+	return d->heard;
+}
+
+/* (NULL is fine) */
+void dmodem_faxdetect_destroy(struct dmodem_faxdetect *d)
+{
+	delete d;
 }

@@ -71,6 +71,9 @@ struct dmbridge_fax {
 	int max_bps;
 	int min_bps;            /* no page below this rate (0: none) */
 	int ecm;                /* error correction mode offered */
+	int modems;             /* the modems for the pages: of
+				   DMODEM_FAX_V27, DMODEM_FAX_V29 and
+				   DMODEM_FAX_V17 (0: all) */
 	int t38;                /* over T.38 when the channel has it */
 	int t38_timeout;        /* ms to wait for the answer to our T.38
 				   request */
@@ -123,7 +126,7 @@ int dmbridge_option_is(const char *name, const char *key);
    rate, ECM, T.38 (6000 ms for the answer), res_fax's variables too */
 void dmbridge_fax_defaults(struct dmbridge_fax *f, const char *dir);
 /* a fax option (fax, fax-dir, fax-ident, fax-header, fax-max-rate,
-   fax-min-rate,
+   fax-min-rate, fax-modems,
    fax-ecm, fax-t38, fax-t38-timeout, fax-res-vars); 0 if name is
    something else */
 int dmbridge_fax_option(const struct dmbridge_host *h,
@@ -132,9 +135,16 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 
 /* the items of a call's own fax settings (DMODEMFAXOPT(item) of
    app_dmodem, the channel variables DMODEMFAXOPT_<ITEM> for all):
-   ecm, maxrate, minrate, t38timeout, localstationid, headerinfo; NULL
-   at the end */
+   ecm, maxrate, minrate, t38timeout, localstationid, headerinfo,
+   modems; NULL at the end */
 extern const char *const dmbridge_faxopt_items[];
+/* the modem mask of a list of modems, as res_fax has it ("v17,v27,v29":
+   ',', ' ' or '|' between them; "v34" taken and not used, as the fax
+   has no V.34; "all" or empty: 0); -1 if it has an unknown name, or no
+   modem that the fax has */
+int dmbridge_fax_modems(const char *list);
+/* the modem mask m as such a list into buf ("v17,v27,v29" for 0) */
+void dmbridge_fax_modems_text(int m, char *buf, size_t len);
 /* the fax setting item to value in *f: 0, or -1 if item is unknown or
    value is not one it takes (f unchanged) */
 int dmbridge_faxopt(const struct dmbridge_host *h, struct dmbridge_fax *f,

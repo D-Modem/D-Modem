@@ -320,6 +320,8 @@ static int faxopt_read(struct ast_channel *chan, const char *cmd,
 		ast_copy_string(buf, f.ident, len);
 	else if (!strcasecmp(data, "headerinfo"))
 		ast_copy_string(buf, f.header, len);
+	else if (!strcasecmp(data, "modems"))
+		dmbridge_fax_modems_text(f.modems, buf, len);
 	else {
 		ast_log(LOG_WARNING, "DMODEMFAXOPT: unknown item '%s'\n",
 			data);
@@ -843,6 +845,12 @@ static char *cli_fax_settings(struct ast_cli_entry *e, int cmd,
 	ast_cli(a->fd, "Maximum rate:          %d\n", f.max_bps);
 	ast_cli(a->fd, "Minimum rate:          %d\n", f.min_bps);
 	ast_cli(a->fd, "ECM:                   %s\n", f.ecm ? "yes" : "no");
+	{
+		char m[32];
+		dmbridge_fax_modems_text(f.modems, m, sizeof(m));
+		ast_cli(a->fd, "Modems:                %s\n", m);
+	}
+	ast_cli(a->fd, "Header:                %s\n", f.header);
 	ast_cli(a->fd, "T.38:                  %s\n", f.t38 ? "yes" : "no");
 	ast_cli(a->fd, "T.38 timeout (ms):     %d\n", f.t38_timeout);
 	ast_cli(a->fd, "res_fax variables:     %s\n",
@@ -1124,6 +1132,7 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	cfg.max_bps = fs->max_bps;
 	cfg.min_bps = fs->min_bps;
 	cfg.no_ecm = !fs->ecm;
+	cfg.modems = fs->modems;
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXFILE", file);
 	if (ro->need_t38 && !may_switch) {
 		ast_log(LOG_WARNING, "%s: DModem fax: T.38 needed, and the "
@@ -1789,8 +1798,8 @@ static const char send_descrip[] =
 	"DMODEMFAXFILE; also res_fax's FAXSTATUS, FAXSTATUSSTRING, FAXERROR,\n"
 	"FAXPAGES, FAXBITRATE, FAXRESOLUTION, REMOTESTATIONID and\n"
 	"LOCALSTATIONID (unless fax_res_vars = no).  DMODEMFAXOPT() sets\n"
-	"ecm, maxrate, minrate, t38timeout, localstationid and headerinfo\n"
-	"first.\n";
+	"ecm, maxrate, minrate, t38timeout, localstationid, headerinfo and\n"
+	"modems first.\n";
 static const char app_recv[] = "DModemReceiveFax";
 static const char recv_synopsis[] = "Receive a fax into a TIFF file with DModem's fax";
 static const char recv_descrip[] =
@@ -1874,6 +1883,160 @@ static int recv_exec(struct ast_channel *chan, const char *data)
 	return fax_exec(chan, data, DMODEM_FAX_RECEIVE);
 }
 
+static const char app_detect[] = "DModemFaxDetect";
+static const char detect_synopsis[] = "Detect a fax machine that calls, and go to the fax extension";
+static const char detect_descrip[] =
+	"  DModemFaxDetect([seconds[,options]]): answers the call and listens\n"
+	"for up to seconds (default 4) for a fax machine: its calling tone\n"
+	"(CNG, 1100 Hz) or its request for T.38.  When it hears one, it sets\n"
+	"DMODEMFAXDETECTED (CNG or T38) and DMODEMFAXEXTEN (the extension\n"
+	"that the call was on), and goes to the fax extension of the context\n"
+	"if there is one.  Else it sets DMODEMFAXDETECTED to NONE, and the\n"
+	"dialplan continues.\n"
+	"  Options: c - the CNG only; t - the T.38 request only; n - do not\n"
+	"answer (early media); r - ringing to the caller while it listens.\n";
+
+AST_APP_OPTIONS(detect_app_options, BEGIN_OPTIONS
+	AST_APP_OPTION('c', 1 << 0),
+	AST_APP_OPTION('t', 1 << 1),
+	AST_APP_OPTION('n', 1 << 2),
+	AST_APP_OPTION('r', 1 << 3),
+END_OPTIONS);
+
+/* listens on chan (read in fmt, law) for up to ms: "CNG" when the
+   detector heard a fax machine's tone (unless no_cng), "T38" when the
+   other end asked for T.38 (unless no_t38; the request is not answered
+   here: the fax application answers it), "NONE" when the time ended,
+   NULL when the channel hung up */
+static const char *fax_listen(struct ast_channel *chan,
+			      enum dmodem_law law, long ms, int no_cng,
+			      int no_t38)
+{
+	struct dmodem_faxdetect *d = dmodem_faxdetect_create(law);
+	struct timeval start = ast_tvnow();
+	const char *what = "NONE";
+
+	if (!d)
+		return "NONE";
+	if (!no_t38 && ast_channel_get_t38_state(chan) == T38_STATE_NEGOTIATING)
+		what = "T38";
+	while (!strcmp(what, "NONE")) {
+		const struct ast_control_t38_parameters *tp;
+		struct ast_frame *fr;
+		long left = ms - ast_tvdiff_ms(ast_tvnow(), start);
+		int n;
+
+		if (left <= 0)
+			break;
+		n = ast_waitfor(chan, left > IDLE_MS ? IDLE_MS : left);
+		if (n < 0 || (n > 0 && !(fr = ast_read(chan)))) {
+			what = NULL;
+			break;
+		}
+		if (n == 0)
+			continue;
+		if (fr->frametype == AST_FRAME_VOICE && !no_cng &&
+		    fr->samples > 0 && fr->datalen >= fr->samples &&
+		    dmodem_faxdetect_process_g711(d, fr->data.ptr,
+						  fr->samples))
+			what = "CNG";
+		else if ((tp = t38_frame(fr)) && !no_t38 &&
+			 tp->request_response == AST_T38_REQUEST_NEGOTIATE)
+			what = "T38";
+		ast_frfree(fr);
+	}
+	dmodem_faxdetect_destroy(d);
+	return what;
+}
+
+/* DModemFaxDetect(): a fax machine heard, the call to the fax
+   extension; or NONE, the dialplan on */
+static int detect_exec(struct ast_channel *chan, const char *data)
+{
+	AST_DECLARE_APP_ARGS(args, AST_APP_ARG(seconds);
+			     AST_APP_ARG(options););
+	struct ast_flags opts = { 0 };
+	struct ast_format *fmt, *old_fmt;
+	enum dmodem_law law;
+	const char *what;
+	char *parse = ast_strdupa(S_OR(data, ""));
+	double secs = 4;
+	int ringing = 0;
+
+	AST_STANDARD_APP_ARGS(args, parse);
+	if (!ast_strlen_zero(args.seconds) &&
+	    (sscanf(args.seconds, "%lf", &secs) != 1 || secs <= 0)) {
+		ast_log(LOG_WARNING, "%s: bad time '%s'\n", app_detect,
+			args.seconds);
+		secs = 4;
+	}
+	if (!ast_strlen_zero(args.options) &&
+	    ast_app_parse_options(detect_app_options, &opts, NULL,
+				  args.options)) {
+		ast_log(LOG_WARNING, "%s: bad options '%s'\n", app_detect,
+			args.options);
+		return 0;
+	}
+	if (ast_test_flag(&opts, 1 << 0) && ast_test_flag(&opts, 1 << 1)) {
+		ast_log(LOG_WARNING, "%s: options c and t together\n",
+			app_detect);
+		return 0;
+	}
+	if (!ast_test_flag(&opts, 1 << 2) &&
+	    ast_channel_state(chan) != AST_STATE_UP && ast_answer(chan))
+		return -1;
+	law = channel_law(chan);
+	fmt = law == DMODEM_LAW_ALAW ? ast_format_alaw : ast_format_ulaw;
+	old_fmt = ao2_bump(ast_channel_readformat(chan));
+	if (ast_set_read_format(chan, fmt)) {
+		ast_log(LOG_WARNING, "%s: cannot set %s\n",
+			ast_channel_name(chan), ast_format_get_name(fmt));
+		ao2_cleanup(old_fmt);
+		return 0;
+	}
+	if (ast_test_flag(&opts, 1 << 3)) {
+		struct ast_tone_zone_sound *ts =
+			ast_get_indication_tone(ast_channel_zone(chan), "ring");
+		if (ts) {
+			ringing = !ast_playtones_start(chan, 0, ts->data, 0);
+			ast_tone_zone_sound_unref(ts);
+		}
+	}
+	what = fax_listen(chan, law, (long)(secs * 1000),
+			  ast_test_flag(&opts, 1 << 1),
+			  ast_test_flag(&opts, 1 << 0));
+	if (ringing)
+		ast_playtones_stop(chan);
+	if (!what) {
+		ao2_cleanup(old_fmt);
+		return -1;
+	}
+	if (old_fmt)
+		ast_set_read_format(chan, old_fmt);
+	ao2_cleanup(old_fmt);
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXDETECTED", what);
+	if (!strcmp(what, "NONE")) {
+		ast_verb(3, "%s: DModem fax detect: no fax\n",
+			 ast_channel_name(chan));
+		return 0;
+	}
+	pbx_builtin_setvar_helper(chan, "DMODEMFAXEXTEN",
+				  ast_channel_exten(chan));
+	if (strcmp(ast_channel_exten(chan), "fax") &&
+	    ast_exists_extension(chan, ast_channel_context(chan), "fax", 1,
+		S_COR(ast_channel_caller(chan)->id.number.valid,
+		      ast_channel_caller(chan)->id.number.str, NULL))) {
+		ast_verb(3, "%s: DModem fax detect: %s, to the fax extension\n",
+			 ast_channel_name(chan), what);
+		ast_explicit_goto(chan, NULL, "fax", 1);
+	} else {
+		ast_verb(3, "%s: DModem fax detect: %s (no fax extension in "
+			 "%s)\n", ast_channel_name(chan), what,
+			 ast_channel_context(chan));
+	}
+	return 0;
+}
+
 /* libdmodem's log level: debug of [general] (0 if none) */
 static void load_general(void)
 {
@@ -1889,13 +2052,14 @@ static void load_general(void)
 	ast_config_destroy(cfg);
 }
 
-/* the three applications, DMODEMFAXOPT(), the CLI commands and the AMI
+/* the four applications, DMODEMFAXOPT(), the CLI commands and the AMI
    actions unregistered */
 static int unload_module(void)
 {
 	int r = ast_unregister_application(app);
 	r |= ast_unregister_application(app_send);
 	r |= ast_unregister_application(app_recv);
+	r |= ast_unregister_application(app_detect);
 	r |= ast_custom_function_unregister(&faxopt_function);
 	ast_cli_unregister_multiple(fax_cli, ARRAY_LEN(fax_cli));
 	r |= ast_manager_unregister("DModemFaxSessions");
@@ -1904,7 +2068,7 @@ static int unload_module(void)
 	return r;
 }
 
-/* the log hook, the pumps, [general], the three applications,
+/* the log hook, the pumps, [general], the four applications,
    DMODEMFAXOPT(), the fax CLI commands and AMI actions */
 static int load_module(void)
 {
@@ -1918,6 +2082,8 @@ static int load_module(void)
 				     send_descrip) ||
 	    ast_register_application(app_recv, recv_exec, recv_synopsis,
 				     recv_descrip) ||
+	    ast_register_application(app_detect, detect_exec,
+				     detect_synopsis, detect_descrip) ||
 	    ast_custom_function_register(&faxopt_function) ||
 	    ast_cli_register_multiple(fax_cli, ARRAY_LEN(fax_cli)) ||
 	    ast_manager_register("DModemFaxSessions", EVENT_FLAG_REPORTING,

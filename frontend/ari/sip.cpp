@@ -714,6 +714,8 @@ void SipAgent::received(const std::string &text, const struct sockaddr_in &from)
 				audio = s.find("audio");
 			}
 			l.rx_cseq = cseq;
+			if (image)
+				l.t38_offered = true;
 			if (image && l.accept_t38) {
 				T38Params p = t38_params(*image);
 				std::string media;

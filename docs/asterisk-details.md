@@ -12,13 +12,14 @@ This page gives the technical data for [Asterisk: app_dmodem](asterisk.md), whic
 
 ## Overview
 
-The module adds three dialplan applications and one dialplan function:
+The module adds four dialplan applications and one dialplan function:
 
 | application or function | what it does |
 |---|---|
 | `DModem([profile[,options]])` | Answers the call with a software modem and, when the modems connect, sends the data to a server or program. |
 | `DModemReceiveFax(file[,ident[,options]])` | Answers as a fax machine and receives into a TIFF file. |
 | `DModemSendFax(file[&file2...][,ident[,options]])` | Sends one or more TIFF files as a fax on a call to a fax machine. |
+| `DModemFaxDetect([seconds[,options]])` | Listens for a fax machine on an incoming call, and goes to the `fax` extension when it hears one. |
 | `DMODEMFAXOPT(item)` | Reads or sets the fax settings of the channel, and reads the results of the last fax. |
 
 `DModem()` sends the data to one of three destinations, as the profile
@@ -133,7 +134,7 @@ The module is also a group 3 fax machine. It is an alternative to the
 - pages in MH or MR coding, in TIFF files;
 - error correction mode (ECM) when the other machine has it.
 
-You can use it in three ways:
+You can use it in four ways:
 
 - **`DModem()` receives faxes automatically.** The modem answers
   adaptively. If the CNG tone of the calling machine, or its V.8 CM of a
@@ -170,6 +171,53 @@ You can use it in three ways:
 send). If there is no `ident`, the module uses
 `DMODEMFAXOPT(localstationid)`. If that is not set, the module uses
 `fax_ident` of `[general]`.
+
+- **`DModemFaxDetect([seconds[,options]])`** finds a fax machine on an
+  incoming call before the dialplan sends the call to a person or to
+  an IVR (refer to [Fax detection](#fax-detection)).
+
+### Fax detection
+
+`DModemFaxDetect([seconds[,options]])` is the D-Modem equivalent of
+`FAXOPT(faxdetect)` of Asterisk. It answers the call, and listens for up
+to `seconds` (default 4, decimals are permitted). It listens for these
+signals:
+
+- the calling tone (CNG, 1100 Hz) of a fax machine;
+- a request for T.38 from the other end.
+
+When it hears one, it does these steps:
+
+1. It sets `DMODEMFAXDETECTED` to `CNG` or `T38`.
+2. It sets `DMODEMFAXEXTEN` to the extension that the call was on.
+3. If the context has a `fax` extension, the call goes to `fax`,
+   priority 1. If not, the dialplan continues at the next priority.
+
+When it hears no fax machine, it sets `DMODEMFAXDETECTED` to `NONE`, and
+the dialplan continues at the next priority.
+
+The application does not answer the T.38 request. The fax application
+in the `fax` extension answers it.
+
+| option | meaning |
+|---|---|
+| `c` | Listen for the CNG only. |
+| `t` | Listen for the T.38 request only. |
+| `n` | Do not answer the call (listen on the early media). |
+| `r` | Send the ring tone of the channel's tone zone to the caller while the application listens. |
+
+`FAXOPT(faxdetect)` of Asterisk listens in the background while other
+applications run. `DModemFaxDetect` listens only while it runs, as an
+"answer and wait" step at the start of the call. A FreePBX inbound route
+does the same (it answers and waits for the detection time).
+
+Example:
+
+```
+exten => 5551000,1,DModemFaxDetect(4,r)
+ same => n,Dial(PJSIP/reception)
+exten => fax,1,DModemReceiveFax(/var/spool/fax/${UNIQUEID}.tif)
+```
 
 ### Fax application options
 
@@ -211,6 +259,7 @@ You can set and read these items:
 | `minrate` | The lowest rate (same values). The fax stops if the two machines cannot use this rate or a higher rate. |
 | `t38timeout` | The time in ms to wait for the answer to our T.38 request. |
 | `localstationid` | Our fax number (CSI or TSI), up to 20 characters. |
+| `modems` | The modems that can send the pages: a list of `v17`, `v27` and `v29`, with commas between them (`v34` is accepted, and not used). The default is all three. |
 | `headerinfo` | The text of the header line on each page that we send, up to 63 characters (refer to [Page header line](#page-header-line)). |
 
 You can only read these items. They give the result of the last fax on
@@ -313,6 +362,7 @@ Put these in `[general]` or in a profile. `DModemSendFax` and
 |---|---|---|
 | `fax_dir` | `/var/spool/asterisk/fax` (the spool directory of Asterisk + `/fax`) | The directory where `DModem()` puts the faxes that it receives. |
 | `fax_ident` | empty | Our fax number (CSI and TSI). |
+| `fax_modems` | `v17,v27,v29` | The modems that can send the pages (refer to `DMODEMFAXOPT(modems)`). |
 | `fax_header` | empty | The text of the header line on each page that we send. Empty: no header line. |
 | `fax_max_rate` | `14400` | The highest rate: 14400, 12000, 9600, 7200, 4800 or 2400. |
 | `fax_min_rate` | `0` (none) | The lowest rate (same values). |
@@ -634,7 +684,11 @@ program from `dsp/test/fax_doc.cpp` into `build/dsp/test/fax_doc`. The fax goes:
 1. to `DModem()`, which must identify the fax machine automatically;
 2. to `DModemReceiveFax`.
 
-It compares the received data with the sent data.
+It compares the received data with the sent data. Then it tests the
+fax settings and options (`DMODEMFAXOPT()`, the header line, the lowest
+rate, option `T`), `DModemFaxDetect` (it must hear the CNG of a sender
+that uses V.27ter only, and go to the `fax` extension; with no fax, it
+must set `NONE`), and the CLI commands and AMI.
 
 `test/fax_spandsp.sh` does the same with the fax of Asterisk
 (`res_fax_spandsp`):
@@ -666,9 +720,12 @@ faster), and `DMODEM_DEBUG=3` (the DSP traces in `console.log`).
    (the gateway asks for T.38 when it receives the DIS);
 8. `DModemReceiveFax` to `DModem()`, which accepts its T.38 request
    before the modems connect as a calling fax machine. The two ends are
-   receivers, thus there is no document. The test checks only this.
+   receivers, thus there is no document. The test checks only this;
+9. `SendFAX` with option `z` to `DModemFaxDetect(30,t)`, which must
+   hear the T.38 request and go to the `fax` extension. There,
+   `DModemReceiveFax` receives the fax through T.38.
 
-Each document received in cases 1 to 7 must be the same as the sent
+Each document received in cases 1 to 7 and 9 must be the same as the sent
 document. Variables: `CASES`, `DMODEM_DEBUG=3`, `SIP_LOG=1` (the SIP
 messages in the console) and `FAX_DEBUG=1` (the debug output of
 spandsp).

@@ -194,6 +194,9 @@ void dmodem_set_log(void (*fn)(const char *line));
 
 enum dmodem_fax_dir { DMODEM_FAX_RECEIVE, DMODEM_FAX_SEND };
 
+/* dmodem_fax_config's modems */
+enum { DMODEM_FAX_V27 = 1, DMODEM_FAX_V29 = 2, DMODEM_FAX_V17 = 4 };
+
 /* T.38's UDPTL error recovery (T38FaxUdpEC) for the packets we send */
 enum dmodem_t38_ec { DMODEM_T38_EC_NONE, DMODEM_T38_EC_REDUNDANCY };
 
@@ -214,6 +217,10 @@ struct dmodem_fax_config {
 	int32_t min_bps;                /* no page below this rate (0:
 					   none) */
 	int no_ecm;                     /* without error correction mode */
+	int modems;                     /* the modems that may carry the
+					   pages: of DMODEM_FAX_V27,
+					   DMODEM_FAX_V29, DMODEM_FAX_V17
+					   (0: all three) */
 	/* T.38 instead of audio: our UDPTL packets to t38_send, the other
 	   end's by dmodem_fax_t38_rx() */
 	int t38;
@@ -281,6 +288,25 @@ void dmodem_fax_t38_rx(struct dmodem_fax *f, const unsigned char *pkt,
 void dmodem_fax_t38_time(struct dmodem_fax *f, int32_t n);
 /* also closes the received file (none if no page came) */
 void dmodem_fax_destroy(struct dmodem_fax *f);
+
+/*
+ *    fax detection: a fax machine's calling tone (CNG, 1100 Hz) on a
+ *    call's audio, as the answerer hears it
+ */
+
+struct dmodem_faxdetect;
+
+/* the octets of dmodem_faxdetect_process_g711() in law (mu-law if
+   unknown); NULL if there is no memory */
+struct dmodem_faxdetect *dmodem_faxdetect_create(enum dmodem_law law);
+/* n samples of the caller (16 bit linear, 8000 Hz): 1 once a fax
+   machine's CNG has been heard (a burst, or 400 ms of the tone), else 0 */
+int dmodem_faxdetect_process(struct dmodem_faxdetect *d, const int16_t *in,
+			     int32_t n);
+/* the same with G.711 octets */
+int dmodem_faxdetect_process_g711(struct dmodem_faxdetect *d,
+				  const unsigned char *in, int32_t n);
+void dmodem_faxdetect_destroy(struct dmodem_faxdetect *d);
 
 #ifdef __cplusplus
 }

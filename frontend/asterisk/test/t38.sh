@@ -19,7 +19,10 @@
 #   8. DModemReceiveFax calls DModem(bbs) and asks for T.38 before the
 #      modems connect: DModem takes the call as a fax machine's, over
 #      T.38 (two receivers: no document, only that is checked)
-# Each document received (1 to 7) must be the one sent; all but 5 over
+#   9. SendFAX asks for T.38 at once (z) from a call to
+#      DModemFaxDetect(): it hears the request (T38), goes to the fax
+#      extension, and DModemReceiveFax receives over T.38
+# Each document received (1 to 7, 9) must be the one sent; all but 5 over
 # T.38.
 # Before 6 and 7, Asterisk's gateway by itself: SendFAX on the audio
 # through it to ReceiveFAX over T.38, no DModem.  Where that fax does
@@ -222,7 +225,7 @@ gateway_works() {
 }
 r=0
 n_send=0; n_in=0
-for c in ${CASES:-1 2 3 4 5 6 7 8}; do
+for c in ${CASES:-1 2 3 4 5 6 7 8 9}; do
 	case $c in
 	6|7)
 		if ! gateway_works; then
@@ -311,6 +314,19 @@ for c in ${CASES:-1 2 3 4 5 6 7 8}; do
 			r=1
 		fi
 		want=0
+		;;
+	9)
+		echo "== 9: SendFAX (T.38 at once) -> DModemFaxDetect -> fax extension"
+		$ast -rx "channel originate PJSIP/detect@loopout extension s@sp-sendz"
+		n_send=$((n_send+1)); n_in=$((n_in+1))
+		wait_for " SPSEND FAXSTATUS" $n_send && wait_for " T38IN " $n_in
+		grep -E " SPSEND| T38IN | T38DETECT " "$run/console.log" | tail -3
+		if ! grep -q " T38DETECT T38 from detect" "$run/console.log"; then
+			echo "FAIL: DModemFaxDetect() did not hear the T.38 request"
+			r=1
+		fi
+		"$t4" compare "$run/doc.tif" "$run/received.tif" || r=1
+		want=1
 		;;
 	esac
 	log_since "$l"

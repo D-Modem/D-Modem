@@ -29,6 +29,9 @@
  *    (DModemReceiveFax); DMODEMFAX* set as they do, but as soon as the
  *    result is final (the MCF to the last page): the channel is gone
  *    with the other machine's hangup, which may come right after it.
+ *    Stasis(<app>,faxdetect[,<seconds>[,<options>]]) listens for a fax
+ *    machine (DModemFaxDetect): its CNG, or its T.38 offer on the SIP
+ *    side, and continues the call at the fax extension.
  *
  *    One thread reads ARI's events (the WebSocket); each call has a
  *    thread of its own.
@@ -382,7 +385,7 @@ struct Rtp {
  */
 
 /* what a call is for: the first of Stasis()'s arguments */
-enum Kind { MODEM, SENDFAX, RECEIVEFAX };
+enum Kind { MODEM, SENDFAX, RECEIVEFAX, FAXDETECT };
 
 struct Call {
 	std::string id, name;           /* the channel (id: its uniqueid) */
@@ -822,6 +825,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	cfg.max_bps = fs.max_bps;
 	cfg.min_bps = fs.min_bps;
 	cfg.no_ecm = !fs.ecm;
+	cfg.modems = fs.modems;
 	set_var(c.id, "DMODEMFAXFILE", file);
 	if (ro.need_t38 && !may_switch) {
 		say("WARNING %s: dmodem fax: T.38 needed, and the line cannot "
@@ -1493,17 +1497,19 @@ bool open_leg(Call &c, enum dmodem_law &law, Line &line, bool t38)
 	return true;
 }
 
-/* the call's line: the channel answered (unless it is up), our UDP port,
+/* the call's line: the channel answered (unless it is up, or answer is
+   false), our UDP port,
    the external media channel that sends the call's audio there in law
    (T.38: the SIP leg, taking T.38 offers if t38), and the two in a
    bridge; false (logged) if any of it fails */
-bool open_line(Call &c, enum dmodem_law &law, Line &line, bool t38)
+bool open_line(Call &c, enum dmodem_law &law, Line &line, bool t38,
+	       bool answer = true)
 {
 	ari::Json r;
 	s32 port;
 
 	line.rtp.pt = law == DMODEM_LAW_ALAW ? 8 : 0;
-	if (c.state != "Up" &&
+	if (answer && c.state != "Up" &&
 	    !ari_call("POST", "channels/" + c.id + "/answer"))
 		return false;
 	if (use_sip) {
@@ -1555,6 +1561,128 @@ bool open_line(Call &c, enum dmodem_law &law, Line &line, bool t38)
 			ari::url_encode(c.id + "," + line.media));
 }
 
+/* the line taken down: its media channel (or SIP leg's channel) and
+   bridge deleted, the leg forgotten; line empty after */
+void close_line(Line &line)
+{
+	if (!line.media.empty())
+		ari_call("DELETE", "channels/" + line.media);
+	if (!line.bridge.empty())
+		ari_call("DELETE", "bridges/" + line.bridge);
+	if (line.leg)
+		sip.forget(line.leg);
+	{
+		std::lock_guard<std::mutex> lk(calls_lock);
+		media_channels.erase(line.media);
+	}
+	line.media.clear();
+	line.bridge.clear();
+	line.leg = nullptr;
+}
+
+/* the options of Stasis(app,faxdetect,seconds,options), as
+   DModemFaxDetect has them: c the CNG only, t the T.38 request only, n
+   no answer, r ringing; false if one is unknown, or c and t together */
+bool detect_options(const std::string &s, bool *cng_only, bool *t38_only,
+		    bool *no_answer, bool *ringing)
+{
+	*cng_only = *t38_only = *no_answer = *ringing = false;
+	for (char ch : s) {
+		if (ch == 'c')
+			*cng_only = true;
+		else if (ch == 't')
+			*t38_only = true;
+		else if (ch == 'n')
+			*no_answer = true;
+		else if (ch == 'r')
+			*ringing = true;
+		else
+			return false;
+	}
+	return !(*cng_only && *t38_only);
+}
+
+/* Stasis(app,faxdetect[,seconds[,options]]): the line opened (a T.38
+   offer on the SIP side taken, unless option c: the caller is then on
+   T.38 with Asterisk, and the fax application's own leg asks for it
+   again), then up to seconds (default 4) of listening for a fax machine: its
+   CNG, or a T.38 offer on the SIP side.  DMODEMFAXDETECTED is CNG, T38
+   or NONE; on a fax, DMODEMFAXEXTEN the extension, and the call
+   continues at the context's fax extension if it has one.  True if the
+   call continues there (run_call() then does not continue it) */
+bool run_detect(Call &c)
+{
+	bool cng_only, t38_only, no_answer, ringing;
+	enum dmodem_law law = call_law(c, DMODEM_LAW_UNKNOWN);
+	double secs = c.file.empty() ? 4 : atof(c.file.c_str());
+	std::string what = "NONE", playback;
+	struct dmodem_faxdetect *d;
+	u8 in[MAX_SAMPLES];
+	Line line;
+	bool jumped = false;
+	ari::Json r;
+
+	if (secs <= 0) {
+		say("WARNING %s: faxdetect: bad time '%s'", c.name.c_str(),
+		    c.file.c_str());
+		secs = 4;
+	}
+	if (!detect_options(c.fax_options, &cng_only, &t38_only, &no_answer,
+			    &ringing)) {
+		say("WARNING %s: faxdetect: bad options '%s'", c.name.c_str(),
+		    c.fax_options.c_str());
+		return false;
+	}
+	if (!open_line(c, law, line, !cng_only, !no_answer)) {
+		close_line(line);
+		return false;
+	}
+	/* (on the channel: a playback on the bridge would put a third
+	   channel in it, and the bridge's change to mixing would change
+	   the channel's formats) */
+	if (ringing && ari_call("POST", "channels/" + c.id +
+				"/play?media=tone:ring", &r))
+		playback = r["id"].str();
+	d = dmodem_faxdetect_create(law);
+	s64 end = now_us() + static_cast<s64>(secs * 1e6);
+	while (d && what == "NONE" && now_us() < end) {
+		s16 n = next_block(c, line.rtp, law, in);
+		if (n <= 0)
+			break;
+		if (!t38_only && dmodem_faxdetect_process_g711(d, in, n))
+			what = "CNG";
+		else if (!cng_only && line.leg && sip.get(line.leg).t38_offered)
+			what = "T38";
+	}
+	dmodem_faxdetect_destroy(d);
+	if (!playback.empty())
+		ari_call("DELETE", "playbacks/" + playback);
+	close_line(line);
+	if (c.hungup)
+		return false;
+	set_var(c.id, "DMODEMFAXDETECTED", what);
+	if (what == "NONE") {
+		if (verbose >= 1)
+			say("%s: dmodem fax detect: no fax", c.name.c_str());
+		return false;
+	}
+	set_var(c.id, "DMODEMFAXEXTEN", c.exten);
+	if (c.exten != "fax" &&
+	    get_var(c.id, "DIALPLAN_EXISTS(" + c.context + ",fax,1)") == "1") {
+		if (verbose >= 1)
+			say("%s: dmodem fax detect: %s, to the fax extension",
+			    c.name.c_str(), what.c_str());
+		jumped = ari_call("POST", "channels/" + c.id +
+				  "/continue?context=" +
+				  ari::url_encode(c.context) +
+				  "&extension=fax&priority=1");
+	} else if (verbose >= 1) {
+		say("%s: dmodem fax detect: %s (no fax extension in %s)",
+		    c.name.c_str(), what.c_str(), c.context.c_str());
+	}
+	return jumped;
+}
+
 /* a call's thread: what it is for on its line (the modem, or a fax to
    send or receive), the line taken down, and the call back to the
    dialplan (if it is still there) */
@@ -1567,6 +1695,14 @@ void run_call(std::shared_ptr<Call> c)
 	Line line;
 	bool up = false;
 
+	if (c->kind == FAXDETECT) {
+		bool jumped = run_detect(*c);
+		if (!c->hungup && !jumped)
+			ari_call("POST", "channels/" + c->id + "/continue");
+		std::lock_guard<std::mutex> lk(calls_lock);
+		calls.erase(c->id);
+		return;
+	}
 	fax_read_settings(*c);
 	if (c->kind == MODEM) {
 		if (load_profile(c->profile, &p)) {
@@ -1610,12 +1746,7 @@ void run_call(std::shared_ptr<Call> c)
 				set_var(c->id, "DMODEMFAXSTATUS", "FAILED");
 		}
 	}
-	if (!line.media.empty())
-		ari_call("DELETE", "channels/" + line.media);
-	if (!line.bridge.empty())
-		ari_call("DELETE", "bridges/" + line.bridge);
-	if (line.leg)
-		sip.forget(line.leg);
+	close_line(line);
 	if (!c->hungup) {
 		if (c->kind == MODEM)
 			set_var(c->id, "DMODEMSTATUS", status);
@@ -1623,7 +1754,6 @@ void run_call(std::shared_ptr<Call> c)
 	}
 	std::lock_guard<std::mutex> lk(calls_lock);
 	calls.erase(c->id);
-	media_channels.erase(line.media);
 }
 
 /* one of ARI's events */
@@ -1667,6 +1797,11 @@ void event(const ari::Json &e)
 			c->file = e["args"][1].str();
 			c->ident = e["args"][2].str();
 			c->fax_options = e["args"][3].str();
+		} else if (what == "faxdetect") {
+			/* (seconds in file, options in fax_options) */
+			c->kind = FAXDETECT;
+			c->file = e["args"][1].str();
+			c->fax_options = e["args"][2].str();
 		} else {
 			c->profile = what.empty() ? "default" : what;
 			c->options = e["args"][1].str();

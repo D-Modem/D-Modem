@@ -12,7 +12,10 @@
 #      DMODEMFAXOPT(headerinfo): page 1 has the header line's rows more
 #   4. the receiver's lowest rate 9600 and the sender's top rate 4800:
 #      no fax (FAXERROR TRAINING)
-#   5. option T on a Local channel (no T.38): no fax (FAXERROR T38)
+#   5. option T on a Local channel (no T.38): no fax (FAXERROR T38);
+#      DModemFaxDetect() hears the CNG of a sender on V.27ter only
+#      (DMODEMFAXOPT(modems)) and goes to the fax extension; with no
+#      fax it sets NONE
 #   6. the CLI: dmodem fax show stats, settings, sessions and
 #      capabilities; the AMI actions registered; AMI (ami_events.py on
 #      AMI_PORT, default 15038): DModemFaxStatus (option s), the
@@ -197,6 +200,21 @@ if true; then
 	wait_for " T38ONLY " 1
 	grep -E " T38ONLY " "$run/console.log"
 	has " T38ONLY FAXSTATUS=FAILED FAXERROR=T38" "option T without T.38"
+
+	$ast -rx "dialplan set global DETECTSECS 10" >/dev/null
+	$ast -rx "channel originate Local/s@faxdetect-in/n extension s@faxdetect-send"
+	wait_for " DSEND " 1
+	grep -E " (DETECTED|DSEND|DSOPT) " "$run/console.log"
+	has " DETECTED CNG from s" "DModemFaxDetect(): CNG heard, to the fax extension"
+	has " DSEND FAXSTATUS=SUCCESS FAXBITRATE=4800 FAXPAGES=2" "DMODEMFAXOPT(modems)=v27: the pages at 4800 bit/s"
+	if [ -z "$ARI" ]; then
+		has " DSOPT modems=v27" "DMODEMFAXOPT(modems) read back"
+	fi
+
+	$ast -rx "dialplan set global DETECTSECS 2" >/dev/null
+	$ast -rx "channel originate Local/s@faxdetect-in/n application Wait 10"
+	wait_for " DETECTED NONE in s" 1
+	has " DETECTED NONE in s" "DModemFaxDetect(): no fax, the dialplan on"
 fi
 if [ -z "$ARI" ]; then
 
