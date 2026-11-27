@@ -1210,6 +1210,114 @@ ok(strpos($dp, "[app-dmodem-faxsent]\n") !== false && strpos($dp, "exten => s,1,
 $x = Dialplan::faxOut(array_merge($m->getSettings(), ['engine' => 'ari']), '/usr/sbin/fwconsole');
 same($x['s'][2], ['Stasis', "dmodem,sendfax,$sdir/out-\${FILTER(a-z0-9,\${DMODEMFAXJOB})}.tif"],
      'the sent fax with dmodem-ari: Stasis(sendfax)');
+/* --- UCP: the Fax widget, its rights in User Manager --- */
+
+require_once __DIR__ . '/ucp_env.php';
+require_once __DIR__ . '/../dmodem/ucp/Dmodem.class.php';
+$ucp = new FakeUcp();
+$um = new FakeUserman();
+$um->users = [['id' => 7, 'username' => 'carol', 'email' => 'carol@example.com']];
+same($m->ucpFaxAccess(7), ['enabled' => false, 'send' => false, 'recipients' => []], 'UCP: no Ucp, no fax');
+FreePBX::$modules['Ucp'] = $ucp;
+FreePBX::$modules['Userman'] = $um;
+$m->saveRecipient(array_merge(Config::defaultRecipient(), ['id' => 'carolfax', 'name' => 'Carol',
+	'email' => '', 'user' => 'carol']));
+same($m->ucpFaxAccess(7)['enabled'], false, 'UCP: off by default');
+$ucp->groupOf[7] = 1;
+$_REQUEST['group'] = 1;
+$_POST = ['dmodem_fax_enable' => 'yes', 'dmodem_fax_send' => 'no'];
+$m->ucpAddGroup(1, 'userman');
+same($m->ucpFaxAccess(7), ['enabled' => true, 'send' => false, 'recipients' => ['carolfax']],
+     'UCP: on for the group; the recipient of the user\'s User Manager user');
+$_POST = ['dmodem_fax_enable' => 'inherit', 'dmodem_fax_send' => 'yes',
+	  'dmodem_fax_recipients' => ['sales', 'nope']];
+$m->ucpUpdateUser(7, 'userman');
+same($ucp->byId[7]['Dmodem'], ['fax_enable' => null, 'fax_send' => true, 'fax_recipients' => ['sales']],
+     'UCP: the user\'s settings (inherit, an unknown recipient dropped)');
+same($m->ucpFaxAccess(7), ['enabled' => true, 'send' => true, 'recipients' => ['carolfax', 'sales']],
+     'UCP: the user\'s own and the group\'s');
+$m->ucpUpdateUser(8, 'otherpage');
+ok(!isset($ucp->byId[8]), 'UCP: other pages\' saves left alone');
+$pg = $m->ucpConfigPage('user', ['id' => 7], 'showuser');
+ok($pg[0]['rawname'] === 'dmodem' && strpos($pg[0]['content'], 'value="sales" selected') !== false &&
+   strpos($pg[0]['content'], 'id="dmodem_fax_send_yes" value="yes" checked') !== false &&
+   strpos($pg[0]['content'], 'id="dmodem_fax_enable_inherit" value="inherit" checked') !== false,
+   'UCP: the User Manager page shows the settings');
+ok(strpos($m->ucpConfigPage('group', [], 'showgroup')[0]['content'], 'inherit') === false,
+   'UCP: no inherit for a group');
+/* the faxes that the user sees */
+$udir = sys_get_temp_dir() . '/dmodem-ucp-' . getmypid();
+mkdir($udir);
+$m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => $udir, 'fax_keep_days' => 0]));
+file_put_contents("$udir/20261127-1-5550100-1800001000.1.tif", mh_white_tiff(2));
+$m->faxReceived('sales', '1800001000.1', ['status' => 'SUCCESS', 'pages' => '1', 'cid' => '5550100',
+	'cidname' => 'ACME'], function () { return true; }, 1800001000);
+$m->faxReceived('', '1800001000.2', ['status' => 'SUCCESS'], null, 1800001001);
+$r = $m->queueFax(['number' => '5550200', 'cover' => 'yes', 'notify' => 'never'], [], 1800001002, $fakeGs, 7);
+$m->runFaxQueue(1800001003);
+$m->faxSent($r['id'], '1800001004.1', 'SUCCESS', 1, 9600, 'OK', '', null, 1800001004);
+$r = $m->queueFax(['number' => '5550201', 'cover' => 'yes', 'notify' => 'never'], [], 1800001005, $fakeGs, 0);
+$other = $r['id'];
+same(array_keys($m->ucpFaxes(7)), ['1800001004.1', '1800001000.1'],
+     'UCP: the user\'s faxes: its recipients\' and its own sent ones');
+same($m->ucpFaxJobs(7), [], 'UCP: no fax of the user waits');
+/* the UCP module */
+$uu = new \UCP\FakeUser();
+$uu->user = ['id' => 7, 'username' => 'carol'];
+\UCP\Modules::$ucp = (object)['FreePBX' => $m->FreePBX, 'User' => $uu];
+FreePBX::$modules['Dmodem'] = $m;
+$w = new \UCP\Modules\Dmodem(null);
+same($w->getWidgetList()['list']['fax']['display'], 'Fax', 'UCP widget: in the list');
+$h = $w->getWidgetDisplay('fax')['html'];
+ok(strpos($h, 'data-dmodem-tab="inbox"') !== false && strpos($h, 'data-uniqueid="1800001000.1"') !== false &&
+   strpos($h, '5550200') !== false && strpos($h, 'data-dmodem-pane="send"') !== false &&
+   strpos($h, '1800001000.2') === false, 'UCP widget: the inbox, the sent fax, the send form; not others\' faxes');
+same($w->poll()['latest']['uniqueid'], '1800001000.1', 'UCP widget: the poll gives the newest received fax');
+ok($w->ajaxRequest('faxsend', []) && $w->ajaxRequest('faxpdf', []) && !$w->ajaxRequest('other', []),
+   'UCP widget: the commands');
+$_REQUEST = ['command' => 'faxtiff', 'uniqueid' => '1800001000.1'];
+ob_start();
+$w->ajaxCustomHandler();
+same(ob_get_clean(), mh_white_tiff(2), 'UCP widget: the TIFF of a fax of the user');
+$_REQUEST = ['command' => 'faxtiff', 'uniqueid' => '1800001000.2'];
+ob_start();
+$w->ajaxCustomHandler();
+ok(strpos(ob_get_clean(), 'No such fax') !== false, 'UCP widget: not the TIFF of another fax');
+$_REQUEST = ['command' => 'faxdelete'];
+$_POST = ['uniqueid' => '1800001000.2'];
+ok(!$w->ajaxHandler()['status'] && $m->getFax('1800001000.2') !== null, 'UCP widget: not another\'s fax deleted');
+$_REQUEST = ['command' => 'faxcancel'];
+$_POST = ['job' => $other];
+ok(!$w->ajaxHandler()['status'] && $m->getFaxJob($other) !== null, 'UCP widget: not another\'s fax cancelled');
+$_REQUEST = ['command' => 'faxforward'];
+$_POST = ['uniqueid' => '1800001000.1', 'number' => '5550300'];
+$fw = $w->ajaxHandler();
+$mine = $m->ucpFaxJobs(7);
+ok(count($mine) === 1 && reset($mine)['number'] === '5550300' && strpos($fw['html'], '5550300') !== false,
+   'UCP widget: a fax forwarded, in the user\'s outgoing faxes');
+$_REQUEST = ['command' => 'faxcancel'];
+$_POST = ['job' => key($mine)];
+ok(reset($mine)['state'] !== 'sending' || !$w->ajaxHandler()['status'],
+   'UCP widget: not a fax cancelled while it is on a call');
+/* the try fails and the job waits for its next try: now it cancels */
+$m->faxSent(key($mine), '1800002000.1', 'FAILED', 0, 0, 'T30_ERR', '', null, 1800002000);
+ok($w->ajaxHandler()['status'] && $m->ucpFaxJobs(7) === [], 'UCP widget: the user\'s fax cancelled');
+$_REQUEST = ['command' => 'faxdelete'];
+$_POST = ['uniqueid' => '1800001000.1'];
+ok($w->ajaxHandler()['status'] && $m->getFax('1800001000.1') === null, 'UCP widget: the user\'s fax deleted');
+$ucp->byId[7]['Dmodem']['fax_send'] = false;
+ok(!$w->ajaxRequest('faxsend', []) && !$w->ajaxRequest('faxforward', []) && $w->ajaxRequest('faxlist', []),
+   'UCP widget: no send right, no send');
+ok(strpos($w->widgetHtml(), 'data-dmodem-pane="send"') === false, 'UCP widget: no send form without the right');
+$ucp->byGid[1]['Dmodem']['fax_enable'] = false;
+ok($w->getWidgetList() === [] && !$w->ajaxRequest('faxlist', []), 'UCP widget: off, nothing');
+$m->cancelFax($other);
+unset(FreePBX::$modules['Ucp'], FreePBX::$modules['Userman']);
+$m->deleteRecipient('carolfax');
+array_map('unlink', glob("$udir/*"));
+rmdir($udir);
+$_REQUEST = $_POST = [];
+
 /* the job each minute */
 $fj = new FakeJob();
 FreePBX::$modules['Job'] = $fj;
