@@ -13,6 +13,8 @@ require_once __DIR__ . '/FaxMail.php';
 require_once __DIR__ . '/Dialplan.php';
 require_once __DIR__ . '/FaxSend.php';
 require_once __DIR__ . '/FaxJunk.php';
+require_once __DIR__ . '/MailParse.php';
+require_once __DIR__ . '/Mail2Fax.php';
 
 class Config
 {
@@ -85,6 +87,17 @@ class Config
 			   faxstatus with a token): on, and its token */
 			'fax_api' => false,
 			'fax_api_token' => '',
+			/* email to fax (Mail2Fax): on, the spool folder (the
+			   mail system writes it), the domain of the addresses
+			   ('': all), the senders that may send, a PIN in the
+			   subject ('': none), and the mail's text on a cover
+			   page */
+			'mail2fax' => false,
+			'mail2fax_spool' => '/var/spool/asterisk/fax/mail2fax',
+			'mail2fax_domain' => '',
+			'mail2fax_senders' => '',
+			'mail2fax_pin' => '',
+			'mail2fax_cover' => true,
 			'fax_cover_name' => '',
 			'fax_cover_address' => '',
 			'fax_cover_phone' => '',
@@ -305,6 +318,18 @@ class Config
 			$e['fax_api_token'] = _('32 to 128 letters, digits, _ and -');
 		elseif ($s['fax_api'] && $s['fax_api_token'] === '')
 			$e['fax_api_token'] = _('The send API needs a token');
+		if (!preg_match('#^/[A-Za-z0-9/._-]{1,200}$#', $s['mail2fax_spool']))
+			$e['mail2fax_spool'] = _('An absolute path of letters, digits, /, ., _ and -');
+		if ($s['mail2fax_domain'] !== '' &&
+		    !preg_match('/^[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+$/', $s['mail2fax_domain']))
+			$e['mail2fax_domain'] = _('A domain, for example fax.example.com, or empty');
+		$why = Mail2Fax::sendersError($s['mail2fax_senders']);
+		if ($why !== '')
+			$e['mail2fax_senders'] = $why;
+		elseif ($s['mail2fax'] && !Mail2Fax::senders($s['mail2fax_senders']))
+			$e['mail2fax_senders'] = _('Email to fax needs a sender on the list');
+		if ($s['mail2fax_pin'] !== '' && !preg_match('/^[A-Za-z0-9]{4,32}$/', $s['mail2fax_pin']))
+			$e['mail2fax_pin'] = _('4 to 32 letters and digits, or empty');
 		foreach (['fax_cover_name', 'fax_cover_phone', 'fax_cover_web',
 			  'fax_cover_footer'] as $k)
 			if (self::breaksLine($s[$k]) || strlen($s[$k]) > 100)

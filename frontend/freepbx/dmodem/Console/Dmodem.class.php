@@ -19,8 +19,12 @@
 //                    [--from=...] [--message=...] [--retries=n]
 //                    [--notify=never|always|success|failure] [--email=...]
 //                                            (a fax into the queue)
-//   fwconsole dmodem faxqueue                (the queue run: FreePBX's
-//                                             jobs run it each minute)
+//   fwconsole dmodem faxqueue                (the email to fax spool,
+//                                             then the queue run:
+//                                             FreePBX's jobs run it
+//                                             each minute)
+//   fwconsole dmodem mail2fax <file|->       (email to fax: a message
+//                                             into the queue)
 //   fwconsole dmodem faxjobs                 (the queue)
 //   fwconsole dmodem faxcancel <job>         (a fax out of the queue)
 //   fwconsole dmodem faxsent <job> <uniqueid> <status> [pages] [rate]
@@ -44,7 +48,7 @@ class Dmodem extends Command
 			->setDescription(_('D-Modem: dial out with a profile, list the profiles, export or import the settings, log and mail a received fax, list the fax log, send a fax'))
 			->setDefinition([
 				new InputArgument('args', InputArgument::IS_ARRAY,
-					_('dial <profile> <number> | profiles | export [file] | import <file> | fax2mail <recipient> <uniqueid> ... | faxes | sendfax <number> [file...] | faxqueue | faxjobs | faxcancel <job> | faxsent ...')),
+					_('dial <profile> <number> | profiles | export [file] | import <file> | fax2mail <recipient> <uniqueid> ... | faxes | sendfax <number> [file...] | faxqueue | mail2fax <file|-> | faxjobs | faxcancel <job> | faxsent ...')),
 				new InputOption('callerid', null, InputOption::VALUE_REQUIRED,
 					_('dial: the caller ID (else the settings\')'), ''),
 				new InputOption('keep', null, InputOption::VALUE_NONE,

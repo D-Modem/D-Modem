@@ -65,6 +65,9 @@ For the generated files, the code and the tests, refer to
   result can go by email. Ghostscript must be installed, and
   LibreOffice for Office files. Scripts can use `fwconsole dmodem
   sendfax`, and programs can use the send API with a token.
+- **Email to fax.** A message to `<number>@<your fax domain>` from a
+  sender on a list (and with a PIN, if you set one) becomes a fax. Its
+  attached files are sent, with its text on a cover page.
 - **Faxes.** The **Faxes** tab shows each received and sent fax. You can view it
   as a PDF file, download the TIFF file or delete it. The module can
   delete old faxes.

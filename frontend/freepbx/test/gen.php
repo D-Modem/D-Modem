@@ -30,7 +30,11 @@ function dmodem_test_module($dir, $engine, $port)
 			 'ari_password' => 'dmodem', 'ari_app' => 'dmodem',
 			 'sip_endpoint' => 'dmodem', 'sip_bind' => '127.0.0.1:5090',
 			 'dialout_context' => 'modem-out', 'dialout_callerid' => '"D-Modem" <5550100>',
-			 'dialout_ring' => '30']);
+			 'dialout_ring' => '30',
+			 /* email to fax: the spool of e2e.sh */
+			 'mail2fax' => 'yes', 'mail2fax_spool' => $dir . '/mail2fax',
+			 'mail2fax_domain' => 'fax.example.com', 'mail2fax_senders' => '@example.com',
+			 'mail2fax_cover' => 'yes']);
 	$p = ['action' => 'save_profile', 'original' => '', 'mode' => 'tcp',
 	      'host' => '127.0.0.1', 'law' => 'auto', 'timeout' => '60', 'fax' => 'yes'];
 	dmodem_post($m, $p + ['name' => 'bbs', 'description' => 'the test BBS', 'port' => '2323']);

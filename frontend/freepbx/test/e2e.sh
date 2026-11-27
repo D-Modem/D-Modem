@@ -246,6 +246,31 @@ else
 		echo "FAIL: no answer: no result"; r=1
 		grep -E "faxout|failed|5559998" "$run/console.log" | tail -10 || true
 	fi
+	echo "--- email to fax (bin/mail2fax-spool.php, the queue reads the spool)"
+	mkdir -p "$run/etc/mail2fax"
+	rm -f "$run/rx.tif"
+	{
+		printf 'From: "Ann" <ann@example.com>\r\nX-Original-To: 5559999@fax.example.com\r\n'
+		printf 'To: fax@fax.example.com\r\nSubject: e2e\r\nMIME-Version: 1.0\r\n'
+		printf 'Content-Type: multipart/mixed; boundary="e2e"\r\n\r\n--e2e\r\n'
+		printf 'Content-Type: text/plain\r\n\r\nBy email.\r\n--e2e\r\n'
+		printf 'Content-Type: image/tiff; name="doc.tif"\r\nContent-Transfer-Encoding: base64\r\n\r\n'
+		base64 "$run/doc.tif"
+		printf '\r\n--e2e--\r\n'
+	} | php "$here/../dmodem/bin/mail2fax-spool.php" "$run/etc/mail2fax" || r=1
+	before=$(grep -c '"faxsent",.*"SUCCESS"' "$run/etc/fax2mail.log" || true)
+	sendfax faxqueue | grep -q "1 of 1 faxes queued" || { echo "FAIL: email to fax: not queued"; r=1; }
+	i=0; until [ "$(grep -c '"faxsent",.*"SUCCESS"' "$run/etc/fax2mail.log" || true)" -gt "$before" ] || [ $i -ge 240 ]; do
+		sleep 1; i=$((i+1))
+	done
+	pages=$(tiffinfo "$run/rx.tif" 2>/dev/null | grep -c "TIFF Directory" || true)
+	if [ "$pages" -eq "$want" ] && [ -z "$(ls "$run/etc/mail2fax")" ] && [ -z "$(sendfax faxjobs)" ]; then
+		echo "PASS: email to fax: $pages pages (the mail's text on the cover page) to the far machine"
+	else
+		echo "FAIL: email to fax ($pages pages of $want)"; r=1
+		cat "$run/etc/fax2mail.log" 2>/dev/null || true
+		ls -la "$run/etc/mail2fax" || true
+	fi
 fi
 
 $ast -rx "core stop now" >/dev/null 2>&1 || true

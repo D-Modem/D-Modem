@@ -172,6 +172,21 @@ foreach (Config::FAX_RATES as $r)
 	$row('fax_cover_footer', _('Cover page: footer'), $text('fax_cover_footer', $s['fax_cover_footer']),
 	     _('A line on the bottom of the cover page, for example a confidentiality notice.'));
 	?>
+	<h2><?php echo _('Email to fax'); ?></h2>
+	<p class="text-muted"><?php echo _('A message to <number>@<your fax domain> becomes a fax to that number: its PDF, TIFF and Office files, and its text on the cover page. The mail system puts each message into the spool folder (bin/mail2fax-spool.php, through an alias with a pipe), and the queue reads the folder each minute. The result goes to the sender as Email the result says.'); ?></p>
+	<?php
+	$row('mail2fax', _('Email to fax'), $check('mail2fax', $s['mail2fax']), '');
+	$row('mail2fax_spool', _('Spool folder'), $text('mail2fax_spool', $s['mail2fax_spool']),
+	     _('The mail system writes here, and Asterisk reads and deletes the messages (for example mode 1733, owner asterisk).'));
+	$row('mail2fax_domain', _('Fax domain'), $text('mail2fax_domain', $s['mail2fax_domain']),
+	     _('Only the addresses in this domain give fax numbers, for example fax.example.com. Empty: all domains.'));
+	$row('mail2fax_senders', _('Senders'), $list('mail2fax_senders', $s['mail2fax_senders']),
+	     _('The senders that may send faxes: one address or @domain on each line. Other messages are dropped, without an answer.'));
+	$row('mail2fax_pin', _('PIN'), $text('mail2fax_pin', $s['mail2fax_pin']),
+	     _('If set, the subject must have it as a word: a sender address alone is easy to forge. 4 to 32 letters and digits.'));
+	$row('mail2fax_cover', _('Cover page'), $check('mail2fax_cover', $s['mail2fax_cover']),
+	     _('The text of the message (and the subject, without a PIN) on a cover page, with the sender.'));
+	?>
 	<h2><?php echo _('Fax to email'); ?></h2>
 	<p class="text-muted"><?php echo _('A fax to a recipient\'s destination (the Fax recipients tab) goes to the recipient\'s email address when the call ends. In the subject and the text, these fields are replaced: {cid} {cidname} {remote} {pages} {status} {date} {recipient} {file}.'); ?></p>
 	<?php

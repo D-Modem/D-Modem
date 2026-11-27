@@ -22,6 +22,8 @@ use FreePBX\modules\Dmodem\FaxPdf;
 use FreePBX\modules\Dmodem\FaxLog;
 use FreePBX\modules\Dmodem\FaxSend;
 use FreePBX\modules\Dmodem\FaxJunk;
+use FreePBX\modules\Dmodem\MailParse;
+use FreePBX\modules\Dmodem\Mail2Fax;
 use FreePBX\modules\Dmodem\FaxCover;
 
 $failed = 0;
@@ -1378,6 +1380,143 @@ ok($m->getSettings()['fax_api'] && $m->getSettings()['fax_api_token'] === $token
    'settings form: an empty token keeps the token');
 $m->saveSettings(['fax_api' => false, 'fax_api_token' => '', 'fax_dir' => $sdir]);
 $_REQUEST = $_POST = [];
+/* email to fax: the message reader */
+same(MailParse::headers("Subject: a\r\n b\r\nX-A: 1\r\nX-A: 2\r\nbad line\r\n"),
+     ['subject' => ['a b'], 'x-a' => ['1', '2']], 'MailParse: headers, folded lines joined');
+same(MailParse::decodeWords('=?UTF-8?B?w4RyZ2Vy?= =?ISO-8859-1?Q?_=E9t=E9?= x'), "Ärger été x",
+     'MailParse: encoded words (B and Q, charsets)');
+same(MailParse::params('Attachment; filename="a \"b\".pdf"; size=3'),
+     ['attachment', ['filename' => 'a "b".pdf', 'size' => '3']], 'MailParse: parameters, quoted');
+same(MailParse::params("attachment; filename*0*=UTF-8''%E2%82%AC; filename*1=-1.pdf")[1]['filename'],
+     '€-1.pdf', 'MailParse: RFC 2231 names');
+same(MailParse::addresses('"Doe, Jane" <Jane@Example.com>, bob@example.com (Bob), x'),
+     [['Doe, Jane', 'jane@example.com'], ['Bob', 'bob@example.com']], 'MailParse: an address list');
+$pdf1 = "%PDF-1.4\n% one\n";
+$eml = function (array $head, $text, array $files = [], $html = false) {
+	$b = 'b1-' . md5(json_encode($head));
+	$m = implode("\r\n", $head) . "\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"$b\"\r\n\r\n";
+	$m .= "preamble\r\n--$b\r\nContent-Type: multipart/alternative; boundary=\"$b-alt\"\r\n\r\n";
+	$m .= "--$b-alt\r\nContent-Type: text/plain; charset=ISO-8859-1\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n";
+	$m .= quoted_printable_encode(mb_convert_encoding_or_utf8($text)) . "\r\n";
+	$m .= "--$b-alt\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n<p>" . ($html ? 'HTML' : 'html') . "</p>\r\n--$b-alt--\r\n";
+	foreach ($files as $f)
+		$m .= "--$b\r\nContent-Type: $f[1]; name=\"$f[0]\"\r\nContent-Transfer-Encoding: base64\r\n" .
+			"Content-Disposition: attachment; filename=\"$f[0]\"\r\n\r\n" .
+			chunk_split(base64_encode($f[2]), 76, "\r\n");
+	return $m . "--$b--\r\nepilogue\r\n";
+};
+function mb_convert_encoding_or_utf8($t)
+{
+	return function_exists('iconv') ? iconv('UTF-8', 'ISO-8859-1', $t) : $t;
+}
+$raw = $eml(['From: "Ann" <ann@example.com>', 'To: 5550110@fax.example.com', 'Subject: Invoice'],
+	    "Hello Bob,\nthe invoice, café.", [['inv.pdf', 'application/pdf', $pdf1],
+					       ['logo.png', 'image/png', "\x89PNG"]]);
+$pp = MailParse::parts($raw);
+same(array_column($pp, 'type'), ['text/plain', 'text/html', 'application/pdf', 'image/png'],
+     'MailParse: the leaf parts, nested');
+same(MailParse::text($pp), "Hello Bob,\nthe invoice, café.", 'MailParse: the text, quoted-printable, as UTF-8');
+same(MailParse::files($pp), [['inv.pdf', $pdf1], ['logo.png', "\x89PNG"]], 'MailParse: the files');
+same(MailParse::text([['type' => 'text/html', 'name' => '', 'attachment' => false, 'charset' => '',
+	'bytes' => '<p>A&amp;B</p><script>x</script>C']]), "A&B\nC", 'MailParse: HTML without its tags');
+same(MailParse::files([['type' => 'application/pdf', 'name' => '../../x.pdf', 'attachment' => true,
+	'charset' => '', 'bytes' => 'x']])[0][0], 'x.pdf', 'MailParse: no path in a file name');
+/* email to fax: the rules */
+same(Mail2Fax::number('5550100@fax.example.com'), '5550100', 'Mail2Fax: the number of an address');
+same(Mail2Fax::number('fax+1-555-0100@x.example.com'), '15550100', 'Mail2Fax: the number after +');
+same(Mail2Fax::number('bob@fax.example.com'), null, 'Mail2Fax: no number');
+same(Mail2Fax::number('5550100@other.example.com', 'fax.example.com'), null, 'Mail2Fax: only the fax domain');
+same(Mail2Fax::sendersError("ann@example.com\n@example.org # all of them"), '', 'Mail2Fax: a good senders list');
+ok(Mail2Fax::sendersError('ann') !== '', 'Mail2Fax: a bad sender refused');
+ok(Mail2Fax::senderOk('Bob@Example.org', '@example.org') && Mail2Fax::senderOk('ann@example.com', 'ann@example.com') &&
+   !Mail2Fax::senderOk('eve@example.com', "ann@example.com\n@example.org"), 'Mail2Fax: the senders');
+ok(Mail2Fax::pinOk('Invoice [1234]', '1234') && !Mail2Fax::pinOk('Invoice 12345', '1234') && Mail2Fax::pinOk('x', ''),
+   'Mail2Fax: the PIN, as a word');
+$ms = array_merge($m->getSettings(), ['mail2fax' => true, 'mail2fax_senders' => '@example.com',
+	'mail2fax_domain' => 'fax.example.com', 'mail2fax_pin' => '', 'mail2fax_cover' => true, 'fax_notify' => 'always']);
+$r = Mail2Fax::read($raw, $ms);
+ok($r['ok'] && $r['numbers'] === ['5550110'] && $r['docs'] === [['inv.pdf', $pdf1]] && $r['skipped'] === ['logo.png'],
+   'Mail2Fax: a message read: the number, the PDF file, the logo left out');
+$j = Mail2Fax::job($r, '5550110', $ms);
+ok($j['cover'] === 'yes' && $j['from'] === 'Ann' && $j['email'] === 'ann@example.com' && $j['notify'] === 'always' &&
+   $j['message'] === "Invoice\n\nHello Bob,\nthe invoice, café.", 'Mail2Fax: the job: the cover page, the result to the sender');
+$r = Mail2Fax::read($eml(['From: eve@evil.example', 'To: 5550110@fax.example.com'], 'x'), $ms);
+ok(!$r['ok'] && !$r['reply'] && strpos($r['why'], 'not on the senders list') !== false, 'Mail2Fax: a sender not on the list, no answer');
+$r = Mail2Fax::read($eml(['From: ann@example.com', 'To: 5550110@fax.example.com', 'Subject: x'], 'x'),
+		    ['mail2fax_pin' => '4711'] + $ms);
+ok(!$r['ok'] && !$r['reply'], 'Mail2Fax: no PIN, no answer');
+$r = Mail2Fax::read($eml(['From: ann@example.com', 'To: 5550110@fax.example.com', 'Subject: x', 'Auto-Submitted: auto-replied'], 'x'), $ms);
+ok(!$r['ok'] && !$r['reply'], 'Mail2Fax: an automatic message, no answer');
+$r = Mail2Fax::read($eml(['From: ann@example.com', 'To: bob@fax.example.com', 'Subject: x'], 'x'), $ms);
+ok(!$r['ok'] && $r['reply'] && strpos($r['why'], 'No fax number') !== false, 'Mail2Fax: no number, an answer');
+$r = Mail2Fax::read($eml(['From: ann@example.com', 'X-Original-To: 5550112@fax.example.com',
+	'To: 5550110@fax.example.com, 5550111@fax.example.com'], 'x'), $ms);
+same($r['numbers'], ['5550112'], 'Mail2Fax: the original recipient comes first');
+$r = Mail2Fax::read($eml(['From: ann@example.com', 'To: 5550110@fax.example.com'], ''), ['mail2fax_cover' => false] + $ms);
+ok(!$r['ok'] && strpos($r['why'], 'No PDF') !== false, 'Mail2Fax: without a cover page, a file is needed');
+ok(isset(Config::validateSettings(array_merge($st, ['mail2fax' => true]))['mail2fax_senders']),
+   'settings: email to fax needs a sender');
+ok(isset(Config::validateSettings(array_merge($st, ['mail2fax_pin' => '12']))['mail2fax_pin']) &&
+   isset(Config::validateSettings(array_merge($st, ['mail2fax_domain' => 'x y']))['mail2fax_domain']) &&
+   isset(Config::validateSettings(array_merge($st, ['mail2fax_spool' => 'spool']))['mail2fax_spool']),
+   'settings: a bad PIN, domain or spool refused');
+/* email to fax: into the queue */
+$mails = [];
+same($m->mail2fax($raw, 1800004000, $fakeGs, $sender)[0], false, 'mail2fax: off');
+$m->saveSettings(['mail2fax' => true, 'mail2fax_senders' => '@example.com', 'mail2fax_domain' => 'fax.example.com',
+	'mail2fax_spool' => "$sdir/spool", 'mail2fax_cover' => true]);
+$two = $eml(['From: "Ann" <ann@example.com>', 'To: 5550110@fax.example.com, 5550111@fax.example.com',
+	     'Subject: Two'], "For both.", [['a.tif', 'image/tiff', $tif]]);
+$r = $m->mail2fax($two, 1800004000, $fakeGs, $sender);
+ok($r[0] && count($r[2]) === 2 && $m->getFaxJob($r[2][0])['number'] === '5550110' &&
+   $m->getFaxJob($r[2][1])['email'] === 'ann@example.com' && $m->getFaxJob($r[2][1])['cover'] === true &&
+   $mails === [], 'mail2fax: a job for each number');
+foreach ($r[2] as $id)
+	$m->cancelFax($id);
+$r = $m->mail2fax($eml(['From: ann@example.com', 'To: bob@fax.example.com', 'Subject: Hi'], 'x'), 1800004000, $fakeGs, $sender);
+ok(!$r[0] && count($mails) === 1 && $mails[0]['to'] === 'ann@example.com' &&
+   strpos($mails[0]['headers'], 'Auto-Submitted: auto-replied') !== false && strpos($mails[0]['subject'], 'Hi') !== false,
+   'mail2fax: the refusal to the sender');
+$mails = [];
+$m->mail2fax($eml(['From: eve@evil.example', 'To: 5550110@fax.example.com'], 'x'), 1800004000, $fakeGs, $sender);
+same($mails, [], 'mail2fax: no answer to a sender not on the list');
+/* the spool: bin/mail2fax-spool.php writes it, the queue reads it */
+mkdir("$sdir/spool");
+$p = proc_open([PHP_BINARY, dirname(__DIR__) . '/dmodem/bin/mail2fax-spool.php', "$sdir/spool"],
+	       [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
+fwrite($pipes[0], $two);
+fclose($pipes[0]);
+stream_get_contents($pipes[1]);
+stream_get_contents($pipes[2]);
+fclose($pipes[1]);
+fclose($pipes[2]);
+same(proc_close($p), 0, 'mail2fax-spool.php: the message taken');
+$spooled = glob("$sdir/spool/*.eml");
+ok(count($spooled) === 1 && file_get_contents($spooled[0]) === $two, 'mail2fax-spool.php: one whole .eml file');
+file_put_contents("$sdir/spool/0-bad.eml", $eml(['From: ann@example.com', 'To: bob@fax.example.com'], 'x'));
+$lines = $m->mailSpool(1800004001, $fakeGs, $sender);
+ok(count($lines) === 2 && strpos($lines[0], '0-bad.eml: A message from ann@example.com refused') === 0 &&
+   strpos($lines[1], '2 of 2 faxes queued') !== false && glob("$sdir/spool/*") === [],
+   'mailSpool: each message read and deleted, the oldest first');
+foreach ($m->getFaxJobs() as $id => $j)
+	if ($j['email'] === 'ann@example.com')
+		$m->cancelFax($id);
+/* fwconsole dmodem mail2fax */
+file_put_contents("$sdir/m.eml", $eml(['From: ann@example.com', 'To: 5550113@fax.example.com'], 'By the CLI'));
+$am->sent = [];
+$lines = [];
+same(Cli::run($m, ['mail2fax', "$sdir/m.eml"], ['run' => $fakeGs], $say), 0, 'fwconsole dmodem mail2fax');
+ok(strpos($lines[0], '1 of 1 faxes queued') !== false && count($am->sent) === 1, 'mail2fax: queued and called');
+same(Cli::run($m, ['mail2fax', "$sdir/none.eml"], [], $say), 1, 'mail2fax: no such file');
+same(Cli::run($m, ['mail2fax'], [], $say), 2, 'mail2fax: usage');
+foreach ($m->getFaxJobs() as $id => $j)
+	if ($j['number'] === '5550113')
+		$m->faxSent($id, '1800004002.1', 'SUCCESS', 1, 9600, 'OK', '', $sender, 1800004002);
+$m->deleteFax('1800004002.1');
+unlink("$sdir/m.eml");
+rmdir("$sdir/spool");
+$m->saveSettings(['mail2fax' => false, 'mail2fax_senders' => '']);
+$mails = [];
 /* the dialplan of a sent fax */
 $dp = dmodem_dialplan($m);
 ok(strpos($dp, "[app-dmodem-faxout]\n") !== false && strpos($dp, "exten => s,1,NoOp(D-Modem fax job \${FILTER(a-z0-9,\${DMODEMFAXJOB})})\n") !== false,
