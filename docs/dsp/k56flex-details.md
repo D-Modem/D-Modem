@@ -29,6 +29,12 @@ Status:
   answer is ANSam, it calls with V.90 (section 6). `DSP_K56A=0` removes
   K56flex. On a digital line, when it calls, it operates V.90 as the
   digital modem.
+- The server sends its MRe at approximately -20.6 dBm0 (the two tones of
+  segment 1 together) and its segment 2 at -17.5 dBm0. For a test,
+  `DSP_K56_MRE_DB=<dB>` changes the level of the two segments by that
+  number of dB (-12 to +12). Use it when a caller does not answer MRe
+  (issue #119). When the value is not 0, the log shows
+  `v34: V.8bis MRe +6.0 dB` (for example).
 - The interop test `sm56_k56flex` (label `sm56`) connects sm56 as the
   client at 44000 bit/s down and 31200 up, with V.42, and sends data
   [seen].
