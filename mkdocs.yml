@@ -45,6 +45,10 @@ nav:
       - "V.22 bis: technical details": standards/v22bis-details.md
       - "V.23": standards/v23.md
       - "V.23: technical details": standards/v23-details.md
+      - "V.26 bis": standards/v26bis.md
+      - "V.26 bis: technical details": standards/v26bis-details.md
+      - "V.26 ter": standards/v26ter.md
+      - "V.26 ter: technical details": standards/v26ter-details.md
       - "V.25": standards/v25.md
       - "V.25: technical details": standards/v25-details.md
   - The modem:

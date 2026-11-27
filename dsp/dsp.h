@@ -428,22 +428,24 @@ struct CarrierDetect {
 #define V22_BACK_MS     110
 
 /* circuit 109 of a pump, from its band passed input: ON when a slow
-   meter (30 ms) is above the ON level, OFF when a fast meter (1.2 ms)
-   stays below the OFF level for off_ms; while hold_on is set (in data,
-   after a dropout), ON only after back_ms above the ON level.  The
-   Recommendations give the two levels and the two times (for example
-   3.2 and 3.3 of V.22 and V.22 bis) */
+   meter (30 ms unless set) is above the ON level, OFF when a fast meter
+   (1.2 ms unless set) stays below the OFF level for off_ms; while
+   hold_on is set (in data, after a dropout), ON only after back_ms
+   above the ON level.  The Recommendations give the two levels and the
+   two times (for example 3.2 and 3.3 of V.22 and V.22 bis, 3.3 of
+   V.26 ter) */
 struct Circuit109 {
 	PowerMeter slow, fast;
 	CarrierDetect cd;
 	s32 srate, end_n, back_n;
 
 	/* the levels as the amplitudes of tones (CarrierDetect's), at
-	   rate */
-	void init(float on_amp, float off_amp, s32 rate)
+	   rate; slow_tc, fast_tc: the meters' time constants (s) */
+	void init(float on_amp, float off_amp, s32 rate, float slow_tc = 0.03f,
+		  float fast_tc = 0.0012f)
 	{
-		slow.init(0.03f, rate);
-		fast.init(0.0012f, rate);
+		slow.init(slow_tc, rate);
+		fast.init(fast_tc, rate);
 		cd.init(on_amp, off_amp);
 		srate = rate;
 		end_n = back_n = 0;
@@ -472,6 +474,17 @@ struct Circuit109 {
 	/* 109 now */
 	s16 on() const { return cd.on; }
 };
+
+/* V.26 ter's circuit 109 in data (3.3): the levels of the start-up's
+   detector (-43.4 and -47.9 dBm0); OFF after 5 ms under the OFF level
+   on a meter of 0.5 ms (6 to 11 ms in all: 5 to 15); ON 40 ms after a
+   dropout (40 to 50) on a meter of 5 ms */
+#define V26_ON_AMP      150.0f
+#define V26_OFF_AMP     90.0f
+#define V26_OFF_MS      5
+#define V26_BACK_MS     40
+#define V26_SLOW_TC     0.005f
+#define V26_FAST_TC     0.0005f
 
 /* a Bell 103 caller's mark and space (1270 and 1070 Hz, its originate
    band) with most of the power in them, in blocks of 20 ms */

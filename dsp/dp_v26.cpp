@@ -170,6 +170,9 @@ struct V26Pump : PumpBase<V26Pump, v26_state>, QamRxCore<V26Pump> {
 	/* receiver */
 	EchoCanceller ec;
 	float ec_mu;
+	Circuit109 c109;        /* the carrier detector in data (3.3.2):
+				   the start-up's is slower, as its 25 ms
+				   gaps need */
 	s16 rx_on;              /* decoding (the far end's carrier) */
 	s16 rx_k;               /* the last point decided */
 	cplx rx_last;           /* and the symbol */
@@ -400,6 +403,9 @@ void V26Pump::rx_bit(s16 bit)
 		return;
 	if (!rx_ones && run1 >= 16)
 		rx_ones = 1;
+	/* no data to the link while 109 is OFF in data (3.3.2) */
+	if (state == V26_DATA && !c109.on())
+		return;
 	if (rx_ones) {
 		u8 b = static_cast<u8>(bit & 1);
 		modem_put_bits(modem, 1, &b, 1);
@@ -459,12 +465,27 @@ void V26Pump::rx_symbol()
 	}
 }
 
-/* one received sample x: the echo canceller, the receiver, the carrier */
+/* one received sample x: the echo canceller, the receiver, the carrier
+   (the start-up's detector, then circuit 109's in data) */
 void V26Pump::rx_sample(float x)
 {
 	x = ec.run(last_tx, x, ec_mu);
 
-	qam_rx(x);
+	if (state != V26_DATA) {
+		qam_rx(x);
+		return;
+	}
+	if (rx.sample(x))
+		rx_symbol();
+	switch (c109.run(x, V26_OFF_MS, true, V26_BACK_MS)) {
+	case 1:
+		DSP_DBG("v26: carrier back at %" PRId32 "\n", total);
+		break;
+	case -1:
+		DSP_DBG("v26: carrier off at %" PRId32 "\n", total);
+		break;
+	}
+	carrier_tick(c109.on());
 }
 
 /* the far end's carrier come (QamRxCore): decoding, the receiver from
@@ -501,6 +522,11 @@ s16 V26Pump::connect()
 {
 	set_state(V26_DATA);
 	data_power = rx.power;
+	/* 109 ON (6.3.1.3), its meters at the level now */
+	c109.init(V26_ON_AMP, V26_OFF_AMP, srate, V26_SLOW_TC,
+		  V26_FAST_TC);
+	c109.slow.power = c109.fast.power = rx.power;
+	c109.cd.on = 1;
 	return connect_at(rate, rate);
 }
 
@@ -760,7 +786,7 @@ s16 V26Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	tx.init(srate_, V26_CARRIER, V26_BAUD, V26_ALPHA, V26_SPAN,
 		sqrtf(V26_POWER), V26_TX_AMPLITUDE);
 	tone.set_freq(2100, srate_);
-	carrier.init(150, 90);
+	carrier.init(V26_ON_AMP, V26_OFF_AMP);
 	if (rx.init(srate_, V26_CARRIER, V26_BAUD, V26_ALPHA, V26_SPAN,
 		    V26_EQ_LEN, V26_POWER) ||
 	    ec.init(V26_EC_LEN))

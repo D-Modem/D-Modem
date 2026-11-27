@@ -34,8 +34,8 @@ A standard that has no link has no pages yet.
 | [V.22](v22.md) ([details](v22-details.md)) | 1200 bit/s DPSK, duplex |
 | [V.22 bis](v22bis.md) ([details](v22bis-details.md)) | 2400 bit/s QAM, duplex |
 | [V.23](v23.md) ([details](v23-details.md)) | 1200/75 bit/s FSK |
-| V.26 bis | 2400/1200 bit/s, with a 75 bit/s backward channel |
-| V.26 ter | 2400 bit/s duplex, with echo cancellation |
+| [V.26 bis](v26bis.md) ([details](v26bis-details.md)) | 2400/1200 bit/s, with a 75 bit/s backward channel |
+| [V.26 ter](v26ter.md) ([details](v26ter-details.md)) | 2400 bit/s duplex, with echo cancellation |
 | V.27ter | 4800/2400 bit/s |
 | V.29 | 9600 bit/s |
 | V.32 | 9600 bit/s duplex, with trellis coding |
