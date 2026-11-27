@@ -43,6 +43,9 @@ enum {
 #define V17_BRIDGE_WORD 0x8880
 /* how much slower the V.17 AGC is in the data than in the training */
 #define V17_DATA_AGC_SLOWER 16
+/* the data symbols with the training gain of the timing loop after a
+   V.17 short train (see data_start()) */
+#define V17_ST_FAST_SYMS 100
 
 static const s16 cdba_to_abcd[4] = { 2, 3, 1, 0 };
 static const s16 dibit_to_step[4] = { 1, 0, 2, 3 };
@@ -711,7 +714,11 @@ void FaxRx::data_start()
 	qam.agc_target *= r;
 	qam.agc_pwr *= r;
 	qam.agc_alpha = agc_alpha / V17_DATA_AGC_SLOWER;
-	qam.kt_p = 0.015f * qam.sps;
+	/* after a short train the timing is still the long train's: the
+	   loop stays at its training gain to take up the new phase.  (With
+	   the 0.015 gain, 3 of 46 page timings against spandsp, whose
+	   segment 4 is 48 symbols long, lost the first rows of the page.) */
+	qam.kt_p = (short_train ? 0.03f : 0.015f) * qam.sps;
 }
 
 /* a data symbol: the decision (V.17: the Viterbi decoder's, late), the
@@ -805,6 +812,8 @@ void FaxRx::data_symbol()
 			zpow / info(mod).data_power);
 	/* the timing loop slows down once it has surely settled (a short
 	   train leaves it little time) */
+	if (data_sym == V17_ST_FAST_SYMS)
+		qam.kt_p = 0.015f * qam.sps;
 	if (data_sym == 1000) {
 		qam.kt_p = 0.005f * qam.sps;
 		qam.kt_gi = 0.003f;

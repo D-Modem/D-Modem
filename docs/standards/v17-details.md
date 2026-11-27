@@ -104,7 +104,7 @@ the training.
 | Before the training | 48 symbols of silence. No TEP. |
 | Turn-off | 80 symbols of scrambled ONE bits (segment A), then 48 symbols of silence |
 | Circuit 109 | ON at -43.4 dBm0. OFF at -46.9 dBm0, or 12 dB below the signal. OFF 34 ms to 41 ms after the signal stops. |
-| Receiver after a short train | It keeps the equalizer of the last long train (`FaxRxMemory`). |
+| Receiver after a short train | It keeps the equalizer of the last long train (`FaxRxMemory`). The timing loop keeps its training gain for the first 100 data symbols, because the timing of the long train is not correct for the new signal. |
 
 The short train and the turn-off are longer than V.17 specifies, and
 the short train starts the trellis encoder in a different state. The
@@ -119,6 +119,9 @@ the data and after it. It does not get errors in the data.
 | Error | Correction |
 |---|---|
 | Circuit 109 went OFF 5 ms to 14 ms after the signal stopped (30 ms to 50 ms required). | `V17_OFF_MS` adds 27 ms before OFF. Circuit 109 goes OFF 34 ms to 41 ms after the signal stops. |
+| After a short train with 48 symbols of segment 4 (as V.17 specifies), the timing loop was too slow at the start of the data. With 3 of 46 start times against spandsp, the first rows of the page were bad. | The timing loop keeps its training gain for the first 100 data symbols (`V17_ST_FAST_SYMS`). All 46 start times now give a correct page. |
 
 The test `V17.Circuit109` (`dsp/test/fax_test.cpp`) measures the levels
-and the OFF time.
+and the OFF time. The tests `Calls/T30Spandsp.SendsTheDocument`
+(`dsp/test/t30_spandsp.cpp`) send pages from spandsp, with the short
+train of V.17.
