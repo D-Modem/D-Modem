@@ -127,6 +127,15 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 			struct dmbridge_fax *f, const char *name,
 			const char *value);
 
+/* the items of a call's own fax settings (DMODEMFAXOPT(item) of
+   app_dmodem, the channel variables DMODEMFAXOPT_<ITEM> for all):
+   ecm, maxrate, minrate, t38timeout, localstationid; NULL at the end */
+extern const char *const dmbridge_faxopt_items[];
+/* the fax setting item to value in *f: 0, or -1 if item is unknown or
+   value is not one it takes (f unchanged) */
+int dmbridge_faxopt(const struct dmbridge_host *h, struct dmbridge_fax *f,
+		    const char *item, const char *value);
+
 /* a profile's defaults: mode tcp, ATA to answer, 60 s to connect, 3 s
    to listen for a person (with voice), all else empty (the fax settings
    too: the module's general ones go there) */

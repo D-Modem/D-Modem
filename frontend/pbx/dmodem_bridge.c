@@ -128,6 +128,50 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 }
 
 /* (see dmodem_bridge.h) */
+const char *const dmbridge_faxopt_items[] = {
+	"ecm", "maxrate", "minrate", "t38timeout", "localstationid", NULL
+};
+
+/* a fax rate that T.30 has: 2400 to 14400 in steps of 2400; 0 if not */
+static int fax_rate_value(const char *value)
+{
+	int r = atoi(value);
+	return r >= 2400 && r <= 14400 && r % 2400 == 0 ? r : 0;
+}
+
+/* (see dmodem_bridge.h) */
+int dmbridge_faxopt(const struct dmbridge_host *h, struct dmbridge_fax *f,
+		    const char *item, const char *value)
+{
+	int v;
+
+	if (!item || !value)
+		return -1;
+	if (!strcasecmp(item, "ecm")) {
+		f->ecm = h->is_true(value) ? 1 : 0;
+	} else if (!strcasecmp(item, "maxrate")) {
+		if (!(v = fax_rate_value(value)))
+			return -1;
+		f->max_bps = v;
+	} else if (!strcasecmp(item, "minrate")) {
+		if (!(v = fax_rate_value(value)))
+			return -1;
+		f->min_bps = v;
+	} else if (!strcasecmp(item, "t38timeout")) {
+		if ((v = atoi(value)) <= 0)
+			return -1;
+		f->t38_timeout = v;
+	} else if (!strcasecmp(item, "localstationid")) {
+		if (strlen(value) >= sizeof(f->ident))
+			return -1;
+		copy(f->ident, value, sizeof(f->ident));
+	} else {
+		return -1;
+	}
+	return 0;
+}
+
+/* (see dmodem_bridge.h) */
 void dmbridge_profile_init(struct dmbridge_profile *p)
 {
 	memset(p, 0, sizeof(*p));

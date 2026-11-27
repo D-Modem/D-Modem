@@ -193,7 +193,10 @@ exten => s,1,DModemSendFax(/var/spool/fax/cover.tif&/var/spool/fax/doc.tif,,dz)
 ### DMODEMFAXOPT()
 
 `DMODEMFAXOPT(item)` is the D-Modem equivalent of `FAXOPT(item)` of
-Asterisk. Set an item before the fax application. The value applies to
+Asterisk. Set an item before the fax application. The function keeps each
+setting in the channel variable `DMODEMFAXOPT_<ITEM>` (for example
+`DMODEMFAXOPT_MINRATE`). `dmodem-ari` reads the same variables (refer to
+[ari-details.md](ari-details.md#the-fax-settings-of-a-call)). The value applies to
 the faxes of this channel only, and replaces the value of `[general]`
 (and of the profile for `DModem()`). An `ident` argument of the
 application replaces `localstationid`.

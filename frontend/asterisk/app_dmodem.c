@@ -220,79 +220,39 @@ static void load_fax_settings(struct dmbridge_fax *f)
 
 /*
  *    DMODEMFAXOPT(): a channel's own fax settings, over [general]'s and a
- *    profile's
+ *    profile's.  They are the channel variables DMODEMFAXOPT_<ITEM>
+ *    (DMODEMFAXOPT_MINRATE and the others), which dmodem-ari reads too
  */
 
-/* the settings DMODEMFAXOPT() wrote on a channel (unset: ecm -1, the
-   numbers 0, the ident empty with has_ident 0) */
-struct faxopt {
-	int ecm;
-	int max_bps;
-	int min_bps;
-	int t38_timeout;
-	int has_ident;
-	char ident[21];
-};
-
-static const struct ast_datastore_info faxopt_info = {
-	.type = "dmodem-faxopt",
-	.destroy = ast_free_ptr,
-};
-
-/* the channel's faxopt (chan locked): NULL if it has none and create is
-   0, or when out of memory */
-static struct faxopt *faxopt_find(struct ast_channel *chan, int create)
+/* the channel variable of a setting: DMODEMFAXOPT_ and the item in
+   capitals */
+static void faxopt_var(const char *item, char *buf, size_t len)
 {
-	struct ast_datastore *ds = ast_channel_datastore_find(chan,
-							      &faxopt_info,
-							      NULL);
-	struct faxopt *o;
+	size_t k, n = snprintf(buf, len, "DMODEMFAXOPT_");
 
-	if (ds)
-		return ds->data;
-	if (!create)
-		return NULL;
-	ds = ast_datastore_alloc(&faxopt_info, NULL);
-	if (!ds)
-		return NULL;
-	o = ast_calloc(1, sizeof(*o));
-	if (!o) {
-		ast_datastore_free(ds);
-		return NULL;
-	}
-	o->ecm = -1;
-	ds->data = o;
-	ast_channel_datastore_add(chan, ds);
-	return o;
+	for (k = 0; item[k] && n + 1 < len; k++)
+		buf[n++] = toupper((unsigned char)item[k]);
+	buf[n < len ? n : len - 1] = 0;
 }
 
-/* the channel's DMODEMFAXOPT() settings over *f */
+/* the channel's DMODEMFAXOPT_<ITEM> variables over *f (one that is not
+   valid is left out, with a warning) */
 static void faxopt_apply(struct ast_channel *chan, struct dmbridge_fax *f)
 {
-	struct faxopt *o;
+	char var[64];
+	const char *v;
+	size_t k;
 
 	ast_channel_lock(chan);
-	o = faxopt_find(chan, 0);
-	if (o) {
-		if (o->ecm >= 0)
-			f->ecm = o->ecm;
-		if (o->max_bps)
-			f->max_bps = o->max_bps;
-		if (o->min_bps)
-			f->min_bps = o->min_bps;
-		if (o->t38_timeout)
-			f->t38_timeout = o->t38_timeout;
-		if (o->has_ident)
-			ast_copy_string(f->ident, o->ident, sizeof(f->ident));
+	for (k = 0; dmbridge_faxopt_items[k]; k++) {
+		faxopt_var(dmbridge_faxopt_items[k], var, sizeof(var));
+		v = pbx_builtin_getvar_helper(chan, var);
+		if (!ast_strlen_zero(v) &&
+		    dmbridge_faxopt(&host, f, dmbridge_faxopt_items[k], v))
+			ast_log(LOG_WARNING, "%s: %s: not valid: '%s'\n",
+				ast_channel_name(chan), var, v);
 	}
 	ast_channel_unlock(chan);
-}
-
-/* a fax rate that T.30 has: 2400 to 14400 in steps of 2400; 0 if not */
-static int fax_rate_value(const char *value)
-{
-	int r = atoi(value);
-	return r >= 2400 && r <= 14400 && r % 2400 == 0 ? r : 0;
 }
 
 /* the results DMODEMFAXOPT() reads: its item, the channel variable */
@@ -363,44 +323,25 @@ static int faxopt_read(struct ast_channel *chan, const char *cmd,
 	return 0;
 }
 
-/* DMODEMFAXOPT(item)=value: a setting for the channel's next faxes */
+/* DMODEMFAXOPT(item)=value: a setting for the channel's next faxes, in
+   its variable DMODEMFAXOPT_<ITEM> once it is valid */
 static int faxopt_write(struct ast_channel *chan, const char *cmd,
 			char *data, const char *value)
 {
-	struct faxopt *o;
-	int res = 0;
+	struct dmbridge_fax f;
+	char var[64];
 
 	if (!chan || ast_strlen_zero(data) || !value)
 		return -1;
-	ast_channel_lock(chan);
-	o = faxopt_find(chan, 1);
-	if (!o) {
-		ast_channel_unlock(chan);
-		return -1;
-	}
-	if (!strcasecmp(data, "ecm")) {
-		o->ecm = ast_true(value) ? 1 : 0;
-	} else if (!strcasecmp(data, "maxrate")) {
-		if (!(o->max_bps = fax_rate_value(value)))
-			res = -1;
-	} else if (!strcasecmp(data, "minrate")) {
-		if (!(o->min_bps = fax_rate_value(value)))
-			res = -1;
-	} else if (!strcasecmp(data, "t38timeout")) {
-		o->t38_timeout = atoi(value) > 0 ? atoi(value) : 0;
-		if (!o->t38_timeout)
-			res = -1;
-	} else if (!strcasecmp(data, "localstationid")) {
-		ast_copy_string(o->ident, value, sizeof(o->ident));
-		o->has_ident = 1;
-	} else {
-		res = -1;
-	}
-	ast_channel_unlock(chan);
-	if (res)
+	dmbridge_fax_defaults(&f, "");
+	if (dmbridge_faxopt(&host, &f, data, value)) {
 		ast_log(LOG_WARNING, "DMODEMFAXOPT(%s): cannot set '%s'\n",
 			data, value);
-	return res;
+		return -1;
+	}
+	faxopt_var(data, var, sizeof(var));
+	pbx_builtin_setvar_helper(chan, var, value);
+	return 0;
 }
 
 static struct ast_custom_function faxopt_function = {
