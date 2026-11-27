@@ -31,6 +31,7 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	const SETTINGS = 'settings';
 	const PROFILES = 'profiles';
 	const RECIPIENTS = 'recipients';
+	const DIDFAX = 'didfax';
 	/* the endpoints the check reads at most */
 	const MAX_ENDPOINTS = 200;
 	/* exportData()'s format */
@@ -80,6 +81,7 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$this->delById(self::SETTINGS);
 		$this->delById(self::PROFILES);
 		$this->delById(self::RECIPIENTS);
+		$this->delById(self::DIDFAX);
 	}
 
 	/* settings over the defaults */
@@ -165,6 +167,131 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$this->setConfig($id, false, self::RECIPIENTS);
 	}
 
+	/* the fax detection of the inbound routes: <DID>/<caller ID number>
+	   => its settings (Config::defaultDidFax()), in key order */
+	public function getDidFaxes()
+	{
+		$all = $this->getAll(self::DIDFAX);
+		$out = [];
+		if (is_array($all))
+			foreach ($all as $k => $f)
+				if (is_array($f))
+					$out[(string)$k] = Config::normalizeDidFax(
+						array_merge(Config::defaultDidFax(), $f));
+		ksort($out, SORT_STRING);
+		return $out;
+	}
+
+	/* the fax detection of the inbound route of key (Config::didKey()):
+	   its settings, the defaults if it has none */
+	public function getDidFax($key)
+	{
+		$all = $this->getDidFaxes();
+		return isset($all[$key]) ? $all[$key] : Config::defaultDidFax();
+	}
+
+	/* the fax detection f of the inbound route of key kept; off: none
+	   kept */
+	public function saveDidFax($key, array $f)
+	{
+		$this->setConfig($key, $f['detect'] ? $f : false, self::DIDFAX);
+	}
+
+	/* the pages of other modules that this one adds to: the inbound
+	   routes (their fax detection) */
+	public static function myConfigPageInits()
+	{
+		return ['did'];
+	}
+
+	/* the inbound route form posted (Core has saved the route): its fax
+	   detection kept under the route's DID and caller ID number, moved
+	   with the route, or dropped with it */
+	private function didPageInit(array $req)
+	{
+		$action = isset($req['action']) ? $req['action'] : '';
+		if ($action === 'delIncoming') {
+			$parts = explode('/', isset($req['extdisplay']) ? (string)$req['extdisplay'] : '', 2);
+			$key = Config::didKey($parts[0], isset($parts[1]) ? $parts[1] : '');
+			if ($key !== null) {
+				$this->saveDidFax($key, Config::defaultDidFax());
+				$this->reload();
+			}
+			return;
+		}
+		if (($action !== 'addIncoming' && $action !== 'edtIncoming') ||
+		    empty($req['dmodem_fax_form']))
+			return;
+		$key = Config::didKey(isset($req['extension']) ? $req['extension'] : '',
+				      isset($req['cidnum']) ? $req['cidnum'] : '');
+		if ($key === null)
+			return;
+		if ($action === 'edtIncoming' && isset($req['old_extension'])) {
+			$old = Config::didKey($req['old_extension'],
+					      isset($req['old_cidnum']) ? $req['old_cidnum'] : '');
+			if ($old !== null && $old !== $key)
+				$this->saveDidFax($old, Config::defaultDidFax());
+		}
+		$dest = '';
+		if (!empty($req['gotodmodemfax'])) {
+			$k = $req['gotodmodemfax'] . 'dmodemfax';
+			$dest = isset($req[$k]) ? (string)$req[$k] : '';
+		} elseif (isset($req['dmodem_fax_dest'])) {
+			$dest = (string)$req['dmodem_fax_dest'];
+		}
+		$f = Config::normalizeDidFax([
+			'detect' => isset($req['dmodem_fax_detect']) ? $req['dmodem_fax_detect'] : '',
+			'listen' => isset($req['dmodem_fax_listen']) ? $req['dmodem_fax_listen'] : 'both',
+			'wait' => isset($req['dmodem_fax_wait']) ? $req['dmodem_fax_wait'] : 4,
+			'ring' => isset($req['dmodem_fax_ring']) ? $req['dmodem_fax_ring'] : '',
+			'dest' => $dest,
+		]);
+		/* (a bad value: the route's fax detection stays as it was; the
+		   form's own checks stop most of them) */
+		if (Config::validateDidFax($f))
+			return;
+		$this->saveDidFax($key, $f);
+		$this->reload();
+	}
+
+	/* the D-Modem fax tab of the inbound route page (Core's hookTabs):
+	   page the page's display */
+	public function didFaxTab($page)
+	{
+		if ($page !== 'did')
+			return [];
+		$ext = isset($_REQUEST['extdisplay']) ? (string)$_REQUEST['extdisplay'] : '';
+		$parts = explode('/', $ext, 2);
+		$key = $ext === '' ? null : Config::didKey($parts[0], isset($parts[1]) ? $parts[1] : '');
+		$f = $key === null ? Config::defaultDidFax() : $this->getDidFax($key);
+		return [[
+			'title' => _('D-Modem fax'),
+			'rawname' => 'dmodemfax',
+			'content' => $this->view('didfax', ['f' => $f,
+				'settings' => $this->getSettings()]),
+		]];
+	}
+
+	/* the inbound routes whose faxes go to a destination of dest (a
+	   list, or one; all if dest is true), as FreePBX's
+	   check_destinations has them */
+	public function didFaxUsage($dest = true)
+	{
+		$out = [];
+		foreach ($this->getDidFaxes() as $key => $f) {
+			if ($dest !== true && !in_array($f['dest'], (array)$dest, true))
+				continue;
+			$parts = explode('/', $key, 2);
+			$out[] = [
+				'dest' => $f['dest'],
+				'description' => sprintf(_('Inbound route %s: D-Modem fax'), $key),
+				'edit_url' => 'config.php?display=did&view=form&extdisplay=' .
+					urlencode($key),
+			];
+		}
+		return $out;
+	}
+
 	/* User Manager's users with an email address, username => email;
 	   null if User Manager is not installed */
 	public function usermanUsers()
@@ -221,6 +348,7 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			'settings' => $this->getSettings(),
 			'profiles' => $this->getProfiles(),
 			'recipients' => $this->getRecipients(),
+			'didfax' => $this->getDidFaxes(),
 		];
 	}
 
@@ -295,6 +423,31 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 					if (!in_array($id, $ids, true))
 						$this->deleteRecipient($id);
 		}
+		/* the fax detection of the inbound routes (the same) */
+		if (isset($data['didfax']) && is_array($data['didfax'])) {
+			$keys = [];
+			foreach ($data['didfax'] as $key => $f) {
+				$parts = explode('/', (string)$key, 2);
+				$k = count($parts) === 2 ? Config::didKey($parts[0], $parts[1]) : null;
+				$f = is_array($f) ? Config::normalizeDidFax(array_merge(
+					Config::defaultDidFax(), $f)) : null;
+				$e = $f === null ? ['detect' => _('Not a fax detection')] :
+					Config::validateDidFax($f);
+				if ($k === null)
+					$e['key'] = _('Not an inbound route');
+				if ($e || !$f['detect']) {
+					if ($e)
+						$r['skipped']['did-' . $key] = $e;
+					continue;
+				}
+				$keys[] = $k;
+				$this->saveDidFax($k, $f);
+			}
+			if ($replace)
+				foreach (array_keys($this->getDidFaxes()) as $k)
+					if (!in_array($k, $keys, true))
+						$this->saveDidFax($k, Config::defaultDidFax());
+		}
 		$this->reload();
 		$r['ok'] = !$r['settings'] && !$r['skipped'];
 		return $r;
@@ -368,7 +521,8 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	{
 		if (!function_exists('framework_check_destination_usage'))
 			return [];
-		$u = framework_check_destination_usage($dest);
+		/* (a list: FreePBX's Destinations goes through it) */
+		$u = framework_check_destination_usage([$dest]);
 		return is_array($u) ? $u : [];
 	}
 
@@ -377,6 +531,10 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	public function doConfigPageInit($page)
 	{
 		$req = $_REQUEST;
+		if ($page === 'did') {
+			$this->didPageInit($req);
+			return;
+		}
 		$action = isset($req['action']) ? $req['action'] : '';
 		if ($action === 'delete' && isset($req['profile'])) {
 			$name = (string)$req['profile'];
@@ -613,6 +771,20 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 				foreach ($steps as $st)
 					$ext->add($name, $exten, '',
 						  new \ext_dmodem_app($st[0], $st[1]));
+		/* the fax detection of the inbound routes, in Core's routes
+		   (its hook runs first, at 480) before their caller ID step */
+		$s = $this->getSettings();
+		foreach ($this->getDidFaxes() as $key => $f) {
+			$parts = explode('/', $key, 2);
+			$exten = Dialplan::didExten($parts[0], isset($parts[1]) ? $parts[1] : '');
+			foreach (Dialplan::DID_CONTEXTS as $ctx) {
+				if (!isset($ext->_exts[$ctx][' ' . $exten . ' ']))
+					continue;
+				foreach (Dialplan::didFax($s, $f) as $st)
+					$ext->splice($ctx, $exten, Dialplan::DID_HOOK,
+						     new \ext_dmodem_app($st[0], $st[1]));
+			}
+		}
 	}
 
 	/* the destinations for routes, IVRs and the like */

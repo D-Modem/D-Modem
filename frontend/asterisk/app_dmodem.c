@@ -1894,13 +1894,16 @@ static const char detect_descrip[] =
 	"if there is one.  Else it sets DMODEMFAXDETECTED to NONE, and the\n"
 	"dialplan continues.\n"
 	"  Options: c - the CNG only; t - the T.38 request only; n - do not\n"
-	"answer (early media); r - ringing to the caller while it listens.\n";
+	"answer (early media); r - ringing to the caller while it listens;\n"
+	"x - do not go to the fax extension (the dialplan reads\n"
+	"DMODEMFAXDETECTED).\n";
 
 AST_APP_OPTIONS(detect_app_options, BEGIN_OPTIONS
 	AST_APP_OPTION('c', 1 << 0),
 	AST_APP_OPTION('t', 1 << 1),
 	AST_APP_OPTION('n', 1 << 2),
 	AST_APP_OPTION('r', 1 << 3),
+	AST_APP_OPTION('x', 1 << 4),
 END_OPTIONS);
 
 /* listens on chan (read in fmt, law) for up to ms: "CNG" when the
@@ -2022,7 +2025,10 @@ static int detect_exec(struct ast_channel *chan, const char *data)
 	}
 	pbx_builtin_setvar_helper(chan, "DMODEMFAXEXTEN",
 				  ast_channel_exten(chan));
-	if (strcmp(ast_channel_exten(chan), "fax") &&
+	if (ast_test_flag(&opts, 1 << 4)) {
+		ast_verb(3, "%s: DModem fax detect: %s\n",
+			 ast_channel_name(chan), what);
+	} else if (strcmp(ast_channel_exten(chan), "fax") &&
 	    ast_exists_extension(chan, ast_channel_context(chan), "fax", 1,
 		S_COR(ast_channel_caller(chan)->id.number.valid,
 		      ast_channel_caller(chan)->id.number.str, NULL))) {

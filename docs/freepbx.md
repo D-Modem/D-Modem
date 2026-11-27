@@ -60,6 +60,10 @@ For the generated files, the code and the tests, refer to
   fax and sends it by email, as a PDF file, the TIFF file or both. The
   address is the address of the recipient, or of a User Manager user. The
   mail system of the machine must send mail.
+- **Fax detection.** The **D-Modem fax** tab of an inbound route
+  listens for a fax machine on each call. A fax goes to the fax
+  destination (for example a fax recipient). Other calls go to the
+  destination of the route.
 - **Dial out.** Make D-Modem call a remote modem (a BBS or a provider)
   with a profile, from the page or from a script:
 
@@ -68,7 +72,7 @@ For the generated files, the code and the tests, refer to
 - **Line check.** Shows the settings on your trunks and extensions that
   can cause problems for a modem call (refer to the subsequent section).
 - **Backup.** The Backup & Restore of FreePBX includes the settings,
-  profiles and fax recipients of D-Modem. `fwconsole dmodem export` and `import` do the same
+  profiles, fax recipients and fax detection of D-Modem. `fwconsole dmodem export` and `import` do the same
   from the command line.
 
 After you change an item, click **Apply Config**. If you use dmodem-ari,

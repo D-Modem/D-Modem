@@ -11,6 +11,7 @@ gives these items:
 - calls out to a remote modem with a profile;
 - fax recipients: destinations that receive a fax and send it by email
   (a PDF file, the TIFF file or both);
+- fax detection on inbound routes (a "D-Modem fax" tab);
 - the settings and profiles in the Backup & Restore of FreePBX;
 - a check of the PJSIP trunks and extensions for modem calls.
 
@@ -176,6 +177,38 @@ The module asks the manager of Asterisk (AMI) to originate the call, with the
 channel `Local/<number>@<context>` and the channel variable
 `DMODEM_DIALOUT=<profile>`.
 
+### Inbound routes: fax detection
+
+The module adds a **D-Modem fax** tab to the page of each inbound route
+(**Connectivity > Inbound Routes**). This is the "Detect Faxes" function of
+the Fax module of FreePBX. It operates with the two engines.
+
+| field | default | notes |
+|---|---|---|
+| Detect faxes | off | Listen for a fax machine on the calls of the route. |
+| Listen for | CNG and T.38 | The calling tone (CNG) and the T.38 request, the CNG only, or T.38 only. |
+| Time | 4 s | 1 to 30 s. |
+| Ring while listening | on | The caller hears the ring tone while D-Modem listens. |
+| Fax destination | none | Necessary. For example a fax recipient, or "D-Modem: receive a fax". |
+
+When the tab is on, the route answers the call and listens. A fax goes
+to the fax destination. Other calls go to the destination of the route.
+Use this tab or the Fax tab of the Fax module on a route, not the two
+together.
+
+With dmodem-ari, D-Modem hears a T.38 request only with the SIP side of
+dmodem-ari (refer to [ari-details.md](ari-details.md)).
+
+The module keeps the fax detection of a route under the DID and the
+caller ID number of the route. If you change the numbers of the route,
+the fax detection moves with the route. If you delete the route, the
+module deletes its fax detection. If a value on the tab is not correct
+(for example, no fax destination), the module keeps the previous fax
+detection of the route.
+
+The fax destination is a use of that destination: the destination
+pages of FreePBX show the route (`dmodem_check_destinations()`).
+
 ### Line check
 
 The check also shows what the fax machine of the engine can do. For
@@ -249,6 +282,24 @@ ID (`*-<uniqueid>.tif` in the fax directory). If the call has the status
 The two engines set the `DMODEMFAX*` variables on the channel. Thus, the
 hangup handler is the same for the two engines.
 
+For an inbound route with fax detection, the dialplan hook of the module
+(priority 500, after Core at 480) adds two steps to the extension of the
+route in `ext-did-0001` or `ext-did-0002`. The steps go immediately
+before the `did-cid-hook` label of Core:
+
+```
+exten => 5551002,n,DModemFaxDetect(4,xr)
+exten => 5551002,n,GotoIf($["${DMODEMFAXDETECTED}" = "CNG" | "${DMODEMFAXDETECTED}" = "T38"]?app-dmodem,fax-sales,1)
+exten => 5551002,n(did-cid-hook),NoOp(CallerID Entry Point)
+```
+
+With dmodem-ari, the first step is
+`Stasis(dmodem,faxdetect,4,xr)`. The option `x` tells the engine not to
+go to a `fax` extension, because each route has its own fax
+destination. The option `r` is the ring tone, and `c` or `t` is the CNG
+only or T.38 only. If the extension of the route is not in those
+contexts, the module adds nothing.
+
 With dmodem-ari as the engine, `DModem(bbs)` is `Stasis(dmodem,bbs)`, and
 the fax step is `Stasis(dmodem,receivefax,<file>)`. The name of the fax file is
 the same as the name that `DModem()` gives to the faxes that it receives automatically. One
@@ -289,7 +340,8 @@ fwconsole dmodem fax2mail <recipient> <uniqueid> [status] [pages] [cid] [remote]
 
 The module is a part of the Backup & Restore of FreePBX (`Backup.php`,
 `Restore.php`). A backup that includes D-Modem keeps its settings,
-profiles and fax recipients: the same data as `fwconsole dmodem export`.
+profiles, fax recipients and the fax detection of the inbound routes:
+the same data as `fwconsole dmodem export`.
 
 A restore (as `fwconsole dmodem import` without `--keep`) checks the
 data as the forms do:
@@ -305,7 +357,8 @@ data as the forms do:
 - The restore checks the fax recipients in the same way as the profiles.
   The log gives a recipient that failed as `fax-<id>`. If the backup has
   no fax recipients (a backup of version 16.0.2), the restore keeps the
-  recipients that there are.
+  recipients that there are. The same applies to the fax detection of
+  the inbound routes (`did-<DID>/<caller ID>` in the log).
 
 The reload after the restore makes `dmodem.conf` and the dialplan again.
 Received faxes are files in the fax directory, outside the
@@ -336,8 +389,10 @@ The line check shows the items that are still incorrect.
   `writeConfig()` for `dmodem.conf`, the dialplan hook
   (`doDialplanHook()`), the destinations, the dial-out (`dialOut()`), the
   export and import (`exportData()`, `importData()`) and the line check
-  (`check()`), the fax recipients and `faxToMail()`. The settings,
-  profiles and fax recipients are in the kvstore of the module.
+  (`check()`), the fax recipients and `faxToMail()`, and the fax
+  detection of the inbound routes (`myConfigPageInits()`,
+  `didFaxTab()`). The settings, profiles, fax recipients and the fax
+  detection of the routes are in the kvstore of the module.
 - `lib/Config.php`: the defaults and checks of the settings and profiles, and
   `dmodem.conf` made from them. A `;` in a value is written `\;`, as
   Asterisk and dmodem-ari read it. No line breaks go through.
@@ -359,7 +414,10 @@ The line check shows the items that are still incorrect.
   without Symfony.
 - `Backup.php`, `Restore.php`: Backup & Restore (through
   `Dmodem::exportData()` and `importData()`).
-- `functions.inc.php`: the destination hooks of FreePBX.
+- `functions.inc.php`: the destination hooks of FreePBX, and
+  `dmodem_check_destinations()`.
+- `module.xml` `<hooks>`: the tab on the inbound route page (Core's
+  `hookTabs`).
 - `page.dmodem.php`, `views/`, `assets/js/dmodem.js`: the pages.
 
 ## Tests
@@ -389,6 +447,10 @@ It checks:
 - the message (its headers, its text and its attachments) to a stand-in
   mail system, and the fax recipients (forms, User Manager, the
   destination, the hangup handler, the pages);
+- the fax detection of the inbound routes: the form of the route
+  (added, changed, renamed, deleted, bad values), the steps in a route
+  as Core writes it for the two engines, the tab and the destination
+  usage;
 - the line check, on the CLI output of Asterisk 20 (`test/fixtures/`);
 - the dial-out (its Originate, and refused numbers and caller IDs);
 - `fwconsole dmodem`;
@@ -424,3 +486,8 @@ through the `extensions.class.php` of FreePBX instead of the stand-in.
    stand-in that runs `fax2mail.php`, which keeps the message in a file.
    The message must go to the recipient, and have the text, a PDF file of
    two pages and the TIFF file.
+6. Fax detection on an inbound route: `gen.php` adds a route 5551002 in
+   `ext-did-0001` (a part of the route that Core writes) with fax detection
+   to the recipient. A fax machine calls the route. The fax must go to
+   `fax-sales` and come as a second message. Then a call without a fax
+   must go to the destination of the route (`app-dmodem,bbs,1`).

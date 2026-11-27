@@ -100,6 +100,39 @@ class Dialplan
 		return $x;
 	}
 
+	/* the contexts where FreePBX's inbound routes are (Core) */
+	const DID_CONTEXTS = ['ext-did-0001', 'ext-did-0002'];
+	/* the label in a route's extension before which the fax detection
+	   goes (Core's "CallerID Entry Point") */
+	const DID_HOOK = 'did-cid-hook';
+
+	/* the extension of the inbound route did/cid in ext-did-000x, as
+	   Core names it: <did>[/<cid>], s for no DID, s/<cid> for a route
+	   of the caller ID alone */
+	public static function didExten($did, $cid)
+	{
+		if ($did === '' && $cid !== '')
+			return 's/' . $cid;
+		return ($did === '' ? 's' : $did) . ($cid === '' ? '' : '/' . $cid);
+	}
+
+	/* the steps of the fax detection f of an inbound route (s the
+	   settings): the engine listens (option x: it does not go to a fax
+	   extension), then a fax goes to f's destination; no fax: the route
+	   goes on */
+	public static function didFax(array $s, array $f)
+	{
+		$o = 'x' . ($f['ring'] ? 'r' : '') .
+			($f['listen'] === 'cng' ? 'c' : ($f['listen'] === 't38' ? 't' : ''));
+		return [
+			$s['engine'] === 'ari' ?
+				['Stasis', $s['ari_app'] . ',faxdetect,' . $f['wait'] . ',' . $o] :
+				['DModemFaxDetect', $f['wait'] . ',' . $o],
+			['GotoIf', '$["${DMODEMFAXDETECTED}" = "CNG" | ' .
+			 '"${DMODEMFAXDETECTED}" = "T38"]?' . $f['dest']],
+		];
+	}
+
 	/* the context as extensions.conf text (name: the context's) */
 	public static function render(array $context, $name = self::CONTEXT)
 	{

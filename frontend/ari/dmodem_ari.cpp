@@ -1582,11 +1582,12 @@ void close_line(Line &line)
 
 /* the options of Stasis(app,faxdetect,seconds,options), as
    DModemFaxDetect has them: c the CNG only, t the T.38 request only, n
-   no answer, r ringing; false if one is unknown, or c and t together */
+   no answer, r ringing, x no jump to the fax extension; false if one is
+   unknown, or c and t together */
 bool detect_options(const std::string &s, bool *cng_only, bool *t38_only,
-		    bool *no_answer, bool *ringing)
+		    bool *no_answer, bool *ringing, bool *no_jump)
 {
-	*cng_only = *t38_only = *no_answer = *ringing = false;
+	*cng_only = *t38_only = *no_answer = *ringing = *no_jump = false;
 	for (char ch : s) {
 		if (ch == 'c')
 			*cng_only = true;
@@ -1596,6 +1597,8 @@ bool detect_options(const std::string &s, bool *cng_only, bool *t38_only,
 			*no_answer = true;
 		else if (ch == 'r')
 			*ringing = true;
+		else if (ch == 'x')
+			*no_jump = true;
 		else
 			return false;
 	}
@@ -1608,11 +1611,12 @@ bool detect_options(const std::string &s, bool *cng_only, bool *t38_only,
    again), then up to seconds (default 4) of listening for a fax machine: its
    CNG, or a T.38 offer on the SIP side.  DMODEMFAXDETECTED is CNG, T38
    or NONE; on a fax, DMODEMFAXEXTEN the extension, and the call
-   continues at the context's fax extension if it has one.  True if the
+   continues at the context's fax extension if it has one (not with
+   option x: the dialplan reads DMODEMFAXDETECTED).  True if the
    call continues there (run_call() then does not continue it) */
 bool run_detect(Call &c)
 {
-	bool cng_only, t38_only, no_answer, ringing;
+	bool cng_only, t38_only, no_answer, ringing, no_jump;
 	enum dmodem_law law = call_law(c, DMODEM_LAW_UNKNOWN);
 	double secs = c.file.empty() ? 4 : atof(c.file.c_str());
 	std::string what = "NONE", playback;
@@ -1628,7 +1632,7 @@ bool run_detect(Call &c)
 		secs = 4;
 	}
 	if (!detect_options(c.fax_options, &cng_only, &t38_only, &no_answer,
-			    &ringing)) {
+			    &ringing, &no_jump)) {
 		say("WARNING %s: faxdetect: bad options '%s'", c.name.c_str(),
 		    c.fax_options.c_str());
 		return false;
@@ -1667,8 +1671,12 @@ bool run_detect(Call &c)
 		return false;
 	}
 	set_var(c.id, "DMODEMFAXEXTEN", c.exten);
-	if (c.exten != "fax" &&
-	    get_var(c.id, "DIALPLAN_EXISTS(" + c.context + ",fax,1)") == "1") {
+	if (no_jump) {
+		if (verbose >= 1)
+			say("%s: dmodem fax detect: %s", c.name.c_str(),
+			    what.c_str());
+	} else if (c.exten != "fax" &&
+		   get_var(c.id, "DIALPLAN_EXISTS(" + c.context + ",fax,1)") == "1") {
 		if (verbose >= 1)
 			say("%s: dmodem fax detect: %s, to the fax extension",
 			    c.name.c_str(), what.c_str());

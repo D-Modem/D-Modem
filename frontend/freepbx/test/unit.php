@@ -796,10 +796,115 @@ $dpa = Dialplan::render(Dialplan::build(array_merge($m->getSettings(), ['engine'
 ok(strpos($dpa, " same => n,Stasis(dmodem,receivefax,/var/spool/asterisk/fax/") !== false,
    'ari: the recipient\'s fax through Stasis(<app>,receivefax,<file>)');
 
+/* --- fax detection on inbound routes (Core's display=did page) --- */
+
+/* the inbound route form posted to the module after Core saved it */
+function dmodem_did_post($m, array $r)
+{
+	$_REQUEST = $_POST = $r + ['display' => 'did'];
+	$m->doConfigPageInit('did');
+}
+
+/* Core's routes in ext-did-000x (a part of what core_get_config adds),
+   then the module's dialplan hook */
+function dmodem_did_dialplan($m, array $routes)
+{
+	$ext = new extensions();
+	foreach ($routes as $r) {
+		list($ctx, $exten) = $r;
+		$ext->add($ctx, $exten, '', new ext_dmodem_app('Set', '__FROM_DID=${EXTEN}'));
+		$ext->add($ctx, $exten, 'did', new ext_dmodem_app('Set', 'CDR(did)=${FROM_DID}'));
+		$ext->add($ctx, $exten, 'did-cid-hook', new ext_dmodem_app('NoOp', 'CallerID Entry Point'));
+		$ext->add($ctx, $exten, 'dest-ext', new ext_dmodem_app('Goto', 'app-dmodem,bbs,1'));
+	}
+	$m->doDialplanHook($ext, 'asterisk', 500);
+	return $ext->generateConf();
+}
+
+same(Dialplan::didExten('5551001', ''), '5551001', 'didExten: a DID');
+same(Dialplan::didExten('5551001', '5550100'), '5551001/5550100', 'didExten: a DID and a caller ID');
+same(Dialplan::didExten('', '5550100'), 's/5550100', 'didExten: a caller ID alone');
+same(Dialplan::didExten('', ''), 's', 'didExten: any DID');
+same(Config::didKey(' <5551001> ', ''), '5551001/', 'didKey: as Core trims a route');
+same(Config::didKey("1\n2", ''), null, 'didKey: no line breaks');
+same(FreePBX\modules\Dmodem::myConfigPageInits(), ['did'], 'the module hooks the inbound route page');
+
+$route = ['action' => 'addIncoming', 'extension' => '5551001', 'cidnum' => '',
+	  'dmodem_fax_form' => '1', 'dmodem_fax_detect' => 'yes', 'dmodem_fax_listen' => 'both',
+	  'dmodem_fax_wait' => '6', 'dmodem_fax_ring' => 'yes',
+	  'gotodmodemfax' => 'dest', 'destdmodemfax' => 'app-dmodem,fax-sales,1'];
+$GLOBALS['needreload'] = 0;
+dmodem_did_post($m, $route);
+same($m->getDidFax('5551001/'), ['detect' => true, 'listen' => 'both', 'wait' => 6, 'ring' => true,
+				'dest' => 'app-dmodem,fax-sales,1'], 'a route\'s fax detection kept');
+ok($GLOBALS['needreload'] > 0, 'a route\'s fax detection asks for Apply Config');
+dmodem_did_post($m, array_merge($route, ['dmodem_fax_wait' => '99']));
+same($m->getDidFax('5551001/')['wait'], 6, 'a bad time: the fax detection stays as it was');
+dmodem_did_post($m, array_merge($route, ['destdmodemfax' => '']));
+same($m->getDidFax('5551001/')['dest'], 'app-dmodem,fax-sales,1', 'no destination: the fax detection stays');
+$noform = $route;
+unset($noform['dmodem_fax_form']);
+dmodem_did_post($m, array_merge($noform, ['dmodem_fax_detect' => '']));
+ok($m->getDidFax('5551001/')['detect'], 'a post without the tab (another caller) changes nothing');
+/* a route renamed: its fax detection goes with it */
+dmodem_did_post($m, array_merge($route, ['action' => 'edtIncoming', 'old_extension' => '5551001',
+	'old_cidnum' => '', 'extension' => '5551002', 'dmodem_fax_listen' => 'cng',
+	'dmodem_fax_ring' => '']));
+ok(!$m->getDidFax('5551001/')['detect'] && $m->getDidFax('5551002/')['detect'],
+   'a renamed route: the fax detection moved');
+dmodem_did_post($m, array_merge($route, ['cidnum' => '5550100', 'extension' => '']));
+same(array_keys($m->getDidFaxes()), ['/5550100', '5551002/'], 'a route of a caller ID alone');
+
+$dp = dmodem_did_dialplan($m, [['ext-did-0002', '5551002'], ['ext-did-0001', 's/5550100'],
+			       ['ext-did-0002', '5559999']]);
+ok(strpos($dp, "exten => 5551002,n(did),Set(CDR(did)=\${FROM_DID})\n" .
+	   "exten => 5551002,n,DModemFaxDetect(6,xc)\n" .
+	   "exten => 5551002,n,GotoIf(\$[\"\${DMODEMFAXDETECTED}\" = \"CNG\" | \"\${DMODEMFAXDETECTED}\" = \"T38\"]?app-dmodem,fax-sales,1)\n" .
+	   "exten => 5551002,n(did-cid-hook),NoOp(CallerID Entry Point)\n") !== false,
+   'the route listens (CNG only, no ring) before its caller ID step, and a fax goes to its destination');
+ok(strpos($dp, "exten => s/5550100,n,DModemFaxDetect(6,xr)\n") !== false,
+   'the caller ID route listens (ring, CNG and T.38)');
+ok(strpos($dp, "exten => 5559999,n,DModemFaxDetect") === false, 'a route without it: no fax detection');
+ok(strpos($dp, 'ext-did-0001') !== false && substr_count($dp, 'DModemFaxDetect') === 2,
+   'only the routes that are there (none added)');
+$m->saveSettings(array_merge($m->getSettings(), ['engine' => 'ari', 'ari_app' => 'dm']));
+$dp = dmodem_did_dialplan($m, [['ext-did-0002', '5551002']]);
+ok(strpos($dp, "exten => 5551002,n,Stasis(dm,faxdetect,6,xc)\n") !== false,
+   'ari: Stasis(<app>,faxdetect,<time>,<options>)');
+$m->saveSettings(array_merge($m->getSettings(), ['engine' => 'app', 'ari_app' => 'dmodem']));
+
+/* the tab on the route's page */
+$_REQUEST = ['display' => 'did', 'view' => 'form', 'extdisplay' => '5551002/'];
+$tab = $m->didFaxTab('did');
+ok(count($tab) === 1 && $tab[0]['rawname'] === 'dmodemfax' && $tab[0]['title'] === 'D-Modem fax',
+   'the inbound route page: a D-Modem fax tab');
+ok(strpos($tab[0]['content'], 'id="dmodem_fax_detect" name="dmodem_fax_detect" value="yes" checked') !== false &&
+   strpos($tab[0]['content'], '<option value="cng" selected>') !== false &&
+   strpos($tab[0]['content'], 'value="app-dmodem,fax-sales,1"') !== false,
+   'the tab: the route\'s fax detection');
+$_REQUEST = ['display' => 'did', 'view' => 'form'];
+ok(strpos($m->didFaxTab('did')[0]['content'], 'name="dmodem_fax_detect" value="yes">') !== false,
+   'the tab of a new route: off');
+same($m->didFaxTab('extensions'), [], 'no tab on other pages');
+
+/* the destinations it uses */
+same(array_column(dmodem_check_destinations(['app-dmodem,fax-sales,1']), 'description'),
+     ['Inbound route /5550100: D-Modem fax', 'Inbound route 5551002/: D-Modem fax'],
+     'check_destinations: the routes that send faxes there');
+same(dmodem_check_destinations(['app-dmodem,bbs,1']), [], 'check_destinations: none for another');
+same(count(dmodem_check_destinations(true)), 2, 'check_destinations: all');
+
+/* a route deleted, and one turned off */
+dmodem_did_post($m, ['action' => 'delIncoming', 'extdisplay' => '/5550100']);
+same(array_keys($m->getDidFaxes()), ['5551002/'], 'a deleted route: its fax detection gone');
+dmodem_did_post($m, array_merge($route, ['extension' => '5551003', 'dmodem_fax_detect' => '']));
+same(array_keys($m->getDidFaxes()), ['5551002/'], 'off: none kept');
+
 /* --- export, import, backup and restore --- */
 
 $exp = $m->exportData();
-same(array_keys($exp), ['format', 'settings', 'profiles', 'recipients'], 'export: its parts');
+same(array_keys($exp), ['format', 'settings', 'profiles', 'recipients', 'didfax'], 'export: its parts');
+same(array_keys($exp['didfax']), ['5551002/'], 'export: the fax detection of the routes');
 same(array_keys($exp['recipients']), ['sales'], 'export: the fax recipients');
 same($exp['settings']['fax_ecm'], false, 'export: settings as they are');
 $file = sys_get_temp_dir() . '/dmodem-unit-' . getmypid() . '.json';

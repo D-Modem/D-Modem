@@ -334,6 +334,55 @@ class Config
 		return $e;
 	}
 
+	/* the fax detection of an inbound route (its DID and caller ID
+	   number): on or off, what it listens for (both, cng or t38), how
+	   long (seconds), ring tone to the caller while it listens, and
+	   where a fax goes (a destination) */
+	public static function defaultDidFax()
+	{
+		return [
+			'detect' => false,
+			'listen' => 'both',
+			'wait' => 4,
+			'ring' => true,
+			'dest' => '',
+		];
+	}
+
+	/* an inbound route's fax detection from the form or the store: see
+	   normalize() */
+	public static function normalizeDidFax(array $in)
+	{
+		return self::normalize($in, self::defaultDidFax());
+	}
+
+	/* what is wrong with the fax detection f, field => message */
+	public static function validateDidFax(array $f)
+	{
+		$e = [];
+		if (!in_array($f['listen'], ['both', 'cng', 't38'], true))
+			$e['listen'] = _('CNG and T.38, CNG only or T.38 only');
+		if (!self::intIn($f['wait'], 1, 30))
+			$e['wait'] = _('1 to 30 seconds');
+		if ($f['detect'] &&
+		    !preg_match('/^[A-Za-z0-9_.+*#-]+,[A-Za-z0-9_.+*#\/-]+,[0-9]+$/', $f['dest']))
+			$e['dest'] = _('A destination for the faxes');
+		return $e;
+	}
+
+	/* the key of an inbound route's fax detection: <DID>/<caller ID
+	   number>, as FreePBX's inbound routes name a route (extdisplay);
+	   null if the route's numbers have characters that a key cannot have */
+	public static function didKey($did, $cid)
+	{
+		$did = trim(str_replace(['<', '>'], '', (string)$did));
+		$cid = trim(str_replace(['<', '>'], '', (string)$cid));
+		if (!preg_match('/^[A-Za-z0-9_.+*#\[\]!-]{0,80}$/', $did) ||
+		    !preg_match('/^[A-Za-z0-9_.+*#\[\]!-]{0,80}$/', $cid))
+			return null;
+		return $did . '/' . $cid;
+	}
+
 	/* v as a dmodem.conf value: its ';' written '\;' (else the rest is
 	   a comment), the line breaks gone */
 	public static function escape($v)

@@ -16,7 +16,11 @@
 # Last, fax to email: a fax machine (DModemSendFax) calls the fax
 # recipient's destination app-dmodem,fax-sales,1; when the call ends, its
 # mail handler runs fwconsole dmodem fax2mail (a stand-in: fax2mail.php),
-# and the mail must have the text, a PDF of the pages and the TIFF.
+# and the mail must have the text, a PDF of the pages and the TIFF.  Then
+# the same through an inbound route (5551002 in ext-did-0001, as Core
+# writes it) with D-Modem's fax detection to that destination; and a call
+# without a fax on that route, which must go on to the route's own
+# destination (app-dmodem,bbs,1).
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 ast_test=$here/../../asterisk/test
@@ -116,16 +120,20 @@ echo "--- the line check"
 php "$here/linecheck.php" "$ami_port" modem warn "$engine" ||
 	{ echo "FAIL: the line check"; r=1; }
 
-echo "--- fax to email (the recipient sales' destination, its mail handler)"
 "$build/dsp/test/fax_doc" light "$run/doc.tif"
 $ast -rx "dialplan set global FAXDOC $run/doc.tif" >/dev/null
-$ast -rx "channel originate Local/fax-sales@app-dmodem/n extension s@fax-e2e-send" >/dev/null
-i=0; until ls "$run"/etc/mail-*.eml >/dev/null 2>&1 || [ $i -ge 240 ]; do
-	sleep 1; i=$((i+1))
-done
-cat "$run/etc/fax2mail.log" 2>/dev/null || true
-mail=$(ls "$run"/etc/mail-*.eml 2>/dev/null | head -1)
-if [ -n "$mail" ] && python3 -I - "$mail" <<'EOT'
+# the mails that the mail handler made
+mails() {
+	ls "$run"/etc/mail-*.eml 2>/dev/null | wc -l
+}
+# waits for mail number $1, then checks it (the recipient, the text, a PDF
+# of 2 pages and the TIFF); $2: what the case is
+check_mail() {
+	i=0; until [ "$(mails)" -ge "$1" ] || [ $i -ge 240 ]; do
+		sleep 1; i=$((i+1))
+	done
+	mail=$(ls -tr "$run"/etc/mail-*.eml 2>/dev/null | sed -n "$1p")
+	if [ -n "$mail" ] && python3 -I - "$mail" <<'EOT'
 import email, sys
 m = email.message_from_binary_file(open(sys.argv[1], "rb"))
 parts = {p.get_content_type(): p.get_payload(decode=True) for p in m.walk()
@@ -138,12 +146,37 @@ assert parts["application/pdf"].count(b"/Type /Page ") == 2, "not 2 pages"
 assert parts["image/tiff"][:4] == b"II*\0", "no TIFF"
 print("the mail: to %s, \"%s\", a PDF of 2 pages and the TIFF" % (m["To"], m["Subject"]))
 EOT
-then
-	echo "PASS: fax to email"
+	then
+		echo "PASS: $2"
+	else
+		echo "FAIL: $2"; r=1
+		cat "$run/etc/fax2mail.log" 2>/dev/null || true
+		grep -E "fax-sales|fax2mail|DMODEMFAX|FaxDetect|faxdetect" "$run/console.log" | tail -20 || true
+		[ -z "$ARI" ] || ari_log "$run"
+	fi
+}
+
+echo "--- fax to email (the recipient sales' destination, its mail handler)"
+$ast -rx "channel originate Local/fax-sales@app-dmodem/n extension s@fax-e2e-send" >/dev/null
+check_mail 1 "fax to email"
+
+echo "--- the inbound route's fax detection: a fax machine"
+$ast -rx "channel originate Local/5551002@ext-did-0001/n extension s@fax-e2e-send" >/dev/null
+check_mail 2 "the route heard the fax and sent it to the recipient"
+grep -q "fax-sales@app-dmodem:1\] NoOp(\"Local/5551002@ext-did-0001" "$run/console.log" ||
+	{ echo "FAIL: the fax did not go from the route to fax-sales"; r=1; }
+
+echo "--- the inbound route's fax detection: no fax machine"
+n=$(grep -c "D-Modem profile bbs" "$run/console.log")
+$ast -rx "channel originate Local/5551002@ext-did-0001/n application Wait 12" >/dev/null
+i=0; until [ "$(grep -c "D-Modem profile bbs" "$run/console.log")" -gt "$n" ] || [ $i -ge 30 ]; do
+	sleep 1; i=$((i+1))
+done
+if [ "$(grep -c "D-Modem profile bbs" "$run/console.log")" -gt "$n" ]; then
+	echo "PASS: no fax: the route went on to its destination"
 else
-	echo "FAIL: fax to email"; r=1
-	grep -E "fax-sales|fax2mail|DMODEMFAX" "$run/console.log" | tail -20 || true
-	[ -z "$ARI" ] || ari_log "$run"
+	echo "FAIL: no fax: the route did not go on to its destination"; r=1
+	grep -E "5551002|FaxDetect|faxdetect" "$run/console.log" | tail -10 || true
 fi
 
 $ast -rx "core stop now" >/dev/null 2>&1 || true

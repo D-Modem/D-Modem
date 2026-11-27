@@ -193,7 +193,8 @@ the modem profiles receive (default `/var/spool/asterisk/fax`).
   [asterisk-details.md](asterisk-details.md#fax-detection)). It has the
   same options and sets the same variables. When it hears a fax
   machine and the context has a `fax` extension, the call continues
-  there. Else the call continues at the next priority.
+  there (not with the option `x`). Else the call continues at the next
+  priority.
 
   It hears a T.38 request only with the SIP side (`t38 = yes`). Unlike
   `DModemFaxDetect`, it accepts the T.38 request on its own leg (it

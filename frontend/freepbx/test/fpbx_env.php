@@ -199,11 +199,27 @@ function needreload()
 	$GLOBALS['needreload']++;
 }
 
+/* FreePBX's destination picker: its module select (goto<i>) and the
+   destination (<module><i>), as drawselects() posts them */
+function drawselects($goto, $i, $show_custom = false, $table = true)
+{
+	return '<select name="goto' . $i . '"><option value="dest" selected>dest</option></select>' .
+		'<input type="text" name="dest' . $i . '" value="' .
+		htmlspecialchars((string)$goto, ENT_QUOTES) . '">';
+}
+
 $GLOBALS['dest_usage'] = [];
-/* what uses destination dest: the test says */
+/* what uses the destinations dest (a list, as FreePBX's Destinations
+   takes them; true: all): module => uses, as the test says */
 function framework_check_destination_usage($dest = true, $module_hash = false)
 {
-	return isset($GLOBALS['dest_usage'][$dest]) ? $GLOBALS['dest_usage'][$dest] : [];
+	if (!is_array($dest))
+		throw new Exception('framework_check_destination_usage: not a list of destinations');
+	$out = [];
+	foreach ($dest as $d)
+		if (isset($GLOBALS['dest_usage'][$d]))
+			$out = array_merge_recursive($out, $GLOBALS['dest_usage'][$d]);
+	return $out;
 }
 
 $fw = getenv('FREEPBX_FRAMEWORK');
@@ -245,6 +261,27 @@ if ($fwext !== '' && is_file($fwext)) {
 			$basetag = empty($this->_exts[$section][$extension]) ? '1' : 'n';
 			$this->_exts[$section][$extension][] = ['basetag' => $basetag,
 				'tag' => $tag, 'cmd' => $command];
+		}
+
+		/* command put before the first step of extension of section
+		   with tag priority (at the end if none has it), as
+		   extensions.class.php's splice() does for a tag */
+		public function splice($section, $extension, $priority, $command)
+		{
+			$extension = ' ' . $extension . ' ';
+			$steps = isset($this->_exts[$section][$extension]) ?
+				$this->_exts[$section][$extension] : [];
+			$at = count($steps);
+			foreach ($steps as $i => $st)
+				if ($st['tag'] === $priority) {
+					$at = $i;
+					break;
+				}
+			array_splice($steps, $at, 0, [['basetag' => $at === 0 ? '1' : 'n',
+				'tag' => '', 'cmd' => $command]]);
+			if ($at === 0 && count($steps) > 1)
+				$steps[1]['basetag'] = 'n';
+			$this->_exts[$section][$extension] = $steps;
 		}
 
 		/* the dialplan's text */
