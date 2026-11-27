@@ -49,7 +49,9 @@ float FskMod::next(s16 bit)
 
 /* mark and space (Hz), baud (bit/s): pre filter around the channel
    centre, base band low pass of shift / 2 + 0.6 baud, carrier on and off
-   levels for 200 and 140 amplitude tones */
+   levels for 145 and 100 amplitude tones: about -43 and -47 dBm0 (the
+   peak of 0 dBm0 is 22300).  8.3/V.21 and 4.3/V.23: on above -43 dBm,
+   off below -48 dBm, at least 2 dB of hysteresis */
 void FskDemod::init(float mark, float space, float baud, s32 rate)
 {
 	float fc = (mark + space) / 2;
@@ -68,10 +70,19 @@ void FskDemod::init(float mark, float space, float baud, s32 rate)
 		lp_im[i].lowpass(bw, 0.707f, srate);
 	}
 	pwr.init(8.0f / baud > 0.02f ? 8.0f / baud : 0.02f, srate);
+	/* circuit 109 ON to OFF: 20 to 80 ms at 300 baud (8.2.2/V.21), 5 to
+	   15 ms at 1200 baud and 15 to 80 ms at 75 baud (8.3.2/V.23).  The
+	   end of the carrier on a meter of one bit (4 ms at most), held for
+	   5.4 bits (20 ms at most) */
+	float hold = 5.4f / baud;
+	hold = hold > 0.02f ? 0.02f : hold;
+	fast.init(1.0f / baud < 0.004f ? 1.0f / baud : 0.004f, srate);
+	low_n = 0;
+	low_max = static_cast<s32>(hold * srate);
 	dev_alpha = 1.0f / (0.02f * srate);
 	/* base band power of a tone of amplitude A is A^2/4 */
-	on_level = 200.0f * 200.0f / 4;
-	off_level = 140.0f * 140.0f / 4;
+	on_level = 145.0f * 145.0f / 4;
+	off_level = 100.0f * 100.0f / 4;
 	bit_inc = baud / srate;
 	bit_gain = 0.25f;
 	dev_avg = half_shift * 4;
@@ -101,11 +112,12 @@ s16 FskDemod::run(float x)
 	/* carrier detector: level plus a sane frequency deviation, so that
 	   e.g. a 2100 Hz answer tone is not taken for a V.21 carrier */
 	p = pwr.run(sqrtf(cplx_pow(z)));
+	low_n = fast.run(sqrtf(cplx_pow(z))) < off_level ? low_n + 1 : 0;
 	dev_avg += dev_alpha * (fabsf(fabsf(dev) - half_shift) - dev_avg);
 	if (!carrier) {
 		if (p > on_level && dev_avg < half_shift * 0.75f + 40)
 			carrier = 1;
-	} else if (p < off_level || dev_avg > half_shift * 1.5f + 80)
+	} else if (low_n >= low_max || dev_avg > half_shift * 1.5f + 80)
 		carrier = 0;
 
 	dec = dev * sign > 0;

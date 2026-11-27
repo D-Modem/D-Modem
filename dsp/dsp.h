@@ -255,6 +255,10 @@ struct FskDemod {
 	Biquad lp_re[2], lp_im[2];
 	cplx prev;
 	PowerMeter pwr;         /* base band power */
+	PowerMeter fast;        /* the same, one bit (4 ms at most): the
+				   carrier's end */
+	s32 low_n, low_max;     /* samples of fast under off_level; the
+				   samples for OFF (5.4 bits, 20 ms at most) */
 	float dev_avg;          /* average |frequency deviation| */
 	float dev_alpha;
 	float on_level, off_level;

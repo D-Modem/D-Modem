@@ -8,6 +8,9 @@ copies. Thus, they are not in the repository. To download the current English ed
 standard into this folder, run `docs/specs/fetch.sh` (`fetch.sh V.34 T.30` downloads only those two).
 Then the "Local copy" links in the table operate.
 
+For a description of each standard in our own words, refer to
+[the standards in Simplified Technical English](../standards/README.md).
+
 | Recommendation | Subject | In D-Modem | Local copy |
 |---|---|---|---|
 | [G.711](https://www.itu.int/rec/T-REC-G.711) | PCM of voice frequencies (µ-law, A-law) | the network codec of V.90/V.91/V.92, netsim, the PBX modules | [G.711.pdf](G.711.pdf) |

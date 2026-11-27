@@ -77,7 +77,7 @@ namespace dsp {
 static const unsigned char v8_msg[] = { 0xe0, 0xc1, 0x45, 0x13, 0x94, 0x2a, 0x0d };
 /* and a fax call's (V.34 half-duplex): the call function (filled in),
    V.34 half-duplex; V.17, V.29 and V.27ter, V.21; PSTN access */
-static const unsigned char v8_fax_msg[] = { 0xe0, 0x81, 0x85, 0x74, 0x90, 0x0d };
+static const unsigned char v8_fax_msg[] = { 0xe0, 0x81, 0x85, 0xd4, 0x90, 0x0d };
 /* x2's client's CM, the Courier's: V.34 alone, no protocol octet, PSTN
    access (the I-modem offers x2 in its INFO0 after this one, and not
    after ours) */
@@ -107,6 +107,9 @@ static const unsigned char v8_x2c_msg[] = { 0xe0, 0xc1, 0x45, 0x10, 0x10, 0x0d }
 #define V8_CAT_PCM      0x07
 #define V8_CAT_CALLF    0x01    /* the call function (Table 3/V.8) */
 #define V8_ACCESS_DIGITAL 0x80
+#define V8_ACCESS_CALL_CELL 0x20 /* the call DCE on a cellular link */
+#define V8_CAT_PROT     0x0A    /* the protocol category (Table 6/V.8) */
+#define V8_PROT_LAPM    0x20    /* prot0's option bits 100: LAPM */
 #define V8_PCM_ANALOGUE 0x20    /* V.90 / V.92 analogue modem */
 #define V8_PCM_DIGITAL  0x40    /* V.90 / V.92 digital modem */
 #define V8_PCM_V91      0x80
@@ -1518,6 +1521,21 @@ void V34V8<P>::v8_make_msg(BitQ *q)
 		if ((pcm_ & (V8_PCM_DIGITAL | V8_PCM_V91)) &&
 		    (c & 0x1F) == V8_CAT_ACCESS)
 			c |= V8_ACCESS_DIGITAL;
+		/* a JM's protocol octet: only for a CM that asks for LAPM
+		   (Table 6/V.8, 7.4/V.8) */
+		if (!self.caller && (c & 0x1F) == V8_CAT_PROT) {
+			s16 r = v8_remote_cat(V8_CAT_PROT);
+			if (r < 0 || (r & 0xE0) != V8_PROT_LAPM)
+				continue;
+		}
+		/* a JM's b5 of the PSTN access octet: the CM's b5, and
+		   nothing else (7.4/V.8) */
+		if (!self.caller && (c & 0x1F) == V8_CAT_ACCESS) {
+			s16 r = v8_remote_cat(V8_CAT_ACCESS);
+			c &= ~V8_ACCESS_CALL_CELL;
+			if (r >= 0)
+				c |= r & V8_ACCESS_CALL_CELL;
+		}
 		/* (not the sync octet) */
 		if (i)
 			put(c);

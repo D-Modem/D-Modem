@@ -130,6 +130,9 @@ measurements, and test lists.
   from the source
 - [ITU-T Recommendations](specs/README.md): the standards that D-Modem
   implements, with a script that downloads them
+- [The standards in Simplified Technical English](standards/README.md):
+  our own description of each standard, with a summary page and a page of
+  technical details
 - [AT command reference](at_commands.pdf): all commands, result codes and
   S-registers, on A5 pages. The other files are for printing:
   - The [booklet](at_commands-booklet.pdf) has

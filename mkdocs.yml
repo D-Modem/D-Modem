@@ -29,6 +29,16 @@ nav:
     - Environment variables: reference/environment.md
     - CMake options: reference/cmake.md
     - ITU-T Recommendations: specs/README.md
+    - The standards in STE:
+      - Index: standards/README.md
+      - "V.8": standards/v8.md
+      - "V.8: technical details": standards/v8-details.md
+      - "V.13": standards/v13.md
+      - "V.13: technical details": standards/v13-details.md
+      - "V.21": standards/v21.md
+      - "V.21: technical details": standards/v21-details.md
+      - "V.25": standards/v25.md
+      - "V.25: technical details": standards/v25-details.md
   - The modem:
     - The modem core: core.md
     - The data pumps: dsp/README.md
