@@ -23,191 +23,191 @@
    9600 B: CONNECT 14400\r\n
    9640 A: \r\n
    9640 A: CONNECT 14400\r\n
-   9640 until A 'PassWord:': yes
-   9640 A< xyz\r
-   9760 A: PassWord:***\r\n
-   9760 A: Error..., try again\r\n
-   9760 until A 'PassWord:': yes
-   9760 A< Secret\r
-   9860 A: PassWord:******\r\n
-   9860 A: Correct\r\n
-   9860 until A 'Correct\r\n': yes
-   9940 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9940 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9940 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9940 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9980 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9980 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9980 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
-   9980 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
-  12860 A< +++
-  13360 A: B0004 The quick brown fox jumps over the lazy dog 01\r\n
-  13360 A: OK\r\n
-  14060 A< ATH\r
-  14060 A: \r\n
-  14060 A: OK\r\n
+   9660 until A 'PassWord:': yes
+   9660 A< xyz\r
+   9780 A: PassWord:***\r\n
+   9780 A: Error..., try again\r\n
+   9780 until A 'PassWord:': yes
+   9780 A< Secret\r
+   9880 A: PassWord:******\r\n
+   9880 A: Correct\r\n
+   9880 until A 'Correct\r\n': yes
+   9960 B: A0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   9960 B: A0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   9960 B: A0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+   9960 B: A0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10000 A: B0000 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10000 A: B0001 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10000 A: B0002 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  10000 A: B0003 The quick brown fox jumps over the lazy dog 0123456789\r\n
+  12880 A< +++
+  13380 A: B0004 The quick brown fox jumps over the lazy dog 01\r\n
+  13380 A: OK\r\n
+  14080 A< ATH\r
   14080 A: \r\n
-  14080 A: NO CARRIER\r\n
-  14120 B: A0004 The quick brown fox jumps over the lazy dog 01+++\r\n
-  14120 B: NO CARRIER\r\n
-  14120 until B 'NO CARRIER': yes
-  14120 until A 'OK': yes
-  14620 B< ATA\r
-  14620 A< ATD\r
-  24220 B: \r\n
-  24220 B: CONNECT 14400\r\n
-  24260 A: \r\n
-  24260 A: CONNECT 14400\r\n
-  24260 until A 'PassWord:': yes
-  24260 A< one\r
-  24380 A: PassWord:***\r\n
-  24380 A: Error..., try again\r\n
-  24380 until A 'PassWord:': yes
-  24380 A< two\r
-  24480 A: PassWord:***\r\n
-  24480 A: Error..., try again\r\n
-  24480 until A 'PassWord:': yes
-  24480 A< three\r
-  24640 B: \r\n
-  24640 B: NO CARRIER\r\n
-  24680 A: PassWord:*****\r\n
-  24680 A: NO CARRIER\r\n
-  24680 until A 'NO CARRIER': yes
-  24680 until B 'NO CARRIER': yes
-  24680 B< ATI6\r
+  14080 A: OK\r\n
+  14100 A: \r\n
+  14100 A: NO CARRIER\r\n
+  14140 B: A0004 The quick brown fox jumps over the lazy dog 01+++\r\n
+  14140 B: NO CARRIER\r\n
+  14140 until B 'NO CARRIER': yes
+  14140 until A 'OK': yes
+  14640 B< ATA\r
+  14640 A< ATD\r
+  24240 B: \r\n
+  24240 B: CONNECT 14400\r\n
+  24280 A: \r\n
+  24280 A: CONNECT 14400\r\n
+  24300 until A 'PassWord:': yes
+  24300 A< one\r
+  24420 A: PassWord:***\r\n
+  24420 A: Error..., try again\r\n
+  24420 until A 'PassWord:': yes
+  24420 A< two\r
+  24520 A: PassWord:***\r\n
+  24520 A: Error..., try again\r\n
+  24520 until A 'PassWord:': yes
+  24520 A< three\r
   24680 B: \r\n
-  24680 B: Description                         Status\r\n
-  24680 B: -----------                         ------\r\n
-  24680 B: Last Connection                     V32bis\r\n
-  24680 B: Initial Transmit Carrier Rate       14400\r\n
-  24680 B: Initial Receive Carrier Rate        14400\r\n
-  24680 B: Final Transmit Carrier Rate         14400\r\n
-  24680 B: Final Receive Carrier Rate          14400\r\n
-  24680 B: Symbol Rate (Tx/Rx)                 2400/2400\r\n
-  24680 B: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
-  24680 B: Protocol Negotiation Result         LAPM\r\n
-  24680 B: Data Compression Result             ZSTD\r\n
-  24680 B: Estimated SNR (dB)                  36.1\r\n
-  24680 B: Estimated Noise Level (dBm0)        -54.0\r\n
-  24680 B: Receive Signal Power Level (dBm0)   -17.9\r\n
-  24680 B: Transmit Signal Power Level (dBm0)  -17.8\r\n
-  24680 B: Carrier Frequency Offset (Hz)       0.0\r\n
-  24680 B: Timing Offset (ppm)                 7\r\n
-  24680 B: Characters Sent                     84\r\n
-  24680 B: Characters Received                 14\r\n
-  24680 B: Transmit Frame Count                7\r\n
-  24680 B: Transmit Frame Error Count          0\r\n
-  24680 B: Receive Frame Count                 9\r\n
-  24680 B: Receive Frame Error Count           0\r\n
-  24680 B: Retrains by Local Modem             0\r\n
-  24680 B: Retrains Requested by Remote Modem  0\r\n
-  24680 B: Rate Renegotiation by Local Modem   0\r\n
-  24680 B: Rate Renegotiation by Remote Modem  0\r\n
-  24680 B: Call Duration                       0:00:00\r\n
-  24680 B: Call Termination Cause              Security check\r\n
-  24680 B: \r\n
-  24680 B: OK\r\n
-  25180 B< AT*G4\r
-  25180 B: \r\n
-  25180 B: OK\r\n
-  25180 B< ATA\r
-  25180 A< ATD\r
-  34780 B: \r\n
-  34780 B: CONNECT 14400\r\n
-  34820 A: \r\n
-  34820 A: CONNECT 14400\r\n
-  34820 until A 'PassWord:': yes
-  34820 A< Secret\r
-  34940 A: PassWord:******\r\n
-  34940 A: Correct\r\n
-  35000 B: \r\n
-  35000 B: NO CARRIER\r\n
-  35040 A: \r\n
-  35040 A: NO CARRIER\r\n
-  35040 until A 'NO CARRIER': yes
-  35040 until B 'NO CARRIER': yes
-  35040 A< ATA\r
-  44640 A: \r\n
-  44640 A: CONNECT 14400\r\n
-  44680 B: \r\n
-  44680 B: CONNECT 14400\r\n
-  44680 until B 'CONNECT': yes
-  44680 until A 'CONNECT': yes
-  44680 A: state 2, tx 14400 rx 14400, started
-  44680 B: state 2, tx 14400 rx 14400, started
-  44680 B< +++
-  45180 B: \r\n
-  45180 B: OK\r\n
-  45880 B< ATH\r
-  45880 B: \r\n
-  45880 B: OK\r\n
-  45900 B: \r\n
-  45900 B: NO CARRIER\r\n
-  45940 A: +++\r\n
-  45940 A: NO CARRIER\r\n
-  45940 until A 'NO CARRIER': yes
-  46440 B< AT*G5\r
-  46440 B: \r\n
-  46440 B: OK\r\n
-  46440 B< ATA\r
-  46440 A< ATD\r
-  56040 B: \r\n
-  56040 B: CONNECT 14400\r\n
-  56080 A: \r\n
-  56080 A: CONNECT 14400\r\n
-  56080 until A 'PassWord:': yes
-  56080 A< abc\r
-  56200 A: PassWord:***\r\n
-  56200 until A 'number:': yes
-  56200 A< 5559\x0888\r
-  56360 B: \r\n
-  56360 B: NO CARRIER\r\n
-  56400 A: Call back phone number:5559\x0888\r\n
-  56400 A: NO CARRIER\r\n
-  56400 until A 'NO CARRIER': yes
-  56400 until B 'NO CARRIER': yes
-  56400 A< ATA\r
-  66000 A: \r\n
-  66000 A: CONNECT 14400\r\n
-  66040 B: \r\n
-  66040 B: CONNECT 14400\r\n
-  66040 until B 'CONNECT': yes
-  66040 until A 'CONNECT': yes
-  66040 A: state 2, tx 14400 rx 14400, started
-  66040 B: state 2, tx 14400 rx 14400, started
-  66040 B< +++
-  66540 B: \r\n
-  66540 B: OK\r\n
-  67240 B< ATH\r
-  67240 B: \r\n
-  67240 B: OK\r\n
-  67260 B: \r\n
-  67260 B: NO CARRIER\r\n
-  67300 A: +++\r\n
-  67300 A: NO CARRIER\r\n
-  67300 until A 'NO CARRIER': yes
-  67800 B< AT*HS=boss\r
-  67800 B: \r\n
-  67800 B: OK\r\n
-  67800 B< AT*V\r
-  67800 B: \r\n
-  67800 B: ERROR\r\n
-  67800 B< AT*V=boss\r
-  67800 B: \r\n
-  67800 B: *G5\r\n
-  67800 B: 0: abc \r\n
-  67800 B: 1: Secret 5551234\r\n
-  67800 B: \r\n
-  67800 B: OK\r\n
-  67800 B< AT*H2=pw\r
-  67800 B: \r\n
-  67800 B: ERROR\r\n
-  67800 B< AT*H2=boss,pw\r
-  67800 B: \r\n
-  67800 B: OK\r\n
-  67800 B< AT*H1\r
-  67800 B: \r\n
-  67800 B: OK\r\n
-  67800 B< ATDS9\r
-  67800 B: \r\n
-  67800 B: ERROR\r\n
+  24680 B: NO CARRIER\r\n
+  24720 A: PassWord:*****\r\n
+  24720 A: NO CARRIER\r\n
+  24720 until A 'NO CARRIER': yes
+  24720 until B 'NO CARRIER': yes
+  24720 B< ATI6\r
+  24720 B: \r\n
+  24720 B: Description                         Status\r\n
+  24720 B: -----------                         ------\r\n
+  24720 B: Last Connection                     V32bis\r\n
+  24720 B: Initial Transmit Carrier Rate       14400\r\n
+  24720 B: Initial Receive Carrier Rate        14400\r\n
+  24720 B: Final Transmit Carrier Rate         14400\r\n
+  24720 B: Final Receive Carrier Rate          14400\r\n
+  24720 B: Symbol Rate (Tx/Rx)                 2400/2400\r\n
+  24720 B: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
+  24720 B: Protocol Negotiation Result         LAPM\r\n
+  24720 B: Data Compression Result             ZSTD\r\n
+  24720 B: Estimated SNR (dB)                  35.6\r\n
+  24720 B: Estimated Noise Level (dBm0)        -53.3\r\n
+  24720 B: Receive Signal Power Level (dBm0)   -17.7\r\n
+  24720 B: Transmit Signal Power Level (dBm0)  -17.8\r\n
+  24720 B: Carrier Frequency Offset (Hz)       0.0\r\n
+  24720 B: Timing Offset (ppm)                 2\r\n
+  24720 B: Characters Sent                     84\r\n
+  24720 B: Characters Received                 14\r\n
+  24720 B: Transmit Frame Count                7\r\n
+  24720 B: Transmit Frame Error Count          0\r\n
+  24720 B: Receive Frame Count                 9\r\n
+  24720 B: Receive Frame Error Count           0\r\n
+  24720 B: Retrains by Local Modem             0\r\n
+  24720 B: Retrains Requested by Remote Modem  0\r\n
+  24720 B: Rate Renegotiation by Local Modem   0\r\n
+  24720 B: Rate Renegotiation by Remote Modem  0\r\n
+  24720 B: Call Duration                       0:00:00\r\n
+  24720 B: Call Termination Cause              Security check\r\n
+  24720 B: \r\n
+  24720 B: OK\r\n
+  25220 B< AT*G4\r
+  25220 B: \r\n
+  25220 B: OK\r\n
+  25220 B< ATA\r
+  25220 A< ATD\r
+  34820 B: \r\n
+  34820 B: CONNECT 14400\r\n
+  34860 A: \r\n
+  34860 A: CONNECT 14400\r\n
+  34880 until A 'PassWord:': yes
+  34880 A< Secret\r
+  35000 A: PassWord:******\r\n
+  35000 A: Correct\r\n
+  35060 B: \r\n
+  35060 B: NO CARRIER\r\n
+  35100 A: \r\n
+  35100 A: NO CARRIER\r\n
+  35100 until A 'NO CARRIER': yes
+  35100 until B 'NO CARRIER': yes
+  35100 A< ATA\r
+  44700 A: \r\n
+  44700 A: CONNECT 14400\r\n
+  44740 B: \r\n
+  44740 B: CONNECT 14400\r\n
+  44740 until B 'CONNECT': yes
+  44740 until A 'CONNECT': yes
+  44740 A: state 2, tx 14400 rx 14400, started
+  44740 B: state 2, tx 14400 rx 14400, started
+  44740 B< +++
+  45240 B: \r\n
+  45240 B: OK\r\n
+  45940 B< ATH\r
+  45940 B: \r\n
+  45940 B: OK\r\n
+  45960 B: \r\n
+  45960 B: NO CARRIER\r\n
+  46000 A: +++\r\n
+  46000 A: NO CARRIER\r\n
+  46000 until A 'NO CARRIER': yes
+  46500 B< AT*G5\r
+  46500 B: \r\n
+  46500 B: OK\r\n
+  46500 B< ATA\r
+  46500 A< ATD\r
+  56100 B: \r\n
+  56100 B: CONNECT 14400\r\n
+  56140 A: \r\n
+  56140 A: CONNECT 14400\r\n
+  56160 until A 'PassWord:': yes
+  56160 A< abc\r
+  56280 A: PassWord:***\r\n
+  56280 until A 'number:': yes
+  56280 A< 5559\x0888\r
+  56440 B: \r\n
+  56440 B: NO CARRIER\r\n
+  56480 A: Call back phone number:5559\x0888\r\n
+  56480 A: NO CARRIER\r\n
+  56480 until A 'NO CARRIER': yes
+  56480 until B 'NO CARRIER': yes
+  56480 A< ATA\r
+  66080 A: \r\n
+  66080 A: CONNECT 14400\r\n
+  66120 B: \r\n
+  66120 B: CONNECT 14400\r\n
+  66120 until B 'CONNECT': yes
+  66120 until A 'CONNECT': yes
+  66120 A: state 2, tx 14400 rx 14400, started
+  66120 B: state 2, tx 14400 rx 14400, started
+  66120 B< +++
+  66620 B: \r\n
+  66620 B: OK\r\n
+  67320 B< ATH\r
+  67320 B: \r\n
+  67320 B: OK\r\n
+  67340 B: \r\n
+  67340 B: NO CARRIER\r\n
+  67380 A: +++\r\n
+  67380 A: NO CARRIER\r\n
+  67380 until A 'NO CARRIER': yes
+  67880 B< AT*HS=boss\r
+  67880 B: \r\n
+  67880 B: OK\r\n
+  67880 B< AT*V\r
+  67880 B: \r\n
+  67880 B: ERROR\r\n
+  67880 B< AT*V=boss\r
+  67880 B: \r\n
+  67880 B: *G5\r\n
+  67880 B: 0: abc \r\n
+  67880 B: 1: Secret 5551234\r\n
+  67880 B: \r\n
+  67880 B: OK\r\n
+  67880 B< AT*H2=pw\r
+  67880 B: \r\n
+  67880 B: ERROR\r\n
+  67880 B< AT*H2=boss,pw\r
+  67880 B: \r\n
+  67880 B: OK\r\n
+  67880 B< AT*H1\r
+  67880 B: \r\n
+  67880 B: OK\r\n
+  67880 B< ATDS9\r
+  67880 B: \r\n
+  67880 B: ERROR\r\n

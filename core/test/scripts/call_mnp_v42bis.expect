@@ -108,12 +108,12 @@
   14480 B: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
   14480 B: Protocol Negotiation Result         MNP\r\n
   14480 B: Data Compression Result             V42bis\r\n
-  14480 B: Estimated SNR (dB)                  45.3\r\n
-  14480 B: Estimated Noise Level (dBm0)        -63.1\r\n
+  14480 B: Estimated SNR (dB)                  44.0\r\n
+  14480 B: Estimated Noise Level (dBm0)        -61.8\r\n
   14480 B: Receive Signal Power Level (dBm0)   -17.8\r\n
   14480 B: Transmit Signal Power Level (dBm0)  -17.8\r\n
   14480 B: Carrier Frequency Offset (Hz)       0.0\r\n
-  14480 B: Timing Offset (ppm)                 -2\r\n
+  14480 B: Timing Offset (ppm)                 3\r\n
   14480 B: Characters Sent                     2003\r\n
   14480 B: Characters Received                 3000\r\n
   14480 B: Transmit Frame Count                15\r\n
@@ -149,12 +149,12 @@
   15860 A: Carrier Frequency (Hz, Tx/Rx)       1800/1800\r\n
   15860 A: Protocol Negotiation Result         MNP\r\n
   15860 A: Data Compression Result             V42bis\r\n
-  15860 A: Estimated SNR (dB)                  43.8\r\n
-  15860 A: Estimated Noise Level (dBm0)        -62.2\r\n
+  15860 A: Estimated SNR (dB)                  45.9\r\n
+  15860 A: Estimated Noise Level (dBm0)        -64.4\r\n
   15860 A: Receive Signal Power Level (dBm0)   -18.5\r\n
   15860 A: Transmit Signal Power Level (dBm0)  -17.8\r\n
   15860 A: Carrier Frequency Offset (Hz)       0.0\r\n
-  15860 A: Timing Offset (ppm)                 -4\r\n
+  15860 A: Timing Offset (ppm)                 0\r\n
   15860 A: Characters Sent                     3000\r\n
   15860 A: Characters Received                 2003\r\n
   15860 A: Transmit Frame Count                14\r\n

@@ -36,13 +36,18 @@
  *    bit first.  The caller scrambles with 1 + x^-18 + x^-23, the
  *    answerer with 1 + x^-5 + x^-23.
  *
- *    A rate renegotiation (8.5/V.32bis) in data, either modem first:
+ *    A rate renegotiation (8/V.32bis) in data, either modem first:
  *
- *    initiator: S S-bar TRN R4 ... (until R5), E, data
- *    responder: (on S) S S-bar TRN R5 ... (after R4, until E), E, data
+ *    initiator: preamble, R4 ... (64 symbols at least, until R5), E,
+ *               B1 (24 symbols), data
+ *    responder: data (on the preamble, until R4), preamble, R5 (64
+ *               symbols), E, B1 (24 symbols), data
  *
- *    the equalizers and the echo canceller as data left them; a modem
- *    that answers with a retrain (AA or AC) is followed.
+ *    The caller's preamble is AA for 56 symbols and CC for 8, the
+ *    answerer's AC for 56 and CA for 8.  R4 and R5 start from a
+ *    scrambler of zeros.  The equalizers and the echo canceller stay as
+ *    data left them; a modem that answers with a retrain (AA or AC for
+ *    more than 128 symbols) is followed.
  *
  *    When the remote modem does not do V.32 the pump falls back to
  *    V.22bis (answerer: no AA after the answer tone, caller: V.22
@@ -103,12 +108,47 @@ namespace dsp {
 #define RB_RATES        (RB_4800 | RB_9600 | RB_TCM | RB_7200 | RB_12000 | \
 			 RB_14400 | RB_TERBO)
 
+/* true when the rate word w calls for a GSTN cleardown: no rate (B5,
+   B6, B9, B10 and B12 zero: Table 6/V.32, Table 5/V.32bis; and
+   V.32terbo's B13 and B14) */
+static bool v32_cleardown(u16 w)
+{
+	return !(w & (RB_4800 | RB_9600 | RB_7200 | RB_12000 | RB_14400 |
+		      RB_TERBO));
+}
+
+/* B1: the data mode starts with scrambled binary ones for 128 symbols
+   (V.32bis 5.4), the remote's receiver may train on them */
+#define V32_B1_SYMS 128
+
+/* B1 in a rate renegotiation (8.1/V.32bis) */
+#define V32_RN_B1_SYMS 24
+
+/* the symbols in a row that show the remote's renegotiation preamble in
+   its data (of its 56 of AA or AC) */
+#define V32_PRE_RUN 24
+
 struct v32_rate {
 	s32 bps;
 	u16 bits;
 	s16 nbits;
 	const cplx *points;
 	const ZyxFrameRate *frame = nullptr;    /* ZyX 16800 to 7200's */
+};
+
+/* 9600 bit/s without trellis coding (2.4.1.1/V.32, Figure 1/V.32):
+   16 points, index (the 4800 coding state of Y1 Y2, as v32_points_4800)
+   x 4 + (Q3 << 1 | Q4); a quadrant's points, A's turned by 90 degree
+   steps */
+static const cplx v32_points_9600nr[16] = {
+	/* A's quadrant (Y1 Y2 00): Q3 Q4 00, 01, 10, 11 */
+	{ -2, -2 }, { -6, -2 }, { -2, -6 }, { -6, -6 },
+	/* D's (10) */
+	{ -2,  2 }, { -2,  6 }, { -6,  2 }, { -6,  6 },
+	/* B's (01) */
+	{  2, -2 }, {  2, -6 }, {  6, -2 }, {  6, -6 },
+	/* C's (11) */
+	{  2,  2 }, {  6,  2 }, {  2,  6 }, {  6,  6 },
 };
 
 static const struct v32_rate v32_rates[] = {
@@ -118,9 +158,17 @@ static const struct v32_rate v32_rates[] = {
 	{ 12000, RB_TCM | RB_12000, 5, v32_points_12000 },
 	{ 9600, RB_TCM | RB_9600, 4, v32_points_9600 },
 	{ 7200, RB_TCM | RB_7200, 3, v32_points_7200 },
+	{ 9600, RB_9600, 4, v32_points_9600nr },
 	{ 4800, RB_4800, 2, v32_points_4800 },
 };
 #define V32_NRATES (s16)std::size(v32_rates)
+
+/* true when rate r has no trellis code (4800, and 9600 of 2.4.1.1/V.32):
+   Q1 Q2 coded by quadrant (Table 1/V.32), the rest of the bits uncoded */
+static bool v32_uncoded(const struct v32_rate *r)
+{
+	return !(r->bits & RB_TCM);
+}
 
 /* ZyX's (all at ZYX_BAUD, no 4800): the bits of the rate words as
    V.32terbo's, nbits the trellis encoder's bits a symbol */
@@ -229,8 +277,9 @@ enum v32_state {
 	C_TRAIN,
 	C_R2,
 	C_E,
-	/* a rate renegotiation (8.5/V.32bis), either modem */
-	RN_TRAIN,               /* S S-bar TRN */
+	/* a rate renegotiation (8/V.32bis), either modem */
+	RN_WAIT_R4,             /* responder: data, the remote's R4 awaited */
+	RN_PRE,                 /* the preamble: AA CC, or AC CA */
 	RN_R,                   /* R4 (initiator) or R5 (responder) */
 	RN_E,
 	/* both */
@@ -315,6 +364,17 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	s16 b1_syms;
 	s16 b1_out;             /* B1's decoded symbols still to come,
 				   ones to the core whatever they are */
+	s16 rx_b1;              /* B1's symbols: 128, 24 in a
+				   renegotiation */
+	s16 tx_b1 = V32_B1_SYMS; /* ours */
+	/* the remote's renegotiation preamble in its data: the symbols in
+	   a row like it, the last one's training point; its event */
+	s16 pre_run = 0, pre_k = 0;
+	s16 ev_pre = 0;
+	bool rn_got_r = false;  /* initiator: R5 (or the remote's R4) in */
+	bool clearing = false;  /* answerer: our R3 calls for a cleardown */
+	bool no_tcm = false;    /* test: no trellis code offered */
+	bool clear_test = false; /* test: the caller's R2 a cleardown */
 	s16 agc_free;           /* symbols the AGC still follows the input
 				   after its level came back */
 
@@ -337,6 +397,8 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	s32 lost_syms;          /* ... symbols in a row past it */
 	s16 lost_off;           /* (tests: none of that) */
 	u16 r_word;             /* last R word received */
+	u16 peer_word = 0;      /* the remote's rates at the start-up (R1 or
+				   R2), its B8 for a renegotiation */
 	enum DP_ID v32_id;      /* DP_V32, DP_V32BIS, DP_V32TERBO or DP_ZYX */
 	/* ZyX: its rates, at ZYX_BAUD after AA, AC and CC; the frames of
 	   ZyX 16800 to 7200: the symbol in the frame we send, receive, the
@@ -388,21 +450,29 @@ struct V32Pump : PumpBase<V32Pump, v32_state>, QamRxCore<V32Pump> {
 	s16 connect();
 	void retrain(bool remote);
 	void renegotiate(bool remote);
-	/* the remote's retrain: AA alone from a caller, AC alone from an
-	   answerer (S, a renegotiation's, has both tones; scrambled data
-	   neither) */
+	/* the remote's retrain (5.5/V.32): AA alone from a caller, AC alone
+	   from an answerer, for more than 128 symbols (a renegotiation's
+	   preamble is shorter; scrambled data has neither) */
 	bool remote_retrain() const
 	{
-		return caller ? ev_ac && !ev_aa : ev_aa && !ev_ac;
+		const ToneTrk &t = caller ? ac : aa, &o = caller ? aa : ac;
+		return t.on && !o.on &&
+			t.on_count > static_cast<s32>(srate * 128 / baud);
 	}
-	/* the remote's S watched for in data (a renegotiation) */
-	bool s_watch() const
+	/* the remote's renegotiation preamble watched for in its data (not
+	   V.32's, which has none) */
+	bool pre_watch() const
 	{
-		return state == V32_DATA || (reneg == 1 && rxp == RX_DATA);
+		return v32_id != DP_V32 && rxp == RX_DATA &&
+			(state == V32_DATA || reneg == 1);
 	}
+	void preamble();
 	s16 fallback_to(enum DP_ID id, const char *mode);
 	s16 fallback();
-	u16 quality_caps();
+	u16 quality_caps(u16 w);
+	bool bis_words() const;
+	u16 rate_word(u16 rates) const;
+	u16 final_word(const struct v32_rate *r) const;
 	float lost_limit(const struct v32_rate *r);
 	const struct v32_rate *choose(u16 w);
 	s16 handshake();
@@ -497,10 +567,27 @@ void V32Pump::zyx_frame(u32 *scr, s16 tap, const struct v32_rate *r,
 	r->frame->encode(bits, q);
 }
 
-/* the rate word naming r alone (R3, and E with RB_HEADER added) */
-static u16 final_word(const struct v32_rate *r)
+/* true when our rate words are V.32bis's: B4 and B8 1 in all of them
+   (Table 5/V.32bis).  Not for V.32 (B4: 2400 bit/s, B8: the trellis
+   code at the fastest rate), nor to a V.32 peer (no B4 and B8 in its
+   word: then V.32 alone, Note 1 to Table 5/V.32bis) */
+bool V32Pump::bis_words() const
 {
-	return RB_B4 | RB_SYNC | r->bits;
+	return v32_id != DP_V32 && !no_tcm &&
+		(!peer_word ||
+		 (peer_word & (RB_B4 | RB_TCM)) == (RB_B4 | RB_TCM));
+}
+
+/* our rate word with the rates (and B8 for a trellis rate) rates */
+u16 V32Pump::rate_word(u16 rates) const
+{
+	return RB_SYNC | rates | (bis_words() ? RB_B4 | RB_TCM : 0);
+}
+
+/* the rate word naming r alone (R3, and E with RB_HEADER added) */
+u16 V32Pump::final_word(const struct v32_rate *r) const
+{
+	return rate_word(r->bits);
 }
 
 /*
@@ -522,9 +609,14 @@ cplx V32Pump::abcd_point(s16 k)
 	return v32_abcd[k];
 }
 
-/* B1: the data mode starts with scrambled binary ones for 128 symbols
-   (V.32bis 5.4), the remote's receiver may train on them */
-#define V32_B1_SYMS 128
+/* the symbols from our detector's phase reversal (AC to CA, or AA to
+   CC) to our own transition: the detector sees a reversal about 12
+   symbols after it arrives, and the pulse shaping puts our transition
+   on the line about 3 symbols after we make it.  Thus the transition is
+   on the line 64 symbols after the reversal (5.4/V.32), as
+   V32.TurnRoundDelay measures */
+#define V32_TURN_SYMS 49
+
 
 /* one 4800 bit/s symbol (two scrambled bits, differentially coded):
    the next two bits of the rate word word (MSB first), or with data two
@@ -536,7 +628,7 @@ cplx V32Pump::tx_word_symbol(u16 word, s16 data)
 		s16 bit;
 		if (data) {
 			u8 x = 1;
-			if (tx_syms >= V32_B1_SYMS)
+			if (tx_syms >= tx_b1)
 				modem_get_bits(modem, 1, &x, 1);
 			bit = x & 1;
 		} else {
@@ -560,16 +652,28 @@ cplx V32Pump::tx_data_symbol()
 
 	if (r->nbits == 2)
 		return tx_word_symbol(0, 1);
+	if (v32_uncoded(r)) {
+		/* 9600 uncoded: Q1 Q2 the quadrant, Q3 Q4 the point in it */
+		s16 b[4];
+		for (k = 0; k < 4; k++) {
+			u8 x = 1;
+			if (tx_syms >= tx_b1)
+				modem_get_bits(modem, 1, &x, 1);
+			b[k] = scramble(&tx_scr, tx_scr_tap, x & 1);
+		}
+		tx_4800 = v32_4800_enc[tx_4800][b[0] | b[1] << 1];
+		return r->points[tx_4800 * 4 + (b[2] << 1 | b[3])];
+	}
 	if (r->frame) {
 		/* ZyX 16800 to 7200: a frame of 8 symbols at a time */
 		if (tx_fpos == 0)
-			zyx_frame(&tx_scr, tx_scr_tap, r, tx_syms < V32_B1_SYMS,
+			zyx_frame(&tx_scr, tx_scr_tap, r, tx_syms < tx_b1,
 				  tx_fq);
 		q = tx_fq[tx_fpos];
 		tx_fpos = (tx_fpos + 1) % ZYX_FRAME;
 		return r->points[tx_trellis.encode(q, r->nbits)];
 	}
-	if (tx_syms < V32_B1_SYMS)
+	if (tx_syms < tx_b1)
 		std::fill_n(bits, r->nbits, 1);
 	else
 		modem_get_bits(modem, 1, bits, r->nbits);
@@ -653,7 +757,7 @@ void V32Pump::rx_reset()
 }
 
 /* data begins (E received): the remote sends B1, scrambled ones, for
-   128 symbols, from the scrambler register our descrambler has now;
+   rx_b1 symbols, from the scrambler register our descrambler has now;
    its trellis encoder's state is not known, all 32 are followed */
 void V32Pump::b1_start()
 {
@@ -666,7 +770,7 @@ void V32Pump::b1_start()
 	}
 	b1_best = -1;
 	b1_syms = 0;
-	b1_out = V32_B1_SYMS;
+	b1_out = rx_b1;
 	rx_fpos = 0;
 }
 
@@ -679,7 +783,7 @@ bool V32Pump::b1_point(s16 n, cplx z, cplx *d)
 	const cplx *pts = rx_rate->points;
 	s16 q = 0, k, i;
 
-	if (b1_syms >= V32_B1_SYMS)
+	if (b1_syms >= rx_b1)
 		return false;
 	if (rx_rate->frame) {
 		if (b1_syms % ZYX_FRAME == 0)
@@ -704,7 +808,7 @@ bool V32Pump::b1_point(s16 n, cplx z, cplx *d)
 	if (b1_err[k] > 8 * 0.05f * V32_POWER) {
 		DSP_DBG("v32: no B1 (error %.3f)\n",
 			b1_err[k] / (8 * V32_POWER));
-		b1_syms = V32_B1_SYMS;
+		b1_syms = rx_b1;
 		return false;
 	}
 	b1_best = k;
@@ -728,12 +832,14 @@ void V32Pump::rx_word_bit(s16 bit)
 	if ((w & RB_SYNC) != RB_SYNC)
 		return;
 	if ((w & RB_HEADER) == 0 && (rx_bits >> 16) == w &&
-	    (w & RB_RATES) && rxp == RX_R && w == rx_r_word) {
+	    rxp == RX_R && w == rx_r_word) {
 		/* E has to come on the same 16 bit boundaries as R; follow
 		   them, a clock offset can slip a symbol */
 		rx_word_align = rx_nbits & 15;
 	} else if ((w & RB_HEADER) == 0 && (rx_bits >> 16) == w &&
-	    (w & RB_RATES) && w != rx_r_word) {
+		   w != rx_r_word) {
+		/* (5.3.1/V.32: the sync bits twice; a cleardown has no
+		   rate) */
 		rx_word_align = rx_nbits & 15;
 		rx_r_word = w;
 		r_word = w;
@@ -744,10 +850,15 @@ void V32Pump::rx_word_bit(s16 bit)
 		DSP_DBG("v32: R word %04X\n", w);
 	} else if (rxp == RX_R && (w & RB_HEADER) == RB_HEADER &&
 		   (rx_nbits & 15) == rx_word_align &&
-		   rate_of_word(w) && (w & RB_RATES) == rate_of_word(w)->bits &&
+		   rate_of_word(w) &&
+		   (w & RB_RATES & ~RB_TCM) ==
+		   (rate_of_word(w)->bits & ~RB_TCM) &&
 		   rx_mse < 0.1f && !rx_e_seen) {
+		/* (one rate; B8, the trellis code, may come with 4800:
+		   Table 6/V.32bis has it 1 in every word) */
 		rx_e_seen = 1;
 		rx_rate = rate_of_word(w);
+		rx_b1 = reneg ? V32_RN_B1_SYMS : V32_B1_SYMS;
 		ev_e = 1;
 		rxp = RX_DATA;
 		vit.init(rx_rate->points, rx_rate->nbits);
@@ -796,9 +907,8 @@ void V32Pump::rx_symbol()
 
 	/* S: steps of +-90 degrees with alternating sign; the first
 	   S-bar symbol (C) repeats the sign.  S can start over at any
-	   time before data (a new training), or in data (the remote's
-	   rate renegotiation). */
-	if (rxp != RX_DATA || s_watch()) {
+	   time before data (a new training). */
+	if (rxp != RX_DATA && !reneg) {
 		st = cplx_mulc(z, last_z);
 		a = atan2f(st.im, st.re);
 		sgn = a > 0 ? 1 : -1;
@@ -806,11 +916,8 @@ void V32Pump::rx_symbol()
 			if (sgn != last_sgn) {
 				if (++run_s >= 24 && rxp != RX_S) {
 					/* whatever was learned on silence or
-					   noise is useless: start over (not
-					   in a renegotiation: the equalizer
-					   goes on from data's) */
-					if (rxp != RX_IDLE && rxp != RX_DATA &&
-					    !reneg)
+					   noise is useless: start over */
+					if (rxp != RX_IDLE)
 						rx.reset();
 					rx_e_seen = 0;
 					rx.agc_hold = 0;
@@ -881,10 +988,42 @@ void V32Pump::rx_symbol()
 			const struct v32_rate *r = rx_rate;
 			u8 bits[ZYX_MAX_BITS];
 			s16 n = r->nbits;
-			k = nearest_point(r->points, 1 << (n == 2 ? 2 : n + 1), z);
+			bool uncoded = v32_uncoded(r);
+			/* the remote's renegotiation preamble (8.2/V.32bis):
+			   a caller's AA (one training point again and again),
+			   an answerer's AC (two opposite points in turn), at
+			   any of the four phases data's lock may have */
+			float pre_mu = 1;
+			if (pre_watch()) {
+				s16 a = nearest_abcd(z);
+				bool on = cplx_pow(cplx_sub(z, v32_abcd[a])) <
+					0.1f * V32_POWER &&
+					a == (caller ? (pre_k + 2) & 3 : pre_k);
+				pre_run = on ? pre_run + 1 : 0;
+				pre_k = a;
+				if (pre_run >= V32_PRE_RUN) {
+					/* the rate signal follows: 4800 bit/s
+					   coding from this symbol, 104 clamped */
+					pre_run = 0;
+					rxp = RX_TRN;
+					rx_4800 = abcd_to_4800[a];
+					rx_nbits = 0;
+					rx_r_word = 0;
+					rx_e_seen = 0;
+					ev_pre = 1;
+					DSP_DBG("v32: renegotiation preamble\n");
+					break;
+				}
+				/* (no training on its first symbols: they are
+				   no points of data's) */
+				if (pre_run >= 4)
+					pre_mu = 0;
+			}
+			k = nearest_point(r->points, 1 << (uncoded ? n : n + 1),
+					  z);
 			d = r->points[k];
 			/* B1: train on the points the remote sends */
-			bool b1 = n > 2 && b1_point(n, z, &d);
+			bool b1 = !uncoded && b1_point(n, z, &d);
 			/* the gain held only while the level stays within 3 dB
 			   of data's: through a burst of noise or a level step
 			   the AGC follows, and for 100 ms after */
@@ -906,12 +1045,18 @@ void V32Pump::rx_symbol()
 				DSP_TRACE("%s data mse %.4f t %.3f tadj %.5f th %.2f dth %.5f\n",
 					  caller ? "C" : "A", rx_mse, rx.t_next,
 					  rx.t_adj, rx.theta, rx.dtheta);
-			rx.adapt(d, b1 ? 0.01f : 0.004f, 0.02f, 0.0002f);
-			if (n == 2) {
+			rx.adapt(d, pre_mu * (b1 ? 0.01f : 0.004f),
+				 pre_mu * 0.02f, pre_mu * 0.0002f);
+			if (uncoded) {
+				/* Q1 Q2 from the quadrant's change (Table
+				   1/V.32), 9600's Q3 Q4 from the point in it */
+				s16 quad = n == 2 ? k : k >> 2;
 				for (q = 0; q < 4; q++)
-					if (v32_4800_enc[rx_4800][q] == k)
+					if (v32_4800_enc[rx_4800][q] == quad)
 						break;
-				rx_4800 = k;
+				rx_4800 = quad;
+				if (n == 4)
+					q |= ((k >> 1) & 1) << 2 | (k & 1) << 3;
 			} else
 				q = vit.decode(z, nullptr);
 			if (q >= 0 && r->frame) {
@@ -927,10 +1072,12 @@ void V32Pump::rx_symbol()
 					for (k = 0; k < nb; k++)
 						bits[k] = static_cast<u8>(descramble(
 							&rx_scr, rx_scr_tap, bits[k]));
-					if (state == V32_DATA)
+					if (state == V32_DATA || reneg)
 						modem_put_bits(modem, 1, bits, nb);
 				}
-			} else if (q >= 0 && state == V32_DATA) {
+			} else if (q >= 0 && (state == V32_DATA || reneg)) {
+				/* (in a renegotiation: the remote's data until
+				   its preamble, and from its E) */
 				for (k = 0; k < n; k++)
 					bits[k] = descramble(&rx_scr,
 							     rx_scr_tap, q >> k);
@@ -1015,6 +1162,8 @@ s16 V32Pump::connect()
 {
 	set_state(V32_DATA);
 	data_power = rx.power;
+	pre_run = 0;
+	ev_pre = 0;
 	if (retraining) {
 		/* the link goes on (V.42 knows nothing of it) */
 		set_rates(tx_rate->bps, rx_rate->bps);
@@ -1052,7 +1201,7 @@ void V32Pump::retrain(bool remote)
 	/* ZyX: AA, AC and CC at 2400 baud again */
 	set_baud(V32_BAUD);
 	rx_reset();
-	ev_rev = ev_r = ev_e = ev_s = 0;
+	ev_rev = ev_r = ev_e = ev_s = ev_pre = 0;
 	ca_rev = 0;
 	nt_syms = 0;
 	timeout = total + ms2samples(15000, srate);
@@ -1062,32 +1211,53 @@ void V32Pump::retrain(bool remote)
 		set_tx(TXM_AA);
 	} else {
 		set_state(A_AC);
+		tx_ac_phase = 1;        /* A first */
 		set_tx(TXM_AC);
 	}
 }
 
-/* a rate renegotiation (8.5/V.32bis), the remote's (its S heard in
-   data) or ours: S, S-bar and a short TRN, the receiver's equalizer
-   and the echo canceller as they are; the initiator's R4 answered by
-   the responder's R5 (the rates of R4 it can take now), then E and B1
-   at R5's fastest rate.  Both at once (each the other's R4 for an R5)
-   end the same way.  A retrain if it is not over in 3 s, or if the
-   remote retrains instead (a modem without it) */
+/* a rate renegotiation (8/V.32bis), the remote's (its preamble heard
+   in data) or ours: the preamble and the rate signal, the receiver's
+   equalizer and the echo canceller as they are.  The initiator's R4
+   answered by the responder's R5 (the rates it can take now), then
+   from each E and B1 at the fastest rate of the two.  Both at once
+   (each the other's R4 for an R5) end the same way.  A retrain if it
+   is not over in 3 s, or if the remote retrains instead (a modem
+   without it).  The responder sends data until R4 is in */
 void V32Pump::renegotiate(bool remote)
 {
-	DSP_DBG("v32: rate renegotiation %d (%s)\n", ++renegs,
-		remote ? "remote" : "ours");
-	stat_reneg(remote);
+	if (!remote) {
+		DSP_DBG("v32: rate renegotiation %d (ours)\n", ++renegs);
+		stat_reneg(false);
+	}
 	retraining = 1;
 	reneg = remote ? 2 : 1;
 	/* the core's limits as they are now (a rate shift's cap) */
 	caps = offered_caps();
 	ev_r = ev_e = ev_s = 0;
 	rn_word = 0;
+	rn_got_r = false;
 	reneg_end = total + ms2samples(3000, srate);
 	timeout = total + ms2samples(15000, srate);
-	set_state(RN_TRAIN);
-	set_tx(TXM_S);
+	if (remote)
+		set_state(RN_WAIT_R4);
+	else
+		preamble();
+}
+
+/* our renegotiation preamble (8/V.32bis): AA for 56 symbols and CC for
+   8 (the caller), or AC for 56 and CA for 8 (the answerer) */
+void V32Pump::preamble()
+{
+	set_state(RN_PRE);
+	if (caller) {
+		set_tx(TXM_AA);
+	} else {
+		/* A first */
+		tx_ac_phase = 1;
+		tx_reverse = 0;
+		set_tx(TXM_AC);
+	}
 }
 
 /* hands over to the pump id (mode its name for the debug output); an
@@ -1104,11 +1274,14 @@ s16 V32Pump::fallback()
 	return fallback_to(DP_V22BIS, "V.22bis");
 }
 
-/* the training SNR (dB) each rate of v32_rates[] takes.  V.32terbo's
+/* the training SNR (dB) each rate of v32_rates[] takes (9600 uncoded:
+   4 dB more than with the trellis code).  V.32terbo's
    from back to back calls (pump_test): our training's estimate tops out
    near 31 dB; 19200 bit/s is clean from about 32 dB of line SNR (an
    estimate of 29.6), 16800 from 24 dB (25.6) */
-static const float v32_min_snr[] = { 29.5f, 26.5f, 25, 22, 19, 16, 0 };
+static const float v32_min_snr[] = { 29.5f, 26.5f, 25, 22, 19, 16, 23,
+				     0 };
+static_assert(std::size(v32_min_snr) == std::size(v32_rates));
 /* ZyX's, from back to back calls (pump_test, ZYX_ALPHA 0.2): each
    rate clean from about 1.5 dB under these estimates (16800 from about
    0.5 dB under: its errors come in frames), the framed rates
@@ -1117,6 +1290,7 @@ static const float v32_min_snr[] = { 29.5f, 26.5f, 25, 22, 19, 16, 0 };
    about 1 dB lower than on 1800 Hz (19200 and 16800 down by 1 dB:
    from 27 to 32 dB of line SNR the rate chosen has no errors) */
 static const float zyx_min_snr[] = { 26.5f, 26, 23, 19.5f, 18, 0 };
+static_assert(std::size(zyx_min_snr) == std::size(zyx_rates));
 
 /* the data mse (of V32_POWER) past which a receiver at rate r has
    lost its equalization (rate_lost_limit()) */
@@ -1144,6 +1318,9 @@ u16 V32Pump::offered_caps()
 		   own) */
 		if (v32_id != DP_V32TERBO && !zyx && (r->bits & RB_TERBO))
 			continue;
+		/* (test: as a modem without the trellis code) */
+		if (no_tcm && (r->bits & RB_TCM))
+			continue;
 		if (max_rate > 0 && r->bps > max_rate)
 			continue;
 		if (min_rate > 0 && r->bps < min_rate)
@@ -1157,22 +1334,26 @@ u16 V32Pump::offered_caps()
 }
 
 /* the rates our receiver can take, judged by the decision error on
-   the training signal (4 points) */
-u16 V32Pump::quality_caps()
+   the training signal (4 points), for a remote whose rate word is w:
+   without B8 in it (no trellis code), the uncoded rates alone */
+u16 V32Pump::quality_caps(u16 w)
 {
-	u16 caps_ = zyx ? rate_caps(zyx_rates, zyx_min_snr, rx_mse) :
-		rate_caps(v32_rates, v32_min_snr, rx_mse);
-	/* TCM is shared by the trellis rates */
-	if (caps_ & (RB_7200 | RB_9600 | RB_12000 | RB_14400 | RB_TERBO))
-		caps_ |= RB_TCM;
-	return caps & (caps_ | (zyx ? zyx_rates[ZYX_NRATES - 1].bits :
-				    RB_4800));
+	const float snr = -10 * log10f(rx_mse + 1e-6f);
+	const float *min_snr = zyx ? zyx_min_snr : v32_min_snr;
+	u16 c = 0;
+	for (s16 i = 0; i < nrates(); i++) {
+		const struct v32_rate *r = &rates()[i];
+		if (snr >= min_snr[i] && (v32_uncoded(r) || (w & RB_TCM)))
+			c |= r->bits;
+	}
+	return caps & (c | (zyx ? zyx_rates[ZYX_NRATES - 1].bits :
+			    RB_4800));
 }
 
 /* the best common rate of our capabilities and the remote's word */
 const struct v32_rate *V32Pump::choose(u16 w)
 {
-	return rate_of_word(w & quality_caps());
+	return rate_of_word(w & quality_caps(w));
 }
 
 /* called once per transmitted symbol, before the symbol is made */
@@ -1198,12 +1379,16 @@ s16 V32Pump::handshake()
 	case A_GAP:
 		if (count >= ms2samples(ANS_GAP_MS, srate)) {
 			set_state(A_AC);
+			tx_ac_phase = 1;        /* A first */
 			set_tx(TXM_AC);
 		}
 		break;
 	case A_AC:
-		/* AC for at least 128 symbols and until AA is heard */
-		if (sym >= 128 && ev_aa) {
+		/* AC for an even number of symbols, 128 at least (its last
+		   C, which CA repeats), and until AA is heard for 64 symbols
+		   (5.4.2/V.32) */
+		if (sym >= 128 && tx_ac_phase == 1 && ev_aa &&
+		    aa.on_count >= static_cast<s32>(srate * 64 / baud)) {
 			set_state(A_CA);
 			tx_reverse = 1;
 			ev_rev = 0;
@@ -1211,16 +1396,18 @@ s16 V32Pump::handshake()
 			return fallback();
 		break;
 	case A_CA:
-		/* the caller answers with CC; our AC again 64 symbols after
-		   its reversal (6.2/V.32bis), as the caller's CC after ours:
-		   our detector sees it about 26 symbols late.  The caller
-		   measures the round trip delay from this (the Intel 537EP,
-		   with our reversal at once, misses our S) */
+		/* the caller answers with CC; our AC again 64 +- 2 symbols
+		   after its reversal arrives (6.2/V.32bis), as the caller's
+		   CC after ours: V32_TURN_SYMS after our detector sees it.
+		   The caller measures the round trip delay from this (the
+		   Intel 537EP, with our reversal at once, misses our S) */
 		if (ev_rev && !ca_rev) {
 			ev_rev = 0;
 			ca_rev = 1;
 			tx_syms = 0;
-		} else if (ca_rev && sym >= 38) {
+		} else if (ca_rev && sym >= V32_TURN_SYMS &&
+			   tx_ac_phase == 0) {
+			/* (after an A, which AC repeats) */
 			ca_rev = 0;
 			set_state(A_AC2);
 			tx_reverse = 1;
@@ -1317,15 +1504,18 @@ s16 V32Pump::handshake()
 			ec_mu = 0;
 			if (state == A_TRAIN1) {
 				set_state(A_R1);
-				start_word(TXM_R, RB_B4 | RB_SYNC | caps);
+				start_word(TXM_R, rate_word(caps));
 			} else if (state == A_TRAIN2) {
 				set_state(A_R3);
-				start_word(TXM_R, final_word(tx_rate));
+				/* (a cleardown: no rate, B4 and B8 as
+				   V.32bis has them) */
+				start_word(TXM_R, clearing ? rate_word(0) :
+					   final_word(tx_rate));
 				ev_e = 0;
 			} else {
 				set_state(C_R2);
-				start_word(TXM_R, RB_B4 | RB_SYNC |
-					       (r_word & r2_caps));
+				start_word(TXM_R,
+					   rate_word(r_word & r2_caps));
 				ev_r = 0;
 				ev_s = 0;
 			}
@@ -1342,26 +1532,37 @@ s16 V32Pump::handshake()
 	case A_WAIT_R2:
 		if (ev_r) {
 			ev_r = 0;
+			peer_word = r_word;
 			r = choose(r_word);
-			if (!r) {
-				DSP_DBG("v32: no common rate in %04X\n", r_word);
-				return DPSTAT_ERROR;
-			}
-			tx_rate = r;
+			/* R2 calls for a cleardown, or no rate of it suits
+			   us: R3 calls for one (5.4.2/V.32) */
+			clearing = !r || v32_cleardown(r_word);
+			if (clearing)
+				DSP_DBG("v32: no common rate in %04X: "
+					"cleardown\n", r_word);
+			else
+				tx_rate = r;
 			set_state(A_TRAIN2);
 			set_tx(TXM_S);
 		}
 		break;
 	case A_R3:
+		/* a cleardown: R3 for 64 symbols at least (Note 6 to
+		   6/V.32bis), then the line is cleared */
+		if (clearing) {
+			if (sym >= 64 && tx_word_bit == 0)
+				return DPSTAT_ERROR;
+			break;
+		}
 		if (ev_e && tx_word_bit == 0) {
 			set_state(A_E);
 			start_word(TXM_E, final_word(tx_rate) | RB_HEADER);
 		}
 		break;
-	case RN_TRAIN:
-		/* S 128, S-bar 16, TRN 256 (no echo canceller training);
-		   the responder's TRN until the initiator's R4 */
-		if (remote_retrain() && txm != TXM_S && rxp == RX_DATA) {
+	case RN_WAIT_R4:
+		/* the responder (8.2/V.32bis): data until R4 is in, then
+		   our preamble */
+		if (remote_retrain()) {
 			retrain(true);
 			break;
 		}
@@ -1369,46 +1570,52 @@ s16 V32Pump::handshake()
 			retrain(false);
 			break;
 		}
-		if (txm == TXM_S && sym >= 128)
-			set_tx(TXM_SBAR);
-		else if (txm == TXM_SBAR && sym >= 16) {
-			set_tx(TXM_TRN2);
-			tx_scr = caller ? 0x673800 : 0x0FF800;
-		} else if (txm == TXM_TRN2 && sym >= 64) {
-			set_tx(TXM_TRN4);
-			tx_scr = caller ? 0x221837 : 0x683C9F;
-		} else if (txm == TXM_TRN4 && sym >= 256 &&
-			   (reneg == 1 || ev_r)) {
-			if (reneg == 1) {
-				rn_word = RB_B4 | RB_SYNC | quality_caps();
-				/* (test: no faster than reneg_to) */
-				for (s16 i = 0; i < nrates(); i++) {
-					const struct v32_rate &t = rates()[i];
-					if (reneg_to && t.bps > reneg_to)
-						rn_word &= ~(t.bits & ~RB_TCM);
-				}
-			} else {
-				ev_r = 0;
-				rn_word = RB_B4 | RB_SYNC |
-					(r_word & quality_caps());
-				r = rate_of_word(rn_word);
-				if (!r) {
-					DSP_DBG("v32: no common rate in %04X\n",
-						r_word);
-					retrain(false);
-					break;
-				}
-				tx_rate = r;
+		if (ev_r) {
+			ev_r = 0;
+			DSP_DBG("v32: rate renegotiation %d (remote)\n",
+				++renegs);
+			stat_reneg(true);
+			preamble();
+		}
+		break;
+	case RN_PRE:
+		if (remote_retrain()) {
+			retrain(true);
+			break;
+		}
+		if (total >= reneg_end) {
+			retrain(false);
+			break;
+		}
+		if (txm == TXM_AA && sym >= 56) {
+			set_tx(TXM_CC);
+		} else if (txm == TXM_AC && sym == 56) {
+			/* CA: the next symbol repeats this one */
+			tx_reverse = 1;
+		} else if ((txm == TXM_CC && sym >= 8) ||
+			   (txm == TXM_AC && sym >= 64)) {
+			/* R4 or R5: the rates we can take now, ours down
+			   from the fastest; the scrambler from zeros, the
+			   differential code from the preamble's last
+			   symbol (8/V.32bis) */
+			rn_word = rate_word(quality_caps(peer_word));
+			/* (test: no faster than reneg_to) */
+			for (s16 i = 0; i < nrates(); i++) {
+				const struct v32_rate &t = rates()[i];
+				if (reneg == 1 && reneg_to && t.bps > reneg_to)
+					rn_word &= ~(t.bits & ~RB_TCM);
 			}
 			DSP_DBG("v32: R%d %04X\n", reneg == 1 ? 4 : 5,
 				rn_word);
+			tx_scr = 0;
+			tx_4800 = abcd_to_4800[tx_last_abcd];
 			set_state(RN_R);
 			start_word(TXM_R, rn_word);
 			ev_e = 0;
 		}
 		break;
 	case RN_R:
-		if (remote_retrain() && rxp == RX_DATA) {
+		if (remote_retrain()) {
 			retrain(true);
 			break;
 		}
@@ -1416,29 +1623,35 @@ s16 V32Pump::handshake()
 			retrain(false);
 			break;
 		}
-		if (tx_word_bit != 0)
-			break;
+		/* the initiator's R5 (or the remote's own R4) */
 		if (reneg == 1 && ev_r) {
-			/* R5 (or the remote's own R4): its fastest rate
-			   of ours */
 			ev_r = 0;
-			r = rate_of_word(r_word & rn_word);
-			if (!r) {
-				DSP_DBG("v32: no common rate in %04X\n", r_word);
-				retrain(false);
-				break;
-			}
-			tx_rate = r;
-		} else if (!(reneg == 2 && ev_e))
+			rn_got_r = true;
+		}
+		/* E after 64 symbols of R4 or R5 at least, at the end of a
+		   word: the fastest rate of R4 and R5 */
+		if (tx_word_bit != 0 || sym < 64 || (reneg == 1 && !rn_got_r))
 			break;
+		r = rate_of_word(r_word & rn_word);
+		if (!r) {
+			DSP_DBG("v32: no common rate in %04X\n", r_word);
+			retrain(false);
+			break;
+		}
+		tx_rate = r;
 		set_state(RN_E);
 		start_word(TXM_E, final_word(tx_rate) | RB_HEADER);
 		break;
 	case RN_E:
 	case A_E:
 	case C_E:
+		if (state == RN_E && total >= reneg_end) {
+			retrain(false);
+			break;
+		}
 		if (txm == TXM_E && sym >= 8) {
 			set_tx(TXM_DATA);
+			tx_b1 = reneg ? V32_RN_B1_SYMS : V32_B1_SYMS;
 			tx_trellis.diff = 0;
 			tx_trellis.conv = 0;
 			tx_fpos = 0;
@@ -1465,11 +1678,10 @@ s16 V32Pump::handshake()
 			return fallback_to(DP_V23, "V.23");
 		break;
 	case C_AA_DELAY:
-		/* CC goes out 64 symbols after the reversal; our detector
-		   sees it about 26 symbols late.  The answerer measures the
-		   round trip delay from this, and the original library fails
-		   its training when the estimate is too long. */
-		if (sym >= 38) {
+		/* CC goes out 64 +- 2 symbols after the reversal arrives
+		   (6.1/V.32bis): V32_TURN_SYMS after our detector sees it.
+		   The answerer measures the round trip delay from this. */
+		if (sym >= V32_TURN_SYMS) {
 			set_state(C_CC);
 			set_tx(TXM_CC);
 			ev_rev = 0;
@@ -1520,7 +1732,8 @@ s16 V32Pump::handshake()
 		}
 		if (ev_r) {
 			ev_r = 0;
-			r2_caps = quality_caps();
+			peer_word = r_word;
+			r2_caps = clear_test ? 0 : quality_caps(r_word);
 			DSP_DBG("v32: rates we can receive: %04X\n", r2_caps);
 			set_state(C_TRAIN);
 			set_tx(TXM_S);
@@ -1528,6 +1741,11 @@ s16 V32Pump::handshake()
 		break;
 	case C_R2:
 		/* R2 until R3 arrives */
+		if (ev_r && v32_cleardown(r_word)) {
+			/* R3 calls for a cleardown (5.4.1/V.32) */
+			DSP_DBG("v32: R word %04X: cleardown\n", r_word);
+			return DPSTAT_ERROR;
+		}
 		if (ev_r && tx_word_bit == 0) {
 			ev_r = 0;
 			/* among the rates our R2 offered (not those our
@@ -1540,7 +1758,8 @@ s16 V32Pump::handshake()
 			/* R1 repeated, until the answerer's second training;
 			   after it R3, which may name all the common rates
 			   (Agere's does): the fastest of them */
-			if (!r || (!ev_s && (r_word & RB_RATES) != r->bits))
+			if (!r || (!ev_s && (r_word & RB_RATES & ~RB_TCM) !=
+					    (r->bits & ~RB_TCM)))
 				break;
 			tx_rate = r;
 			set_state(C_E);
@@ -1549,9 +1768,10 @@ s16 V32Pump::handshake()
 		break;
 
 	case V32_DATA:
-		/* the remote renegotiates (its S heard), or retrains: AA
-		   from a caller, AC from an answerer */
-		if (rxp != RX_DATA) {
+		/* the remote renegotiates (its preamble heard), or retrains:
+		   AA from a caller, AC from an answerer */
+		if (ev_pre) {
+			ev_pre = 0;
 			renegotiate(true);
 			break;
 		}
@@ -1655,6 +1875,13 @@ s16 V32Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	zyx = id == DP_ZYX && !zpeer;
 	if (zyx)
 		zyx_scale_tables();
+	/* test: DSP_V32_NO_TCM=1[a|c], no trellis code offered (9600
+	   bit/s uncoded), as a V.32 modem without it */
+	no_tcm = pump_test_env("DSP_V32_NO_TCM", caller_) != nullptr;
+	/* and DSP_V32_CLEARDOWN=1c: the caller's R2 calls for a cleardown */
+	clear_test = caller_ &&
+		pump_test_env("DSP_V32_CLEARDOWN", caller_) != nullptr;
+	clearing = false;
 	caps = offered_caps();
 
 	tx.init(srate_, 1800, V32_BAUD, V32_ALPHA, V32_SPAN,

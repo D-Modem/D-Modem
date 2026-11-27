@@ -135,34 +135,36 @@ rate, 19200 runs without errors from about 32 dB, and 16800 from 24 dB.
 ## Rate renegotiation
 
 V.32bis and V.32terbo can change their rate during data without a
-retrain (8.5/V.32bis). The equalizers and the echo canceller keep the
-values that they learned. Thus, a renegotiation takes a fraction of a
-second, but a retrain takes about three seconds.
+retrain (8/V.32bis). The equalizers and the echo canceller keep the
+values that they learned. Thus, a renegotiation takes about 150 ms, but a
+retrain takes about three seconds.
 
-1. The modem that starts the renegotiation (the initiator) sends S for
-   128 symbols and S-bar for 16 symbols. Then it sends a short TRN (64
-   symbols of the two-point part, then the four-point part to 256). Then
-   it sends R4: the rates of the call that it can use now.
-2. The other modem (the responder) receives S in its data. S contains the
-   1800 Hz of AA and the 600 Hz and 3000 Hz of AC. Thus, the receiver
-   first looks for the +-90 degree steps of S (10 ms). It does this
-   before the tone trackers can identify a retrain (20 ms). The responder
-   sends the same S, S-bar and TRN and waits for R4. Then it sends R5:
-   the rates of R4 that its own receiver can use. It uses the error on
-   the training to find these rates.
-3. The initiator selects the fastest rate of R5 and sends E, then B1 and
-   data. The responder sends E after it receives E from the initiator.
-   Then it sends data.
+1. The modem that starts the renegotiation (the initiator) sends a
+   preamble. The caller sends AA for 56 symbols and CC for 8 symbols. The
+   answerer sends AC for 56 symbols and CA for 8 symbols. Then it sends
+   R4: the rates that it can use now. The scrambler starts again from
+   zero for R4.
+2. The other modem (the responder) finds the preamble in its data: 24
+   symbols in a row on one training point (AA), or on two opposite points
+   in turn (AC). It continues to send data until it receives R4. Then it
+   sends its own preamble and R5 for 64 symbols. R5 gives the rates that
+   its receiver can use now, whatever R4 contains.
+3. Each modem sends E with the fastest rate of R4 and R5, then 24
+   symbols of B1, then data. The initiator sends E after R5 arrives,
+   when it has sent R4 for 64 symbols at least.
 
 If the two modems start at the same time, each modem uses the R4 of the
 other modem as an R5. Then the two modems use the fastest rate that the
 two words have in common.
 
-Some modems do not renegotiate. None of the peers here renegotiate:
-Agere, Broadcom, ESS and the Courier all answer S with a retrain. Also,
-their own `ATO3` in V.32bis starts a retrain. With such a modem, its AA
-or AC alone shows in about 200 ms, and the pump answers that retrain. If
-neither shows, the pump retrains after 3 s.
+A preamble is shorter than a retrain. A modem answers a tone of AA or AC
+as a retrain only after 128 symbols (5.5/V.32).
+
+Before 2026-11, the pump used S, S-bar and a short TRN as its preamble,
+because we did not have the text of V.32bis then. Agere, Broadcom, ESS
+and the Courier answered that signal with a retrain. If a modem does not
+renegotiate, its AA or AC continues for more than 128 symbols, and the
+pump answers that retrain. If neither shows, the pump retrains after 3 s.
 
 These items start a renegotiation:
 
@@ -175,21 +177,13 @@ Plain V.32 has no renegotiation. Thus, in V.32, `ATO3` starts a retrain.
 `ATI11` counts each renegotiation as a renegotiation of the local modem
 or of the remote modem.
 
-Back-to-back tests showed two details:
+Back-to-back tests showed one detail: **the modem clears the tone
+trackers after a renegotiation.** The preamble starts the 1800 Hz
+tracker or the 600 Hz tracker. The spectrum of the data near 1800 Hz then
+goes above the threshold frequently, and this keeps the tracker on.
 
-- **The modem clears the tone trackers after a renegotiation.** When S
-  starts the 1800 Hz tracker, the spectrum of the data near 1800 Hz goes
-  above the threshold frequently. This keeps the tracker on. Without this
-  step, the answerer identified the data of the caller as AA (a retrain)
-  immediately after the renegotiation.
-- **The receiver listens during its own S and TRN.** At the start-up,
-  the receiver ignores the line while the echo canceller learns. In a
-  renegotiation, the canceller is already trained, and the two trainings
-  overlap.
-
-The words are the words of the start-up (`0FF9` for all the V.32bis
-rates). We did not have the text of V.32bis on R4 and R5, and no peer
-here sends them. Thus, we checked these words only against our own pump.
+The rate words are the words of the start-up. [V.32 bis](../standards/v32bis-details.md)
+has the details of the procedure.
 
 ## Not done
 

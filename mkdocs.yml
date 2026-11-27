@@ -53,6 +53,10 @@ nav:
       - "V.27 ter: technical details": standards/v27ter-details.md
       - "V.29": standards/v29.md
       - "V.29: technical details": standards/v29-details.md
+      - "V.32": standards/v32.md
+      - "V.32: technical details": standards/v32-details.md
+      - "V.32 bis": standards/v32bis.md
+      - "V.32 bis: technical details": standards/v32bis-details.md
       - "V.25": standards/v25.md
       - "V.25: technical details": standards/v25-details.md
   - The modem:
