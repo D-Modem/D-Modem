@@ -2,7 +2,7 @@
 	<rawname>dmodem</rawname>
 	<repo>unsupported</repo>
 	<name>D-Modem</name>
-	<version>16.0.8</version>
+	<version>16.0.9</version>
 	<publisher>D-Modem Authors</publisher>
 	<license>AGPLv3</license>
 	<licenselink>https://www.gnu.org/licenses/agpl-3.0.txt</licenselink>
@@ -14,6 +14,7 @@
 	</description>
 	<more-info>https://github.com/D-Modem/D-Modem</more-info>
 	<changelog>
+		*16.0.9* Email to fax: a spool for the mail system, senders, a PIN, a cover page with the text, fwconsole dmodem mail2fax
 		*16.0.8* A send API (sendfax, faxstatus with a token), Office documents through LibreOffice
 		*16.0.7* Junk fax control: a block list and an allow list of caller IDs, a Block button on the Faxes tab
 		*16.0.6* A Fax widget in UCP (inbox, sent, failed, outgoing, send, forward, browser notification), its rights in User Manager

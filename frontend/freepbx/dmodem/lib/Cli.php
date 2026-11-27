@@ -115,9 +115,28 @@ class Cli
 				$say($l);
 			return 0;
 		case 'faxqueue':
-			foreach ($m->runFaxQueue() as $l)
+			/* the email to fax spool first: its faxes go now */
+			foreach (array_merge($m->mailSpool(null, isset($opts['run']) ? $opts['run'] : null),
+					     $m->runFaxQueue()) as $l)
 				$say($l);
 			return 0;
+		case 'mail2fax':
+			if (count($args) !== 2) {
+				$say(_('Usage: fwconsole dmodem mail2fax <message file, - for standard input>'));
+				return 2;
+			}
+			$raw = $args[1] === '-' ? stream_get_contents(STDIN, Mail2Fax::MAX_BYTES + 1) :
+				(is_file($args[1]) ? file_get_contents($args[1], false, null, 0, Mail2Fax::MAX_BYTES + 1) : false);
+			if ($raw === false) {
+				$say(sprintf(_('Cannot read %s'), $args[1]));
+				return 1;
+			}
+			$r = $m->mail2fax($raw, null, isset($opts['run']) ? $opts['run'] : null);
+			$say($r[1]);
+			if ($r[0])
+				foreach ($m->runFaxQueue() as $l)
+					$say($l);
+			return $r[0] ? 0 : 1;
 		case 'faxjobs':
 			foreach ($m->getFaxJobs() as $id => $j)
 				$say(sprintf('%s  %-16s %-8s %d/%d  %s  %s', $id, $j['number'], $j['state'],
@@ -143,7 +162,7 @@ class Cli
 			$say($r[1]);
 			return $r[0] ? 0 : 1;
 		default:
-			$say(_('Usage: fwconsole dmodem dial <profile> <number> | profiles | export [file] | import <file> | fax2mail <recipient> <uniqueid> ... | faxes | sendfax <number> [file...] | faxqueue | faxjobs | faxcancel <job> | faxsent ...'));
+			$say(_('Usage: fwconsole dmodem dial <profile> <number> | profiles | export [file] | import <file> | fax2mail <recipient> <uniqueid> ... | faxes | sendfax <number> [file...] | faxqueue | mail2fax <file|-> | faxjobs | faxcancel <job> | faxsent ...'));
 			return 2;
 		}
 	}

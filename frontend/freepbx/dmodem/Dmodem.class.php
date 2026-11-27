@@ -22,6 +22,8 @@ require_once __DIR__ . '/lib/FaxLog.php';
 require_once __DIR__ . '/lib/FaxSend.php';
 require_once __DIR__ . '/lib/FaxCover.php';
 require_once __DIR__ . '/lib/FaxJunk.php';
+require_once __DIR__ . '/lib/MailParse.php';
+require_once __DIR__ . '/lib/Mail2Fax.php';
 
 use FreePBX\modules\Dmodem\Config;
 use FreePBX\modules\Dmodem\Dialplan;
@@ -32,6 +34,7 @@ use FreePBX\modules\Dmodem\FaxLog;
 use FreePBX\modules\Dmodem\FaxPdf;
 use FreePBX\modules\Dmodem\FaxSend;
 use FreePBX\modules\Dmodem\FaxJunk;
+use FreePBX\modules\Dmodem\Mail2Fax;
 
 class Dmodem extends \FreePBX_Helpers implements \BMO
 {
@@ -839,8 +842,10 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$subject = sprintf($ok ? _('Fax to %s sent') : _('Fax to %s not sent'), $j['number']);
 		$text = implode("
 ", [
-			sprintf(_('Fax to %s (%s): %s.'), $j['number'], $j['to'],
-				$ok ? _('sent') : $j['last']),
+			$j['to'] === '' ?
+				sprintf(_('Fax to %s: %s.'), $j['number'], $ok ? _('sent') : $j['last']) :
+				sprintf(_('Fax to %s (%s): %s.'), $j['number'], $j['to'],
+					$ok ? _('sent') : $j['last']),
 			sprintf(_('Pages: %d of %d. Tries: %d.'), $e['pages'], $j['pages'], $j['attempts']),
 			sprintf(_('Queued %s.'), date('Y-m-d H:i', $j['created'])),
 		]);
@@ -858,6 +863,91 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$sent = (bool)$send($j['email'], $subj, $body, $headers);
 		return [$sent, $sent ? sprintf(_('The result mailed to %s'), $j['email']) :
 			sprintf(_('The mail system did not take the result for %s'), $j['email'])];
+	}
+
+	/* email to fax: message raw (from the spool, or fwconsole dmodem
+	   mail2fax) into the queue, one job for each fax number, at the
+	   time now; run: the runner of the commands (FaxSend::make()),
+	   send: the mail system (mail() if null) for the refusal to the
+	   sender.  [ok, message, the job ids] */
+	public function mail2fax($raw, $now = null, ?callable $run = null, ?callable $send = null)
+	{
+		$s = $this->getSettings();
+		if (!$s['mail2fax'])
+			return [false, _('Email to fax is off (Settings)'), []];
+		$r = Mail2Fax::read($raw, $s);
+		if (!$r['ok']) {
+			if ($r['reply'])
+				$this->mailRefusal($r, [$r['why']], $send);
+			return [false, sprintf(_('A message from %s refused: %s'),
+					      $r['from'][1] !== '' ? $r['from'][1] : '?', $r['why']), []];
+		}
+		$ids = [];
+		$why = [];
+		foreach ($r['numbers'] as $n) {
+			$q = $this->queueFax(Mail2Fax::job($r, $n, $s), $r['docs'], $now, $run);
+			if ($q['ok'])
+				$ids[] = $q['id'];
+			else
+				$why[] = sprintf('%s: %s', $n, $q['message']);
+		}
+		if ($why)
+			$this->mailRefusal($r, $why, $send);
+		$msg = sprintf(_('A message from %s: %d of %d faxes queued'), $r['from'][1],
+			       count($ids), count($r['numbers']));
+		if ($r['skipped'])
+			$msg .= '; ' . sprintf(_('not sent: %s'), implode(', ', $r['skipped']));
+		if ($why)
+			$msg .= '; ' . implode('; ', $why);
+		return [(bool)$ids, $msg, $ids];
+	}
+
+	/* the mail to the sender of request r (Mail2Fax::read()): its fax
+	   is not sent, for the reasons why (a list).  [ok, message] */
+	private function mailRefusal(array $r, array $why, ?callable $send)
+	{
+		if (!FaxMail::addressOk($r['from'][1]))
+			return [false, _('No address for the refusal')];
+		$s = $this->getSettings();
+		$text = implode("\n", array_merge(
+			[sprintf(_('Your fax "%s" was not sent:'), $r['subject'])],
+			array_map(function ($w) { return '- ' . $w; }, $why),
+			$r['skipped'] ? [sprintf(_('These files are not PDF, TIFF or Office files: %s'),
+						 implode(', ', $r['skipped']))] : []));
+		list($headers, $body, $subj) = FaxMail::build($s['fax_email_from'],
+			sprintf(_('Fax not sent: %s'), $r['subject']), $text, []);
+		/* no answer to this answer */
+		$headers .= "\r\nAuto-Submitted: auto-replied";
+		if ($send === null)
+			$send = function ($to, $subject, $body, $headers) {
+				return mail($to, $subject, $body, $headers);
+			};
+		$ok = (bool)$send($r['from'][1], $subj, $body, $headers);
+		return [$ok, $ok ? _('The refusal mailed') : _('The mail system did not take the refusal')];
+	}
+
+	/* the messages of the spool folder (mail2fax_spool: the .eml
+	   files of bin/mail2fax-spool.php), 20 at most, the oldest first,
+	   into the queue (mail2fax()); each file is deleted first.  Its
+	   lines */
+	public function mailSpool($now = null, ?callable $run = null, ?callable $send = null)
+	{
+		$s = $this->getSettings();
+		$dir = rtrim($s['mail2fax_spool'], '/');
+		if (!$s['mail2fax'] || !is_dir($dir))
+			return [];
+		$files = glob($dir . '/*.eml') ?: [];
+		sort($files);
+		$lines = [];
+		foreach (array_slice($files, 0, 20) as $f) {
+			if (is_link($f) || !is_file($f))
+				continue;
+			$raw = (string)file_get_contents($f, false, null, 0, Mail2Fax::MAX_BYTES + 1);
+			unlink($f);
+			$r = $this->mail2fax($raw, $now, $run, $send);
+			$lines[] = basename($f) . ': ' . $r[1];
+		}
+		return $lines;
 	}
 
 	/* job id taken out of the queue before its try (CANCELLED in the

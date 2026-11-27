@@ -2,7 +2,7 @@
 
 This page gives the technical details for [FreePBX: the D-Modem module](freepbx.md), the plain-English overview. Read the overview first. This page keeps the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
-`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.8, for FreePBX 16
+`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.9, for FreePBX 16
 and 17) for [app_dmodem](asterisk.md) or [dmodem-ari](ari.md). It
 gives these items:
 
@@ -39,7 +39,7 @@ command. The module is only PHP. Nothing in it is compiled.
    FreePBX and install it from the command line:
 
    ```
-   tar xzf dmodem-16.0.8.tgz -C /var/www/html/admin/modules/
+   tar xzf dmodem-16.0.9.tgz -C /var/www/html/admin/modules/
    fwconsole ma installlocal dmodem
    fwconsole reload
    ```
@@ -52,6 +52,7 @@ command. The module is only PHP. Nothing in it is compiled.
    `dnf install libreoffice-headless` or `apt install
    libreoffice-core-nogui libreoffice-writer-nogui` (and the Calc and
    Impress parts for spreadsheets and presentations).
+5. **Email to fax** (optional): refer to [Email to fax](#email-to-fax).
 
 ## Use
 
@@ -135,6 +136,7 @@ a profile if a route or a different object still refers to it.
     files from Office documents. Empty: only PDF and TIFF files;
   - **Send API** (off) and **Send API token**: the
     [send API](#send-api). An empty token field keeps the token;
+- **Email to fax**: refer to [Email to fax](#email-to-fax);
   - **Cover page**: the company name, the address (5 lines at most),
     the telephone, the web site and the footer.
 - **Fax to email**, for the [fax recipients](#fax-recipients):
@@ -314,6 +316,86 @@ goes by email if the job says so.
 Below the form, the page shows the faxes that wait, with their state,
 tries and last result. **Cancel** removes a fax that is not on a call.
 It goes into the log as `CANCELLED`.
+
+### Email to fax
+
+A message to `<number>@<fax domain>` becomes a fax to that number
+(`lib/Mail2Fax.php`, and `lib/MailParse.php`: our own reader of MIME
+messages).
+
+| setting | key | notes |
+|---|---|---|
+| Email to fax | `mail2fax` | Off by default. |
+| Spool folder | `mail2fax_spool` | `/var/spool/asterisk/fax/mail2fax`. The mail system writes the messages here. |
+| Fax domain | `mail2fax_domain` | Only the addresses in this domain give numbers. Empty: all domains. |
+| Senders | `mail2fax_senders` | One address or `@domain` on each line, 500 at most. Email to fax needs one. |
+| PIN | `mail2fax_pin` | 4 to 32 letters and digits. If set, the subject must have the PIN as a word. Empty: no PIN. |
+| Cover page | `mail2fax_cover` | On by default: a cover page with the sender (From) and the text of the message. |
+
+To set up the mail system (Postfix on FreePBX):
+
+1. Make the spool folder. The mail system writes to it, and Asterisk
+   reads and deletes the messages:
+
+   ```sh
+   install -d -m 1733 -o asterisk -g asterisk /var/spool/asterisk/fax/mail2fax
+   ```
+
+2. Add an alias with a pipe to `/etc/aliases`, then run `newaliases`:
+
+   ```
+   fax: "|/usr/bin/php /var/www/html/admin/modules/dmodem/bin/mail2fax-spool.php /var/spool/asterisk/fax/mail2fax"
+   ```
+
+3. Send all addresses of the fax domain to the alias. For example, in
+   `/etc/postfix/main.cf`, add the domain to `mydestination` and set
+   `virtual_alias_maps = regexp:/etc/postfix/fax_virtual`, with this
+   line in `/etc/postfix/fax_virtual`:
+
+   ```
+   /^[0-9+*#().-]+@fax\.example\.com$/ fax
+   ```
+
+   Postfix keeps the original address in `X-Original-To`. Then run
+   `postfix reload`.
+
+`bin/mail2fax-spool.php` uses no code of FreePBX or of the module,
+because it runs as the user of the mail system. It writes each message
+to the spool as `<time>-<random>.eml` (30 MB at most), with a temporary
+name first. On an error it exits with 75, and the mail system tries
+again. It does nothing when it is not run on the command line.
+
+Each minute, `fwconsole dmodem faxqueue` reads 20 messages of the spool
+at most (the oldest first), deletes each file, and then starts the
+tries. For each message:
+
+1. A message without a sender on **Senders**, without the PIN, or from
+   an automatic sender (`Auto-Submitted`, `Precedence: bulk`, `junk` or
+   `list`, `List-Id`) is dropped without an answer.
+2. The fax numbers come from `X-Original-To` and `Delivered-To`, or, if
+   these have no number, from `To` and `Cc`: 10 numbers at most. The
+   number is the part before `@` (or after its last `+`, as in
+   `fax+5550100@...`), without `-`, `.`, `(` and `)`.
+3. The documents are the attached PDF, TIFF and Office files. The
+   module skips other files (for example, an image of a signature).
+4. One job goes into the queue for each number, with the cover page.
+   If there is no PIN, the subject is the first line of the message on
+   the cover page. The result goes to the sender, as **Email the result**
+   says.
+
+When a known sender's fax cannot be sent (no number, no document, a
+document that the module cannot read), the sender gets an answer with
+`Auto-Submitted: auto-replied`.
+
+A sender address is easy to forge. Set a PIN, or let the mail system
+take mail for the fax domain only from your own network.
+
+`fwconsole dmodem mail2fax <file>` (or `-` for standard input) puts one
+message into the queue immediately, for example from procmail or
+fetchmail as the asterisk user.
+
+Email to fax is the same for the two engines, because it uses the queue
+of [Send fax](#send-fax).
 
 ### Send API
 
@@ -604,7 +686,9 @@ fwconsole dmodem faxes                  # the fax log
 fwconsole dmodem sendfax <number> [file...] [--cover] [--to=...] [--from=...]
           [--message=...] [--retries=n] [--notify=never|always|success|failure]
           [--email=...]                 # a fax into the queue
-fwconsole dmodem faxqueue               # the tries whose time has come
+fwconsole dmodem faxqueue               # the email to fax spool, then the
+                                        # tries whose time has come
+fwconsole dmodem mail2fax <file|->      # email to fax: one message
 fwconsole dmodem faxjobs                # the queue
 fwconsole dmodem faxcancel <job>        # a fax out of the queue
 fwconsole dmodem faxsent <job> <uniqueid> <status> [pages] [rate] [error] [remote]
@@ -624,6 +708,7 @@ fwconsole dmodem faxsent <job> <uniqueid> <status> [pages] [rate] [error] [remot
 - `sendfax` is the Send fax tab for scripts. Without `--retries`,
   `--notify` and `--email`, the settings give the values. It starts
   the first try immediately.
+- `mail2fax` is [email to fax](#email-to-fax) for one message.
 - `faxqueue` is the command of the FreePBX job. `faxsent` is the command
   of `app-dmodem-faxout` (refer to
   [What Apply Config writes](#what-apply-config-writes)).
@@ -678,7 +763,7 @@ The line check shows the items that are still incorrect.
 
 ## The module's code
 
-- `module.xml`: the name, version (16.0.8), menu item, console
+- `module.xml`: the name, version (16.0.9), menu item, console
   command and FreePBX versions of the module.
 - `Dmodem.class.php`: the BMO (the module object of FreePBX) class. It has the
   forms (`doConfigPageInit()`), the pages, `genConfig()` and
@@ -706,6 +791,13 @@ The line check shows the items that are still incorrect.
   the state after a try.
 - `lib/FaxJunk.php`: the junk fax control: the block list and the
   allow list of caller IDs, and their checks.
+- `lib/MailParse.php`: our own reader of an email message (headers,
+  encoded words, RFC 2231 names, addresses, multipart, base64 and
+  quoted-printable, the text and the files).
+- `lib/Mail2Fax.php`: email to fax: the numbers of the addresses, the
+  senders, the PIN, and the job of each number.
+- `bin/mail2fax-spool.php`: email to fax: a message from the mail
+  system into the spool folder.
 - `lib/FaxCover.php`: the cover page as a PDF file (Helvetica, no font
   files).
 - `lib/FaxMail.php`: the message of a fax (MIME, with the subject and
@@ -775,7 +867,9 @@ It checks:
   page as `pdftoppm` shows it), the checks of a job, the Ghostscript
   and LibreOffice commands (with stand-ins, and with the real programs
   if they are installed), the send API (the token, `sendfax`,
-  `faxstatus`), the Ghostscript
+  `faxstatus`), email to fax (the message reader, the numbers, the
+  senders, the PIN, automatic messages, the refusal, the spool and
+  `bin/mail2fax-spool.php`, `fwconsole dmodem mail2fax`), the Ghostscript
   command (with a stand-in, and with the real `gs` if it is installed),
   the queue (the `Originate`, a failed try and the next try, the result
   in the log and by email, no answer, a refused call, a try without a
@@ -842,3 +936,7 @@ through the `extensions.class.php` of FreePBX instead of the stand-in.
    which does not answer, must give `NOANSWER` through the `failed`
    extension. `dmodem_test_store()` keeps the queue and the log between
    the scripts.
+9. Email to fax: `bin/mail2fax-spool.php` puts a message to
+   5559999@fax.example.com (with the test document) into the spool.
+   `fwconsole dmodem faxqueue` must queue it, and the far machine must
+   get the pages of the document and the cover page.
