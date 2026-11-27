@@ -18,12 +18,15 @@ require_once __DIR__ . '/lib/LineCheck.php';
 require_once __DIR__ . '/lib/Dialout.php';
 require_once __DIR__ . '/lib/Cli.php';
 require_once __DIR__ . '/lib/FaxMail.php';
+require_once __DIR__ . '/lib/FaxLog.php';
 
 use FreePBX\modules\Dmodem\Config;
 use FreePBX\modules\Dmodem\Dialplan;
 use FreePBX\modules\Dmodem\LineCheck;
 use FreePBX\modules\Dmodem\Dialout;
 use FreePBX\modules\Dmodem\FaxMail;
+use FreePBX\modules\Dmodem\FaxLog;
+use FreePBX\modules\Dmodem\FaxPdf;
 
 class Dmodem extends \FreePBX_Helpers implements \BMO
 {
@@ -32,6 +35,7 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	const PROFILES = 'profiles';
 	const RECIPIENTS = 'recipients';
 	const DIDFAX = 'didfax';
+	const FAXLOG = 'faxlog';
 	/* the endpoints the check reads at most */
 	const MAX_ENDPOINTS = 200;
 	/* exportData()'s format */
@@ -338,6 +342,174 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 				     $uniqueid, $vars, $send);
 	}
 
+	/* fwconsole dmodem fax2mail: the fax of call uniqueid into the
+	   fax log, then mailed to recipient id ('' for none: the log only);
+	   the call's results in vars (FaxLog::VARS); send as
+	   FaxMail::send() has it; now the time (seconds, null: time()).
+	   The old entries go (fax_keep_days).  [ok, message] */
+	public function faxReceived($id, $uniqueid, array $vars,
+				    ?callable $send = null, $now = null)
+	{
+		$id = (string)$id;
+		if (!FaxLog::uniqueidOk($uniqueid))
+			return [false, sprintf(_('Not a call id: %s'), $uniqueid)];
+		$now = $now === null ? time() : (int)$now;
+		$s = $this->getSettings();
+		$e = FaxLog::entry($id, $uniqueid, $vars,
+				   FaxMail::findFile($s['fax_dir'], $uniqueid), $now);
+		$r = [true, sprintf(_('Fax of call %s logged'), $uniqueid)];
+		if ($id !== '') {
+			$r = $this->faxToMail($id, $uniqueid, $vars, $send);
+			$e['mail'] = $r[1];
+			$e['mail_ok'] = (bool)$r[0];
+		}
+		$this->setConfig($e['uniqueid'], $e, self::FAXLOG);
+		$this->purgeFaxes($now);
+		return $r;
+	}
+
+	/* the fax log: uniqueid => entry (FaxLog::entry()), the newest
+	   first */
+	public function getFaxes()
+	{
+		$all = $this->getAll(self::FAXLOG);
+		$out = [];
+		if (is_array($all))
+			foreach ($all as $u => $e) {
+				$e = FaxLog::normalize($e);
+				if ($e !== null && $e['uniqueid'] === (string)$u)
+					$out[$e['uniqueid']] = $e;
+			}
+		uasort($out, function ($a, $b) {
+			return [$b['time'], $b['uniqueid']] <=> [$a['time'], $a['uniqueid']];
+		});
+		return $out;
+	}
+
+	/* the log entry of call uniqueid, null if there is none */
+	public function getFax($uniqueid)
+	{
+		if (!FaxLog::uniqueidOk($uniqueid))
+			return null;
+		$e = FaxLog::normalize($this->getConfig((string)$uniqueid, self::FAXLOG));
+		return $e !== null && $e['uniqueid'] === (string)$uniqueid ? $e : null;
+	}
+
+	/* the path of entry e's fax file, null if it has none or the file
+	   is not there (only a file in fax_dir) */
+	public function faxPath(array $e)
+	{
+		$name = FaxLog::fileName($e['file']);
+		if ($name === '')
+			return null;
+		$p = rtrim($this->getSettings()['fax_dir'], '/') . '/' . $name;
+		return is_file($p) ? $p : null;
+	}
+
+	/* the fax of call uniqueid dropped from the log, its file too.
+	   [ok, message] */
+	public function deleteFax($uniqueid)
+	{
+		$e = $this->getFax($uniqueid);
+		if ($e === null)
+			return [false, sprintf(_('No fax of call %s'), $uniqueid)];
+		$p = $this->faxPath($e);
+		if ($p !== null && !@unlink($p))
+			return [false, sprintf(_('Cannot delete %s'), $p)];
+		$this->setConfig($e['uniqueid'], false, self::FAXLOG);
+		return [true, sprintf(_('Fax of call %s deleted'), $uniqueid)];
+	}
+
+	/* the faxes older than fax_keep_days (0: none for age) at the time
+	   now dropped, and the oldest above FaxLog::MAX_ENTRIES.  The
+	   number dropped */
+	public function purgeFaxes($now = null)
+	{
+		$now = $now === null ? time() : (int)$now;
+		$days = (int)$this->getSettings()['fax_keep_days'];
+		$n = 0;
+		foreach (FaxLog::expired($this->getFaxes(), $days, $now) as $u)
+			if ($this->deleteFax($u)[0])
+				$n++;
+		return $n;
+	}
+
+	/* the fax of entry e as [MIME type, file name, bytes] for the
+	   browser: kind pdf (FaxPdf, paper fax_paper) or tiff; null if
+	   there is no file, or no PDF of it */
+	public function faxDocument(array $e, $kind)
+	{
+		$p = $this->faxPath($e);
+		if ($p === null)
+			return null;
+		$b = @file_get_contents($p);
+		if ($b === false)
+			return null;
+		$base = substr(basename($p), 0, -4);
+		if ($kind === 'tiff')
+			return ['image/tiff', $base . '.tif', $b];
+		try {
+			return ['application/pdf', $base . '.pdf',
+				FaxPdf::fromTiff($b, $this->getSettings()['fax_paper'])];
+		} catch (\RuntimeException $x) {
+			return null;
+		}
+	}
+
+	/* BMO Ajax: the commands that this module answers (faxpdf,
+	   faxtiff: a logged fax for a signed-in administrator) */
+	public function ajaxRequest($command, &$setting)
+	{
+		if ($command !== 'faxpdf' && $command !== 'faxtiff')
+			return false;
+		$setting['authenticate'] = true;
+		$setting['allowremote'] = false;
+		return true;
+	}
+
+	/* BMO Ajax: no JSON answers (ajaxCustomHandler() sends the files) */
+	public function ajaxHandler()
+	{
+		return false;
+	}
+
+	/* BMO Ajax: the fax of $_REQUEST['uniqueid'] sent to the browser,
+	   a PDF to view (faxpdf) or the TIFF file to keep (faxtiff).  true
+	   when it sent an answer */
+	public function ajaxCustomHandler()
+	{
+		$cmd = isset($_REQUEST['command']) ? (string)$_REQUEST['command'] : '';
+		$u = isset($_REQUEST['uniqueid']) ? (string)$_REQUEST['uniqueid'] : '';
+		$e = $this->getFax($u);
+		$d = $e === null ? null :
+			$this->faxDocument($e, $cmd === 'faxtiff' ? 'tiff' : 'pdf');
+		if ($d === null) {
+			self::headers(['Content-Type: text/plain; charset=utf-8'], 404);
+			echo _('No such fax file'), "\n";
+			return true;
+		}
+		self::headers([
+			'Content-Type: ' . $d[0],
+			'Content-Length: ' . strlen($d[2]),
+			'X-Content-Type-Options: nosniff',
+			'Content-Disposition: ' . ($cmd === 'faxtiff' ? 'attachment' : 'inline') .
+			'; filename="' . $d[1] . '"',
+		], 200);
+		echo $d[2];
+		return true;
+	}
+
+	/* the HTTP headers h (a list of lines) and the status code sent,
+	   when no output went before them (none from the command line) */
+	private static function headers(array $h, $code)
+	{
+		if (headers_sent())
+			return;
+		http_response_code($code);
+		foreach ($h as $l)
+			header($l);
+	}
+
 	/* the settings, profiles and fax recipients, for a backup or
 	   fwconsole dmodem export: ['format', 'settings', 'profiles' (name
 	   => profile), 'recipients' (id => recipient)] */
@@ -509,9 +681,9 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$s = $this->getSettings();
 		$c = [Dialplan::CONTEXT => Dialplan::build($s, $this->getProfiles(),
 							   $this->getRecipients())];
-		if ($this->getRecipients())
-			$c[Dialplan::MAIL_CONTEXT] = ['s' => Dialplan::mailHandler(
-				$this->fwconsole())];
+		/* (the fax log's hangup handler: always) */
+		$c[Dialplan::MAIL_CONTEXT] = ['s' => Dialplan::mailHandler(
+			$this->fwconsole())];
 		return $c;
 	}
 
@@ -564,6 +736,12 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			$this->reload();
 			$this->message = ['success', sprintf(_('Fax recipient %s deleted'), $id)];
 			$_REQUEST['view'] = 'recipients';
+			return;
+		}
+		if ($action === 'delete_fax' && isset($req['uniqueid'])) {
+			$r = $this->deleteFax((string)$req['uniqueid']);
+			$this->message = [$r[0] ? 'success' : 'danger', $r[1]];
+			$_REQUEST['view'] = 'faxes';
 			return;
 		}
 		if ($action === 'save_recipient') {
@@ -702,6 +880,11 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			break;
 		case 'recipients':
 			$body = $this->view('recipients', ['recipients' => $this->getRecipients(),
+				'settings' => $settings]);
+			break;
+		case 'faxes':
+			$body = $this->view('faxes', ['faxes' => $this->getFaxes(),
+				'recipients' => $this->getRecipients(),
 				'settings' => $settings]);
 			break;
 		case 'recipient':

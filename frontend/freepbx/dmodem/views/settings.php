@@ -110,6 +110,8 @@ foreach (Config::FAX_RATES as $r)
 	     _('A destination "D-Modem: receive a fax" that answers as a fax machine.'));
 	$row('fax_dir', _('Fax directory'), $text('fax_dir', $s['fax_dir']),
 	     _('Where received faxes go, as TIFF files: <date>-<time>-<caller>-<uniqueid>.tif. Asterisk must be able to write there.'));
+	$row('fax_keep_days', _('Keep faxes'), $text('fax_keep_days', $s['fax_keep_days']),
+	     _('Days that a received fax stays in the Faxes list and in the fax directory. 0: all are kept.'));
 	$row('fax_ident', _('Our fax number'), $text('fax_ident', $s['fax_ident']),
 	     _('Sent to the other fax machine (CSI/TSI): up to 20 digits, + and spaces.'));
 	$row('fax_header', _('Fax header'), $text('fax_header', $s['fax_header']),

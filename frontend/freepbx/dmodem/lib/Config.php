@@ -52,6 +52,9 @@ class Config
 			'fax_ecm' => true,
 			'fax_t38' => true,
 			'fax_destination' => true,
+			/* the fax log: days that a received fax is kept, its
+			   file too (0: all kept) */
+			'fax_keep_days' => 0,
 			/* fax-to-email (FaxMail): the PDF's paper, what goes
 			   with the message, its sender, subject and text */
 			'fax_paper' => 'letter',
@@ -237,6 +240,8 @@ class Config
 		elseif (!isset($e['fax_max_rate']) &&
 			$s['fax_min_rate'] > $s['fax_max_rate'])
 			$e['fax_min_rate'] = _('Not above the fastest rate');
+		if (!self::intIn($s['fax_keep_days'], 0, 3650))
+			$e['fax_keep_days'] = _('From 0 (keep all) to 3650 days');
 		if (!in_array($s['fax_paper'], self::PAPERS, true))
 			$e['fax_paper'] = _('Letter or A4');
 		if (!in_array($s['fax_attach'], FaxMail::ATTACH, true))

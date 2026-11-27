@@ -179,6 +179,29 @@ else
 	grep -E "5551002|FaxDetect|faxdetect" "$run/console.log" | tail -10 || true
 fi
 
+echo "--- the fax log (the fax destination: no recipient, no mail)"
+$ast -rx "channel originate Local/receivefax@app-dmodem/n extension s@fax-e2e-send" >/dev/null
+i=0; until grep -q "logged" "$run/etc/fax2mail.log" 2>/dev/null || [ $i -ge 240 ]; do
+	sleep 1; i=$((i+1))
+done
+if grep -q '^args: \["fax2mail","","[0-9.]*","SUCCESS","2",' "$run/etc/fax2mail.log" &&
+   grep -q "logged" "$run/etc/fax2mail.log"; then
+	echo "PASS: the fax log: the fax destination's fax logged"
+else
+	echo "FAIL: the fax log: no entry for the fax destination's fax"; r=1
+	cat "$run/etc/fax2mail.log" 2>/dev/null || true
+fi
+# each fax gave the rate (the 8th argument); the data calls gave nothing
+if grep '^args: ' "$run/etc/fax2mail.log" | grep -qv ',"[0-9][0-9]*"\]$'; then
+	echo "FAIL: the fax log: a call without the rate"; r=1
+	grep '^args: ' "$run/etc/fax2mail.log"
+elif [ "$(grep -c '^args: ' "$run/etc/fax2mail.log")" -ne 3 ]; then
+	echo "FAIL: the fax log: not 3 faxes (a call without a fax ran fax2mail)"; r=1
+	grep '^args: ' "$run/etc/fax2mail.log"
+else
+	echo "PASS: the fax log: 3 faxes with their rate, none for the data calls"
+fi
+
 $ast -rx "core stop now" >/dev/null 2>&1 || true
 [ $r -eq 0 ] && echo "PASS" || echo "FAIL"
 exit $r

@@ -60,6 +60,9 @@ For the generated files, the code and the tests, refer to
   fax and sends it by email, as a PDF file, the TIFF file or both. The
   address is the address of the recipient, or of a User Manager user. The
   mail system of the machine must send mail.
+- **Faxes.** The **Faxes** tab shows each received fax. You can view it
+  as a PDF file, download the TIFF file or delete it. The module can
+  delete old faxes.
 - **Fax detection.** The **D-Modem fax** tab of an inbound route
   listens for a fax machine on each call. A fax goes to the fax
   destination (for example a fax recipient). Other calls go to the

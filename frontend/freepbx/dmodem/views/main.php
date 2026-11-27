@@ -12,6 +12,7 @@ use FreePBX\modules\Dmodem as D;
 
 $tabs = [
 	'' => _('Profiles'),
+	'faxes' => _('Faxes'),
 	'recipients' => _('Fax recipients'),
 	'settings' => _('Settings'),
 	'dialout' => _('Dial out'),
