@@ -112,6 +112,16 @@ foreach (Config::FAX_RATES as $r)
 	     _('Where received faxes go, as TIFF files: <date>-<time>-<caller>-<uniqueid>.tif. Asterisk must be able to write there.'));
 	$row('fax_keep_days', _('Keep faxes'), $text('fax_keep_days', $s['fax_keep_days']),
 	     _('Days that a received fax stays in the Faxes list and in the fax directory. 0: all are kept.'));
+	$list = function ($k, $v) {
+		return '<textarea class="form-control" rows="4" id="' . $k . '" name="' . $k . '">' .
+			D::h($v) . '</textarea>';
+	};
+	$row('fax_block', _('Block faxes from'), $list('fax_block', $s['fax_block']),
+	     _('One caller ID on each line: a number, a prefix with * at the end (for example 1900*), or anonymous for a call without a number. Text after # is a comment. A blocked fax is kept in the Faxes list as BLOCKED, and it does not go by email or to UCP.'));
+	$row('fax_allow', _('Never block faxes from'), $list('fax_allow', $s['fax_allow']),
+	     _('The same form. A caller ID on this list is never blocked.'));
+	$row('fax_allow_only', _('Only the allow list'), $check('fax_allow_only', $s['fax_allow_only']),
+	     _('Block each fax from a caller ID that is not on the "Never block" list.'));
 	$row('fax_ident', _('Our fax number'), $text('fax_ident', $s['fax_ident']),
 	     _('Sent to the other fax machine (CSI/TSI): up to 20 digits, + and spaces.'));
 	$row('fax_header', _('Fax header'), $text('fax_header', $s['fax_header']),

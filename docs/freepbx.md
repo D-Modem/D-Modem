@@ -67,6 +67,9 @@ For the generated files, the code and the tests, refer to
 - **Faxes.** The **Faxes** tab shows each received and sent fax. You can view it
   as a PDF file, download the TIFF file or delete it. The module can
   delete old faxes.
+- **Junk fax control.** A block list and an allow list of caller IDs.
+  A blocked fax stays in the **Faxes** tab as `BLOCKED`. It does not go
+  by email or to UCP. A **Block** button adds the caller of a fax.
 - **Fax in UCP.** Users see their faxes in a **Fax** widget in the User
   Control Panel. With the send right, they also send and forward faxes.
   You give the rights in User Manager.

@@ -2,7 +2,7 @@
 
 This page gives the technical details for [FreePBX: the D-Modem module](freepbx.md), the plain-English overview. Read the overview first. This page keeps the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
-`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.6, for FreePBX 16
+`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.7, for FreePBX 16
 and 17) for [app_dmodem](asterisk.md) or [dmodem-ari](ari.md). It
 gives these items:
 
@@ -39,7 +39,7 @@ command. The module is only PHP. Nothing in it is compiled.
    FreePBX and install it from the command line:
 
    ```
-   tar xzf dmodem-16.0.6.tgz -C /var/www/html/admin/modules/
+   tar xzf dmodem-16.0.7.tgz -C /var/www/html/admin/modules/
    fwconsole ma installlocal dmodem
    fwconsole reload
    ```
@@ -105,6 +105,8 @@ a profile if a route or a different object still refers to it.
   - **Keep faxes** (0): the number of days that a received fax stays
     in the [fax log](#faxes) and in the fax directory, 0 to 3650. 0
     keeps all faxes;
+  - **Block faxes from**, **Never block faxes from** and **Only the
+    allow list**: the [junk fax control](#junk-fax-control);
   - our fax number (up to 20 digits, `+` and spaces);
   - the fax header (up to 63 characters): the text of the header line
     on the top of each page that D-Modem sends. The line also has the
@@ -191,13 +193,15 @@ fax, the newest fax first. For a sent fax, **To** is the fax number:
 | Fax number | The fax number of the other machine (its TSI). |
 | To | The fax recipient, if the fax came to a recipient. |
 | Pages, Status, Rate | `DMODEMFAXPAGES`, `DMODEMFAXSTATUS` and `DMODEMFAXRATE`. |
-| Email | **Sent** or **Not sent**, for a fax recipient. Put the mouse on it to see the message of the mail system. |
+| Email | **Sent** or **Not sent**, for a fax recipient, or **Blocked**. Put the mouse on it to see the message of the mail system, or why the fax is blocked. |
 
 For each fax:
 
 - **View PDF** opens the fax as a PDF file (the PDF paper size of the
   settings).
 - **TIFF** downloads the fax file.
+- **Block** (a received fax with a caller ID number) adds the caller ID
+  number to **Block faxes from**.
 - **Delete** deletes the entry and the fax file.
 
 The log gets the faxes of the fax destination, of the fax recipients and
@@ -215,6 +219,40 @@ file of the fax directory that the log has.
 
 The fax log is not in the backup or in `fwconsole dmodem export`. The
 fax files are in the fax directory.
+
+### Junk fax control
+
+Three settings block the faxes from some caller IDs (`lib/FaxJunk.php`):
+
+| setting | key | notes |
+|---|---|---|
+| Block faxes from | `fax_block` | The caller IDs to block. |
+| Never block faxes from | `fax_allow` | The caller IDs that are never blocked. This list comes first. |
+| Only the allow list | `fax_allow_only` | Block each caller ID that is not on **Never block faxes from**. Then that list must not be empty. |
+
+Each list has one entry on each line, 500 entries at most:
+
+- a number. The module compares only the digits, thus `+1 (555)
+  010-0100` and `15550100100` are the same number;
+- a prefix with `*` at the end, for example `1900*`: all numbers that
+  start with these digits;
+- `anonymous`: a call without a caller ID number (for example
+  "anonymous" or "restricted").
+
+The text after `#` on a line is a comment.
+
+D-Modem receives a blocked fax, because the module examines the caller
+ID when the call ends (`Dmodem::faxReceived()`). Then:
+
+- the fax goes into the fax log with the status `BLOCKED`, and its
+  file stays in the fax directory;
+- the fax does not go by email to a fax recipient;
+- the fax is not in the UCP Fax widget, and UCP shows no notification
+  for it.
+
+The control is the same for the two engines, because the hangup
+handler gives the caller ID to `fwconsole dmodem fax2mail` for app_dmodem
+and dmodem-ari.
 
 ### Send fax
 
@@ -371,7 +409,7 @@ The widget has five tabs:
 
 | tab | content |
 |---|---|
-| Inbox | The received faxes of the user's fax recipients. |
+| Inbox | The received faxes of the user's fax recipients (not the blocked faxes). |
 | Sent | The faxes that the user sent with the result `SUCCESS`. |
 | Failed | The faxes that the user sent with a different result. |
 | Outgoing | The user's faxes in the queue. **Cancel** removes a fax that is not on a call. |
@@ -589,7 +627,7 @@ The line check shows the items that are still incorrect.
 
 ## The module's code
 
-- `module.xml`: the name, version (16.0.6), menu item, console
+- `module.xml`: the name, version (16.0.7), menu item, console
   command and FreePBX versions of the module.
 - `Dmodem.class.php`: the BMO (the module object of FreePBX) class. It has the
   forms (`doConfigPageInit()`), the pages, `genConfig()` and
@@ -614,6 +652,8 @@ The line check shows the items that are still incorrect.
 - `lib/FaxSend.php`: a fax to send: the job and its checks, the
   Ghostscript command, the fax file, the `Originate` action of a try, and
   the state after a try.
+- `lib/FaxJunk.php`: the junk fax control: the block list and the
+  allow list of caller IDs, and their checks.
 - `lib/FaxCover.php`: the cover page as a PDF file (Helvetica, no font
   files).
 - `lib/FaxMail.php`: the message of a fax (MIME, with the subject and
@@ -675,6 +715,10 @@ It checks:
   recipient, `fwconsole dmodem faxes`, the PDF and TIFF through the
   Ajax handler, the Faxes page, the delete action, **Keep faxes** and
   the limit of 5000 faxes;
+- the junk fax control: the lists and their checks, numbers, prefixes
+  and `anonymous`, the allow list first, **Only the allow list**, a
+  blocked fax (logged as `BLOCKED`, not mailed, not in UCP) and the
+  **Block** button;
 - the faxes to send: the cover page (and, if Poppler is installed, the
   page as `pdftoppm` shows it), the checks of a job, the Ghostscript
   command (with a stand-in, and with the real `gs` if it is installed),

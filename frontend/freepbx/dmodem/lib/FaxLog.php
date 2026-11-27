@@ -43,6 +43,8 @@ class FaxLog
 			'file' => $file === null ? '' : basename($file),
 			'mail' => '',
 			'mail_ok' => false,
+			/* junk fax control (FaxJunk): not mailed, not in UCP */
+			'blocked' => false,
 		];
 		foreach (self::VARS as $k)
 			$e[$k] = isset($vars[$k]) ? self::clean($vars[$k]) : '';
@@ -76,6 +78,7 @@ class FaxLog
 		$out['file'] = isset($e['file']) ? self::fileName($e['file']) : '';
 		$out['mail'] = isset($e['mail']) ? substr((string)$e['mail'], 0, 300) : '';
 		$out['mail_ok'] = !empty($e['mail_ok']);
+		$out['blocked'] = $out['direction'] === 'in' && !empty($e['blocked']);
 		return $out;
 	}
 
@@ -107,10 +110,12 @@ class FaxLog
 		return $out;
 	}
 
-	/* the status of entry e for the list: OK, FAILED and others as
-	   the engine gave them, "?" if none */
+	/* the status of entry e for the list: BLOCKED for a blocked fax,
+	   else OK, FAILED and others as the engine gave them, "?" if none */
 	public static function status(array $e)
 	{
+		if (!empty($e['blocked']))
+			return 'BLOCKED';
 		return $e['status'] !== '' ? $e['status'] : '?';
 	}
 }

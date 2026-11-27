@@ -21,6 +21,7 @@ use FreePBX\modules\Dmodem\FaxMail;
 use FreePBX\modules\Dmodem\FaxPdf;
 use FreePBX\modules\Dmodem\FaxLog;
 use FreePBX\modules\Dmodem\FaxSend;
+use FreePBX\modules\Dmodem\FaxJunk;
 use FreePBX\modules\Dmodem\FaxCover;
 
 $failed = 0;
@@ -799,6 +800,68 @@ for ($i = 0; $i < FaxLog::MAX_ENTRIES + 3; $i++)
 same(count(FaxLog::expired($old, 0, 0)), 3, 'FaxLog: the oldest above MAX_ENTRIES go');
 same(FaxLog::expired($old, 0, 0)[0], '1.2', 'FaxLog: the oldest go first');
 
+/* junk fax control */
+same(FaxJunk::parse("5550100 # a sender\n\n 1900* \nAnonymous"), ['5550100', '1900*', 'anonymous'],
+     'FaxJunk: the lines, comments and spaces removed');
+same(FaxJunk::listError("+1 (555) 010-0\n1900*\nanonymous"), '', 'FaxJunk: a good list');
+foreach (["555x", "*", "19*00", "anon", str_repeat('1', 41)] as $bad)
+	ok(FaxJunk::listError($bad) !== '', "FaxJunk: a bad line refused ($bad)");
+ok(FaxJunk::listError(str_repeat("1\n", FaxJunk::MAX_LINES + 1)) !== '', 'FaxJunk: not too many lines');
+ok(FaxJunk::matches('+1 555 0100', '15550100') && !FaxJunk::matches('15550101', '15550100'),
+   'FaxJunk: a number matches its digits only');
+ok(FaxJunk::matches('19005551234', '1900*') && !FaxJunk::matches('18005551234', '1900*'),
+   'FaxJunk: a prefix');
+ok(FaxJunk::matches('', 'anonymous') && FaxJunk::matches('Restricted', 'anonymous') &&
+   !FaxJunk::matches('5550100', 'anonymous') && !FaxJunk::matches('', '1900*'),
+   'FaxJunk: anonymous, only for a call without a number');
+$js = ['fax_block' => "1900*\nanonymous", 'fax_allow' => '19005550000', 'fax_allow_only' => false];
+same(FaxJunk::blocked('19001234567', $js), 'On the block list', 'FaxJunk: blocked');
+same(FaxJunk::blocked('19005550000', $js), '', 'FaxJunk: the allow list comes first');
+same(FaxJunk::blocked('5550100', $js), '', 'FaxJunk: not blocked');
+same(FaxJunk::blocked('5550100', ['fax_allow_only' => true] + $js), 'Not on the allow list',
+     'FaxJunk: only the allow list');
+same(FaxJunk::add("1900*\n", '+1 555 0100'), "1900*\n15550100", 'FaxJunk: a caller ID added');
+same(FaxJunk::add("15550100", '15550100'), '15550100', 'FaxJunk: not added twice');
+same(FaxJunk::add('', 'anonymous'), '', 'FaxJunk: no number, nothing added');
+$st = $m->getSettings();
+ok(isset(Config::validateSettings(array_merge($st, ['fax_block' => 'junk']))['fax_block']),
+   'settings: a bad block list refused');
+ok(isset(Config::validateSettings(array_merge($st, ['fax_allow_only' => true]))['fax_allow']),
+   'settings: only the allow list needs a number on it');
+/* (only the keys of the lists: fax_dir is a temporary path, which is
+   not a good path on Windows) */
+same(array_intersect_key(Config::validateSettings(array_merge($st, ['fax_block' => '1900*',
+	'fax_allow' => '5550100', 'fax_allow_only' => true])),
+	['fax_block' => 1, 'fax_allow' => 1, 'fax_allow_only' => 1]), [], 'settings: good lists');
+$m->saveSettings(array_merge($st, ['fax_block' => "1900*\n"]));
+$n = count($mails);
+same(Cli::run($m, ['fax2mail', 'sales', '1700000000.9', 'SUCCESS', '1', '19005550123', '', 'JUNK', '9600'],
+	       ['send' => $sender], $say), 0, 'fax2mail: a blocked fax');
+$e = $m->getFax('1700000000.9');
+ok($e['blocked'] && FaxLog::status($e) === 'BLOCKED' && $e['mail'] === 'On the block list' &&
+   count($mails) === $n, 'a blocked fax: logged as BLOCKED, not mailed');
+$m->faxReceived('', '1700000000.10', ['status' => 'SUCCESS', 'cid' => '5550123'], $sender);
+ok(!$m->getFax('1700000000.10')['blocked'], 'a fax from a different caller ID: not blocked');
+$h = dmodem_get($m, ['view' => 'faxes']);
+ok(strpos($h, 'BLOCKED') !== false && substr_count($h, 'value="block_caller"') === 1,
+   'faxes page: BLOCKED, and a block button for the fax that is not blocked');
+dmodem_post($m, ['action' => 'block_caller', 'uniqueid' => '1700000000.10']);
+ok($m->message[0] === 'success' && $m->getSettings()['fax_block'] === "1900*\n5550123",
+   'block_caller: the caller ID on the block list');
+dmodem_post($m, ['action' => 'block_caller', 'uniqueid' => '9.9']);
+same($m->message[0], 'danger', 'block_caller: no such fax');
+$m->saveSettings(['fax_allow' => '5550123']);
+dmodem_post($m, ['action' => 'block_caller', 'uniqueid' => '1700000000.10']);
+same($m->message[0], 'danger', 'block_caller: not a caller ID on the allow list');
+$m->faxReceived('', '1700000000.11', ['status' => 'SUCCESS'], $sender);
+dmodem_post($m, ['action' => 'block_caller', 'uniqueid' => '1700000000.11']);
+same($m->message[0], 'danger', 'block_caller: not without a caller ID number');
+ok(!FaxLog::normalize(['uniqueid' => '1.1', 'direction' => 'out', 'blocked' => true])['blocked'],
+   'FaxLog: a sent fax is never blocked');
+foreach (['1700000000.9', '1700000000.10', '1700000000.11'] as $u)
+	$m->deleteFax($u);
+$m->saveSettings(array_merge($st, ['fax_block' => '', 'fax_allow' => '']));
+
 $m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => '/var/spool/asterisk/fax']));
 array_map('unlink', glob("$faxdir/*"));
 rmdir($faxdir);
@@ -1261,6 +1324,13 @@ $r = $m->queueFax(['number' => '5550201', 'cover' => 'yes', 'notify' => 'never']
 $other = $r['id'];
 same(array_keys($m->ucpFaxes(7)), ['1800001004.1', '1800001000.1'],
      'UCP: the user\'s faxes: its recipients\' and its own sent ones');
+$m->saveSettings(['fax_block' => '5550999']);
+$m->faxReceived('sales', '1800001000.3', ['status' => 'SUCCESS', 'cid' => '5550999'],
+	function () { return true; }, 1800001006);
+ok(!isset($m->ucpFaxes(7)['1800001000.3']) && $m->getFax('1800001000.3')['blocked'],
+   'UCP: no blocked fax');
+$m->deleteFax('1800001000.3');
+$m->saveSettings(['fax_block' => '']);
 same($m->ucpFaxJobs(7), [], 'UCP: no fax of the user waits');
 /* the UCP module */
 $uu = new \UCP\FakeUser();

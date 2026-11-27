@@ -12,6 +12,7 @@ require_once __DIR__ . '/Dialout.php';
 require_once __DIR__ . '/FaxMail.php';
 require_once __DIR__ . '/Dialplan.php';
 require_once __DIR__ . '/FaxSend.php';
+require_once __DIR__ . '/FaxJunk.php';
 
 class Config
 {
@@ -56,6 +57,12 @@ class Config
 			/* the fax log: days that a received fax is kept, its
 			   file too (0: all kept) */
 			'fax_keep_days' => 0,
+			/* junk fax control (FaxJunk): the caller IDs that are
+			   blocked, those that are never blocked, and "only the
+			   allow list" */
+			'fax_block' => '',
+			'fax_allow' => '',
+			'fax_allow_only' => false,
 			/* fax-to-email (FaxMail): the PDF's paper, what goes
 			   with the message, its sender, subject and text */
 			'fax_paper' => 'letter',
@@ -257,6 +264,13 @@ class Config
 			$e['fax_min_rate'] = _('Not above the fastest rate');
 		if (!self::intIn($s['fax_keep_days'], 0, 3650))
 			$e['fax_keep_days'] = _('From 0 (keep all) to 3650 days');
+		foreach (['fax_block', 'fax_allow'] as $k) {
+			$why = FaxJunk::listError($s[$k]);
+			if ($why !== '')
+				$e[$k] = $why;
+		}
+		if ($s['fax_allow_only'] && !FaxJunk::parse($s['fax_allow']))
+			$e['fax_allow'] = _('Only the allow list: put a number on it');
 		if (!in_array($s['fax_paper'], self::PAPERS, true))
 			$e['fax_paper'] = _('Letter or A4');
 		if (!in_array($s['fax_attach'], FaxMail::ATTACH, true))
