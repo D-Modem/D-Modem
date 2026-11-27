@@ -506,22 +506,28 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$cmd = isset($_REQUEST['command']) ? (string)$_REQUEST['command'] : '';
 		$u = isset($_REQUEST['uniqueid']) ? (string)$_REQUEST['uniqueid'] : '';
 		$e = $this->getFax($u);
-		$d = $e === null ? null :
-			$this->faxDocument($e, $cmd === 'faxtiff' ? 'tiff' : 'pdf');
+		$this->sendDocument($e === null ? null :
+			$this->faxDocument($e, $cmd === 'faxtiff' ? 'tiff' : 'pdf'), $cmd === 'faxtiff');
+		return true;
+	}
+
+	/* document d (faxDocument(): [type, name, bytes], null for none)
+	   to the browser: to view, or to keep (download) */
+	public function sendDocument($d, $download)
+	{
 		if ($d === null) {
 			self::headers(['Content-Type: text/plain; charset=utf-8'], 404);
 			echo _('No such fax file'), "\n";
-			return true;
+			return;
 		}
 		self::headers([
 			'Content-Type: ' . $d[0],
 			'Content-Length: ' . strlen($d[2]),
 			'X-Content-Type-Options: nosniff',
-			'Content-Disposition: ' . ($cmd === 'faxtiff' ? 'attachment' : 'inline') .
+			'Content-Disposition: ' . ($download ? 'attachment' : 'inline') .
 			'; filename="' . $d[1] . '"',
 		], 200);
 		echo $d[2];
-		return true;
 	}
 
 	/* the uploaded files f ($_FILES of a multiple file input) as a list
@@ -578,9 +584,11 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	/* a fax to send: job in (FaxSend::normalizeJob()'s fields) with
 	   the documents docs (a list of [name, bytes]) made into its fax
 	   file and put in the queue, at the time now (null: time()); run
-	   the runner of Ghostscript (FaxSend::make()).  ['ok', 'message',
-	   'errors' (field => message), 'id'] */
-	public function queueFax(array $in, array $docs, $now = null, ?callable $run = null)
+	   the runner of Ghostscript (FaxSend::make()); user: the User
+	   Manager user id that sends it (UCP; 0 for none).  ['ok',
+	   'message', 'errors' (field => message), 'id'] */
+	public function queueFax(array $in, array $docs, $now = null, ?callable $run = null,
+				 $user = 0)
 	{
 		$now = $now === null ? time() : (int)$now;
 		$s = $this->getSettings();
@@ -606,7 +614,7 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$this->saveFaxJob($j + [
 			'id' => $id, 'created' => $now, 'state' => 'queued',
 			'attempts' => 0, 'next' => $now, 'started' => 0,
-			'pages' => $pages, 'last' => '',
+			'pages' => $pages, 'last' => '', 'user' => (int)$user,
 		]);
 		return ['ok' => true, 'errors' => [], 'id' => $id,
 			'message' => sprintf(_('Fax to %s queued (%d pages)'), $j['number'], $pages)];
@@ -698,7 +706,8 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			'remote' => isset($r['remote']) ? $r['remote'] : '',
 			'cid' => '', 'cidname' => $j['to'],
 		], is_file($file) ? $file : null, $now,
-			['number' => $j['number'], 'job' => $j['id'], 'attempts' => $j['attempts']]);
+			['number' => $j['number'], 'job' => $j['id'], 'attempts' => $j['attempts'],
+			 'user' => isset($j['user']) ? $j['user'] : 0]);
 		$msg = sprintf(_('Fax %s to %s: %s after %d tries'), $j['id'], $j['number'],
 			       $status === 'SUCCESS' ? _('sent') : $j['last'], $j['attempts']);
 		if (FaxSend::notifies($j, $status)) {
@@ -754,6 +763,143 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			return [false, sprintf(_('Fax %s is on a call now'), $id)];
 		$j['last'] = 'CANCELLED';
 		return $this->finishFax($j, 'CANCELLED', null, $now === null ? time() : (int)$now);
+	}
+
+	/* FreePBX's module name (Ucp, Userman), null if it is not there */
+	private function module($name)
+	{
+		try {
+			return isset($this->FreePBX->$name) ? $this->FreePBX->$name : null;
+		} catch (\Throwable $e) {
+			return null;
+		}
+	}
+
+	/* the fax rights in UCP of User Manager user uid (its own, else its
+	   groups'): ['enabled' (the Fax widget), 'send', 'recipients' (the
+	   ids of the fax recipients whose faxes it sees: those given to it,
+	   and those of its User Manager user)] */
+	public function ucpFaxAccess($uid)
+	{
+		$out = ['enabled' => false, 'send' => false, 'recipients' => []];
+		$ucp = $this->module('Ucp');
+		if ($ucp === null || !method_exists($ucp, 'getCombinedSettingByID'))
+			return $out;
+		$out['enabled'] = (bool)$ucp->getCombinedSettingByID($uid, 'Dmodem', 'fax_enable');
+		if (!$out['enabled'])
+			return $out;
+		$out['send'] = (bool)$ucp->getCombinedSettingByID($uid, 'Dmodem', 'fax_send');
+		$ids = (array)$ucp->getCombinedSettingByID($uid, 'Dmodem', 'fax_recipients');
+		$um = $this->module('Userman');
+		$u = $um !== null && method_exists($um, 'getUserByID') ?
+			(array)$um->getUserByID($uid) : [];
+		$name = isset($u['username']) ? (string)$u['username'] : '';
+		foreach ($this->getRecipients() as $id => $r)
+			if (in_array($id, $ids, true) || ($name !== '' && $r['user'] === $name))
+				$out['recipients'][] = (string)$id;
+		return $out;
+	}
+
+	/* the faxes of the fax log that user uid sees in UCP: those
+	   received for its recipients, and those that it sent; the newest
+	   first (uniqueid => entry) */
+	public function ucpFaxes($uid)
+	{
+		$a = $this->ucpFaxAccess($uid);
+		$out = [];
+		if (!$a['enabled'])
+			return $out;
+		foreach ($this->getFaxes() as $u => $e)
+			if (($e['direction'] === 'in' && in_array($e['recipient'], $a['recipients'], true)) ||
+			    ($e['direction'] === 'out' && $e['user'] === (int)$uid))
+				$out[$u] = $e;
+		return $out;
+	}
+
+	/* the faxes of the queue that user uid sent (id => job) */
+	public function ucpFaxJobs($uid)
+	{
+		$out = [];
+		if (!$this->ucpFaxAccess($uid)['enabled'])
+			return $out;
+		foreach ($this->getFaxJobs() as $id => $j)
+			if (isset($j['user']) && (int)$j['user'] === (int)$uid)
+				$out[$id] = $j;
+		return $out;
+	}
+
+	/* the UCP part of the User Manager page of a user or group (Ucp's
+	   constructModuleConfigPages hook): mode user or group, the user (an
+	   array, empty for a new one), action.  [[title, rawname, content]] */
+	public function ucpConfigPage($mode, $user, $action)
+	{
+		$ucp = $this->module('Ucp');
+		/* setting k of the user or group shown (null: none yet) */
+		$get = function ($k) use ($ucp, $mode, $user) {
+			if ($ucp === null)
+				return null;
+			if ($mode === 'group')
+				return isset($_REQUEST['group']) && method_exists($ucp, 'getSettingByGID') ?
+					$ucp->getSettingByGID($_REQUEST['group'], 'Dmodem', $k) : null;
+			return isset($user['id']) && method_exists($ucp, 'getSettingByID') ?
+				$ucp->getSettingByID($user['id'], 'Dmodem', $k) : null;
+		};
+		return [['title' => _('D-Modem Fax'), 'rawname' => 'dmodem',
+			 'content' => $this->view('ucp_user', [
+				'mode' => $mode,
+				'enable' => $get('fax_enable'),
+				'send' => $get('fax_send'),
+				'chosen' => (array)$get('fax_recipients'),
+				'recipients' => $this->getRecipients(),
+			 ])]];
+	}
+
+	/* the form of ucpConfigPage() kept for user (or group: gid) id, from
+	   the request req; a value "inherit" (users only) keeps the
+	   group's */
+	public function ucpSave($kind, $id, array $req)
+	{
+		$ucp = $this->module('Ucp');
+		if ($ucp === null || !isset($req['dmodem_fax_enable']))
+			return;
+		$set = $kind === 'group' ? 'setSettingByGID' : 'setSettingByID';
+		if (!method_exists($ucp, $set))
+			return;
+		$ids = array_keys($this->getRecipients());
+		$chosen = isset($req['dmodem_fax_recipients']) ?
+			array_values(array_intersect((array)$req['dmodem_fax_recipients'], $ids)) : [];
+		foreach (['fax_enable', 'fax_send'] as $k) {
+			$v = isset($req['dmodem_' . $k]) ? (string)$req['dmodem_' . $k] : 'no';
+			$ucp->$set($id, 'Dmodem', $k, $v === 'inherit' && $kind === 'user' ? null : $v === 'yes');
+		}
+		$ucp->$set($id, 'Dmodem', 'fax_recipients', $chosen);
+	}
+
+	/* Ucp's hooks of the User Manager pages: a user or a group added
+	   or changed (id, the page display, ...) */
+	public function ucpAddUser($id, $display, $ucpStatus = null, $data = null)
+	{
+		if ($display === 'userman')
+			$this->ucpSave('user', $id, $_POST);
+	}
+
+	/* see ucpAddUser() */
+	public function ucpUpdateUser($id, $display, $ucpStatus = null, $data = null)
+	{
+		$this->ucpAddUser($id, $display, $ucpStatus, $data);
+	}
+
+	/* see ucpAddUser(): a group */
+	public function ucpAddGroup($id, $display, $ucpStatus = null, $data = null)
+	{
+		if ($display === 'userman')
+			$this->ucpSave('group', $id, $_POST);
+	}
+
+	/* see ucpAddGroup() */
+	public function ucpUpdateGroup($id, $display, $ucpStatus = null, $data = null)
+	{
+		$this->ucpAddGroup($id, $display, $ucpStatus, $data);
 	}
 
 	/* the HTTP headers h (a list of lines) and the status code sent,

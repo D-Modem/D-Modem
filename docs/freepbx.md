@@ -67,6 +67,9 @@ For the generated files, the code and the tests, refer to
 - **Faxes.** The **Faxes** tab shows each received and sent fax. You can view it
   as a PDF file, download the TIFF file or delete it. The module can
   delete old faxes.
+- **Fax in UCP.** Users see their faxes in a **Fax** widget in the User
+  Control Panel. With the send right, they also send and forward faxes.
+  You give the rights in User Manager.
 - **Fax detection.** The **D-Modem fax** tab of an inbound route
   listens for a fax machine on each call. A fax goes to the fax
   destination (for example a fax recipient). Other calls go to the

@@ -26,7 +26,8 @@ class FaxLog
 	/* the log entry of the fax of call uniqueid to recipient id (''
 	   for none), the call's results in vars (VARS), its file (a path,
 	   null if there is none) and the time now (seconds); out: a sent
-	   fax (['number', 'job', 'attempts']) */
+	   fax (['number', 'job', 'attempts', 'user' (its User Manager
+	   user id, 0 for none)]) */
 	public static function entry($id, $uniqueid, array $vars, $file, $now,
 				     ?array $out = null)
 	{
@@ -38,6 +39,7 @@ class FaxLog
 			'number' => $out === null ? '' : self::clean($out['number']),
 			'job' => $out === null ? '' : self::clean($out['job']),
 			'attempts' => $out === null ? 0 : (int)$out['attempts'],
+			'user' => $out === null || !isset($out['user']) ? 0 : (int)$out['user'],
 			'file' => $file === null ? '' : basename($file),
 			'mail' => '',
 			'mail_ok' => false,
@@ -66,7 +68,8 @@ class FaxLog
 		$sent = isset($e['direction']) && $e['direction'] === 'out' ? [
 			'number' => isset($e['number']) ? $e['number'] : '',
 			'job' => isset($e['job']) ? $e['job'] : '',
-			'attempts' => isset($e['attempts']) ? $e['attempts'] : 0] : null;
+			'attempts' => isset($e['attempts']) ? $e['attempts'] : 0,
+			'user' => isset($e['user']) ? $e['user'] : 0] : null;
 		$out = self::entry(isset($e['recipient']) ? $e['recipient'] : '',
 				   $e['uniqueid'], $e, null,
 				   isset($e['time']) ? $e['time'] : 0, $sent);

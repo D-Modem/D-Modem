@@ -2,7 +2,7 @@
 
 This page gives the technical details for [FreePBX: the D-Modem module](freepbx.md), the plain-English overview. Read the overview first. This page keeps the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
-`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.5, for FreePBX 16
+`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.6, for FreePBX 16
 and 17) for [app_dmodem](asterisk.md) or [dmodem-ari](ari.md). It
 gives these items:
 
@@ -12,6 +12,9 @@ gives these items:
 - fax recipients: destinations that receive a fax and send it by email
   (a PDF file, the TIFF file or both);
 - fax detection on inbound routes (a "D-Modem fax" tab);
+- a fax log and a page to send faxes;
+- a Fax widget in UCP (the User Control Panel), with its rights in
+  User Manager;
 - the settings and profiles in the Backup & Restore of FreePBX;
 - a check of the PJSIP trunks and extensions for modem calls.
 
@@ -36,7 +39,7 @@ command. The module is only PHP. Nothing in it is compiled.
    FreePBX and install it from the command line:
 
    ```
-   tar xzf dmodem-16.0.5.tgz -C /var/www/html/admin/modules/
+   tar xzf dmodem-16.0.6.tgz -C /var/www/html/admin/modules/
    fwconsole ma installlocal dmodem
    fwconsole reload
    ```
@@ -338,6 +341,69 @@ show apps`).
 
 This part shows the files that Apply Config writes.
 
+## UCP: the Fax widget
+
+UCP (the User Control Panel of FreePBX) shows a **Fax** widget to each
+user that has fax on. The `ucp/` folder of the module has the widget.
+When UCP is installed, FreePBX links this folder into UCP.
+
+### The rights in User Manager
+
+The **D-Modem** part of the UCP tab of a user or a group in User Manager
+has these settings:
+
+| setting | key | notes |
+|---|---|---|
+| Fax | `fax_enable` | Yes or no. A user can also inherit the value of its groups. |
+| Send faxes | `fax_send` | Yes or no, or inherit. Without it, the user can only see faxes. |
+| Fax recipients | `fax_recipients` | The fax recipients that the user sees. |
+
+The module keeps these settings in UCP (`setSettingByID()` and
+`setSettingByGID()`, module `Dmodem`). It reads them with
+`getCombinedSettingByID()`, which merges the user and its groups.
+
+A user also sees the faxes of each fax recipient whose User Manager
+user is that user.
+
+### The widget
+
+The widget has five tabs:
+
+| tab | content |
+|---|---|
+| Inbox | The received faxes of the user's fax recipients. |
+| Sent | The faxes that the user sent with the result `SUCCESS`. |
+| Failed | The faxes that the user sent with a different result. |
+| Outgoing | The user's faxes in the queue. **Cancel** removes a fax that is not on a call. |
+| Send | The form of the [Send fax](#send-fax) tab: the fax number, the documents, the cover page. |
+
+Each fax in a tab has these buttons: **View** (the PDF file),
+**Download** (the TIFF file), **Delete**, and, with the send right,
+**Forward** (send the fax file to a different number).
+
+The module keeps the User Manager user ID in each fax that the widget
+sends (`user` in the job and in the fax log). A user sees only the
+faxes that it sent.
+
+When the widget is open, UCP polls the module. When a new fax comes to
+the inbox, the browser shows a notification (if the user allowed
+notifications).
+
+### The Ajax commands
+
+| command | right | does |
+|---|---|---|
+| `faxlist` | fax | Gives the widget HTML again. |
+| `faxpdf`, `faxtiff` | fax | Gives the file of a fax of the user. |
+| `faxdelete` | fax | Deletes a fax of the user. |
+| `faxsend` | send | Puts a fax into the queue (`Dmodem::queueFax()`). |
+| `faxforward` | send | Puts a fax of the user into the queue to a new number. |
+| `faxcancel` | send | Cancels a fax of the user in the queue. |
+
+After `faxsend` and `faxforward`, the module starts the queue
+immediately. A command for a fax of a different user fails with "No
+such fax".
+
 ## What Apply Config writes
 
 Apply Config writes `/etc/asterisk/dmodem.conf` (with the header of FreePBX
@@ -523,7 +589,7 @@ The line check shows the items that are still incorrect.
 
 ## The module's code
 
-- `module.xml`: the name, version (16.0.5), menu item, console
+- `module.xml`: the name, version (16.0.6), menu item, console
   command and FreePBX versions of the module.
 - `Dmodem.class.php`: the BMO (the module object of FreePBX) class. It has the
   forms (`doConfigPageInit()`), the pages, `genConfig()` and
@@ -570,6 +636,13 @@ The line check shows the items that are still incorrect.
 - `module.xml` `<hooks>`: the tab on the inbound route page (Core's
   `hookTabs`).
 - `page.dmodem.php`, `views/`, `assets/js/dmodem.js`: the pages.
+- `ucp/Dmodem.class.php`, `ucp/views/widget.php`,
+  `ucp/assets/js/global.js`: the UCP Fax widget (`UCP\Modules\Dmodem`).
+  It calls `Dmodem::ucpFaxAccess()`, `ucpFaxes()` and `ucpFaxJobs()`.
+- `module.xml` `<hooks>` for `Ucp`: the D-Modem part of the UCP tab in
+  User Manager (`constructModuleConfigPages` to `Dmodem::ucpConfigPage()`,
+  `views/ucp_user.php`), and its save (`addUser`, `updateUser`,
+  `addGroup`, `updateGroup`).
 
 ## Tests
 
@@ -609,6 +682,11 @@ It checks:
   in the log and by email, no answer, a refused call, a try without a
   result, cancel), `fwconsole dmodem sendfax`, the page, the contexts
   for the two engines and the FreePBX job;
+- the UCP Fax widget, on stand-ins of UCP and User Manager
+  (`ucp_env.php`): the rights of users and groups (and inherit), the
+  User Manager page and its save, the widget list, the folders, the
+  poll, the files, delete, send, forward and cancel, and the faxes of
+  a different user;
 - the fax detection of the inbound routes: the form of the route
   (added, changed, renamed, deleted, bad values), the steps in a route
   as Core writes it for the two engines, the tab and the destination

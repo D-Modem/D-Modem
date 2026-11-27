@@ -184,6 +184,15 @@ class FakeUserman
 	{
 		return $this->users;
 	}
+
+	/* user id (its 'id'), an empty array if there is none */
+	public function getUserByID($id)
+	{
+		foreach ($this->users as $u)
+			if (isset($u['id']) && (int)$u['id'] === (int)$id)
+				return $u;
+		return [];
+	}
 }
 
 /* FreePBX's settings (Config): name => value */
