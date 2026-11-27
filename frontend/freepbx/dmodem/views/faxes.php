@@ -26,13 +26,14 @@ $link = function ($cmd, $u) {
 </p>
 <?php if (!$faxes): ?>
 	<div class="alert alert-info">
-		<?php echo _('No faxes yet. A fax that D-Modem takes (the fax destination, a fax recipient, or a profile with fax) comes here when the call ends.'); ?>
+		<?php echo _('No faxes yet. A fax that D-Modem takes (the fax destination, a fax recipient, or a profile with fax) or sends comes here when the call ends.'); ?>
 	</div>
 <?php else: ?>
 	<table class="table table-striped" id="dmodem-faxes">
 		<thead>
 			<tr>
 				<th><?php echo _('Date'); ?></th>
+				<th></th>
 				<th><?php echo _('From'); ?></th>
 				<th><?php echo _('Fax number'); ?></th>
 				<th><?php echo _('To'); ?></th>
@@ -48,11 +49,13 @@ $link = function ($cmd, $u) {
 				<?php $file = $dmodem->faxPath($e) !== null; ?>
 				<tr>
 					<td><?php echo D::h(date('Y-m-d H:i', $e['time'])); ?></td>
+					<td><?php echo $e['direction'] === 'out' ? _('Sent') : _('Received'); ?></td>
 					<td><?php echo D::h(trim($e['cidname'] . ' ' . $e['cid'])); ?></td>
 					<td><?php echo D::h($e['remote']); ?></td>
-					<td><?php echo $e['recipient'] === '' ? '' :
+					<td><?php echo $e['direction'] === 'out' ? D::h($e['number']) :
+						($e['recipient'] === '' ? '' :
 						D::h(isset($recipients[$e['recipient']]) ?
-						     $recipients[$e['recipient']]['name'] : $e['recipient']); ?></td>
+						     $recipients[$e['recipient']]['name'] : $e['recipient'])); ?></td>
 					<td><?php echo (int)$e['pages']; ?></td>
 					<td><?php echo D::h(FaxLog::status($e)); ?></td>
 					<td><?php echo $e['rate'] > 0 ? (int)$e['rate'] : ''; ?></td>

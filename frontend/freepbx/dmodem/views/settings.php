@@ -126,6 +126,35 @@ foreach (Config::FAX_RATES as $r)
 	$row('fax_t38', _('T.38'), $check('fax_t38', $s['fax_t38']),
 	     _('Faxes over T.38 when the channel has it (a PJSIP endpoint with T.38 on).'));
 	?>
+	<h2><?php echo _('Sending faxes'); ?></h2>
+	<?php
+	$row('fax_retries', _('Tries again'), $select('fax_retries', $s['fax_retries'], [0 => '0', 1 => '1', 2 => '2', 3 => '3']),
+	     _('The tries after the first, when a fax is not sent. The send page can change it for each fax.'));
+	$row('fax_retry_delay', _('Minutes between tries'), $text('fax_retry_delay', $s['fax_retry_delay']),
+	     _('From 1 to 120.'));
+	$row('fax_notify', _('Email the result'), $select('fax_notify', $s['fax_notify'], [
+		     'never' => _('Never'),
+		     'always' => _('Always'),
+		     'success' => _('When it is sent'),
+		     'failure' => _('When it is not sent'),
+	     ]),
+	     _('The default of the send page.'));
+	$row('fax_notify_email', _('Result to'), $text('fax_notify_email', $s['fax_notify_email']),
+	     _('The default address for the result.'));
+	$row('fax_ghostscript', _('Ghostscript'), $text('fax_ghostscript', $s['fax_ghostscript']),
+	     _('The gs program, which makes the fax pages from PDF files (on FreePBX: yum or apt install ghostscript).'));
+	$row('fax_cover_name', _('Cover page: company'), $text('fax_cover_name', $s['fax_cover_name']),
+	     _('Your company name, on the top of the cover page.'));
+	$row('fax_cover_address', _('Cover page: address'),
+	     '<textarea class="form-control" rows="3" id="fax_cover_address" name="fax_cover_address">' .
+	     D::h($s['fax_cover_address']) . '</textarea>',
+	     _('Up to 5 lines.'));
+	$row('fax_cover_phone', _('Cover page: telephone'), $text('fax_cover_phone', $s['fax_cover_phone']),
+	     _('For example "Tel. +1 555 0100, fax +1 555 0101".'));
+	$row('fax_cover_web', _('Cover page: web site'), $text('fax_cover_web', $s['fax_cover_web']), '');
+	$row('fax_cover_footer', _('Cover page: footer'), $text('fax_cover_footer', $s['fax_cover_footer']),
+	     _('A line on the bottom of the cover page, for example a confidentiality notice.'));
+	?>
 	<h2><?php echo _('Fax to email'); ?></h2>
 	<p class="text-muted"><?php echo _('A fax to a recipient\'s destination (the Fax recipients tab) goes to the recipient\'s email address when the call ends. In the subject and the text, these fields are replaced: {cid} {cidname} {remote} {pages} {status} {date} {recipient} {file}.'); ?></p>
 	<?php

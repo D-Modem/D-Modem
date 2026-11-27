@@ -125,6 +125,24 @@ class FakeAstman
 }
 
 /* FreePBX's object: the manager, and the files WriteConfig was given */
+/* FreePBX's jobs (BMO Job, fwconsole job): the jobs added */
+class FakeJob
+{
+	public $jobs = [];
+
+	/* a job that runs command on schedule (cron syntax) */
+	public function addCommand($module, $name, $command, $schedule, $max = 30)
+	{
+		$this->jobs[$module . '/' . $name] = [$command, $schedule, $max];
+	}
+
+	/* job name of module gone */
+	public function remove($module, $name)
+	{
+		unset($this->jobs[$module . '/' . $name]);
+	}
+}
+
 class FakeFreePBX
 {
 	public $astman;

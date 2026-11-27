@@ -762,7 +762,7 @@ jobs:
         with:
           packages: >-
             cmake ninja-build pkg-config clang g++ libssl-dev libgtest-dev
-            libtiff-tools python3 efax php-cli
+            libtiff-tools python3 efax php-cli ghostscript
             libjansson-dev libxml2-dev libsqlite3-dev uuid-dev libedit-dev
             libspandsp-dev libtiff-dev libcurl4-openssl-dev bzip2 patch ccache
 

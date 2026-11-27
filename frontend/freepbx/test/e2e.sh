@@ -21,6 +21,9 @@
 # writes it) with D-Modem's fax detection to that destination; and a call
 # without a fax on that route, which must go on to the route's own
 # destination (app-dmodem,bbs,1).
+# Then the module sends a fax (sendfax.php, as fwconsole dmodem sendfax:
+# Ghostscript, a cover page) through the dial-out context to a fax
+# machine there, and a fax to a number that does not answer.
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 ast_test=$here/../../asterisk/test
@@ -41,6 +44,12 @@ exten => 5551000,1,Goto(app-dmodem,bbs,1)
 [modem-out]
 exten => _X.,1,Dial(PJSIP/modem,30)
  same => n,Hangup()
+; a fax machine for the module's sent faxes: it keeps them in FAXRX
+exten => 5559999,1,Answer()
+ same => n,DModemReceiveFax(${FAXRX})
+ same => n,Hangup()
+; a number that does not answer
+exten => 5559998,1,Hangup(17)
 
 ; a fax machine for the fax-to-email case: it sends FAXDOC
 [fax-e2e-send]
@@ -200,6 +209,43 @@ elif [ "$(grep -c '^args: ' "$run/etc/fax2mail.log")" -ne 3 ]; then
 	grep '^args: ' "$run/etc/fax2mail.log"
 else
 	echo "PASS: the fax log: 3 faxes with their rate, none for the data calls"
+fi
+
+echo "--- send a fax (the module's queue, Ghostscript, the cover page)"
+sendfax() {
+	php "$here/sendfax.php" "$run/etc" "$engine" "$ami_port" "$@"
+}
+if ! command -v gs >/dev/null; then
+	echo "FAIL: no Ghostscript (gs) for the send cases"; r=1
+else
+	$ast -rx "dialplan set global FAXRX $run/rx.tif" >/dev/null
+	sendfax sendfax 5559999 "$run/doc.tif" cover=yes message="From the e2e test" \
+		retries=0 notify=never || r=1
+	i=0; until grep -q '"faxsent",.*"SUCCESS"' "$run/etc/fax2mail.log" 2>/dev/null || [ $i -ge 240 ]; do
+		sleep 1; i=$((i+1))
+	done
+	sent=$(sendfax faxes | grep -c "SUCCESS" || true)
+	pages=$(tiffinfo "$run/rx.tif" 2>/dev/null | grep -c "TIFF Directory" || true)
+	want=$(( $(tiffinfo "$run/doc.tif" 2>/dev/null | grep -c "TIFF Directory") + 1 ))
+	if [ "$sent" -ge 1 ] && [ "$pages" -eq "$want" ] && [ -z "$(sendfax faxjobs)" ]; then
+		echo "PASS: send a fax: $pages pages (the cover page first) to the far machine, in the log"
+	else
+		echo "FAIL: send a fax (sent $sent, $pages pages of $want)"; r=1
+		cat "$run/etc/fax2mail.log" 2>/dev/null || true
+		grep -E "faxout|faxsent|DModemSendFax|sendfax" "$run/console.log" | tail -20 || true
+		[ -z "$ARI" ] || ari_log "$run"
+	fi
+	echo "--- send a fax to a number that does not answer"
+	sendfax sendfax 5559998 "$run/doc.tif" retries=0 notify=never || r=1
+	i=0; until grep -q '"faxsent",.*"NOANSWER"' "$run/etc/fax2mail.log" 2>/dev/null || [ $i -ge 60 ]; do
+		sleep 1; i=$((i+1))
+	done
+	if grep -q '"faxsent",.*"NOANSWER"' "$run/etc/fax2mail.log" && [ -z "$(sendfax faxjobs)" ]; then
+		echo "PASS: no answer: the failed extension gave the result"
+	else
+		echo "FAIL: no answer: no result"; r=1
+		grep -E "faxout|failed|5559998" "$run/console.log" | tail -10 || true
+	fi
 fi
 
 $ast -rx "core stop now" >/dev/null 2>&1 || true

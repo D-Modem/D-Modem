@@ -11,6 +11,7 @@ namespace FreePBX\modules\Dmodem;
 require_once __DIR__ . '/Dialout.php';
 require_once __DIR__ . '/FaxMail.php';
 require_once __DIR__ . '/Dialplan.php';
+require_once __DIR__ . '/FaxSend.php';
 
 class Config
 {
@@ -62,6 +63,20 @@ class Config
 			'fax_email_from' => '',
 			'fax_email_subject' => 'Fax from {cid} ({pages} pages)',
 			'fax_email_body' => "A fax came from {cid} (fax number {remote}): {pages} pages, {status}.\nReceived {date} for {recipient}.",
+			/* sending faxes (FaxSend): the tries after the first,
+			   the minutes between tries, when the result goes by
+			   email and to whom, Ghostscript (PDF to fax pages),
+			   and the cover page's company lines */
+			'fax_retries' => 1,
+			'fax_retry_delay' => 5,
+			'fax_notify' => 'failure',
+			'fax_notify_email' => '',
+			'fax_ghostscript' => '/usr/bin/gs',
+			'fax_cover_name' => '',
+			'fax_cover_address' => '',
+			'fax_cover_phone' => '',
+			'fax_cover_web' => '',
+			'fax_cover_footer' => '',
 			'ari_url' => 'http://127.0.0.1:8088',
 			'ari_user' => 'dmodem',
 			'ari_password' => '',
@@ -254,6 +269,24 @@ class Config
 		if (strpos($s['fax_email_body'], "\0") !== false ||
 		    strlen($s['fax_email_body']) > 4000)
 			$e['fax_email_body'] = _('4000 characters at most');
+		if (!self::intIn($s['fax_retries'], 0, 3))
+			$e['fax_retries'] = _('From 0 to 3');
+		if (!self::intIn($s['fax_retry_delay'], 1, 120))
+			$e['fax_retry_delay'] = _('From 1 to 120 minutes');
+		if (!in_array($s['fax_notify'], FaxSend::NOTIFY, true))
+			$e['fax_notify'] = _('Never, always, on success or on failure');
+		if ($s['fax_notify_email'] !== '' && !FaxMail::addressOk($s['fax_notify_email']))
+			$e['fax_notify_email'] = _('An email address, or empty');
+		if (!preg_match('#^/[A-Za-z0-9/._-]{1,200}$#', $s['fax_ghostscript']))
+			$e['fax_ghostscript'] = _('An absolute path of letters, digits, /, ., _ and -');
+		foreach (['fax_cover_name', 'fax_cover_phone', 'fax_cover_web',
+			  'fax_cover_footer'] as $k)
+			if (self::breaksLine($s[$k]) || strlen($s[$k]) > 100)
+				$e[$k] = _('One line of 100 characters at most');
+		if (strpos($s['fax_cover_address'], "\0") !== false ||
+		    strlen($s['fax_cover_address']) > 300 ||
+		    substr_count($s['fax_cover_address'], "\n") > 4)
+			$e['fax_cover_address'] = _('5 lines and 300 characters at most');
 		if (!preg_match('/^[A-Za-z0-9_.-]{1,79}$/', $s['dialout_context']))
 			$e['dialout_context'] = _('A dialplan context, e.g. from-internal');
 		if (!Dialout::callerIdOk($s['dialout_callerid']))

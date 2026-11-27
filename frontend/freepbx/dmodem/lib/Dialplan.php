@@ -83,6 +83,63 @@ class Dialplan
 		];
 	}
 
+	/* a sent fax's context (FaxSend::originate()): s when the far end
+	   answers, failed when it does not */
+	const FAXOUT_CONTEXT = 'app-dmodem-faxout';
+	/* its hangup handler's context: the try's result to the queue */
+	const SENT_CONTEXT = 'app-dmodem-faxsent';
+
+	/* the extensions of FAXOUT_CONTEXT (s the settings; fwconsole its
+	   path): the fax file of job DMODEMFAXJOB sent, its hangup handler
+	   first; failed: the try's result without a call */
+	public static function faxOut(array $s, $fwconsole)
+	{
+		$s = array_merge(Config::defaultSettings(), $s);
+		$job = '${FILTER(a-z0-9,${DMODEMFAXJOB})}';
+		$file = rtrim($s['fax_dir'], '/') . '/out-' . $job . '.tif';
+		return [
+			's' => [
+				['NoOp', 'D-Modem fax job ' . $job],
+				['Set', 'CHANNEL(hangup_handler_push)=' . self::SENT_CONTEXT .
+				 ',s,1(' . $job . ')'],
+				$s['engine'] === 'ari' ?
+					['Stasis', $s['ari_app'] . ',sendfax,' . $file] :
+					['DModemSendFax', $file],
+				['NoOp', 'D-Modem fax job ' . $job .
+				 ': ${DMODEMFAXSTATUS} ${DMODEMFAXPAGES} ${DMODEMFAXERROR}'],
+				['Hangup', ''],
+			],
+			'failed' => [
+				['System', $fwconsole . " dmodem faxsent '" . $job . "' " .
+				 '\'${FILTER(0-9.,${UNIQUEID})}\' \'NOANSWER\' \'0\' \'0\' ' .
+				 '\'REASON_${FILTER(0-9,${REASON})}\' \'\''],
+				['Hangup', ''],
+			],
+		];
+	}
+
+	/* the hangup handler of a sent fax (SENT_CONTEXT, s): fwconsole
+	   dmodem faxsent with the job (ARG1) and the try's results, each
+	   filtered as mailHandler() does */
+	public static function sentHandler($fwconsole)
+	{
+		$q = function ($v) {
+			return "'" . $v . "'";
+		};
+		return [
+			['System', $fwconsole . ' dmodem faxsent ' . implode(' ', [
+				$q('${FILTER(a-z0-9,${ARG1})}'),
+				$q('${FILTER(0-9.,${UNIQUEID})}'),
+				$q('${IF($["${DMODEMFAXSTATUS}" = ""]?FAILED:${FILTER(A-Z,${DMODEMFAXSTATUS})})}'),
+				$q('${FILTER(0-9,${DMODEMFAXPAGES})}'),
+				$q('${FILTER(0-9,${DMODEMFAXRATE})}'),
+				$q('${FILTER(A-Za-z0-9_,${DMODEMFAXERROR})}'),
+				$q('${FILTER(0-9+ ,${DMODEMFAXREMOTE})}'),
+			])],
+			['Return', ''],
+		];
+	}
+
 	/* the context: exten => [[application, data], ...] in order;
 	   recipients: id => recipient */
 	public static function build(array $settings, array $profiles,
