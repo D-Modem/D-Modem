@@ -1249,14 +1249,7 @@ ok(strpos($m->ucpConfigPage('group', [], 'showgroup')[0]['content'], 'inherit') 
 /* the faxes that the user sees */
 $udir = sys_get_temp_dir() . '/dmodem-ucp-' . getmypid();
 mkdir($udir);
-/* a stand-in of Ghostscript for the widget, which runs the real
-   command: it writes a fax page to the -sOutputFile file */
-file_put_contents("$udir/page.tif", mh_white_tiff(1));
-file_put_contents("$udir/gs", "#!/bin/sh\nfor a; do case \"\$a\" in -sOutputFile=*) " .
-	"cp '$udir/page.tif' \"\${a#-sOutputFile=}\";; esac; done\n");
-chmod("$udir/gs", 0755);
-$m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => $udir, 'fax_keep_days' => 0,
-	'fax_ghostscript' => "$udir/gs"]));
+$m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => $udir, 'fax_keep_days' => 0]));
 file_put_contents("$udir/20261127-1-5550100-1800001000.1.tif", mh_white_tiff(2));
 $m->faxReceived('sales', '1800001000.1', ['status' => 'SUCCESS', 'pages' => '1', 'cid' => '5550100',
 	'cidname' => 'ACME'], function () { return true; }, 1800001000);
@@ -1275,6 +1268,8 @@ $uu->user = ['id' => 7, 'username' => 'carol'];
 \UCP\Modules::$ucp = (object)['FreePBX' => $m->FreePBX, 'User' => $uu];
 FreePBX::$modules['Dmodem'] = $m;
 $w = new \UCP\Modules\Dmodem(null);
+/* the stand-in of Ghostscript: the widget runs no real command */
+$w->run = $fakeGs;
 same($w->getWidgetList()['list']['fax']['display'], 'Fax', 'UCP widget: in the list');
 $h = $w->getWidgetDisplay('fax')['html'];
 ok(strpos($h, 'data-dmodem-tab="inbox"') !== false && strpos($h, 'data-uniqueid="1800001000.1"') !== false &&

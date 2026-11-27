@@ -19,6 +19,9 @@ class Dmodem extends Modules
 {
 	protected $module = 'Dmodem';
 	private $uid = 0;
+	/* the runner of the Ghostscript command (FaxSend::make()); null:
+	   FaxSend::exec().  The tests give a stand-in */
+	public $run = null;
 
 	/* the module for the signed-in user */
 	public function __construct($Modules)
@@ -161,7 +164,7 @@ class Dmodem extends Modules
 				$r = [false, $why];
 				break;
 			}
-			$q = $this->bmo()->queueFax($_POST, $docs, null, null, $this->uid);
+			$q = $this->bmo()->queueFax($_POST, $docs, null, $this->run, $this->uid);
 			$r = [$q['ok'], $q['message']];
 			break;
 		case 'faxforward':
@@ -172,7 +175,7 @@ class Dmodem extends Modules
 				break;
 			}
 			$q = $this->bmo()->queueFax(['number' => isset($_POST['number']) ? $_POST['number'] : ''],
-				[[basename($p), (string)file_get_contents($p)]], null, null, $this->uid);
+				[[basename($p), (string)file_get_contents($p)]], null, $this->run, $this->uid);
 			$r = [$q['ok'], $q['message']];
 			break;
 		case 'faxcancel':
