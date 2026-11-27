@@ -10,22 +10,27 @@ the normative text, download the Recommendations with
 `docs/specs/fetch.sh`. For the location of each standard in the code,
 refer to [ITU-T Recommendations](../specs/README.md).
 
-A page that has no link is not written yet.
+Each standard has two pages. The first page is a summary: what the standard
+does, the main steps and where D-Modem uses it. The second page,
+"technical details", gives the signals, the timing, the codes and the
+implementation in D-Modem.
+
+A standard that has no link has no pages yet.
 
 ## Start-up and call control
 
 | Recommendation | Subject |
 |---|---|
-| [V.8](v8.md) | The start of a data call: ANSam, CM, JM and CJ |
+| [V.8](v8.md) ([details](v8-details.md)) | The start of a data call: ANSam, CM, JM and CJ |
 | V.8 bis | Identification and selection of a mode before V.8 |
-| V.25 | Answer tones, call tones and echo canceller disabling |
-| V.13 | Simulated carrier control |
+| [V.25](v25.md) ([details](v25-details.md)) | Answer tones, call tones and echo canceller disabling |
+| [V.13](v13.md) ([details](v13-details.md)) | Simulated carrier control |
 
 ## Modulations for the telephone line
 
 | Recommendation | Subject |
 |---|---|
-| V.21 | 300 bit/s FSK, duplex |
+| [V.21](v21.md) ([details](v21-details.md)) | 300 bit/s FSK, duplex |
 | V.22 | 1200 bit/s DPSK, duplex |
 | V.22bis | 2400 bit/s QAM, duplex |
 | V.23 | 1200/75 bit/s FSK |
