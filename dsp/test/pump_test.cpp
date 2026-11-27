@@ -1056,3 +1056,57 @@ TEST(Fsk, V23CarrierOffTime)
 		EXPECT_LE(b, 80.0) << l << " dBm0";
 	}
 }
+
+/* V.22's circuit 109 (Circuit109 with dp_v22.cpp's settings) on the
+   answerer's band pass, 1200 Hz, at 8000 Hz: a tone at dbm0 for 1 s.
+   Its state at the end (from OFF, or from ON first at -20 dBm0 if
+   was_on); *off_ms (if not null): the ms to OFF after the tone stops,
+   at rate's OFF time */
+static bool v22_109(double dbm0, bool was_on, double *off_ms = nullptr,
+		    int rate = 1200)
+{
+	dsp::Biquad bp;
+	bp.bandpass(1200, 1.0f, 8000);
+	dsp::Circuit109 c;
+	c.init(V22_ON_AMP, V22_OFF_AMP, 8000);
+	auto run = [&](double a, int n, int &i) {
+		for (int k = 0; k < n; k++, i++)
+			c.run(bp.run(static_cast<float>(a * sin(2 * M_PI *
+				1200 * i / 8000.0))), V22_OFF_MS(rate), false,
+			      V22_BACK_MS);
+	};
+	int i = 0;
+	if (was_on)
+		run(22300 * 0.1, 8000, i);
+	run(22300 * pow(10, dbm0 / 20), 8000, i);
+	bool on = c.on() != 0;
+	if (off_ms) {
+		int n = 0;
+		while (c.on() && n < 8000) {
+			c.run(bp.run(0), V22_OFF_MS(rate), false, V22_BACK_MS);
+			n++;
+		}
+		*off_ms = n / 8.0;
+	}
+	return on;
+}
+
+/* 3.3/V.22 and 3.3/V.22 bis: 109 ON above -43 dBm, OFF below -48 dBm,
+   2 dB of hysteresis at least; 109 ON to OFF in 10 to 24 ms (Table
+   3/V.22), 40 to 65 ms at 2400 bit/s (3.2/V.22 bis) */
+TEST(V22, Circuit109)
+{
+	EXPECT_TRUE(v22_109(-42.5, false));
+	EXPECT_FALSE(v22_109(-44.5, false));
+	EXPECT_TRUE(v22_109(-45.5, true));
+	EXPECT_FALSE(v22_109(-48.5, true));
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -42.0 }) {
+		double t;
+		v22_109(l, false, &t, 1200);
+		EXPECT_GE(t, 10.0) << l << " dBm0";
+		EXPECT_LE(t, 24.0) << l << " dBm0";
+		v22_109(l, false, &t, 2400);
+		EXPECT_GE(t, 40.0) << l << " dBm0";
+		EXPECT_LE(t, 65.0) << l << " dBm0";
+	}
+}

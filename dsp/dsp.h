@@ -18,6 +18,7 @@
 /* the interface to the modem core: the data pumps register and exchange
    bits through modem_dp.h, read and set parameters through modem_param.h,
    and dsplibs.h is the rest of the library's interface (both ways) */
+#include <algorithm>
 #include <cstring>
 
 #include "dm_types.h"
@@ -410,6 +411,63 @@ struct CarrierDetect {
 		}
 		return 0;
 	}
+};
+
+/* V.22 and V.22 bis's circuit 109 (dp_v22.cpp): about -43.4 and -47 dBm0 (ON above -43 dBm, OFF below
+   -48 dBm, 2 dB of hysteresis at least: 3.3/V.22, 3.3/V.22 bis); ON to
+   OFF 10 to 24 ms at 1200 bit/s (Table 3/V.22), 40 to 65 ms at 2400
+   (3.2/V.22 bis), after the level falls below the OFF level; after a
+   dropout in data, OFF to ON in 105 to 205 ms (V.22) or 40 to 205 ms
+   (V.22 bis) */
+#define V22_ON_AMP      150.0f
+#define V22_OFF_AMP     100.0f
+#define V22_OFF_MS(rate) ((rate) == 2400 ? 45 : 11)
+#define V22_BACK_MS     110
+
+/* circuit 109 of a pump, from its band passed input: ON when a slow
+   meter (30 ms) is above the ON level, OFF when a fast meter (1.2 ms)
+   stays below the OFF level for off_ms; while hold_on is set (in data,
+   after a dropout), ON only after back_ms above the ON level.  The
+   Recommendations give the two levels and the two times (for example
+   3.2 and 3.3 of V.22 and V.22 bis) */
+struct Circuit109 {
+	PowerMeter slow, fast;
+	CarrierDetect cd;
+	s32 srate, end_n, back_n;
+
+	/* the levels as the amplitudes of tones (CarrierDetect's), at
+	   rate */
+	void init(float on_amp, float off_amp, s32 rate)
+	{
+		slow.init(0.03f, rate);
+		fast.init(0.0012f, rate);
+		cd.init(on_amp, off_amp);
+		srate = rate;
+		end_n = back_n = 0;
+	}
+	/* one sample x: 1 as 109 turns ON, -1 as it turns OFF, else 0 */
+	s16 run(float x, s32 off_ms, bool hold_on, s32 back_ms)
+	{
+		slow.run(x);
+		end_n = fast.run(x) < cd.off_level ? end_n + 1 : 0;
+		float p = slow.power;
+		/* ON to OFF on the fast meter alone */
+		if (cd.on)
+			p = end_n >= off_ms * srate / 1000 ? 0 :
+				std::max(p, cd.off_level);
+		if (cd.on && !p)
+			slow.power = 0;
+		if (hold_on && !cd.on) {
+			back_n = p > cd.on_level ? back_n + 1 : 0;
+			if (back_n < back_ms * srate / 1000)
+				p = 0;
+		} else {
+			back_n = 0;
+		}
+		return cd.run(p);
+	}
+	/* 109 now */
+	s16 on() const { return cd.on; }
 };
 
 /* a Bell 103 caller's mark and space (1270 and 1070 Hz, its originate
