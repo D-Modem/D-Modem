@@ -191,7 +191,8 @@ When it hears one, it does these steps:
 1. It sets `DMODEMFAXDETECTED` to `CNG` or `T38`.
 2. It sets `DMODEMFAXEXTEN` to the extension that the call was on.
 3. If the context has a `fax` extension, the call goes to `fax`,
-   priority 1. If not, the dialplan continues at the next priority.
+   priority 1. If not (or with the option `x`), the dialplan continues
+   at the next priority.
 
 When it hears no fax machine, it sets `DMODEMFAXDETECTED` to `NONE`, and
 the dialplan continues at the next priority.
@@ -205,6 +206,7 @@ in the `fax` extension answers it.
 | `t` | Listen for the T.38 request only. |
 | `n` | Do not answer the call (listen on the early media). |
 | `r` | Send the ring tone of the channel's tone zone to the caller while the application listens. |
+| `x` | Do not go to the `fax` extension. The dialplan reads `DMODEMFAXDETECTED` and goes to the fax destination itself. The FreePBX module uses this option on inbound routes. |
 
 `FAXOPT(faxdetect)` of Asterisk listens in the background while other
 applications run. `DModemFaxDetect` listens only while it runs, as an

@@ -116,9 +116,35 @@ foreach (Config::FAX_RATES as $r)
 	     _('A header line on the top of each page that D-Modem sends: the date, the time, this text, our fax number and the page number. Empty: no header line.'));
 	$row('fax_max_rate', _('Fastest fax rate'), $select('fax_max_rate', $s['fax_max_rate'], $rates),
 	     _('Lower it for lines that drop pages at 14400.'));
+	$minrates = [0 => _('None')] + $rates;
+	$row('fax_min_rate', _('Slowest fax rate'), $select('fax_min_rate', $s['fax_min_rate'], $minrates),
+	     _('A fax that cannot go at this rate or faster is not taken. None: as slow as the other machine goes.'));
 	$row('fax_ecm', _('Error correction (ECM)'), $check('fax_ecm', $s['fax_ecm']),
 	     _('Offered to the other machine: pages come through line hits undamaged.'));
 	$row('fax_t38', _('T.38'), $check('fax_t38', $s['fax_t38']),
 	     _('Faxes over T.38 when the channel has it (a PJSIP endpoint with T.38 on).'));
+	?>
+	<h2><?php echo _('Fax to email'); ?></h2>
+	<p class="text-muted"><?php echo _('A fax to a recipient\'s destination (the Fax recipients tab) goes to the recipient\'s email address when the call ends. In the subject and the text, these fields are replaced: {cid} {cidname} {remote} {pages} {status} {date} {recipient} {file}.'); ?></p>
+	<?php
+	$row('fax_attach', _('Attach'), $select('fax_attach', $s['fax_attach'], [
+		     'pdf' => _('A PDF file'),
+		     'tiff' => _('The TIFF file'),
+		     'both' => _('Both'),
+	     ]),
+	     _('What goes with the message. A recipient can have its own.'));
+	$row('fax_paper', _('PDF paper size'), $select('fax_paper', $s['fax_paper'], [
+		     'letter' => _('Letter'),
+		     'a4' => _('A4'),
+	     ]),
+	     _('Each page of the PDF file is of this size.'));
+	$row('fax_email_from', _('From'), $text('fax_email_from', $s['fax_email_from']),
+	     _('The sender of the message: an address, or Name <address>. Empty: the mail system\'s.'));
+	$row('fax_email_subject', _('Subject'), $text('fax_email_subject', $s['fax_email_subject']),
+	     _('The subject of the message.'));
+	$row('fax_email_body', _('Text'),
+	     '<textarea class="form-control" rows="4" id="fax_email_body" name="fax_email_body">' .
+	     D::h($s['fax_email_body']) . '</textarea>',
+	     _('The text of the message.'));
 	?>
 </form>

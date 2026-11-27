@@ -6,8 +6,9 @@
 // DModem() (app_dmodem) or dmodem-ari kept in the module's store,
 // dmodem.conf written from them on Apply Config, the app-dmodem context
 // with a destination for each, calls out with a profile, the settings'
-// export and import (Backup.php, Restore.php, fwconsole dmodem), and a
-// check of the PJSIP endpoints for modem calls.
+// export and import (Backup.php, Restore.php, fwconsole dmodem), the fax
+// recipients (fax-to-email: FaxMail), and a check of the PJSIP endpoints
+// for modem calls.
 
 namespace FreePBX\modules;
 
@@ -16,17 +17,21 @@ require_once __DIR__ . '/lib/Dialplan.php';
 require_once __DIR__ . '/lib/LineCheck.php';
 require_once __DIR__ . '/lib/Dialout.php';
 require_once __DIR__ . '/lib/Cli.php';
+require_once __DIR__ . '/lib/FaxMail.php';
 
 use FreePBX\modules\Dmodem\Config;
 use FreePBX\modules\Dmodem\Dialplan;
 use FreePBX\modules\Dmodem\LineCheck;
 use FreePBX\modules\Dmodem\Dialout;
+use FreePBX\modules\Dmodem\FaxMail;
 
 class Dmodem extends \FreePBX_Helpers implements \BMO
 {
 	/* the store's groups (kvstore ids) */
 	const SETTINGS = 'settings';
 	const PROFILES = 'profiles';
+	const RECIPIENTS = 'recipients';
+	const DIDFAX = 'didfax';
 	/* the endpoints the check reads at most */
 	const MAX_ENDPOINTS = 200;
 	/* exportData()'s format */
@@ -75,6 +80,8 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	{
 		$this->delById(self::SETTINGS);
 		$this->delById(self::PROFILES);
+		$this->delById(self::RECIPIENTS);
+		$this->delById(self::DIDFAX);
 	}
 
 	/* settings over the defaults */
@@ -126,25 +133,235 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$this->setConfig($name, false, self::PROFILES);
 	}
 
-	/* the settings and profiles, for a backup or fwconsole dmodem
-	   export: ['format', 'settings', 'profiles' (name => profile)] */
+	/* id => fax recipient, in id order */
+	public function getRecipients()
+	{
+		$all = $this->getAll(self::RECIPIENTS);
+		$out = [];
+		if (is_array($all))
+			foreach ($all as $id => $r)
+				if (is_array($r))
+					$out[$id] = Config::normalizeRecipient(
+						array_merge(Config::defaultRecipient(), $r,
+							    ['id' => $id]));
+		ksort($out, SORT_STRING);
+		return $out;
+	}
+
+	/* recipient id, null if there is none */
+	public function getRecipient($id)
+	{
+		$all = $this->getRecipients();
+		return isset($all[$id]) ? $all[$id] : null;
+	}
+
+	/* recipient r (checked) kept under its id */
+	public function saveRecipient(array $r)
+	{
+		$this->setConfig($r['id'], $r, self::RECIPIENTS);
+	}
+
+	/* recipient id dropped */
+	public function deleteRecipient($id)
+	{
+		$this->setConfig($id, false, self::RECIPIENTS);
+	}
+
+	/* the fax detection of the inbound routes: <DID>/<caller ID number>
+	   => its settings (Config::defaultDidFax()), in key order */
+	public function getDidFaxes()
+	{
+		$all = $this->getAll(self::DIDFAX);
+		$out = [];
+		if (is_array($all))
+			foreach ($all as $k => $f)
+				if (is_array($f))
+					$out[(string)$k] = Config::normalizeDidFax(
+						array_merge(Config::defaultDidFax(), $f));
+		ksort($out, SORT_STRING);
+		return $out;
+	}
+
+	/* the fax detection of the inbound route of key (Config::didKey()):
+	   its settings, the defaults if it has none */
+	public function getDidFax($key)
+	{
+		$all = $this->getDidFaxes();
+		return isset($all[$key]) ? $all[$key] : Config::defaultDidFax();
+	}
+
+	/* the fax detection f of the inbound route of key kept; off: none
+	   kept */
+	public function saveDidFax($key, array $f)
+	{
+		$this->setConfig($key, $f['detect'] ? $f : false, self::DIDFAX);
+	}
+
+	/* the pages of other modules that this one adds to: the inbound
+	   routes (their fax detection) */
+	public static function myConfigPageInits()
+	{
+		return ['did'];
+	}
+
+	/* the inbound route form posted (Core has saved the route): its fax
+	   detection kept under the route's DID and caller ID number, moved
+	   with the route, or dropped with it */
+	private function didPageInit(array $req)
+	{
+		$action = isset($req['action']) ? $req['action'] : '';
+		if ($action === 'delIncoming') {
+			$parts = explode('/', isset($req['extdisplay']) ? (string)$req['extdisplay'] : '', 2);
+			$key = Config::didKey($parts[0], isset($parts[1]) ? $parts[1] : '');
+			if ($key !== null) {
+				$this->saveDidFax($key, Config::defaultDidFax());
+				$this->reload();
+			}
+			return;
+		}
+		if (($action !== 'addIncoming' && $action !== 'edtIncoming') ||
+		    empty($req['dmodem_fax_form']))
+			return;
+		$key = Config::didKey(isset($req['extension']) ? $req['extension'] : '',
+				      isset($req['cidnum']) ? $req['cidnum'] : '');
+		if ($key === null)
+			return;
+		if ($action === 'edtIncoming' && isset($req['old_extension'])) {
+			$old = Config::didKey($req['old_extension'],
+					      isset($req['old_cidnum']) ? $req['old_cidnum'] : '');
+			if ($old !== null && $old !== $key)
+				$this->saveDidFax($old, Config::defaultDidFax());
+		}
+		$dest = '';
+		if (!empty($req['gotodmodemfax'])) {
+			$k = $req['gotodmodemfax'] . 'dmodemfax';
+			$dest = isset($req[$k]) ? (string)$req[$k] : '';
+		} elseif (isset($req['dmodem_fax_dest'])) {
+			$dest = (string)$req['dmodem_fax_dest'];
+		}
+		$f = Config::normalizeDidFax([
+			'detect' => isset($req['dmodem_fax_detect']) ? $req['dmodem_fax_detect'] : '',
+			'listen' => isset($req['dmodem_fax_listen']) ? $req['dmodem_fax_listen'] : 'both',
+			'wait' => isset($req['dmodem_fax_wait']) ? $req['dmodem_fax_wait'] : 4,
+			'ring' => isset($req['dmodem_fax_ring']) ? $req['dmodem_fax_ring'] : '',
+			'dest' => $dest,
+		]);
+		/* (a bad value: the route's fax detection stays as it was; the
+		   form's own checks stop most of them) */
+		if (Config::validateDidFax($f))
+			return;
+		$this->saveDidFax($key, $f);
+		$this->reload();
+	}
+
+	/* the D-Modem fax tab of the inbound route page (Core's hookTabs):
+	   page the page's display */
+	public function didFaxTab($page)
+	{
+		if ($page !== 'did')
+			return [];
+		$ext = isset($_REQUEST['extdisplay']) ? (string)$_REQUEST['extdisplay'] : '';
+		$parts = explode('/', $ext, 2);
+		$key = $ext === '' ? null : Config::didKey($parts[0], isset($parts[1]) ? $parts[1] : '');
+		$f = $key === null ? Config::defaultDidFax() : $this->getDidFax($key);
+		return [[
+			'title' => _('D-Modem fax'),
+			'rawname' => 'dmodemfax',
+			'content' => $this->view('didfax', ['f' => $f,
+				'settings' => $this->getSettings()]),
+		]];
+	}
+
+	/* the inbound routes whose faxes go to a destination of dest (a
+	   list, or one; all if dest is true), as FreePBX's
+	   check_destinations has them */
+	public function didFaxUsage($dest = true)
+	{
+		$out = [];
+		foreach ($this->getDidFaxes() as $key => $f) {
+			if ($dest !== true && !in_array($f['dest'], (array)$dest, true))
+				continue;
+			$parts = explode('/', $key, 2);
+			$out[] = [
+				'dest' => $f['dest'],
+				'description' => sprintf(_('Inbound route %s: D-Modem fax'), $key),
+				'edit_url' => 'config.php?display=did&view=form&extdisplay=' .
+					urlencode($key),
+			];
+		}
+		return $out;
+	}
+
+	/* User Manager's users with an email address, username => email;
+	   null if User Manager is not installed */
+	public function usermanUsers()
+	{
+		$um = null;
+		try {
+			if (isset($this->FreePBX->Userman))
+				$um = $this->FreePBX->Userman;
+		} catch (\Throwable $e) {
+			$um = null;
+		}
+		if (!$um || !method_exists($um, 'getAllUsers'))
+			return null;
+		$out = [];
+		foreach ((array)$um->getAllUsers() as $u) {
+			$u = (array)$u;
+			if (!empty($u['username']) && !empty($u['email']))
+				$out[(string)$u['username']] = (string)$u['email'];
+		}
+		ksort($out, SORT_STRING);
+		return $out;
+	}
+
+	/* recipient r with its email address: its own, else its User
+	   Manager user's */
+	public function recipientAddress(array $r)
+	{
+		if ($r['email'] !== '' || $r['user'] === '')
+			return $r;
+		$u = $this->usermanUsers();
+		$r['email'] = $u !== null && isset($u[$r['user']]) ? $u[$r['user']] : '';
+		return $r;
+	}
+
+	/* fwconsole dmodem fax2mail: the fax of call uniqueid mailed to
+	   recipient id (the call's results in vars: status, pages, cid,
+	   remote, cidname); send as FaxMail::send() has it.  [ok, message] */
+	public function faxToMail($id, $uniqueid, array $vars, ?callable $send = null)
+	{
+		$r = $this->getRecipient((string)$id);
+		if ($r === null)
+			return [false, sprintf(_('No fax recipient %s'), $id)];
+		return FaxMail::send($this->getSettings(), $this->recipientAddress($r),
+				     $uniqueid, $vars, $send);
+	}
+
+	/* the settings, profiles and fax recipients, for a backup or
+	   fwconsole dmodem export: ['format', 'settings', 'profiles' (name
+	   => profile), 'recipients' (id => recipient)] */
 	public function exportData()
 	{
 		return [
 			'format' => self::EXPORT_FORMAT,
 			'settings' => $this->getSettings(),
 			'profiles' => $this->getProfiles(),
+			'recipients' => $this->getRecipients(),
+			'didfax' => $this->getDidFaxes(),
 		];
 	}
 
 	/* exportData()'s data back (a restore, fwconsole dmodem import):
 	   the settings and each profile checked as the forms check them,
 	   what passes kept; the profiles that data hasn't are dropped
-	   (replace false: kept).  [ok, settings errors, name => errors of
-	   the profiles left out, names imported] */
+	   (replace false: kept); the same for the fax recipients.  [ok,
+	   settings errors, name => errors of the profiles left out (fax-<id>
+	   for a recipient), names imported, recipient ids imported] */
 	public function importData($data, $replace = true)
 	{
-		$r = ['ok' => false, 'settings' => [], 'skipped' => [], 'imported' => []];
+		$r = ['ok' => false, 'settings' => [], 'skipped' => [], 'imported' => [],
+		      'recipients' => []];
 		if (!is_array($data) || !isset($data['format']) ||
 		    (int)$data['format'] !== self::EXPORT_FORMAT) {
 			$r['settings'] = ['format' => _('Not D-Modem settings, or of another format')];
@@ -180,6 +397,57 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			foreach (array_keys($this->getProfiles()) as $name)
 				if (!in_array($name, $names, true))
 					$this->deleteProfile($name);
+		/* the fax recipients (an export without them: none taken,
+		   none dropped) */
+		if (isset($data['recipients']) && is_array($data['recipients'])) {
+			$ids = [];
+			$users = $this->usermanUsers();
+			foreach ($data['recipients'] as $id => $rc) {
+				if (!is_array($rc)) {
+					$r['skipped']['fax-' . $id] = ['id' => _('Not a fax recipient')];
+					continue;
+				}
+				$rc = Config::normalizeRecipient(array_merge(
+					Config::defaultRecipient(), $rc, ['id' => (string)$id]));
+				$e = Config::validateRecipient($rc, $ids, $users);
+				if ($e) {
+					$r['skipped']['fax-' . $id] = $e;
+					continue;
+				}
+				$ids[] = $rc['id'];
+				$this->saveRecipient($rc);
+				$r['recipients'][] = $rc['id'];
+			}
+			if ($replace)
+				foreach (array_keys($this->getRecipients()) as $id)
+					if (!in_array($id, $ids, true))
+						$this->deleteRecipient($id);
+		}
+		/* the fax detection of the inbound routes (the same) */
+		if (isset($data['didfax']) && is_array($data['didfax'])) {
+			$keys = [];
+			foreach ($data['didfax'] as $key => $f) {
+				$parts = explode('/', (string)$key, 2);
+				$k = count($parts) === 2 ? Config::didKey($parts[0], $parts[1]) : null;
+				$f = is_array($f) ? Config::normalizeDidFax(array_merge(
+					Config::defaultDidFax(), $f)) : null;
+				$e = $f === null ? ['detect' => _('Not a fax detection')] :
+					Config::validateDidFax($f);
+				if ($k === null)
+					$e['key'] = _('Not an inbound route');
+				if ($e || !$f['detect']) {
+					if ($e)
+						$r['skipped']['did-' . $key] = $e;
+					continue;
+				}
+				$keys[] = $k;
+				$this->saveDidFax($k, $f);
+			}
+			if ($replace)
+				foreach (array_keys($this->getDidFaxes()) as $k)
+					if (!in_array($k, $keys, true))
+						$this->saveDidFax($k, Config::defaultDidFax());
+		}
 		$this->reload();
 		$r['ok'] = !$r['settings'] && !$r['skipped'];
 		return $r;
@@ -213,13 +481,48 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		return Dialplan::CONTEXT . ',' . $name . ',1';
 	}
 
+	/* the destination of fax recipient id */
+	public static function recipientDestination($id)
+	{
+		return Dialplan::CONTEXT . ',' . Dialplan::RECIPIENT_PREFIX . $id . ',1';
+	}
+
+	/* fwconsole's path (FreePBX's AMPSBIN), for the dialplan's hangup
+	   handler */
+	public function fwconsole()
+	{
+		$dir = '';
+		try {
+			if (isset($this->FreePBX->Config))
+				$dir = (string)$this->FreePBX->Config->get('AMPSBIN');
+		} catch (\Throwable $e) {
+			$dir = '';
+		}
+		if (!preg_match('#^/[A-Za-z0-9/._-]{0,200}$#', $dir))
+			$dir = '/usr/sbin';
+		return rtrim($dir, '/') . '/fwconsole';
+	}
+
+	/* the dialplan: app-dmodem's extensions, the context of each */
+	public function dialplan()
+	{
+		$s = $this->getSettings();
+		$c = [Dialplan::CONTEXT => Dialplan::build($s, $this->getProfiles(),
+							   $this->getRecipients())];
+		if ($this->getRecipients())
+			$c[Dialplan::MAIL_CONTEXT] = ['s' => Dialplan::mailHandler(
+				$this->fwconsole())];
+		return $c;
+	}
+
 	/* what uses destination dest (FreePBX's other modules), empty if
 	   nothing or unknown */
 	private function destinationUsers($dest)
 	{
 		if (!function_exists('framework_check_destination_usage'))
 			return [];
-		$u = framework_check_destination_usage($dest);
+		/* (a list: FreePBX's Destinations goes through it) */
+		$u = framework_check_destination_usage([$dest]);
 		return is_array($u) ? $u : [];
 	}
 
@@ -228,6 +531,10 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	public function doConfigPageInit($page)
 	{
 		$req = $_REQUEST;
+		if ($page === 'did') {
+			$this->didPageInit($req);
+			return;
+		}
 		$action = isset($req['action']) ? $req['action'] : '';
 		if ($action === 'delete' && isset($req['profile'])) {
 			$name = (string)$req['profile'];
@@ -242,6 +549,44 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			$this->reload();
 			$this->message = ['success', sprintf(_('Profile %s deleted'), $name)];
 			$_REQUEST['view'] = '';
+			return;
+		}
+		if ($action === 'delete_recipient' && isset($req['recipient'])) {
+			$id = (string)$req['recipient'];
+			if ($this->getRecipient($id) === null)
+				return;
+			if ($this->destinationUsers(self::recipientDestination($id))) {
+				$this->message = ['danger', sprintf(_('Fax recipient %s is the destination of a route or another object: point those elsewhere first'), $id)];
+				$_REQUEST['view'] = 'recipient';
+				return;
+			}
+			$this->deleteRecipient($id);
+			$this->reload();
+			$this->message = ['success', sprintf(_('Fax recipient %s deleted'), $id)];
+			$_REQUEST['view'] = 'recipients';
+			return;
+		}
+		if ($action === 'save_recipient') {
+			$r = Config::normalizeRecipient($req);
+			$old = isset($req['original']) ? (string)$req['original'] : '';
+			if ($old !== '') {
+				/* a recipient keeps its id: it is its destination */
+				$r['id'] = $old;
+				$taken = [];
+			} else {
+				$taken = array_keys($this->getRecipients());
+			}
+			$this->errors = Config::validateRecipient($r, $taken,
+								  $this->usermanUsers());
+			if ($this->errors) {
+				$this->posted = $r;
+				$_REQUEST['view'] = 'recipient';
+				return;
+			}
+			$this->saveRecipient($r);
+			$this->reload();
+			$this->message = ['success', sprintf(_('Fax recipient %s saved'), $r['id'])];
+			$_REQUEST['view'] = 'recipients';
 			return;
 		}
 		if ($action === 'save_profile') {
@@ -308,7 +653,7 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		if (!isset($request['display']) || $request['display'] !== 'dmodem')
 			return [];
 		$view = isset($request['view']) ? $request['view'] : '';
-		if ($view !== 'form' && $view !== 'settings')
+		if ($view !== 'form' && $view !== 'settings' && $view !== 'recipient')
 			return [];
 		$b = [
 			'reset' => ['name' => 'reset', 'id' => 'reset',
@@ -317,6 +662,9 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 				     'value' => _('Submit')],
 		];
 		if ($view === 'form' && !empty($request['profile']))
+			$b['delete'] = ['name' => 'delete', 'id' => 'delete',
+					'value' => _('Delete')];
+		if ($view === 'recipient' && !empty($request['recipient']))
 			$b['delete'] = ['name' => 'delete', 'id' => 'delete',
 					'value' => _('Delete')];
 		return $b;
@@ -352,6 +700,21 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			$body = $this->view('profile', ['profile' => $p,
 				'editing' => $editing, 'errors' => $this->errors]);
 			break;
+		case 'recipients':
+			$body = $this->view('recipients', ['recipients' => $this->getRecipients(),
+				'settings' => $settings]);
+			break;
+		case 'recipient':
+			$id = isset($_REQUEST['recipient']) ? (string)$_REQUEST['recipient'] : '';
+			$r = $this->posted !== null ? $this->posted :
+				($id !== '' ? $this->getRecipient($id) : null);
+			$editing = $id !== '' && $this->getRecipient($id) !== null;
+			if ($r === null)
+				$r = Config::defaultRecipient();
+			$body = $this->view('recipient', ['recipient' => $r,
+				'editing' => $editing, 'users' => $this->usermanUsers(),
+				'errors' => $this->errors]);
+			break;
 		case 'settings':
 			$s = $this->posted !== null ? $this->posted : $settings;
 			$body = $this->view('settings', ['s' => $s,
@@ -369,8 +732,9 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		case 'dialplan':
 			$body = $this->view('dialplan', [
 				'conf' => Config::render($settings, $this->getProfiles()),
-				'dialplan' => Dialplan::render(Dialplan::build(
-					$settings, $this->getProfiles()))]);
+				'dialplan' => implode("\n", array_map(function ($name, $x) {
+					return Dialplan::render($x, $name);
+				}, array_keys($this->dialplan()), $this->dialplan()))]);
 			break;
 		default:
 			$common['view'] = '';
@@ -402,11 +766,25 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	public function doDialplanHook(&$ext, $engine, $priority)
 	{
 		require_once __DIR__ . '/lib/Apps.php';
-		$context = Dialplan::build($this->getSettings(), $this->getProfiles());
-		foreach ($context as $exten => $steps)
-			foreach ($steps as $st)
-				$ext->add(Dialplan::CONTEXT, $exten, '',
-					  new \ext_dmodem_app($st[0], $st[1]));
+		foreach ($this->dialplan() as $name => $context)
+			foreach ($context as $exten => $steps)
+				foreach ($steps as $st)
+					$ext->add($name, $exten, '',
+						  new \ext_dmodem_app($st[0], $st[1]));
+		/* the fax detection of the inbound routes, in Core's routes
+		   (its hook runs first, at 480) before their caller ID step */
+		$s = $this->getSettings();
+		foreach ($this->getDidFaxes() as $key => $f) {
+			$parts = explode('/', $key, 2);
+			$exten = Dialplan::didExten($parts[0], isset($parts[1]) ? $parts[1] : '');
+			foreach (Dialplan::DID_CONTEXTS as $ctx) {
+				if (!isset($ext->_exts[$ctx][' ' . $exten . ' ']))
+					continue;
+				foreach (Dialplan::didFax($s, $f) as $st)
+					$ext->splice($ctx, $exten, Dialplan::DID_HOOK,
+						     new \ext_dmodem_app($st[0], $st[1]));
+			}
+		}
 	}
 
 	/* the destinations for routes, IVRs and the like */
@@ -426,6 +804,12 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 				'description' => _('Receive a fax'),
 				'category' => 'D-Modem',
 			];
+		foreach ($this->getRecipients() as $id => $r)
+			$d[] = [
+				'destination' => self::recipientDestination($id),
+				'description' => sprintf(_('Fax to %s'), $r['name']),
+				'category' => 'D-Modem',
+			];
 		return $d;
 	}
 
@@ -441,6 +825,15 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		if ($name === Dialplan::FAX_EXTEN)
 			return ['description' => _('D-Modem: receive a fax'),
 				'edit_url' => 'config.php?display=dmodem&view=settings'];
+		$pre = Dialplan::RECIPIENT_PREFIX;
+		if (strpos($name, $pre) === 0) {
+			$id = substr($name, strlen($pre));
+			$r = $this->getRecipient($id);
+			if ($r !== null)
+				return ['description' => sprintf(_('D-Modem: fax to %s'), $r['name']),
+					'edit_url' => 'config.php?display=dmodem&view=recipient&recipient=' .
+						urlencode($id)];
+		}
 		if ($this->getProfile($name) === null)
 			return [];
 		return ['description' => sprintf(_('D-Modem profile %s'), $name),
@@ -465,12 +858,36 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		return '';
 	}
 
+	/* what the engine's fax machine can do, as lines of text: app_dmodem
+	   tells it (dmodem fax show capabilities), dmodem-ari's are fixed
+	   (its T.38 as the settings have it); empty if the engine is not
+	   there */
+	public function faxCapabilities(array $settings, $engine_ok)
+	{
+		if (!$engine_ok)
+			return '';
+		if ($settings['engine'] !== 'ari') {
+			$out = $this->cli('dmodem fax show capabilities');
+			return $out === null ? '' : trim($out);
+		}
+		return implode("\n", [
+			'Technology:   dmodem-ari (libdmodem T.30)',
+			'Directions:   send, receive',
+			'Transports:   audio (G.711)' . ($settings['ari_t38'] ?
+				', T.38 (versions 0 to 3, on the SIP side)' : ''),
+			'Modems:       V.17, V.29, V.27ter, 2400 to 14400 bit/s',
+			'ECM:          yes',
+			'Coding:       MH, MR, MMR, T.85 (with ECM)',
+			'Files:        TIFF (several in one fax)',
+		]);
+	}
+
 	/* the check page's findings: the engine's state, and each PJSIP
 	   endpoint's settings and what they mean */
 	public function check(array $settings)
 	{
 		$c = ['manager' => true, 'engine' => $settings['engine'],
-		      'engine_ok' => null, 'endpoints' => []];
+		      'engine_ok' => null, 'endpoints' => [], 'fax' => ''];
 		if ($settings['engine'] === 'ari') {
 			$out = $this->cli('ari show apps');
 			$c['engine_ok'] = $out === null ? null :
@@ -484,6 +901,7 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			$c['manager'] = false;
 			return $c;
 		}
+		$c['fax'] = $this->faxCapabilities($settings, $c['engine_ok']);
 		$names = LineCheck::endpointNames($this->cli('pjsip show endpoints'));
 		foreach (array_slice($names, 0, self::MAX_ENDPOINTS) as $n) {
 			$s = LineCheck::endpointSettings(
