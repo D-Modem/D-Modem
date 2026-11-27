@@ -69,7 +69,12 @@ void FskDemod::init(float mark, float space, float baud, s32 rate)
 		lp_re[i].lowpass(bw, 0.707f, srate);
 		lp_im[i].lowpass(bw, 0.707f, srate);
 	}
-	pwr.init(8.0f / baud > 0.02f ? 8.0f / baud : 0.02f, srate);
+	/* the level meter: 8 bits, 20 ms at least and 50 ms at most.  At
+	   75 baud (V.23's backward channel) circuit 122 must turn ON in
+	   less than 80 ms (8.3.2/V.23) */
+	float tc = 8.0f / baud;
+	tc = tc < 0.02f ? 0.02f : tc > 0.05f ? 0.05f : tc;
+	pwr.init(tc, srate);
 	/* circuit 109 ON to OFF: 20 to 80 ms at 300 baud (8.2.2/V.21), 5 to
 	   15 ms at 1200 baud and 15 to 80 ms at 75 baud (8.3.2/V.23).  The
 	   end of the carrier on a meter of one bit (4 ms at most), held for
@@ -79,6 +84,11 @@ void FskDemod::init(float mark, float space, float baud, s32 rate)
 	fast.init(1.0f / baud < 0.004f ? 1.0f / baud : 0.004f, srate);
 	low_n = 0;
 	low_max = static_cast<s32>(hold * srate);
+	/* circuit 109 OFF to ON in 10 to 20 ms at 1200 baud (8.3.2/V.23,
+	   after the call set up): at 600 baud and more, ON after 12 ms of
+	   the fast meter over the ON level, at all levels */
+	on_n = 0;
+	on_min = baud >= 600 ? static_cast<s32>(0.012f * srate) : 0;
 	dev_alpha = 1.0f / (0.02f * srate);
 	/* base band power of a tone of amplitude A is A^2/4 */
 	on_level = 145.0f * 145.0f / 4;
@@ -94,7 +104,7 @@ void FskDemod::init(float mark, float space, float baud, s32 rate)
 s16 FskDemod::run(float x)
 {
 	cplx z, d;
-	float dev, p;
+	float dev, p, f;
 	s16 dec, bit = -1, i;
 
 	x = pre.run(x);
@@ -112,10 +122,13 @@ s16 FskDemod::run(float x)
 	/* carrier detector: level plus a sane frequency deviation, so that
 	   e.g. a 2100 Hz answer tone is not taken for a V.21 carrier */
 	p = pwr.run(sqrtf(cplx_pow(z)));
-	low_n = fast.run(sqrtf(cplx_pow(z))) < off_level ? low_n + 1 : 0;
+	f = fast.run(sqrtf(cplx_pow(z)));
+	low_n = f < off_level ? low_n + 1 : 0;
+	on_n = f > on_level ? on_n + 1 : 0;
 	dev_avg += dev_alpha * (fabsf(fabsf(dev) - half_shift) - dev_avg);
 	if (!carrier) {
-		if (p > on_level && dev_avg < half_shift * 0.75f + 40)
+		if ((on_min ? on_n >= on_min : p > on_level) &&
+		    dev_avg < half_shift * 0.75f + 40)
 			carrier = 1;
 	} else if (low_n >= low_max || dev_avg > half_shift * 1.5f + 80)
 		carrier = 0;
@@ -207,6 +220,23 @@ struct FskPump : PumpBase<FskPump, fsk_state> {
 	const char *tag() const { return par->name; }
 	/* in data mode (the carrier watched, no handshake timeout) */
 	bool in_data() const { return state == FSK_DATA; }
+	/* V.21 or V.23 (the ITU modes, with the times of 8.2.2/V.21 and
+	   8.3.2/V.23) */
+	bool itu() const { return dp.id == DP_V21 || dp.id == DP_V23; }
+	/* the least time in FSK_TRAIN (ms): 350 for an ITU caller, which
+	   so links up after the answerer; else 200 */
+	s32 train_ms() const { return caller && itu() && !after_v8 ? 350 : 200; }
+	/* the far mark (or carrier) that FSK_TRAIN waits for (ms): 400
+	   after V.8, 300 for a V.21 answerer (circuit 109 ON 300 to 700
+	   ms after the far mark starts), else 150.  (A V.23 answerer
+	   receives the backward channel: its detector is circuit 122,
+	   ON in less than 80 ms) */
+	s32 mark_ms() const
+	{
+		if (after_v8)
+			return 400;
+		return !caller && dp.id == DP_V21 ? 300 : 150;
+	}
 	float tx_sample(s16 data);
 	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
 		  s32 max_frag);
@@ -372,11 +402,18 @@ s16 FskPump::sample(float x, float *y)
 		   and 400 ms of it, the answerer starting its own as
 		   it starts listening to ours, which it needs 150
 		   ms of) */
-		if (count >= ms2samples(200, srate) &&
+		/* (V.21 8.2.2 and V.23 8.3.2: during the call set up,
+		   circuit 109 comes ON 300 to 700 ms after the far
+		   mark starts.  A V.21 answerer waits for 300 ms of
+		   the caller's mark; the caller, which starts its mark
+		   150 ms into the answerer's, stays in its mark for
+		   350 ms, thus it is ON 500 ms after the answerer's
+		   mark, and after the answerer) */
+		if (count >= ms2samples(train_ms(), srate) &&
 		    ((caller && !after_v8) ||
 		     (automode && dp.id == DP_B103) ?
 		     carrier_run : mark_count) >=
-		    ms2samples(after_v8 ? 400 : 150, srate)) {
+		    ms2samples(mark_ms(), srate)) {
 			set_state(FSK_DATA);
 			ret = connect_at(static_cast<s32>(par->tx_baud),
 					 static_cast<s32>(par->rx_baud));

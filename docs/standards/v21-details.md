@@ -98,16 +98,20 @@ answer tone as a V.21 carrier.
 
 ### Corrections (2026-11)
 
-A check against clause 8 found two errors in the carrier detector:
+A check against clause 8 found two errors in the carrier detector, and
+one error in the call set up:
 
 | Error | Correction |
 |---|---|
 | The detector turned ON at about -40.5 dBm0. V.21 requires ON above -43 dBm (8.3). | The detector turns ON at about -42.7 dBm0 and OFF at about -46.5 dBm0. The hysteresis is about 4 dB. |
 | After the far carrier stopped, the detector stayed ON for up to about 220 ms. V.21 requires ON to OFF in 20 ms to 80 ms (8.2.2). | A second power meter (one bit, 4 ms at most) finds the end of the carrier. The detector turns OFF when this meter stays below the OFF level for 5.4 bits (18 ms at 300 baud). The time is now about 25 ms to 60 ms. |
+| In the call set up, the answer modem set circuit 109 ON (CONNECT) about 170 ms after the mark of the call modem started. V.21 requires 300 ms to 700 ms (8.2.2, Note 2). | The answer modem waits for 300 ms of mark (about 320 ms in total). The call modem stays in its mark for 350 ms. Thus, it sets circuit 109 ON about 500 ms after the mark of the answer modem starts, after the answer modem. |
 
 This page takes 0 dBm0 at the codec as 0 dBm at the line. The tests
 `Fsk.CarrierThresholds` and `Fsk.CarrierOffTime`
-(`dsp/test/pump_test.cpp`) measure the levels and the time. The same
+(`dsp/test/pump_test.cpp`) measure the levels and the time.
+`Fsk.CallSetupCarrierOnTime` measures the call set up times of V.21 and
+V.23 at the two modems. The same
 detector is in V.23, Bell 103 and Bell 202. V.23 has the same thresholds
 as V.21, and shorter OFF times. `Fsk.V23CarrierOffTime` measures the
 OFF times of V.23 (5 ms to 15 ms at 1200 baud, 15 ms to 80 ms at 75

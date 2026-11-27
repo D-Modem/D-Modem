@@ -260,6 +260,9 @@ struct FskDemod {
 				   carrier's end */
 	s32 low_n, low_max;     /* samples of fast under off_level; the
 				   samples for OFF (5.4 bits, 20 ms at most) */
+	s32 on_n, on_min;       /* samples of fast over on_level; 0, or
+				   the samples for ON from fast alone (12
+				   ms at 600 baud and more) */
 	float dev_avg;          /* average |frequency deviation| */
 	float dev_alpha;
 	float on_level, off_level;

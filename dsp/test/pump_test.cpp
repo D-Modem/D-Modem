@@ -13,9 +13,11 @@
  */
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -1054,6 +1056,91 @@ TEST(Fsk, V23CarrierOffTime)
 		const double b = fsk_off_ms(l, 390, 450, 75);
 		EXPECT_GE(b, 15.0) << l << " dBm0";
 		EXPECT_LE(b, 80.0) << l << " dBm0";
+	}
+}
+
+/* ms from the start of a mark tone at dbm0 (after 1 s of silence) to
+   carrier ON, for the FSK channel mark/space at baud, at 8000 Hz; 1000
+   if none in 1 s */
+static double fsk_on_ms(double dbm0, float mark, float space, float baud)
+{
+	dsp::FskDemod d;
+	d.init(mark, space, baud, 8000);
+	for (int i = 0; i < 8000; i++)
+		d.run(0);
+	const double a = 22300 * pow(10, dbm0 / 20);
+	for (int i = 0; i < 8000; i++) {
+		d.run(static_cast<float>(a * sin(2 * M_PI * mark * i / 8000.0)));
+		if (d.carrier)
+			return i / 8.0;
+	}
+	return 1000;
+}
+
+/* 8.3.2/V.23: circuit 109 (the 1200 baud channel) OFF to ON in 10 ms to
+   20 ms after the call set up, and circuit 122 (the 75 baud channel) in
+   less than 80 ms, from 3 dB over the ON level (-43 dBm) to 0 dBm0 */
+TEST(Fsk, V23CarrierOnTime)
+{
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -39.5 }) {
+		double fwd = fsk_on_ms(l, 1300, 2100, 1200);
+		EXPECT_GE(fwd, 10) << l;
+		EXPECT_LE(fwd, 20) << l;
+		EXPECT_LT(fsk_on_ms(l, 390, 450, 75), 80) << l;
+	}
+}
+
+/* the last time (s) in the samples of file that a 10 ms block goes from
+   below to above amplitude 500, before limit_s (at srate); -1 if none */
+static double fsk_onset(const std::string &file, double limit_s, int srate)
+{
+	FILE *f = fopen(file.c_str(), "rb");
+	if (!f)
+		return -1;
+	const int blk = srate / 100;
+	std::vector<s16> b(blk);
+	double at = -1;
+	bool was = false;
+	for (long n = 0; fread(b.data(), sizeof(s16), blk, f) ==
+		     static_cast<size_t>(blk); n += blk) {
+		if (n >= limit_s * srate)
+			break;
+		bool on = false;
+		for (s16 v : b)
+			on = on || abs(v) > 500;
+		if (on && !was)
+			at = static_cast<double>(n) / srate;
+		was = on;
+	}
+	fclose(f);
+	return at;
+}
+
+/* 8.2.2/V.21 and 8.3.2/V.23: in the call set up, circuit 109 (here the
+   CONNECT) comes ON 300 ms to 700 ms after the far mark starts, at each
+   V.21 side and at the V.23 caller (the V.23 answerer has circuit 122);
+   and the answerer before the caller, which then sends no data that the
+   answerer cannot receive yet */
+TEST(Fsk, CallSetupCarrierOnTime)
+{
+	for (int dp : { 21, 23 }) {
+		LoopbackConfig c = line(dp, 40, 6);
+		std::string dump = testing::TempDir() + "fsk_setup_" +
+			std::to_string(dp);
+		c.dump = dump.c_str();
+		LoopbackResult r = loopback_run(c);
+		ASSERT_TRUE(r.side[0].connected && r.side[1].connected) << dp;
+		for (int k = 0; k < (dp == 21 ? 2 : 1); k++) {
+			double con = r.side[k].connect_s;
+			double on = fsk_onset(dump + (k ? ".a" : ".c"), con,
+					      c.srate);
+			ASSERT_GE(on, 0) << dp << " side " << k;
+			EXPECT_GE(con - on, 0.29) << dp << " side " << k;
+			EXPECT_LE(con - on, 0.71) << dp << " side " << k;
+		}
+		EXPECT_LE(r.side[1].connect_s, r.side[0].connect_s) << dp;
+		remove((dump + ".a").c_str());
+		remove((dump + ".c").c_str());
 	}
 }
 
