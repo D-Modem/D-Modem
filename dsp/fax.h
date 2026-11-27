@@ -91,6 +91,17 @@ struct FaxTx {
 #define V29_OFF_AMP     706.0f
 #define V29_OFF_MS      20
 
+/* V.17's circuit 109 OFF time (3.6/V.17: 30 to 50 ms after the level
+   falls): the OFF condition 27 ms (with the detector's 5 to 14 ms) */
+#define V17_OFF_MS      27
+
+/* V.33's circuit 109 (5.2/V.33, a leased line): ON at -27 dBm0 (above
+   -26), OFF at -32 dBm0 (below -33, 5 dB of hysteresis), the OFF
+   condition 30 ms (with the detector's 5 to 14 ms: 40 +- 10) */
+#define V33_ON_AMP      996.0f
+#define V33_OFF_AMP     560.0f
+#define V33_OFF_MS      30
+
 struct FaxRxMemory;
 
 struct FaxRx {

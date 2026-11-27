@@ -332,6 +332,62 @@ TEST(V29, Circuit109)
 	}
 }
 
+/* the V.17 receiver's circuit 109 at 8000 Hz (v33: the 4-wire V.33
+   receiver's, with V33_ON_AMP, V33_OFF_AMP and V33_OFF_MS): after 1 s
+   of silence and 2 s of a V.17 14400 bit/s signal (ones) at dbm0, ON
+   (true) or OFF; *off_ms: the ms to OFF after the signal stops */
+static bool v17_109(double dbm0, double *off_ms, bool v33 = false)
+{
+	FaxTx t;
+	t.init(FM_V17_14400, 0, 8000, v29_ones, nullptr);
+	FaxRx r;
+	EXPECT_EQ(r.init(FM_V17_14400, 0, 8000, v29_sink, nullptr, nullptr),
+		  0);
+	if (v33)
+		r.set_detector(V33_ON_AMP, V33_OFF_AMP, V33_OFF_MS);
+	/* the transmitter's rms (3920) to dbm0 */
+	const double g = 15768 * pow(10, dbm0 / 20) / 3920;
+	for (int i = 0; i < 8000; i++)
+		r.sample(0);
+	for (int i = 0; i < 16000; i++)
+		r.sample(static_cast<float>(g * t.sample()));
+	bool on = r.carrier != 0;
+	int n = 0;
+	for (; r.carrier && n < 8000; n++)
+		r.sample(0);
+	*off_ms = n / 8.0;
+	r.release();
+	return on;
+}
+
+/* 3.6 and 3.7/V.17: circuit 109 ON above -43 dBm, OFF below -48 dBm,
+   ON to OFF 30 to 50 ms after the level falls */
+TEST(V17, Circuit109)
+{
+	double off;
+	EXPECT_TRUE(v17_109(-42.5, &off));
+	EXPECT_FALSE(v17_109(-48.5, &off));
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -40.0 }) {
+		ASSERT_TRUE(v17_109(l, &off)) << l;
+		EXPECT_GE(off, 30) << l << " dBm0";
+		EXPECT_LE(off, 50) << l << " dBm0";
+	}
+}
+
+/* 5.2/V.33 (a leased line): circuit 109 ON above -26 dBm, OFF below
+   -33 dBm, ON to OFF in 40 +- 10 ms */
+TEST(V33, Circuit109)
+{
+	double off;
+	EXPECT_TRUE(v17_109(-25.5, &off, true));
+	EXPECT_FALSE(v17_109(-33.5, &off, true));
+	for (double l : { 0.0, -10.0, -20.0, -25.0 }) {
+		ASSERT_TRUE(v17_109(l, &off, true)) << l;
+		EXPECT_GE(off, 30) << l << " dBm0";
+		EXPECT_LE(off, 50) << l << " dBm0";
+	}
+}
+
 /*
  *    the page coding and TIFF files
  *

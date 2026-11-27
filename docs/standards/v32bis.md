@@ -26,8 +26,8 @@ V.32 bis is [V.32](v32.md) with more rates. It sends data at 14400,
 ## Where V.32 bis is used
 
 V.32 bis was the standard 14400 bit/s modem before V.34. A modern modem
-uses it after V.8, when the far modem does not have V.34. V.17 (fax) and
-V.33 (leased lines) use its trellis code and its points.
+uses it after V.8, when the far modem does not have V.34. [V.17](v17.md) (fax) and
+[V.33](v33.md) (leased lines) use its trellis code and its points.
 
 ## Related standards
 
@@ -36,7 +36,7 @@ V.33 (leased lines) use its trellis code and its points.
 - [V.25](v25.md): the answer tone before the start-up.
 - [V.22 bis](v22bis.md): Annex A gives an automode start-up that finds
   V.22 bis and V.22 modems.
-- V.17 and V.33: the same trellis code and points.
+- [V.17](v17.md) and [V.33](v33.md): the same trellis code and points.
 - V.54: the test loops.
 
 ## V.32 bis in D-Modem

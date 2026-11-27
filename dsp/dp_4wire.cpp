@@ -252,6 +252,11 @@ s16 FourWirePump::rx_reset()
 		if (dp.id == DP_V29)
 			rx[k].set_detector(V29_ON_AMP, V29_OFF_AMP,
 					   V29_OFF_MS);
+		/* (5.2/V.33: ON above -26 dBm, OFF below -33 dBm, OFF in
+		   40 +- 10 ms) */
+		if (dp.id == DP_V33)
+			rx[k].set_detector(V33_ON_AMP, V33_OFF_AMP,
+					   V33_OFF_MS);
 		if (dp.id == DP_V33 &&
 		    rx[k].set_bridge(rx_mods[k] == FM_V17_14400 ?
 					     V33_RATE_14400 : V33_RATE_12000,

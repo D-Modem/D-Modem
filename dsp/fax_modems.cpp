@@ -619,6 +619,9 @@ s16 FaxRx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_put_bit_t p
 	det_alpha = 1.0f / (0.005f * srate_);
 	det_on_amp = 150;
 	det_off_amp = 100;
+	/* (V.17: OFF 30 to 50 ms after the signal falls; V.27ter 5 to 15
+	   ms, the detector's own) */
+	det_off_min = is_v17(mod_) ? V17_OFF_MS * srate_ / 1000 : 0;
 	det_hold = srate_ / 25;       /* learn the noise floor first */
 	det_floor = 1e12f;
 	agc_alpha = qam.agc_alpha;
