@@ -1165,7 +1165,7 @@ same(count(preg_grep('/\.pdf$/', $gsRuns[1])), 3,
 same($m->getFaxJob($jid)['pages'], 1, 'queueFax: the pages counted');
 ok(is_file("$sdir/out-$jid.tif") && !is_dir("$sdir/out-$jid.tif.d"), 'queueFax: the fax file, no temporary files');
 $r = $m->queueFax(['number' => '5550100'], [['x.html', '<html>']], 1800000000, $fakeGs);
-ok(!$r['ok'] && strpos($r['errors']['docs'], 'not a PDF or TIFF') !== false, 'queueFax: not a document');
+ok(!$r['ok'] && strpos($r['errors']['docs'], 'not a PDF, TIFF or Office') !== false, 'queueFax: not a document');
 $r = $m->queueFax(['number' => '5550100'], [['x.pdf', '%PDF-']], 1800000000,
 		  function ($c) { return [1, 'Error: /syntaxerror']; });
 ok(!$r['ok'] && strpos($r['message'], '/syntaxerror') !== false, 'queueFax: Ghostscript\'s error');
@@ -1175,6 +1175,57 @@ if (is_executable('/usr/bin/gs')) {
 			  [['b.tif', mh_white_tiff(4)]], 1800000001);
 	ok($r['ok'] && $m->getFaxJob($r['id'])['pages'] === 2, 'queueFax: Ghostscript\'s own pages (cover + 1)');
 	if (!$r['ok'] || $m->getFaxJob($r['id'])['pages'] !== 2)
+		echo "  ($r[message])\n";
+	$m->cancelFax($r['id']);
+}
+/* Office documents: LibreOffice makes a PDF file, then Ghostscript the
+   fax pages */
+same(FaxSend::docKind('a.DOCX', "PK\3\4"), 'office', 'FaxSend: an Office document by its name');
+same(FaxSend::docKind('a.docx', "%PDF-1.4"), 'pdf', 'FaxSend: the bytes come first');
+same(FaxSend::docKind('a.exe', 'MZ'), null, 'FaxSend: not an Office document');
+$cmd = FaxSend::officeCommand('/usr/bin/soffice', '/t/src-0.docx', '/t');
+ok($cmd[0] === '/usr/bin/soffice' && in_array('--headless', $cmd, true) &&
+   in_array('-env:UserInstallation=file:///t/profile', $cmd, true) &&
+   array_slice($cmd, -3) === ['--outdir', '/t', '/t/src-0.docx'],
+   'FaxSend: the LibreOffice command (no shell, its own profile)');
+ok(isset(Config::validateSettings(array_merge($st, ['fax_office' => 'soffice; rm']))['fax_office']) &&
+   !isset(Config::validateSettings(array_merge($st, ['fax_office' => '']))['fax_office']),
+   'settings: the LibreOffice path, or empty');
+/* a stand-in LibreOffice (a PDF file, and a profile folder to delete)
+   with the stand-in Ghostscript */
+$officeRuns = [];
+$officeCode = 0;
+$fakeRun = function (array $c) use (&$officeRuns, &$officeCode, $fakeGs) {
+	if (!in_array('--convert-to', $c, true))
+		return $fakeGs($c);
+	$officeRuns[] = $c;
+	$dir = $c[count($c) - 2];
+	mkdir("$dir/profile/user", 0700, true);
+	file_put_contents("$dir/profile/user/.lock", 'x');
+	if ($officeCode === 0)
+		file_put_contents($dir . '/' . pathinfo(end($c), PATHINFO_FILENAME) . '.pdf', "%PDF-1.4\n");
+	return [$officeCode, $officeCode === 0 ? '' : 'Error: source file could not be loaded'];
+};
+$gsRuns = [];
+$r = $m->queueFax(['number' => '5550107', 'notify' => 'never'],
+		  [['a.docx', "PK\3\4word"], ['b.tif', $tif]], 1800000000, $fakeRun);
+ok($r['ok'] && count($officeRuns) === 1 && count($gsRuns) === 2, 'queueFax: an Office document');
+ok(!is_dir("$sdir/out-$r[id].tif.d"), 'queueFax: the LibreOffice files deleted');
+$m->cancelFax($r['id']);
+$officeCode = 1;
+$r = $m->queueFax(['number' => '5550107'], [['a.odt', 'x']], 1800000000, $fakeRun);
+ok(!$r['ok'] && strpos($r['message'], 'did not make a PDF file of a.odt') !== false &&
+   strpos($r['message'], 'could not be loaded') !== false && !is_dir("$sdir/out-.tif.d"),
+   'queueFax: LibreOffice fails');
+$m->saveSettings(['fax_office' => '']);
+$r = $m->queueFax(['number' => '5550107'], [['a.odt', 'x']], 1800000000, $fakeRun);
+ok(!$r['ok'] && strpos($r['message'], 'need LibreOffice') !== false, 'queueFax: no LibreOffice set');
+$m->saveSettings(['fax_office' => '/usr/bin/soffice']);
+if (is_executable('/usr/bin/soffice') && is_executable('/usr/bin/gs')) {
+	$r = $m->queueFax(['number' => '5550108', 'notify' => 'never'],
+			  [['note.txt', "A fax from LibreOffice.\n"]], 1800000001);
+	ok($r['ok'] && $m->getFaxJob($r['id'])['pages'] === 1, 'queueFax: the real LibreOffice and Ghostscript');
+	if (!$r['ok'])
 		echo "  ($r[message])\n";
 	$m->cancelFax($r['id']);
 }
@@ -1261,6 +1312,72 @@ ok(strpos($h, 'enctype="multipart/form-data"') !== false && strpos($h, 'name="do
 ok(strpos(dmodem_get($m, []), 'view=send') !== false, 'the page: a Send fax tab');
 dmodem_post($m, ['action' => 'send_fax', 'number' => 'x']);
 ok(isset($m->errors['number']) && $m->message[0] === 'danger', 'send_fax: a bad number refused');
+/* the send API */
+same(Config::validateSettings(array_merge($st, ['fax_api' => true]))['fax_api_token'],
+     'The send API needs a token', 'settings: the send API needs a token');
+ok(isset(Config::validateSettings(array_merge($st, ['fax_api_token' => 'short']))['fax_api_token']),
+   'settings: a short token refused');
+$token = str_repeat('a1', 20);
+$m->saveSettings(['fax_api' => true, 'fax_api_token' => $token]);
+$setting = [];
+ok($m->ajaxRequest('sendfax', $setting) && $setting['authenticate'] === true && $setting['allowremote'] === false,
+   'send API: without the token, a signed-in administrator');
+$_SERVER['HTTP_X_DMODEM_TOKEN'] = $token;
+$setting = [];
+ok($m->ajaxRequest('faxstatus', $setting) && $setting['authenticate'] === false && $setting['allowremote'] === true,
+   'send API: the token in X-Dmodem-Token');
+$setting = [];
+$m->ajaxRequest('faxpdf', $setting);
+same($setting['authenticate'], true, 'send API: the token opens only the send API');
+$_SERVER['HTTP_X_DMODEM_TOKEN'] = $token . 'x';
+$setting = [];
+$m->ajaxRequest('sendfax', $setting);
+same($setting['authenticate'], true, 'send API: a wrong token');
+unset($_SERVER['HTTP_X_DMODEM_TOKEN']);
+$_SERVER['HTTP_AUTHORIZATION'] = "Bearer $token";
+$setting = [];
+$m->ajaxRequest('sendfax', $setting);
+same($setting['authenticate'], false, 'send API: the token as Authorization: Bearer');
+$m->saveSettings(['fax_api' => false]);
+$setting = [];
+$m->ajaxRequest('sendfax', $setting);
+same($setting['authenticate'], true, 'send API: off, the token opens nothing');
+unset($_SERVER['HTTP_AUTHORIZATION']);
+$m->saveSettings(['fax_api' => true]);
+$_REQUEST = ['command' => 'sendfax'];
+$_SERVER['REQUEST_METHOD'] = 'GET';
+ok(!$m->ajaxHandler()['status'], 'send API: POST only');
+same($m->ajaxCustomHandler(), false, 'send API: not a file command');
+$_SERVER['REQUEST_METHOD'] = 'POST';
+$_POST = ['number' => '5550109', 'cover' => 'yes', 'message' => 'API', 'notify' => 'never'];
+$m->faxRun = $fakeGs;
+$am->sent = [];
+$a = $m->ajaxHandler();
+ok($a['status'] && FaxSend::idOk($a['job']) && count($am->sent) === 1, 'send API: sendfax queued and called');
+$_REQUEST = ['command' => 'faxstatus', 'job' => $a['job']];
+$st2 = $m->ajaxHandler();
+ok($st2['status'] && $st2['state'] === 'sending' && $st2['number'] === '5550109' && $st2['attempts'] === 1,
+   'send API: faxstatus of a fax on a call');
+$m->faxSent($a['job'], '1800003000.1', 'SUCCESS', 1, 14400, 'OK', '', null, 1800003000);
+$st2 = $m->ajaxHandler();
+ok($st2['status'] && $st2['state'] === 'done' && $st2['result'] === 'SUCCESS' && $st2['uniqueid'] === '1800003000.1',
+   'send API: faxstatus of a sent fax');
+$_REQUEST = ['command' => 'faxstatus', 'job' => 'j1'];
+ok(!$m->ajaxHandler()['status'], 'send API: faxstatus of no such job');
+$_REQUEST = ['command' => 'sendfax'];
+$_POST = ['number' => 'x'];
+$a = $m->ajaxHandler();
+ok(!$a['status'] && isset($a['errors']['number']), 'send API: a bad number refused');
+$m->deleteFax('1800003000.1');
+$m->faxRun = null;
+/* the settings form keeps the token when the field is empty */
+$m->saveSettings(['fax_api' => false]);
+dmodem_post($m, array_merge($m->getSettings(), ['action' => 'save_settings', 'fax_api' => 'yes',
+	'fax_api_token' => '', 'ari_password' => '', 'fax_dir' => '/var/spool/asterisk/fax']));
+ok($m->getSettings()['fax_api'] && $m->getSettings()['fax_api_token'] === $token,
+   'settings form: an empty token keeps the token');
+$m->saveSettings(['fax_api' => false, 'fax_api_token' => '', 'fax_dir' => $sdir]);
+$_REQUEST = $_POST = [];
 /* the dialplan of a sent fax */
 $dp = dmodem_dialplan($m);
 ok(strpos($dp, "[app-dmodem-faxout]\n") !== false && strpos($dp, "exten => s,1,NoOp(D-Modem fax job \${FILTER(a-z0-9,\${DMODEMFAXJOB})})\n") !== false,

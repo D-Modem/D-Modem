@@ -2,7 +2,7 @@
 
 This page gives the technical details for [FreePBX: the D-Modem module](freepbx.md), the plain-English overview. Read the overview first. This page keeps the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
-`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.7, for FreePBX 16
+`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.8, for FreePBX 16
 and 17) for [app_dmodem](asterisk.md) or [dmodem-ari](ari.md). It
 gives these items:
 
@@ -39,7 +39,7 @@ command. The module is only PHP. Nothing in it is compiled.
    FreePBX and install it from the command line:
 
    ```
-   tar xzf dmodem-16.0.7.tgz -C /var/www/html/admin/modules/
+   tar xzf dmodem-16.0.8.tgz -C /var/www/html/admin/modules/
    fwconsole ma installlocal dmodem
    fwconsole reload
    ```
@@ -48,6 +48,10 @@ command. The module is only PHP. Nothing in it is compiled.
 3. **Ghostscript**, to send faxes from the Send fax tab or with
    `fwconsole dmodem sendfax`: `dnf install ghostscript` or
    `apt install ghostscript`. Received faxes do not need it.
+4. **LibreOffice** (optional), to send Office documents:
+   `dnf install libreoffice-headless` or `apt install
+   libreoffice-core-nogui libreoffice-writer-nogui` (and the Calc and
+   Impress parts for spreadsheets and presentations).
 
 ## Use
 
@@ -127,6 +131,10 @@ a profile if a route or a different object still refers to it.
     defaults of the send page;
   - **Ghostscript** (`/usr/bin/gs`): the program that makes the fax
     pages from PDF files;
+  - **LibreOffice** (`/usr/bin/soffice`): the program that makes PDF
+    files from Office documents. Empty: only PDF and TIFF files;
+  - **Send API** (off) and **Send API token**: the
+    [send API](#send-api). An empty token field keeps the token;
   - **Cover page**: the company name, the address (5 lines at most),
     the telephone, the web site and the footer.
 - **Fax to email**, for the [fax recipients](#fax-recipients):
@@ -262,7 +270,7 @@ outbound routes):
 | field | notes |
 |---|---|
 | Fax number | Digits, `*`, `#` and `+`. |
-| Documents | PDF or TIFF files, 10 at most, 20 MB at most each. They go in this order. |
+| Documents | PDF, TIFF or Office files, 10 at most, 20 MB at most each. They go in this order. |
 | Cover page | A first page with the company lines of the settings, the date, To, the fax number, From, the number of pages and the message. |
 | To, From, Message | One line of 100 characters (To, From). The message has 3000 characters at most, and 36 lines show on the page. |
 | Tries again | 0 to 3 (the settings give the default). |
@@ -271,7 +279,12 @@ outbound routes):
 When you click **Send**, the module makes the fax file
 `<fax directory>/out-<job>.tif`:
 
-1. A TIFF document goes into a PDF file (`lib/FaxPdf.php`).
+1. A TIFF document goes into a PDF file (`lib/FaxPdf.php`). LibreOffice
+   makes a PDF file of an Office document (`soffice --headless
+   --convert-to pdf`, with its own profile in the temporary folder).
+   The module finds an Office document by the extension of its name:
+   `.doc`, `.docx`, `.odt`, `.rtf`, `.txt`, `.xls`, `.xlsx`, `.ods`,
+   `.ppt`, `.pptx` and `.odp`.
 2. Ghostscript makes the fax pages of the documents (`tiffg4`, 204 x
    196 dpi, 1728 dots a line, the PDF paper size of the settings). The
    module counts these pages for the cover page.
@@ -279,8 +292,8 @@ When you click **Send**, the module makes the fax file
    our own PDF code) and the documents.
 
 Then the job goes into the queue, and the first try starts
-immediately. The module runs Ghostscript without a shell, with
-`-dSAFER`.
+immediately. The module runs Ghostscript (with `-dSAFER`) and
+LibreOffice without a shell.
 
 A try is a call: the manager's `Originate` action dials
 `Local/<number>@<dial-out context>`. When the far end answers, the call
@@ -301,6 +314,44 @@ goes by email if the job says so.
 Below the form, the page shows the faxes that wait, with their state,
 tries and last result. **Cancel** removes a fax that is not on a call.
 It goes into the log as `CANCELLED`.
+
+### Send API
+
+Programs send faxes through the Ajax handler of FreePBX
+(`ajax.php?module=dmodem`). The answers are JSON.
+
+| command | method | parameters | answer |
+|---|---|---|---|
+| `sendfax` | POST, `multipart/form-data` | The fields of the [Send fax](#send-fax) form: `number`, `docs[]` (the files), `cover`, `to`, `from`, `message`, `retries`, `notify`, `email`. | `status`, `message`, `job` (the job ID), `errors` (field: message). |
+| `faxstatus` | GET or POST | `job` | `status`, `job`, `state`, `number`, `pages`, `attempts`. In the queue (`queued`, `sending`, `retry`): also `next` and `last`. Done (`done`): also `result` (`SUCCESS`, `FAILED`, `NOANSWER`, `CANCELLED` and others), `uniqueid` and `time`. |
+
+An administrator who is signed in can use the commands. A program must
+send the token:
+
+1. In the settings, set **Send API** on, and set a **Send API token**
+   (32 to 128 letters, digits, `_` and `-`, for example `openssl rand
+   -hex 32`).
+2. Send the token in the `X-Dmodem-Token` header, or as
+   `Authorization: Bearer <token>`.
+
+With a good token, the module tells FreePBX not to examine the session
+and the referrer (`authenticate` and `allowremote`). The token opens
+only `sendfax` and `faxstatus`. The module compares the token with
+`hash_equals()`. Use HTTPS, because the token is a password.
+
+For example:
+
+```sh
+curl -H "X-Dmodem-Token: $TOKEN" \
+     -F number=5550100 -F cover=yes -F message=Hello \
+     -F 'docs[]=@invoice.pdf' \
+     'https://pbx.example.com/admin/ajax.php?module=dmodem&command=sendfax'
+curl -H "X-Dmodem-Token: $TOKEN" \
+     'https://pbx.example.com/admin/ajax.php?module=dmodem&command=faxstatus&job=j1800000000a1b2c3'
+```
+
+A fax from the API has no User Manager user. Thus, it is not in the
+UCP Fax widget of a user.
 
 ### Dial out
 
@@ -627,7 +678,7 @@ The line check shows the items that are still incorrect.
 
 ## The module's code
 
-- `module.xml`: the name, version (16.0.7), menu item, console
+- `module.xml`: the name, version (16.0.8), menu item, console
   command and FreePBX versions of the module.
 - `Dmodem.class.php`: the BMO (the module object of FreePBX) class. It has the
   forms (`doConfigPageInit()`), the pages, `genConfig()` and
@@ -638,7 +689,8 @@ The line check shows the items that are still incorrect.
   detection of the inbound routes (`myConfigPageInits()`,
   `didFaxTab()`), and the fax log (`faxReceived()`, `getFaxes()`,
   `deleteFax()`, `purgeFaxes()`, and `ajaxRequest()` and
-  `ajaxCustomHandler()` for the files). The settings, profiles, fax
+  `ajaxCustomHandler()` for the files), and the send API
+  (`ajaxHandler()`, `faxStatus()`). The settings, profiles, fax
   recipients, the fax detection of the routes and the fax log are in
   the kvstore of the module.
 - `lib/Config.php`: the defaults and checks of the settings and profiles, and
@@ -650,7 +702,7 @@ The line check shows the items that are still incorrect.
 - `lib/FaxLog.php`: the entry of the fax log, its checks, and the
   entries to delete.
 - `lib/FaxSend.php`: a fax to send: the job and its checks, the
-  Ghostscript command, the fax file, the `Originate` action of a try, and
+  Ghostscript and LibreOffice commands, the fax file, the `Originate` action of a try, and
   the state after a try.
 - `lib/FaxJunk.php`: the junk fax control: the block list and the
   allow list of caller IDs, and their checks.
@@ -721,6 +773,9 @@ It checks:
   **Block** button;
 - the faxes to send: the cover page (and, if Poppler is installed, the
   page as `pdftoppm` shows it), the checks of a job, the Ghostscript
+  and LibreOffice commands (with stand-ins, and with the real programs
+  if they are installed), the send API (the token, `sendfax`,
+  `faxstatus`), the Ghostscript
   command (with a stand-in, and with the real `gs` if it is installed),
   the queue (the `Originate`, a failed try and the next try, the result
   in the log and by email, no answer, a refused call, a try without a

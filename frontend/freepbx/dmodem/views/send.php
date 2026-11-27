@@ -3,7 +3,7 @@
 // Copyright (C) 2026 D-Modem Authors
 //
 // views/send.php - a fax to send (Dmodem::queueFax()): the number, the
-// documents (PDF or TIFF), the cover page, the tries and the email of the
+// documents (PDF, TIFF or Office), the cover page, the tries and the email of the
 // result; then the queue, with a cancel button for each fax that waits.
 // Given $job (the form's values), $jobs (the queue), $settings, $errors.
 
@@ -32,7 +32,7 @@ $notify = [
 ];
 ?>
 <p>
-	<?php echo _('Sends a fax through your outbound routes. D-Modem makes the fax pages from PDF and TIFF files with Ghostscript, puts the cover page first, and tries again when the call fails. A sent fax goes into the Faxes list.'); ?>
+	<?php echo _('Sends a fax through your outbound routes. D-Modem makes the fax pages from PDF and TIFF files with Ghostscript (and from Office documents with LibreOffice, if it is installed), puts the cover page first, and tries again when the call fails. A sent fax goes into the Faxes list.'); ?>
 </p>
 <form name="dmodem_sendfax" method="post" enctype="multipart/form-data"
       action="config.php?display=dmodem&amp;view=send">
@@ -43,9 +43,9 @@ $notify = [
 		<span class="help-block"><?php echo _('Dialled as an extension dials it: your outbound routes pick the trunk.'); ?></span>
 	</div></div>
 	<?php echo $row('docs', _('Documents')); ?>
-		<input type="file" id="docs" name="docs[]" multiple accept=".pdf,.tif,.tiff,application/pdf,image/tiff">
+		<input type="file" id="docs" name="docs[]" multiple accept=".pdf,.tif,.tiff,.doc,.docx,.odt,.rtf,.txt,.xls,.xlsx,.ods,.ppt,.pptx,.odp">
 		<?php echo $err('docs'); ?>
-		<span class="help-block"><?php echo sprintf(_('PDF or TIFF files, %d at most. They are sent in this order.'), FaxSend::MAX_DOCS); ?></span>
+		<span class="help-block"><?php echo sprintf(_('PDF, TIFF or Office files (Word, Excel, PowerPoint, OpenDocument, RTF, text), %d at most. They are sent in this order.'), FaxSend::MAX_DOCS); ?></span>
 	</div></div>
 	<?php echo $row('cover', _('Cover page')); ?>
 		<input type="checkbox" id="cover" name="cover" value="yes"<?php echo $job['cover'] ? ' checked' : ''; ?>>

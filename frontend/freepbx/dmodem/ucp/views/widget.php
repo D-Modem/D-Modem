@@ -107,8 +107,8 @@ if ($send)
 				<form class="dmodem-fax-send" enctype="multipart/form-data">
 					<div class="form-group"><label><?php echo _('Fax number'); ?></label>
 						<input type="text" class="form-control" name="number" required></div>
-					<div class="form-group"><label><?php echo _('Documents (PDF or TIFF)'); ?></label>
-						<input type="file" class="form-control-file" name="docs[]" multiple accept=".pdf,.tif,.tiff,application/pdf,image/tiff"></div>
+					<div class="form-group"><label><?php echo _('Documents (PDF, TIFF or Office)'); ?></label>
+						<input type="file" class="form-control-file" name="docs[]" multiple accept=".pdf,.tif,.tiff,.doc,.docx,.odt,.rtf,.txt,.xls,.xlsx,.ods,.ppt,.pptx,.odp"></div>
 					<div class="form-check"><input type="checkbox" class="form-check-input" name="cover" value="yes" id="dmodem-cover">
 						<label class="form-check-label" for="dmodem-cover"><?php echo _('Cover page'); ?></label></div>
 					<div class="form-group"><label><?php echo _('To'); ?></label>
