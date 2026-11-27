@@ -1120,3 +1120,91 @@ INSTANTIATE_TEST_SUITE_P(Mcf, T30Lost, testing::Values(
 	[](const testing::TestParamInfo<Lost> &i) {
 		return std::string(i.param.name);
 	});
+
+/*
+ *    the lowest rate (t30_config's min_bps)
+ *
+ */
+
+/* a sender (its rates up to tx_max, none below tx_min) to a receiver
+   (up to rx_max, none below rx_min), audio through G.711 mu-law: the
+   two results when both end (10 minutes of line at most) */
+static void min_rate_call(s32 tx_max, s32 tx_min, s32 rx_max, s32 rx_min,
+			  t30_status *sa, t30_status *sb)
+{
+	std::string in = fax_file("min_in.tif"), out = fax_file("min_out.tif");
+	Doc tx, rx;
+	struct t30_config c = {};
+	short ab[160] = { 0 }, ba[160] = { 0 }, oa[160], ob[160];
+
+	ASSERT_TRUE(write_test_doc(in, true));
+	ASSERT_EQ(tx.in.open(in.c_str()), 0);
+	ASSERT_EQ(rx.out.open(out.c_str()), 0);
+	c.srate = 8000;
+	c.sending = 1;
+	c.max_bps = tx_max;
+	c.min_bps = tx_min;
+	c.ident = "+1 555 0100";
+	c.next_page = next_page;
+	c.ctx = &tx;
+	T30 *a = t30_create(&c);
+	c.sending = 0;
+	c.max_bps = rx_max;
+	c.min_bps = rx_min;
+	c.ident = "+1 555 0199";
+	c.next_page = NULL;
+	c.page_received = page_received;
+	c.ctx = &rx;
+	T30 *b = t30_create(&c);
+	for (long n = 0; n < 8000L * 600; n += 160) {
+		t30_process(a, ba, oa, 160);
+		t30_process(b, ab, ob, 160);
+		for (int i = 0; i < 160; i++) {
+			ab[i] = g711_ulaw(oa[i]);
+			ba[i] = g711_ulaw(ob[i]);
+		}
+		t30_get_status(a, sa);
+		t30_get_status(b, sb);
+		if (sa->result != T30_RUNNING && sb->result != T30_RUNNING)
+			break;
+	}
+	rx.out.close();
+	tx.in.close();
+	t30_free(a);
+	t30_free(b);
+}
+
+/* the sender's lowest rate above all the receiver has: nothing in
+   common, no page */
+TEST(T30MinRate, SenderMinAboveReceiverMax)
+{
+	t30_status sa = {}, sb = {};
+	min_rate_call(14400, 9600, 4800, 0, &sa, &sb);
+	EXPECT_EQ(sa.result, T30_ERR_INCOMPATIBLE)
+		<< t30_result_text(sa.result);
+	EXPECT_EQ(sa.pages, 0);
+	EXPECT_EQ(sb.pages, 0);
+}
+
+/* the receiver's lowest rate above the sender's top rate: the DCS is
+   refused, no page */
+TEST(T30MinRate, ReceiverMinAboveSenderMax)
+{
+	t30_status sa = {}, sb = {};
+	min_rate_call(4800, 0, 14400, 9600, &sa, &sb);
+	EXPECT_EQ(sb.result, T30_ERR_TRAINING) << t30_result_text(sb.result);
+	EXPECT_NE(sa.result, T30_OK);
+	EXPECT_EQ(sb.pages, 0);
+}
+
+/* a lowest rate both can do: the document goes through at a rate not
+   below it */
+TEST(T30MinRate, DocumentAtOrAboveMin)
+{
+	t30_status sa = {}, sb = {};
+	min_rate_call(14400, 9600, 14400, 9600, &sa, &sb);
+	EXPECT_EQ(sa.result, T30_OK) << t30_result_text(sa.result);
+	EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+	EXPECT_EQ(sa.pages, 2);
+	EXPECT_GE(sa.bps, 9600);
+}

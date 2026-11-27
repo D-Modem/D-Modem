@@ -191,7 +191,7 @@ wait_for() {
 }
 # DModem's faxes that went through over T.38, so far
 over_t38() {
-	grep -ci "dmodem fax \(sent\|received\): OK.*over T.38" "$log"
+	grep -ci "dmodem fax \([0-9]* \)\?\(sent\|received\): OK.*over T.38" "$log"
 }
 # DModem's fax lines since line $1 of its log
 log_since() {

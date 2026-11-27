@@ -116,6 +116,9 @@ struct t30_config {
 	const char *ident;      /* our identity (TSI/CSI), up to 20 of
 				   0-9 + and space */
 	s32 max_bps;            /* 14400 (V.17), 9600 (V.29), 4800 (V.27) */
+	s32 min_bps;            /* no page below this rate: sending, no
+				   step down past it; receiving, a DCS
+				   below it ends the call (0: none) */
 	s16 ecm;                /* offer and take error correction mode */
 	s32 srate;              /* sample rate of the audio (8000) */
 	/* sending: the next page, 1; no more, 0.  A page with file is a

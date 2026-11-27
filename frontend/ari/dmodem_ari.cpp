@@ -24,8 +24,8 @@
  *
  *    Faxes as app_dmodem has them: a fax machine that calls a modem
  *    profile (fax on) is received into fax_dir; Stasis(<app>,sendfax,
- *    <file>[,<ident>]) sends a TIFF file (DModemSendFax), and
- *    Stasis(<app>,receivefax,<file>[,<ident>]) answers as a fax machine
+ *    <file>[,<ident>[,<options>]]) sends TIFF files (DModemSendFax), and
+ *    Stasis(<app>,receivefax,<file>[,<ident>[,<options>]]) answers as a fax machine
  *    (DModemReceiveFax); DMODEMFAX* set as they do, but as soon as the
  *    result is final (the MCF to the last page): the channel is gone
  *    with the other machine's hangup, which may come right after it.
@@ -86,7 +86,6 @@ int udp_socket()
 
 const s16 IDLE_MS = 200;        /* no packet this long: go on alone */
 const s16 MAX_SAMPLES = 1600;   /* in a packet, 200 ms */
-const s64 T38_WAIT_MS = 6000;   /* a fax receiver's wait for T.38 */
 
 /*
  *    configuration and logging
@@ -390,7 +389,10 @@ struct Call {
 	Kind kind = MODEM;
 	std::string profile, options;   /* MODEM: Stasis(app,profile,options) */
 	std::string file, ident;        /* the faxes: Stasis(app,sendfax,file,
-					   ident) */
+					   ident,options) */
+	std::string fax_options;
+	std::vector<std::string> faxopt;        /* DMODEMFAXOPT_* (see
+						   fax_read_settings()) */
 	std::string state, caller, caller_name, exten, context;
 	std::atomic<bool> hungup{false};
 };
@@ -463,18 +465,119 @@ std::string fax_file_name(const Call &c, const char *dir)
 		(caller.empty() ? "unknown" : caller) + "-" + id + ".tif";
 }
 
-/* the fax's result in the call's variables, as DModemSendFax and
-   DModemReceiveFax set them (t38: it went over T.38) */
-void fax_variables(const Call &c, const struct dmodem_fax_status &st,
-		   bool t38)
+/* the variable of a fax setting item: DMODEMFAXOPT_ and the item in
+   capitals */
+std::string faxopt_var(const char *item)
 {
-	set_var(c.id, "DMODEMFAXSTATUS", st.ok ? "SUCCESS" : "FAILED");
-	set_var(c.id, "DMODEMFAXRESULT", st.result);
-	set_var(c.id, "DMODEMFAXPAGES", std::to_string(st.pages));
-	set_var(c.id, "DMODEMFAXRATE", std::to_string(st.bps));
+	std::string var = "DMODEMFAXOPT_";
+	for (const char *p = item; *p; p++)
+		var += static_cast<char>(toupper(static_cast<unsigned char>(*p)));
+	return var;
+}
+
+/* the channel's variables DMODEMFAXOPT_<ITEM> (as DMODEMFAXOPT() of
+   app_dmodem sets them) into c.faxopt, in the order of
+   dmbridge_faxopt_items: one request (EVAL() of them all, | between
+   them), so that the call does not wait for one for each */
+void fax_read_settings(Call &c)
+{
+	std::string expr = "EVAL(";
+	for (size_t k = 0; dmbridge_faxopt_items[k]; k++)
+		expr += (k ? "|${" : "${") + faxopt_var(dmbridge_faxopt_items[k]) +
+			"}";
+	std::string v = get_var(c.id, expr + ")") + "|";
+	c.faxopt.clear();
+	for (size_t at = 0, bar; (bar = v.find('|', at)) != std::string::npos;
+	     at = bar + 1)
+		c.faxopt.push_back(v.substr(at, bar - at));
+}
+
+/* the channel's own fax settings (c.faxopt, read at the start of the
+   call) over *f */
+void fax_channel_settings(const Call &c, struct dmbridge_fax *f)
+{
+	for (size_t k = 0; dmbridge_faxopt_items[k] && k < c.faxopt.size();
+	     k++) {
+		const std::string &v = c.faxopt[k];
+		if (!v.empty() &&
+		    dmbridge_faxopt(&host, f, dmbridge_faxopt_items[k],
+				    v.c_str()))
+			say("WARNING %s: %s: not valid: '%s'", c.name.c_str(),
+			    faxopt_var(dmbridge_faxopt_items[k]).c_str(),
+			    v.c_str());
+	}
+}
+
+/* how a fax runs: Stasis()'s fax options, as DModemSendFax has them */
+struct FaxRun {
+	bool debug = false;     /* d: each phase in the log */
+	bool audio_only = false;        /* F: no T.38 */
+	bool ask_t38 = false;   /* z: a sender asks for T.38 */
+	bool need_t38 = false;  /* T: T.38 or no fax */
+};
+
+/* the options into *r: false if one is unknown, or F and T together */
+bool fax_options(const std::string &o, FaxRun *r)
+{
+	for (char ch : o) {
+		switch (ch) {
+		case 'd': r->debug = true; break;
+		case 'f': break;        /* (audio after T.38: anyway) */
+		case 'F': r->audio_only = true; break;
+		case 'z': r->ask_t38 = true; break;
+		case 'T': r->need_t38 = true; break;
+		default: return false;
+		}
+	}
+	return !(r->audio_only && r->need_t38);
+}
+
+std::atomic<int> fax_session_seq{0};    /* the last fax session's number */
+
+/* the fax's result in the call's variables, as DModemSendFax and
+   DModemReceiveFax set them (t38: it went over T.38; session: its
+   number): DMODEMFAX*, and res_fax's with fax_res_vars */
+void fax_variables(const Call &c, const struct dmbridge_fax &fs,
+		   const struct dmodem_fax_status &st, bool t38, int session)
+{
+	const char *status = st.ok ? "SUCCESS" : "FAILED";
+	const char *res = st.fine ? "8040x7700" : "8040x3850";
+	const char *error = st.error ? st.error : "UNKNOWN";
+	const char *result = st.result ? st.result : "";
+	std::string pages = std::to_string(st.pages);
+	std::string rate = std::to_string(st.bps);
+
+	set_var(c.id, "DMODEMFAXSTATUS", status);
+	set_var(c.id, "DMODEMFAXRESULT", result);
+	set_var(c.id, "DMODEMFAXERROR", error);
+	set_var(c.id, "DMODEMFAXPAGES", pages);
+	set_var(c.id, "DMODEMFAXRATE", rate);
+	set_var(c.id, "DMODEMFAXRESOLUTION", res);
 	set_var(c.id, "DMODEMFAXREMOTE", st.remote_ident);
 	set_var(c.id, "DMODEMFAXECM", st.ecm ? "yes" : "no");
 	set_var(c.id, "DMODEMFAXT38", t38 ? "yes" : "no");
+	set_var(c.id, "DMODEMFAXSESSION", std::to_string(session));
+	if (!fs.res_vars)
+		return;
+	set_var(c.id, "FAXSTATUS", status);
+	set_var(c.id, "FAXSTATUSSTRING", result);
+	set_var(c.id, "FAXERROR", error);
+	set_var(c.id, "FAXPAGES", pages);
+	set_var(c.id, "FAXBITRATE", rate);
+	set_var(c.id, "FAXRESOLUTION", res);
+	set_var(c.id, "REMOTESTATIONID", st.remote_ident);
+	set_var(c.id, "LOCALSTATIONID", fs.ident);
+}
+
+/* a fax that did not start or stopped (error the code, result its text)
+   in the variables */
+void fax_failed(const Call &c, const struct dmbridge_fax &fs,
+		const char *error, const char *result, int session)
+{
+	struct dmodem_fax_status st = {};
+	st.error = error;
+	st.result = result;
+	fax_variables(c, fs, st, false, session);
 }
 
 /* the call's line: our RTP, and what Asterisk has at its end (an
@@ -533,38 +636,48 @@ s64 now_us()
    (35 s of audio) in a second or two: "no fax machine" */
 void run_fax(Call &c, Line &line, enum dmodem_law law,
 	     enum dmodem_fax_dir dir, const std::string &file,
-	     const struct dmbridge_fax &fs)
+	     const struct dmbridge_fax &fs, const FaxRun &ro)
 {
 	struct dmodem_fax_config cfg = {};
 	struct dmodem_fax_status st = {};
 	struct dmodem_fax *f;
 	u8 in[MAX_SAMPLES], out[MAX_SAMPLES];
 	bool sending = dir == DMODEM_FAX_SEND, told = false, t38 = false;
-	bool may_switch = line.leg != nullptr && fs.t38, asking = false;
+	bool may_switch = line.leg != nullptr && fs.t38 && !ro.audio_only;
+	bool asking = false;
 	T38Peer peer = { line.udptl, {} };
 	s64 t0 = 0, samples = 0, asked = 0, waited = 0;
+	int session = ++fax_session_seq;
+	const char *phase = nullptr;
 
 	cfg.law = law;
 	cfg.dir = dir;
 	cfg.file = file.c_str();
 	cfg.ident = fs.ident;
 	cfg.max_bps = fs.max_bps;
+	cfg.min_bps = fs.min_bps;
 	cfg.no_ecm = !fs.ecm;
 	set_var(c.id, "DMODEMFAXFILE", file);
+	if (ro.need_t38 && !may_switch) {
+		say("WARNING %s: dmodem fax: T.38 needed, and the line cannot "
+		    "have it", c.name.c_str());
+		fax_failed(c, fs, "T38", "no T.38", session);
+		return;
+	}
 	f = dmodem_fax_create(&cfg);
 	if (!f) {
 		say("WARNING %s: cannot %s fax file %s", c.name.c_str(),
 		    sending ? "read" : "use", file.c_str());
-		set_var(c.id, "DMODEMFAXSTATUS", "FAILED");
-		set_var(c.id, "DMODEMFAXRESULT", "no document");
+		fax_failed(c, fs, "DOCUMENT", "no document", session);
 		return;
 	}
 	if (verbose >= 1)
-		say("%s: dmodem fax: %s %s", c.name.c_str(),
+		say("%s: dmodem fax %d: %s %s", c.name.c_str(), session,
 		    sending ? "sending" : "receiving", file.c_str());
 	if (may_switch) {
 		sip.accept_t38(line.leg, true);
-		if (!sending && sip.ask_t38(line.leg)) {
+		if ((!sending || ro.ask_t38 || ro.need_t38) &&
+		    sip.ask_t38(line.leg)) {
 			asked = now_us();
 			if (verbose >= 1)
 				say("%s: dmodem fax: T.38 asked for",
@@ -599,7 +712,8 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 					say("WARNING %s: cannot %s fax file %s",
 					    c.name.c_str(),
 					    sending ? "read" : "use", file.c_str());
-					set_var(c.id, "DMODEMFAXSTATUS", "FAILED");
+					fax_failed(c, fs, "DOCUMENT",
+						   "no document", session);
 					return;
 				}
 				if (verbose >= 1)
@@ -619,8 +733,17 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 				may_switch = false;
 			}
 			asking = asked && l.t38 == ari::T38_ASKED &&
-				now_us() - asked < T38_WAIT_MS * 1000 &&
-				waited < T38_WAIT_MS * 8;
+				now_us() - asked < fs.t38_timeout * 1000LL &&
+				waited < fs.t38_timeout * 8LL;
+			if (ro.need_t38 && !t38 && !asking &&
+			    l.t38 != ari::T38_ON) {
+				/* no T.38: no fax (option T) */
+				say("WARNING %s: dmodem fax: no T.38",
+				    c.name.c_str());
+				dmodem_fax_destroy(f);
+				fax_failed(c, fs, "T38", "no T.38", session);
+				return;
+			}
 		}
 		if (t38) {
 			unsigned char pkt[2048];
@@ -663,8 +786,14 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 			line.rtp.send(out, n);
 		}
 		dmodem_fax_status(f, &st);
+		if (ro.debug && st.phase &&
+		    (!phase || strcmp(phase, st.phase))) {
+			say("%s: dmodem fax %d: %s", c.name.c_str(), session,
+			    st.phase);
+			phase = st.phase;
+		}
 		if (st.complete && !told) {
-			fax_variables(c, st, t38);
+			fax_variables(c, fs, st, t38, session);
 			told = true;
 		}
 		if (st.done)
@@ -672,12 +801,12 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	}
 	dmodem_fax_status(f, &st);
 	if (!told && !c.hungup)
-		fax_variables(c, st, t38);
+		fax_variables(c, fs, st, t38, session);
 	/* (the received file closed with it) */
 	dmodem_fax_destroy(f);
 	if (verbose >= 1)
-		say("%s: dmodem fax %s: %s, %d pages at %" PRId32 " bit/s%s%s, "
-		    "remote '%s'", c.name.c_str(),
+		say("%s: dmodem fax %d %s: %s, %d pages at %" PRId32 " bit/s%s%s, "
+		    "remote '%s'", c.name.c_str(), session,
 		    sending ? "sent" : "received",
 		    st.result, st.pages, st.bps, st.ecm ? " (ECM)" : "",
 		    t38 ? " over T.38" : "", st.remote_ident);
@@ -1080,7 +1209,10 @@ std::string run_modem(Call &c, const struct dmbridge_profile &p,
 			/* (now: it may have hung up when the fax ends) */
 			set_var(c.id, "DMODEMSTATUS", "FAX");
 			make_dirs(p.fax.dir);
-			run_fax(c, line, law, DMODEM_FAX_RECEIVE, path, p.fax);
+			struct dmbridge_fax pf = p.fax;
+			fax_channel_settings(c, &pf);
+			run_fax(c, line, law, DMODEM_FAX_RECEIVE, path, pf,
+				FaxRun());
 			fax = true;
 			break;
 		}
@@ -1249,6 +1381,7 @@ void run_call(std::shared_ptr<Call> c)
 	Line line;
 	bool up = false;
 
+	fax_read_settings(*c);
 	if (c->kind == MODEM) {
 		if (load_profile(c->profile, &p)) {
 			law = call_law(*c, p.law);
@@ -1263,12 +1396,19 @@ void run_call(std::shared_ptr<Call> c)
 			say("%s: dmodem done: %s", c->name.c_str(),
 			    status.c_str());
 	} else {
-		/* the fax settings of [general], the ident of Stasis() */
+		/* the fax settings of [general], the channel's own
+		   (DMODEMFAXOPT_*), the ident of Stasis() */
+		FaxRun ro;
 		general_fax(&fs);
+		fax_channel_settings(*c, &fs);
 		if (!c->ident.empty())
 			snprintf(fs.ident, sizeof(fs.ident), "%s",
 				 c->ident.c_str());
-		if (c->file.empty()) {
+		if (!fax_options(c->fax_options, &ro)) {
+			say("WARNING %s: bad fax options '%s'",
+			    c->name.c_str(), c->fax_options.c_str());
+			set_var(c->id, "DMODEMFAXSTATUS", "FAILED");
+		} else if (c->file.empty()) {
 			say("WARNING %s: %s needs a file name",
 			    c->name.c_str(), c->kind == SENDFAX ?
 			    "sendfax" : "receivefax");
@@ -1279,7 +1419,7 @@ void run_call(std::shared_ptr<Call> c)
 			if (up)
 				run_fax(*c, line, law, c->kind == SENDFAX ?
 					DMODEM_FAX_SEND : DMODEM_FAX_RECEIVE,
-					c->file, fs);
+					c->file, fs, ro);
 			else if (!c->hungup)
 				set_var(c->id, "DMODEMFAXSTATUS", "FAILED");
 		}
@@ -1340,6 +1480,7 @@ void event(const ari::Json &e)
 			c->kind = what == "sendfax" ? SENDFAX : RECEIVEFAX;
 			c->file = e["args"][1].str();
 			c->ident = e["args"][2].str();
+			c->fax_options = e["args"][3].str();
 		} else {
 			c->profile = what.empty() ? "default" : what;
 			c->options = e["args"][1].str();

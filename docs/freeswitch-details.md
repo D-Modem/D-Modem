@@ -197,6 +197,7 @@ These params go in `<settings>` or in a profile. The fax applications read only
 | `fax-dir` | FreeSWITCH's storage directory + `/fax` | Where `dmodem` puts the faxes it receives. |
 | `fax-ident` | empty | Our fax number (CSI and TSI). |
 | `fax-max-rate` | `14400` | The fastest rate. |
+| `fax-min-rate` | `0` (none) | The lowest rate. The fax stops if the two machines cannot use this rate or a higher rate. |
 | `fax-ecm` | `true` | Offer error correction mode (`false`: do not offer it). |
 | `fax-t38` | `true` | Use T.38 when the channel does (`false`: keep the faxes on the audio). |
 

@@ -169,9 +169,9 @@ For each call that comes into the app, `dmodem-ari` does these steps:
 The fax machine is the same as that of `app_dmodem`: T.30 on V.17, V.29
 and V.27ter, with error correction mode (ECM) and TIFF files (refer to
 [asterisk.md](asterisk.md#fax)). Its settings come from the `[general]`
-section of `dmodem.conf`: `fax_ident`, `fax_max_rate`, `fax_ecm`,
-`fax_t38`, and `fax_dir` for the faxes that the modem profiles receive
-(default `/var/spool/asterisk/fax`).
+section of `dmodem.conf`: `fax_ident`, `fax_max_rate`, `fax_min_rate`,
+`fax_ecm`, `fax_t38`, `fax_t38_timeout`, `fax_res_vars`, and `fax_dir` for the faxes that
+the modem profiles receive (default `/var/spool/asterisk/fax`).
 
 ### Three ways to fax
 
@@ -182,13 +182,40 @@ section of `dmodem.conf`: `fax_ident`, `fax_max_rate`, `fax_ecm`,
   machine by its CNG tone, or by a V.8 CM that tells of a fax call.
   `DMODEMSTATUS` is set to `FAX` immediately when the modem hears the fax
   machine.
-- **`Stasis(dmodem,receivefax,<file>[,<ident>])`** answers as a fax
-  machine and receives into the file.
-- **`Stasis(dmodem,sendfax,<file>[,<ident>])`** sends a TIFF file (all
-  TIFFs of 1 bit pels, as `DModemSendFax` accepts) on a call to a fax
-  machine.
+- **`Stasis(dmodem,receivefax,<file>[,<ident>[,<options>]])`** answers
+  as a fax machine and receives into the file.
+- **`Stasis(dmodem,sendfax,<file>[&<file2>...][,<ident>[,<options>]])`**
+  sends one or more TIFF files (all TIFFs of 1 bit pels, as
+  `DModemSendFax` accepts) on a call to a fax machine.
 
 `<ident>` is our own number. It replaces `fax_ident`.
+
+`<options>` are the options of `DModemSendFax` and `DModemReceiveFax`:
+`d`, `f`, `F`, `z` and `T` (refer to
+[asterisk-details.md](asterisk-details.md#fax-application-options)).
+For option `z` and option `T`, `dmodem-ari` must have its SIP side
+(`t38 = yes`).
+
+### The fax settings of a call
+
+`DMODEMFAXOPT()` is a function of `app_dmodem`. Without `app_dmodem`,
+set the channel variables that it sets. `dmodem-ari` reads them before
+each fax, also for a fax machine that calls a modem profile:
+
+| variable | the same as |
+|---|---|
+| `DMODEMFAXOPT_ECM` | `DMODEMFAXOPT(ecm)` |
+| `DMODEMFAXOPT_MAXRATE` | `DMODEMFAXOPT(maxrate)` |
+| `DMODEMFAXOPT_MINRATE` | `DMODEMFAXOPT(minrate)` |
+| `DMODEMFAXOPT_T38TIMEOUT` | `DMODEMFAXOPT(t38timeout)` |
+| `DMODEMFAXOPT_LOCALSTATIONID` | `DMODEMFAXOPT(localstationid)` |
+
+Example:
+
+```
+exten => 5551001,1,Set(DMODEMFAXOPT_MINRATE=9600)
+ same => n,Stasis(dmodem,receivefax,/var/spool/fax/${UNIQUEID}.tif,,d)
+```
 
 ### The variables
 
@@ -199,11 +226,18 @@ section of `dmodem.conf`: `fax_ident`, `fax_max_rate`, `fax_ecm`,
 |---|---|
 | `DMODEMFAXSTATUS` | `SUCCESS` or `FAILED` |
 | `DMODEMFAXRESULT` | the result in words |
+| `DMODEMFAXERROR` | the result as a code (`NO_ERROR`, `TRAINING`, `T38` and the other codes of `app_dmodem`) |
 | `DMODEMFAXPAGES` | pages sent or received |
 | `DMODEMFAXRATE` | the bit rate |
+| `DMODEMFAXRESOLUTION` | `8040x3850` or `8040x7700` |
 | `DMODEMFAXREMOTE` | the other machine's ident |
 | `DMODEMFAXECM` | `yes` or `no` |
 | `DMODEMFAXT38` | `yes` or `no` |
+| `DMODEMFAXSESSION` | the number of the fax session in `dmodem-ari` |
+
+`dmodem-ari` also sets the variables of `res_fax` (`FAXSTATUS`,
+`FAXSTATUSSTRING`, `FAXERROR`, `FAXPAGES`, `FAXBITRATE`, `FAXRESOLUTION`,
+`REMOTESTATIONID` and `LOCALSTATIONID`), unless `fax_res_vars = no`.
 
 ### One difference from the module
 

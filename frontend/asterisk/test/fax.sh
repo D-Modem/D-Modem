@@ -6,6 +6,15 @@
 #   1. DModemSendFax calls DModem(bbs), which sees the CNG and receives
 #      the fax into fax_dir by itself
 #   2. DModemSendFax calls DModemReceiveFax(file)
+#   3. DMODEMFAXOPT(): two files in one fax at 9600 bit/s without ECM,
+#      the receiver's lowest rate 9600, options d and F; res_fax's
+#      variables (FAXSTATUS and the rest) set too
+#   4. the receiver's lowest rate 9600 and the sender's top rate 4800:
+#      no fax (FAXERROR TRAINING)
+#   5. option T on a Local channel (no T.38): no fax (FAXERROR T38)
+# With ARI=1, 3 to 5 set the channel variables DMODEMFAXOPT_<ITEM> in
+# place of DMODEMFAXOPT() (ari_env.sh), and DMODEMFAXOPT()'s results are
+# not checked (app_dmodem only)
 # The document is the two page test file of dsp/test/fax_doc;
 # the received ones must be the same.  ARI=1: DModem's side of the
 # calls through dmodem-ari instead (ari_env.sh).
@@ -84,6 +93,55 @@ wait_for " SEND DMODEMFAXSTATUS" 2 && wait_for " RECV DMODEMFAXSTATUS" 1
 grep -E " RECV DMODEM" "$run/console.log"
 grep -E " SEND DMODEM" "$run/console.log" | tail -1
 "$t4" compare "$run/doc.tif" "$run/received.tif" || r=1
+
+# checks that the console has the line, else fails (r=1)
+has() {
+	if grep -qE "$1" "$run/console.log"; then
+		echo "PASS: $2"
+	else
+		echo "FAIL: $2"; r=1
+	fi
+}
+# the results of DMODEMFAXOPT() read, as the console has them: empty
+# with ARI=1 (the variables DMODEMFAXOPT_PAGES and the others are none)
+if [ -z "$ARI" ]; then
+	opt_pages="pages=4 error=NO_ERROR"
+	opt_file="filename=$run/doc.tif session=[0-9]+"
+else
+	opt_pages="pages= error="
+	opt_file="filename= session="
+fi
+if true; then
+	rm -f "$run/received.tif"
+	$ast -rx "dialplan set global FAXMIN 9600" >/dev/null
+	$ast -rx "dialplan set global FAXMAX 9600" >/dev/null
+	$ast -rx "channel originate Local/s@faxopt-recv/n extension s@faxopt-send"
+	wait_for " SENDOPT " 1 && wait_for " RECVOPT " 1
+	grep -E " (ROPT|SOPT|RECVOPT|SENDOPT) " "$run/console.log"
+	has " ROPT minrate=9600 localstationid=\+1 555 0177" "DMODEMFAXOPT() read back"
+	has " SOPT maxrate=9600 ecm=no" "DMODEMFAXOPT() maxrate, ecm"
+	has " SENDOPT FAXSTATUS=SUCCESS FAXERROR=NO_ERROR FAXPAGES=4 FAXBITRATE=9600 DMODEMFAXECM=no $opt_file" "two files at 9600 bit/s without ECM"
+	has " RECVOPT FAXSTATUS=SUCCESS FAXERROR=NO_ERROR FAXPAGES=4 FAXBITRATE=9600 LOCALSTATIONID=\+1 555 0177 REMOTESTATIONID=\+1 555 0100 $opt_pages" "res_fax's variables, receiver"
+	if [ -z "$ARI" ]; then
+		has "DModem fax [0-9]+: " "option d: the phases in the log"
+	else
+		ari_log "$run" > "$run/ari-lines.txt"
+		grep -qE "dmodem fax [0-9]+: " "$run/ari-lines.txt" &&
+			echo "PASS: option d: the phases in the log" ||
+			{ echo "FAIL: option d: the phases in the log"; r=1; }
+	fi
+
+	$ast -rx "dialplan set global FAXMAX 4800" >/dev/null
+	$ast -rx "channel originate Local/s@faxopt-recv/n extension s@faxopt-send"
+	wait_for " SENDOPT " 2 && wait_for " RECVOPT " 2
+	grep -E " RECVOPT " "$run/console.log" | tail -1
+	has " RECVOPT FAXSTATUS=FAILED FAXERROR=TRAINING FAXPAGES=0" "the lowest rate refused"
+
+	$ast -rx "channel originate Local/s@faxopt-t38only/n application Wait 20"
+	wait_for " T38ONLY " 1
+	grep -E " T38ONLY " "$run/console.log"
+	has " T38ONLY FAXSTATUS=FAILED FAXERROR=T38" "option T without T.38"
+fi
 [ -z "$ARI" ] || ari_log "$run"
 $ast -rx "core stop now" >/dev/null 2>&1
 exit $r

@@ -28,7 +28,9 @@ ari_setup() {
 	sed -i -e 's/DModemSendFax(\(.*\))/Stasis(dmodem,sendfax,\1)/' \
 		-e 's/DModemReceiveFax(\(.*\))/Stasis(dmodem,receivefax,\1)/' \
 		-e 's/DModem(\([a-z]*\),o)/Stasis(dmodem,\1,o)/' \
-		-e 's/DModem(\([a-z]*\))/Stasis(dmodem,\1)/' "$1/extensions.conf"
+		-e 's/DModem(\([a-z]*\))/Stasis(dmodem,\1)/' \
+		-e 's/DMODEMFAXOPT(\([a-z0-9]*\))/DMODEMFAXOPT_\U\1\E/g' \
+		"$1/extensions.conf"
 	printf '[general]\nenabled = yes\nbindaddr = 127.0.0.1\nbindport = %s\n' \
 		"$ari_port" > "$1/http.conf"
 	printf '[general]\nenabled = yes\n[dmodem]\ntype = user\nread_only = no\npassword = dmodem\n' \

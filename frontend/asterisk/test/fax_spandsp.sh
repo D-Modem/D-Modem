@@ -88,7 +88,7 @@ echo "== 1: SendFAX (spandsp) -> DModem()"
 $ast -rx "channel originate Local/s@fax-auto/n extension s@sp-send"
 n_sp=$((n_sp+1)); wait_for " SPSEND FAXSTATUS" $n_sp
 grep -E " SPSEND" "$run/console.log" | tail -1
-grep -E "DModem fax received" "$run/console.log" | tail -1
+grep -E "DModem fax ([0-9]+ )?received" "$run/console.log" | tail -1
 f=$(ls "$run"/fax/*.tif 2>/dev/null | head -1)
 "$t4" compare "$run/doc.tif" "${f:-/nonexistent}" || r=1
 ;;

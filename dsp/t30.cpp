@@ -940,6 +940,13 @@ void T30::got_dcs(const unsigned char *fif, s16 len)
 		DSP_DBG("t30: DCS with unknown rate %x\n", v);
 		return;
 	}
+	if (rates[k].bps < cfg.min_bps) {
+		/* slower than the configuration permits */
+		DSP_DBG("t30: DCS at %" PRId32 " bit/s, below %" PRId32 "\n",
+			rates[k].bps, cfg.min_bps);
+		send_dcn(T30_ERR_TRAINING);
+		return;
+	}
 	rate = k;
 	fine = get_bit(fif, len, 15);
 	mr = get_bit(fif, len, 16);
@@ -1309,6 +1316,7 @@ s16 T30::choose()
 	s16 k;
 	for (k = 0; k < NRATES; k++)
 		if (rates[k].bps <= cfg.max_bps &&
+		    rates[k].bps >= cfg.min_bps &&
 		    dis_rate_ok(dis, dis_len, &rates[k]))
 			break;
 	if (k == NRATES)
@@ -1386,10 +1394,12 @@ void T30::sender_message()
 			gap_then(RESPONSE_GAP_MS, ecm_on ? &T30::start_ecm_page :
 				 &T30::send_page);
 		} else if (fcf == FCF_FTT) {
-			/* a lower rate the remote has */
+			/* a lower rate the remote has (not below
+			   min_bps) */
 			s16 k;
 			for (k = rate + 1; k < NRATES; k++)
-				if (dis_rate_ok(dis, dis_len, &rates[k]))
+				if (rates[k].bps >= cfg.min_bps &&
+				    dis_rate_ok(dis, dis_len, &rates[k]))
 					break;
 			if (k == NRATES) {
 				send_dcn(T30_ERR_TRAINING);
