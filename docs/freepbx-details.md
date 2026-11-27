@@ -2,7 +2,7 @@
 
 This page gives the technical details for [FreePBX: the D-Modem module](freepbx.md), the plain-English overview. Read the overview first. This page keeps the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
-`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.4, for FreePBX 16
+`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.5, for FreePBX 16
 and 17) for [app_dmodem](asterisk.md) or [dmodem-ari](ari.md). It
 gives these items:
 
@@ -36,16 +36,19 @@ command. The module is only PHP. Nothing in it is compiled.
    FreePBX and install it from the command line:
 
    ```
-   tar xzf dmodem-16.0.4.tgz -C /var/www/html/admin/modules/
+   tar xzf dmodem-16.0.5.tgz -C /var/www/html/admin/modules/
    fwconsole ma installlocal dmodem
    fwconsole reload
    ```
 
    The module is not signed. Thus, FreePBX shows it as unsigned.
+3. **Ghostscript**, to send faxes from the Send fax tab or with
+   `fwconsole dmodem sendfax`: `dnf install ghostscript` or
+   `apt install ghostscript`. Received faxes do not need it.
 
 ## Use
 
-The page of the module has six parts.
+The page of the module has eight parts.
 
 ### Profiles
 
@@ -111,6 +114,16 @@ a profile if a route or a different object still refers to it.
   - error correction mode (on) and T.38 (on);
   - **Fax destination** (on): a destination "D-Modem: receive a fax"
     (`app-dmodem,receivefax,1`) that answers as a fax machine.
+- **Sending faxes**, for the [Send fax](#send-fax) tab:
+  - **Tries again** (1): the tries after the first, 0 to 3;
+  - **Minutes between tries** (5): 1 to 120;
+  - **Email the result** (`failure`): `never`, `always`, `success` or
+    `failure`, and **Result to** (empty): the address. These are the
+    defaults of the send page;
+  - **Ghostscript** (`/usr/bin/gs`): the program that makes the fax
+    pages from PDF files;
+  - **Cover page**: the company name, the address (5 lines at most),
+    the telephone, the web site and the footer.
 - **Fax to email**, for the [fax recipients](#fax-recipients):
   - **Attach** (`pdf`): `pdf`, `tiff` or `both`. A recipient can have
     its own value;
@@ -165,8 +178,8 @@ mail system of the machine must send mail.
 
 ### Faxes
 
-The **Faxes** tab is the fax log. It shows each received fax, the
-newest fax first:
+The **Faxes** tab is the fax log. It shows each received and each sent
+fax, the newest fax first. For a sent fax, **To** is the fax number:
 
 | column | value |
 |---|---|
@@ -199,6 +212,54 @@ file of the fax directory that the log has.
 
 The fax log is not in the backup or in `fwconsole dmodem export`. The
 fax files are in the fax directory.
+
+### Send fax
+
+The **Send fax** tab sends a fax through the dial-out context (your
+outbound routes):
+
+| field | notes |
+|---|---|
+| Fax number | Digits, `*`, `#` and `+`. |
+| Documents | PDF or TIFF files, 10 at most, 20 MB at most each. They go in this order. |
+| Cover page | A first page with the company lines of the settings, the date, To, the fax number, From, the number of pages and the message. |
+| To, From, Message | One line of 100 characters (To, From). The message has 3000 characters at most, and 36 lines show on the page. |
+| Tries again | 0 to 3 (the settings give the default). |
+| Email the result, Email address | When the result goes by email, and to whom. The message has the PDF file of the fax. |
+
+When you click **Send**, the module makes the fax file
+`<fax directory>/out-<job>.tif`:
+
+1. A TIFF document goes into a PDF file (`lib/FaxPdf.php`).
+2. Ghostscript makes the fax pages of the documents (`tiffg4`, 204 x
+   196 dpi, 1728 dots a line, the PDF paper size of the settings). The
+   module counts these pages for the cover page.
+3. Ghostscript makes the fax file of the cover page (`lib/FaxCover.php`,
+   our own PDF code) and the documents.
+
+Then the job goes into the queue, and the first try starts
+immediately. The module runs Ghostscript without a shell, with
+`-dSAFER`.
+
+A try is a call: the manager's `Originate` action dials
+`Local/<number>@<dial-out context>`. When the far end answers, the call
+goes to `app-dmodem-faxout`, which sends the fax file. If the far end
+does not answer, Asterisk runs the `failed` extension of that context.
+Each of the two gives the result to `fwconsole dmodem faxsent`.
+
+If the try fails and the job has tries left, the next try is after the
+minutes of the settings. FreePBX runs `fwconsole dmodem faxqueue` each
+minute (a FreePBX job, `fwconsole job`, that the module adds when it is
+installed), which starts each try at its time. A try without a result
+after the ring time and one hour is a failure.
+
+When the fax is sent, or the last try fails, the fax goes into the
+[fax log](#faxes) (**Sent**), the job leaves the queue, and the result
+goes by email if the job says so.
+
+Below the form, the page shows the faxes that wait, with their state,
+tries and last result. **Cancel** removes a fax that is not on a call.
+It goes into the log as `CANCELLED`.
 
 ### Dial out
 
@@ -301,6 +362,17 @@ exten => fax-sales,n,Set(CHANNEL(hangup_handler_push)=app-dmodem-fax2mail,s,1(sa
 exten => fax-sales,n,DModemReceiveFax(<the same file name>)
 ...
 
+[app-dmodem-faxout]
+exten => s,1,NoOp(D-Modem fax job ${FILTER(a-z0-9,${DMODEMFAXJOB})})
+exten => s,n,Set(CHANNEL(hangup_handler_push)=app-dmodem-faxsent,s,1(${FILTER(a-z0-9,${DMODEMFAXJOB})}))
+exten => s,n,DModemSendFax(/var/spool/asterisk/fax/out-${FILTER(a-z0-9,${DMODEMFAXJOB})}.tif)
+...
+exten => failed,1,System(/usr/sbin/fwconsole dmodem faxsent '${FILTER(a-z0-9,${DMODEMFAXJOB})}' '${FILTER(0-9.,${UNIQUEID})}' 'NOANSWER' ...)
+
+[app-dmodem-faxsent]
+exten => s,1,System(/usr/sbin/fwconsole dmodem faxsent '${FILTER(a-z0-9,${ARG1})}' '${FILTER(0-9.,${UNIQUEID})}' ...)
+exten => s,n,Return()
+
 [app-dmodem-fax2mail]
 exten => s,1,ExecIf($["${DMODEMFAXSTATUS}" = ""]?Return())
 exten => s,n,System(/usr/sbin/fwconsole dmodem fax2mail '${FILTER(a-z0-9_,${ARG1})}' '${FILTER(0-9.,${UNIQUEID})}' ...)
@@ -374,6 +446,14 @@ fwconsole dmodem fax2mail <recipient|""> <uniqueid> [status] [pages] [cid] [remo
                                         # the fax of a call into the log,
                                         # and by email to a recipient
 fwconsole dmodem faxes                  # the fax log
+fwconsole dmodem sendfax <number> [file...] [--cover] [--to=...] [--from=...]
+          [--message=...] [--retries=n] [--notify=never|always|success|failure]
+          [--email=...]                 # a fax into the queue
+fwconsole dmodem faxqueue               # the tries whose time has come
+fwconsole dmodem faxjobs                # the queue
+fwconsole dmodem faxcancel <job>        # a fax out of the queue
+fwconsole dmodem faxsent <job> <uniqueid> <status> [pages] [rate] [error] [remote]
+                                        # the result of a try
 ```
 
 - `dial` is the Dial out page for scripts (cron, the mailer of a BBS).
@@ -386,6 +466,12 @@ fwconsole dmodem faxes                  # the fax log
   into the log only.
 - `faxes` shows the fax log: the date, the unique ID, the status, the
   pages, the caller ID and the recipient of each fax.
+- `sendfax` is the Send fax tab for scripts. Without `--retries`,
+  `--notify` and `--email`, the settings give the values. It starts
+  the first try immediately.
+- `faxqueue` is the command of the FreePBX job. `faxsent` is the command
+  of `app-dmodem-faxout` (refer to
+  [What Apply Config writes](#what-apply-config-writes)).
 - `import` checks the settings, each profile and each fax recipient as
   the forms do (refer to
   [Backup and restore](#backup-and-restore)). After an import, run
@@ -437,7 +523,7 @@ The line check shows the items that are still incorrect.
 
 ## The module's code
 
-- `module.xml`: the name, version (16.0.4), menu item, console
+- `module.xml`: the name, version (16.0.5), menu item, console
   command and FreePBX versions of the module.
 - `Dmodem.class.php`: the BMO (the module object of FreePBX) class. It has the
   forms (`doConfigPageInit()`), the pages, `genConfig()` and
@@ -459,6 +545,11 @@ The line check shows the items that are still incorrect.
 - `lib/FaxPdf.php`: a TIFF file of a fax as a PDF file.
 - `lib/FaxLog.php`: the entry of the fax log, its checks, and the
   entries to delete.
+- `lib/FaxSend.php`: a fax to send: the job and its checks, the
+  Ghostscript command, the fax file, the `Originate` action of a try, and
+  the state after a try.
+- `lib/FaxCover.php`: the cover page as a PDF file (Helvetica, no font
+  files).
 - `lib/FaxMail.php`: the message of a fax (MIME, with the subject and
   text from the templates) to the mail system.
 - `lib/Apps.php`: the dialplan step class (`ext_dmodem_app`) for
@@ -511,6 +602,13 @@ It checks:
   recipient, `fwconsole dmodem faxes`, the PDF and TIFF through the
   Ajax handler, the Faxes page, the delete action, **Keep faxes** and
   the limit of 5000 faxes;
+- the faxes to send: the cover page (and, if Poppler is installed, the
+  page as `pdftoppm` shows it), the checks of a job, the Ghostscript
+  command (with a stand-in, and with the real `gs` if it is installed),
+  the queue (the `Originate`, a failed try and the next try, the result
+  in the log and by email, no answer, a refused call, a try without a
+  result, cancel), `fwconsole dmodem sendfax`, the page, the contexts
+  for the two engines and the FreePBX job;
 - the fax detection of the inbound routes: the form of the route
   (added, changed, renamed, deleted, bad values), the steps in a route
   as Core writes it for the two engines, the tab and the destination
@@ -559,3 +657,11 @@ through the `extensions.class.php` of FreePBX instead of the stand-in.
    run `fwconsole dmodem fax2mail` with an empty recipient, and go into
    the log. The test then makes sure that each of the three faxes gave
    its rate, and that the data calls did not run the command.
+8. Send a fax: `sendfax.php` (as `fwconsole dmodem sendfax`) queues the
+   test document with a cover page to 5559999 in the dial-out context,
+   where `DModemReceiveFax` takes it. Ghostscript (`gs`) must be
+   installed. The far machine must get the pages of the document and the
+   cover page, and the fax must go into the log. Then a fax to 5559998,
+   which does not answer, must give `NOANSWER` through the `failed`
+   extension. `dmodem_test_store()` keeps the queue and the log between
+   the scripts.

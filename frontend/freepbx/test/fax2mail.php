@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 D-Modem Authors
 //
-// fax2mail.php <dir> <engine> <ari port> fax2mail <args>: fwconsole
-// dmodem fax2mail as the mail handler of e2e.sh's Asterisk runs it (gen.php
+// fax2mail.php <dir> <engine> <ari port> <subcommand> <args>: fwconsole
+// dmodem fax2mail (or faxsent) as the hangup handlers of e2e.sh's
+// Asterisk run it (gen.php
 // writes <dir>/bin/fwconsole), on the module that gen.php sets up.  The
 // mail system is a stand-in: each message goes to <dir>/mail-<n>.eml
 // (To:, Subject:, the headers, the body), and the command's lines and its
@@ -15,6 +16,7 @@ use FreePBX\modules\Dmodem\Cli;
 
 $dir = $argv[1];
 $m = dmodem_test_module($dir, $argv[2], $argv[3]);
+dmodem_test_store($dir, true);
 $args = array_slice($argv, 4);
 $log = fopen($dir . '/fax2mail.log', 'a');
 fwrite($log, 'args: ' . json_encode($args) . "\n");
@@ -30,4 +32,5 @@ $st = Cli::run($m, $args, ['send' => $send], function ($line) use ($log) {
 	echo $line . "\n";
 });
 fwrite($log, "status: $st\n");
+dmodem_test_store($dir, false);
 exit($st);

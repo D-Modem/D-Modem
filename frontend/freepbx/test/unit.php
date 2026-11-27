@@ -20,6 +20,8 @@ use FreePBX\modules\Dmodem\Cli;
 use FreePBX\modules\Dmodem\FaxMail;
 use FreePBX\modules\Dmodem\FaxPdf;
 use FreePBX\modules\Dmodem\FaxLog;
+use FreePBX\modules\Dmodem\FaxSend;
+use FreePBX\modules\Dmodem\FaxCover;
 
 $failed = 0;
 $passed = 0;
@@ -239,7 +241,7 @@ ok(strpos($dp, "exten => receivefax,n,Set(CHANNEL(hangup_handler_push)=app-dmode
 ok(strpos($dp, "[app-dmodem-fax2mail]\n") !== false, 'the fax log\'s handler without recipients');
 ok(strpos($dp, "exten => receivefax,n,DModemReceiveFax(/var/spool/asterisk/fax/\${STRFTIME(\${EPOCH},,%Y%m%d-%H%M%S)}-\${FILTER(0-9A-Za-z+,\${CALLERID(num)})}-\${UNIQUEID}.tif)\n") !== false,
    'receivefax runs DModemReceiveFax into fax_dir');
-same(substr_count($dp, ',n,Hangup()'), 3, 'each extension hangs up');
+same(substr_count($dp, ',n,Hangup()'), 5, 'each extension hangs up (and the sent fax\'s s and failed)');
 echo DMODEM_TEST_REAL_EXTENSIONS ? "(FreePBX's own extensions class)\n" : '';
 
 /* the ARI engine: Stasis() (on a store of its own: m's put back after) */
@@ -1031,6 +1033,195 @@ same($m4->exportData(), $exp, 'restore: the settings and profiles back');
 ok(strpos(json_encode($rs->logged), '1 profiles and 1 fax recipients restored') !== false, 'restore: logged');
 FreePBX_Helpers::$kv = $saved;
 FreePBX::$modules['Dmodem'] = $m;
+
+/* --- sending faxes --- */
+
+$sdir = sys_get_temp_dir() . '/dmodem-send-' . getmypid();
+@mkdir($sdir);
+$m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => $sdir, 'fax_retries' => 1,
+	'fax_retry_delay' => 5, 'fax_notify' => 'failure', 'fax_notify_email' => 'ops@example.com',
+	'fax_cover_name' => 'ACME (Fax) \\ Co', 'fax_cover_address' => "1 Main St\nSpringfield"]));
+/* the cover page */
+$cv = FaxCover::pdf(['name' => 'ACME (Fax)', 'to' => 'Bob', 'number' => '5550100',
+		     'message' => str_repeat('word ', 100), 'pages' => 3, 'footer' => 'Private'], 'a4');
+ok(strpos($cv, '%PDF-1.4') === 0 && strpos($cv, '/MediaBox [0 0 595 842]') !== false,
+   'FaxCover: a PDF of A4');
+ok(strpos($cv, '(ACME \\(Fax\\))') !== false && strpos($cv, '(3, with this page)') !== false &&
+   strpos($cv, '(Private)') !== false, 'FaxCover: the text escaped, the pages, the footer');
+same(count(FaxCover::wrap(str_repeat("x\n", 50))), FaxCover::MAX_LINES, 'FaxCover: the lines cut');
+same(FaxCover::str("caf\xc3\xa9"), "(caf\xe9)", 'FaxCover: UTF-8 to WinAnsi');
+if (is_executable('/usr/local/bin/pdftoppm') || is_executable('/usr/bin/pdftoppm')) {
+	file_put_contents("$sdir/cover.pdf", $cv);
+	exec('pdftoppm -r 20 -gray ' . escapeshellarg("$sdir/cover.pdf") . ' ' .
+	     escapeshellarg("$sdir/cv") . ' 2>&1', $o, $rc);
+	ok($rc === 0 && glob("$sdir/cv*.pgm"), 'FaxCover: Poppler reads the cover page');
+	array_map('unlink', glob("$sdir/cv*.pgm"));
+	unlink("$sdir/cover.pdf");
+}
+/* the job's checks */
+$st = $m->getSettings();
+$jb = FaxSend::normalizeJob(['number' => '5550100', 'retries' => '2', 'cover' => 'yes'], $st);
+ok($jb['cover'] === true && $jb['retries'] === 2 && $jb['email'] === 'ops@example.com',
+   'FaxSend: a job over the settings\' defaults');
+same(FaxSend::validateJob($jb, 0), [], 'FaxSend: a cover page alone is a fax');
+foreach (['number' => ['number' => '555;0100'], 'docs' => ['cover' => ''],
+	  'retries' => ['retries' => '4'], 'notify' => ['notify' => 'sometimes'],
+	  'email' => ['email' => 'nobody'], 'to' => ['to' => "a\nb"]] as $k => $over)
+	ok(isset(FaxSend::validateJob(FaxSend::normalizeJob(array_merge(
+		['number' => '5550100', 'cover' => 'yes'], $over), $st), 0)[$k]), "FaxSend: bad $k refused");
+same(FaxSend::kind('%PDF-1.4'), 'pdf', 'FaxSend: a PDF');
+same(FaxSend::kind("II*\0"), 'tiff', 'FaxSend: a TIFF');
+same(FaxSend::kind('<html>'), null, 'FaxSend: not a document');
+$cmd = FaxSend::gsCommand('/usr/bin/gs', ['/a.pdf', '/b.pdf'], '/o.tif', 'a4');
+ok(in_array('-sDEVICE=tiffg4', $cmd, true) && in_array('-g1728x2292', $cmd, true) &&
+   in_array('-dSAFER', $cmd, true) && array_slice($cmd, -2) === ['/a.pdf', '/b.pdf'],
+   'FaxSend: the Ghostscript command (no shell)');
+same(Config::validateSettings(array_merge($st, ['fax_retries' => 5]))['fax_retries'], 'From 0 to 3',
+     'settings: fax_retries');
+ok(isset(Config::validateSettings(array_merge($st, ['fax_ghostscript' => 'gs; rm']))['fax_ghostscript']),
+   'settings: a strange Ghostscript path refused');
+/* a stand-in Ghostscript: a fax file of one page */
+$gsRuns = [];
+$fakeGs = function (array $c) use (&$gsRuns) {
+	$gsRuns[] = $c;
+	foreach ($c as $a)
+		if (strpos($a, '-sOutputFile=') === 0)
+			$out = substr($a, 13);
+	file_put_contents($out, mh_white_tiff(3));
+	return [0, ''];
+};
+$tif = mh_white_tiff(2);
+$r = $m->queueFax(['number' => '5550100', 'cover' => 'yes', 'to' => 'Bob', 'message' => 'Hi',
+		   'notify' => 'always'], [['a.pdf', "%PDF-1.4\n"], ['b.tif', $tif]], 1800000000, $fakeGs);
+ok($r['ok'] && FaxSend::idOk($r['id']), 'queueFax: queued');
+$jid = $r['id'];
+same(count($gsRuns), 2, 'queueFax: Ghostscript for the pages, then with the cover page');
+same(count(preg_grep('/\.pdf$/', $gsRuns[1])), 3,
+     'queueFax: the cover page and two documents');
+same($m->getFaxJob($jid)['pages'], 1, 'queueFax: the pages counted');
+ok(is_file("$sdir/out-$jid.tif") && !is_dir("$sdir/out-$jid.tif.d"), 'queueFax: the fax file, no temporary files');
+$r = $m->queueFax(['number' => '5550100'], [['x.html', '<html>']], 1800000000, $fakeGs);
+ok(!$r['ok'] && strpos($r['errors']['docs'], 'not a PDF or TIFF') !== false, 'queueFax: not a document');
+$r = $m->queueFax(['number' => '5550100'], [['x.pdf', '%PDF-']], 1800000000,
+		  function ($c) { return [1, 'Error: /syntaxerror']; });
+ok(!$r['ok'] && strpos($r['message'], '/syntaxerror') !== false, 'queueFax: Ghostscript\'s error');
+same(count($m->getFaxJobs()), 1, 'queueFax: only the good job queued');
+if (is_executable('/usr/bin/gs')) {
+	$r = $m->queueFax(['number' => '5550101', 'cover' => 'yes', 'message' => 'Real'],
+			  [['b.tif', mh_white_tiff(4)]], 1800000001);
+	ok($r['ok'] && $m->getFaxJob($r['id'])['pages'] === 2, 'queueFax: Ghostscript\'s own pages (cover + 1)');
+	if (!$r['ok'] || $m->getFaxJob($r['id'])['pages'] !== 2)
+		echo "  ($r[message])\n";
+	$m->cancelFax($r['id']);
+}
+/* the queue: a try */
+$am = $m->FreePBX->astman;
+$am->sent = [];
+$m->runFaxQueue(1800000010);
+same($am->sent[0][0], 'Originate', 'runFaxQueue: an Originate');
+same(array_intersect_key($am->sent[0][1], array_flip(['Channel', 'Context', 'Exten', 'Variable'])),
+     ['Channel' => 'Local/5550100@from-internal', 'Context' => 'app-dmodem-faxout', 'Exten' => 's',
+      'Variable' => 'DMODEMFAXJOB=' . $jid], 'runFaxQueue: the call to the fax context');
+ok($m->getFaxJob($jid)['state'] === 'sending' && $m->getFaxJob($jid)['attempts'] === 1,
+   'runFaxQueue: the job on a call');
+$m->runFaxQueue(1800000020);
+same(count($am->sent), 1, 'runFaxQueue: no second call while on a call');
+/* a failed try: the next one later */
+$lines = [];
+same(Cli::run($m, ['faxsent', $jid, '1800000030.4', 'FAILED', '0', '0', 'T30_NO_ANSWER', ''], [], $say), 0,
+     'fwconsole dmodem faxsent: a failed try');
+ok($m->getFaxJob($jid)['state'] === 'retry' && $m->getFaxJob($jid)['next'] >= time() + 299,
+   'faxsent: the next try in 5 minutes');
+ok(strpos(end($lines), 'try 2 of 2') !== false, 'faxsent: says the next try');
+$m->runFaxQueue(time() + 10);
+same(count($am->sent), 1, 'runFaxQueue: not before the next try');
+$lines = [];
+same(Cli::run($m, ['faxjobs'], [], $say), 0, 'fwconsole dmodem faxjobs');
+ok(strpos($lines[0], $jid) !== false && strpos($lines[0], 'retry') !== false, 'faxjobs: the job');
+$m->runFaxQueue(time() + 400);
+same(count($am->sent), 2, 'runFaxQueue: the second try');
+/* the last try: into the log, the result by email */
+$n = count($mails);
+same(Cli::run($m, ['faxsent', $jid, '1800000500.7', 'SUCCESS', '3', '9600', 'OK', '+1 555 0100'],
+	       ['send' => $sender], $say), 0, 'faxsent: sent');
+same($m->getFaxJob($jid), null, 'faxsent: the job out of the queue');
+$e = $m->getFax('1800000500.7');
+ok($e !== null && $e['direction'] === 'out' && $e['number'] === '5550100' && $e['pages'] === 3 &&
+   $e['attempts'] === 2 && $e['file'] === "out-$jid.tif" && $e['mail_ok'],
+   'faxsent: the sent fax in the fax log');
+same(count($mails), $n + 1, 'faxsent: the result mailed (notify always)');
+ok(end($mails)['to'] === 'ops@example.com' && end($mails)['subject'] === 'Fax to 5550100 sent' &&
+   isset($parts(end($mails))['application/pdf']), 'the result: to the address, its subject, the PDF');
+$h = dmodem_get($m, ['view' => 'faxes']);
+ok(strpos($h, '<td>Sent</td>') !== false && strpos($h, '5550100') !== false, 'faxes page: a sent fax');
+/* no answer, no tries left: failed; refused by Asterisk */
+$r = $m->queueFax(['number' => '5550102', 'cover' => 'yes', 'retries' => '0'], [], 1800000000, $fakeGs);
+$m->runFaxQueue(1800000100);
+$n = count($mails);
+$m->faxSent($r['id'], '1800000600.1', 'NOANSWER', 0, 0, 'REASON_3', '', $sender);
+ok($m->getFaxJob($r['id']) === null && $m->getFax('1800000600.1')['status'] === 'NOANSWER',
+   'faxSent: no answer, no tries left: in the log');
+same(count($mails), $n + 1, 'faxSent: the failure mailed (notify failure)');
+$r = $m->queueFax(['number' => '5550103', 'cover' => 'yes', 'retries' => '0', 'notify' => 'never'],
+		  [], 1800000000, $fakeGs);
+$am->reply = ['Response' => 'Error', 'Message' => 'Extension does not exist.'];
+$out = $m->runFaxQueue(1800000100);
+$am->reply = ['Response' => 'Success', 'Message' => 'Originate successfully queued'];
+ok($m->getFaxJob($r['id']) === null && strpos($out[0], 'Extension does not exist') !== false,
+   'runFaxQueue: refused by Asterisk: a failed try');
+/* a try that never reports */
+$r = $m->queueFax(['number' => '5550104', 'cover' => 'yes', 'retries' => '0', 'notify' => 'never'],
+		  [], 1800000000, $fakeGs);
+$m->runFaxQueue(1800000000);
+$m->runFaxQueue(1800000000 + 60 + FaxSend::MAX_TRY + 1);
+ok($m->getFaxJob($r['id']) === null, 'runFaxQueue: a try without a result is a failure');
+/* cancel */
+$r = $m->queueFax(['number' => '5550105', 'cover' => 'yes'], [], 1900000000, $fakeGs);
+dmodem_post($m, ['action' => 'cancel_fax', 'job' => $r['id']]);
+ok($m->message[0] === 'success' && $m->getFaxJob($r['id']) === null, 'cancel_fax: out of the queue');
+same(Cli::run($m, ['faxcancel', 'j1'], [], $say), 1, 'faxcancel: no such job');
+same(Cli::run($m, ['faxsent', 'j1', '1.1', 'SUCCESS'], [], $say), 1, 'faxsent: no such job');
+/* fwconsole dmodem sendfax */
+file_put_contents("$sdir/in.tif", $tif);
+$am->sent = [];
+$lines = [];
+same(Cli::run($m, ['sendfax', '5550106', "$sdir/in.tif"], ['run' => $fakeGs, 'retries' => '0',
+	'notify' => 'never'], $say), 0, 'fwconsole dmodem sendfax');
+ok(strpos($lines[0], 'queued (1 pages)') !== false && count($am->sent) === 1, 'sendfax: queued and called');
+same(Cli::run($m, ['sendfax', '5550106', "$sdir/none.pdf"], [], $say), 1, 'sendfax: no such file');
+same(Cli::run($m, ['sendfax'], [], $say), 2, 'sendfax: usage');
+/* the page */
+$h = dmodem_get($m, ['view' => 'send']);
+ok(strpos($h, 'enctype="multipart/form-data"') !== false && strpos($h, 'name="docs[]"') !== false &&
+   strpos($h, '5550106') !== false, 'send page: the form and the queue');
+ok(strpos(dmodem_get($m, []), 'view=send') !== false, 'the page: a Send fax tab');
+dmodem_post($m, ['action' => 'send_fax', 'number' => 'x']);
+ok(isset($m->errors['number']) && $m->message[0] === 'danger', 'send_fax: a bad number refused');
+/* the dialplan of a sent fax */
+$dp = dmodem_dialplan($m);
+ok(strpos($dp, "[app-dmodem-faxout]\n") !== false && strpos($dp, "exten => s,1,NoOp(D-Modem fax job \${FILTER(a-z0-9,\${DMODEMFAXJOB})})\n") !== false,
+   'the sent fax\'s context');
+ok(strpos($dp, "exten => s,n,DModemSendFax($sdir/out-\${FILTER(a-z0-9,\${DMODEMFAXJOB})}.tif)\n") !== false,
+   'the sent fax: DModemSendFax of the job\'s file');
+ok(strpos($dp, "exten => failed,1,System(/usr/sbin/fwconsole dmodem faxsent '\${FILTER(a-z0-9,\${DMODEMFAXJOB})}'") !== false,
+   'the sent fax: the failed extension');
+ok(strpos($dp, "[app-dmodem-faxsent]\n") !== false && strpos($dp, "exten => s,1,System(/usr/sbin/fwconsole dmodem faxsent '\${FILTER(a-z0-9,\${ARG1})}'") !== false,
+   'the sent fax\'s hangup handler');
+$x = Dialplan::faxOut(array_merge($m->getSettings(), ['engine' => 'ari']), '/usr/sbin/fwconsole');
+same($x['s'][2], ['Stasis', "dmodem,sendfax,$sdir/out-\${FILTER(a-z0-9,\${DMODEMFAXJOB})}.tif"],
+     'the sent fax with dmodem-ari: Stasis(sendfax)');
+/* the job each minute */
+$fj = new FakeJob();
+FreePBX::$modules['Job'] = $fj;
+$m->install();
+same($fj->jobs['dmodem/faxqueue'][0], '/usr/sbin/fwconsole dmodem faxqueue', 'install: the fax queue job');
+same($fj->jobs['dmodem/faxqueue'][1], '* * * * *', 'install: each minute');
+$m->uninstall();
+same($fj->jobs, [], 'uninstall: the job gone');
+unset(FreePBX::$modules['Job']);
+$m->install();
+array_map('unlink', glob("$sdir/*"));
+rmdir($sdir);
 
 /* --- uninstall --- */
 

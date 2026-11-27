@@ -19,6 +19,8 @@ require_once __DIR__ . '/lib/Dialout.php';
 require_once __DIR__ . '/lib/Cli.php';
 require_once __DIR__ . '/lib/FaxMail.php';
 require_once __DIR__ . '/lib/FaxLog.php';
+require_once __DIR__ . '/lib/FaxSend.php';
+require_once __DIR__ . '/lib/FaxCover.php';
 
 use FreePBX\modules\Dmodem\Config;
 use FreePBX\modules\Dmodem\Dialplan;
@@ -27,6 +29,7 @@ use FreePBX\modules\Dmodem\Dialout;
 use FreePBX\modules\Dmodem\FaxMail;
 use FreePBX\modules\Dmodem\FaxLog;
 use FreePBX\modules\Dmodem\FaxPdf;
+use FreePBX\modules\Dmodem\FaxSend;
 
 class Dmodem extends \FreePBX_Helpers implements \BMO
 {
@@ -36,6 +39,7 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	const RECIPIENTS = 'recipients';
 	const DIDFAX = 'didfax';
 	const FAXLOG = 'faxlog';
+	const FAXJOBS = 'faxjobs';
 	/* the endpoints the check reads at most */
 	const MAX_ENDPOINTS = 200;
 	/* exportData()'s format */
@@ -69,6 +73,22 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		foreach (Config::defaultSettings() as $k => $v)
 			if (!is_array($have) || !array_key_exists($k, $have))
 				$this->setConfig($k, self::stored($v), self::SETTINGS);
+		/* the fax queue each minute (FreePBX's jobs: fwconsole job) */
+		$job = $this->jobs();
+		if ($job !== null)
+			$job->addCommand('dmodem', 'faxqueue',
+					 $this->fwconsole() . ' dmodem faxqueue', '* * * * *', 600);
+	}
+
+	/* FreePBX's jobs (fwconsole job), null if this FreePBX has none */
+	private function jobs()
+	{
+		try {
+			$j = $this->FreePBX->Job;
+		} catch (\Throwable $e) {
+			return null;
+		}
+		return is_object($j) && method_exists($j, 'addCommand') ? $j : null;
 	}
 
 	/* v as the store keeps it: a bool as yes or no, since the store
@@ -86,6 +106,11 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$this->delById(self::PROFILES);
 		$this->delById(self::RECIPIENTS);
 		$this->delById(self::DIDFAX);
+		$this->delById(self::FAXLOG);
+		$this->delById(self::FAXJOBS);
+		$job = $this->jobs();
+		if ($job !== null)
+			$job->remove('dmodem', 'faxqueue');
 	}
 
 	/* settings over the defaults */
@@ -499,6 +524,238 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		return true;
 	}
 
+	/* the uploaded files f ($_FILES of a multiple file input) as a list
+	   of [name, bytes]; *why: '' or what went wrong */
+	public static function uploads($f, &$why = null)
+	{
+		$why = '';
+		$out = [];
+		if (!is_array($f) || !isset($f['name']))
+			return $out;
+		foreach ((array)$f['name'] as $i => $name) {
+			$e = is_array($f['error']) ? $f['error'][$i] : $f['error'];
+			if ($e === UPLOAD_ERR_NO_FILE)
+				continue;
+			$tmp = is_array($f['tmp_name']) ? $f['tmp_name'][$i] : $f['tmp_name'];
+			if ($e !== UPLOAD_ERR_OK || !is_uploaded_file($tmp)) {
+				$why = sprintf(_('%s did not upload'), $name);
+				return [];
+			}
+			$out[] = [basename((string)$name), (string)file_get_contents($tmp)];
+		}
+		return $out;
+	}
+
+	/* the faxes to send (the queue): id => job, the oldest first */
+	public function getFaxJobs()
+	{
+		$all = $this->getAll(self::FAXJOBS);
+		$out = [];
+		if (is_array($all))
+			foreach ($all as $id => $j)
+				if (is_array($j) && FaxSend::idOk($id) &&
+				    in_array(isset($j['state']) ? $j['state'] : '', FaxSend::STATES, true))
+					$out[(string)$id] = $j + ['id' => (string)$id];
+		uasort($out, function ($a, $b) {
+			return [$a['created'], $a['id']] <=> [$b['created'], $b['id']];
+		});
+		return $out;
+	}
+
+	/* job id of the queue, null if there is none */
+	public function getFaxJob($id)
+	{
+		$all = $this->getFaxJobs();
+		return isset($all[(string)$id]) ? $all[(string)$id] : null;
+	}
+
+	/* job j kept in the queue */
+	private function saveFaxJob(array $j)
+	{
+		$this->setConfig($j['id'], $j, self::FAXJOBS);
+	}
+
+	/* a fax to send: job in (FaxSend::normalizeJob()'s fields) with
+	   the documents docs (a list of [name, bytes]) made into its fax
+	   file and put in the queue, at the time now (null: time()); run
+	   the runner of Ghostscript (FaxSend::make()).  ['ok', 'message',
+	   'errors' (field => message), 'id'] */
+	public function queueFax(array $in, array $docs, $now = null, ?callable $run = null)
+	{
+		$now = $now === null ? time() : (int)$now;
+		$s = $this->getSettings();
+		$j = FaxSend::normalizeJob($in, $s);
+		$e = FaxSend::validateJob($j, count($docs));
+		foreach ($docs as $d)
+			if (strlen($d[1]) > FaxSend::MAX_BYTES)
+				$e['docs'] = sprintf(_('%s is too big'), $d[0]);
+		if ($e)
+			return ['ok' => false, 'message' => implode('; ', $e), 'errors' => $e,
+				'id' => ''];
+		$id = FaxSend::newId($now);
+		$out = rtrim($s['fax_dir'], '/') . '/' . FaxSend::fileName($id);
+		$c = [
+			'name' => $s['fax_cover_name'], 'address' => $s['fax_cover_address'],
+			'phone' => $s['fax_cover_phone'], 'web' => $s['fax_cover_web'],
+			'footer' => $s['fax_cover_footer'], 'date' => date('Y-m-d H:i', $now),
+		];
+		list($ok, $why, $pages) = FaxSend::make($s, $j, $docs, $c, $out, $run);
+		if (!$ok)
+			return ['ok' => false, 'message' => $why, 'errors' => ['docs' => $why],
+				'id' => ''];
+		$this->saveFaxJob($j + [
+			'id' => $id, 'created' => $now, 'state' => 'queued',
+			'attempts' => 0, 'next' => $now, 'started' => 0,
+			'pages' => $pages, 'last' => '',
+		]);
+		return ['ok' => true, 'errors' => [], 'id' => $id,
+			'message' => sprintf(_('Fax to %s queued (%d pages)'), $j['number'], $pages)];
+	}
+
+	/* the queue run at the time now (null: time()): each job whose
+	   time has come is called (the manager's Originate); a try without
+	   a result after its time is a failure.  Its lines */
+	public function runFaxQueue($now = null)
+	{
+		$now = $now === null ? time() : (int)$now;
+		$s = $this->getSettings();
+		$lines = [];
+		$am = isset($this->FreePBX->astman) ? $this->FreePBX->astman : null;
+		foreach ($this->getFaxJobs() as $id => $j) {
+			if ($j['state'] === 'sending') {
+				if ($j['started'] < $now - (int)$s['dialout_ring'] - FaxSend::MAX_TRY) {
+					$r = $this->faxSent($id, '', 'FAILED', 0, 0, 'NO_RESULT', '', null, $now);
+					$lines[] = $r[1];
+				}
+				continue;
+			}
+			if ($j['next'] > $now)
+				continue;
+			$j['attempts']++;
+			$j['state'] = 'sending';
+			$j['started'] = $now;
+			$this->saveFaxJob($j);
+			if (!$am || (method_exists($am, 'connected') && !$am->connected())) {
+				$res = ['Response' => 'Error', 'Message' => _('the manager is not connected')];
+			} else {
+				$res = $am->send_request('Originate', FaxSend::originate($s, $j));
+			}
+			if (is_array($res) && isset($res['Response']) &&
+			    strcasecmp($res['Response'], 'Success') === 0) {
+				$lines[] = sprintf(_('Fax %s: calling %s (try %d)'), $id, $j['number'],
+						   $j['attempts']);
+				continue;
+			}
+			$why = is_array($res) && isset($res['Message']) ? $res['Message'] : '';
+			$r = $this->faxSent($id, '', 'FAILED', 0, 0,
+					    'ASTERISK_REFUSED ' . $why, '', null, $now);
+			$lines[] = $r[1];
+		}
+		return $lines;
+	}
+
+	/* fwconsole dmodem faxsent: the result of a try of job id (the
+	   call uniqueid, status, pages, rate, error, the remote fax
+	   number) at the time now; a job with tries left waits for its
+	   next try, else it goes into the fax log and its result by email
+	   (send as FaxMail::send() has it).  [ok, message] */
+	public function faxSent($id, $uniqueid, $status, $pages, $rate, $error, $remote,
+				?callable $send = null, $now = null)
+	{
+		$now = $now === null ? time() : (int)$now;
+		$j = $this->getFaxJob($id);
+		if ($j === null)
+			return [false, sprintf(_('No fax job %s'), $id)];
+		$status = preg_replace('/[^A-Z]/', '', (string)$status);
+		$j['last'] = trim($status . ' ' . $error);
+		$j['result'] = ['uniqueid' => (string)$uniqueid, 'status' => $status,
+				'pages' => (int)$pages, 'rate' => (int)$rate,
+				'error' => (string)$error, 'remote' => (string)$remote];
+		list($j, $final) = FaxSend::after($j, $status, $this->getSettings(), $now);
+		if (!$final) {
+			$this->saveFaxJob($j);
+			return [true, sprintf(_('Fax %s to %s: %s; try %d of %d at %s'), $id,
+				$j['number'], $j['last'], $j['attempts'] + 1, $j['retries'] + 1,
+				date('H:i', $j['next']))];
+		}
+		return $this->finishFax($j, $status, $send, $now);
+	}
+
+	/* job j ended with status: into the fax log, out of the queue, and
+	   its result by email when its notify setting says so.  [ok,
+	   message] */
+	private function finishFax(array $j, $status, ?callable $send, $now)
+	{
+		$s = $this->getSettings();
+		$r = isset($j['result']) ? $j['result'] : [];
+		$u = isset($r['uniqueid']) && FaxLog::uniqueidOk($r['uniqueid']) ?
+			$r['uniqueid'] : sprintf('%d.%d', $now, crc32($j['id']) % 100000);
+		$file = rtrim($s['fax_dir'], '/') . '/' . FaxSend::fileName($j['id']);
+		$e = FaxLog::entry('', $u, [
+			'status' => $status,
+			'pages' => isset($r['pages']) ? $r['pages'] : 0,
+			'rate' => isset($r['rate']) ? $r['rate'] : 0,
+			'remote' => isset($r['remote']) ? $r['remote'] : '',
+			'cid' => '', 'cidname' => $j['to'],
+		], is_file($file) ? $file : null, $now,
+			['number' => $j['number'], 'job' => $j['id'], 'attempts' => $j['attempts']]);
+		$msg = sprintf(_('Fax %s to %s: %s after %d tries'), $j['id'], $j['number'],
+			       $status === 'SUCCESS' ? _('sent') : $j['last'], $j['attempts']);
+		if (FaxSend::notifies($j, $status)) {
+			$m = $this->mailResult($j, $status, $e, $file, $send);
+			$e['mail'] = $m[1];
+			$e['mail_ok'] = $m[0];
+			$msg .= '; ' . $m[1];
+		}
+		$this->setConfig($u, $e, self::FAXLOG);
+		$this->setConfig($j['id'], false, self::FAXJOBS);
+		$this->purgeFaxes($now);
+		return [true, $msg];
+	}
+
+	/* the result of job j (status, its log entry e, its fax file) to
+	   the job's email address, with the PDF of the fax.  [ok, message] */
+	private function mailResult(array $j, $status, array $e, $file, ?callable $send)
+	{
+		$s = $this->getSettings();
+		$ok = $status === 'SUCCESS';
+		$subject = sprintf($ok ? _('Fax to %s sent') : _('Fax to %s not sent'), $j['number']);
+		$text = implode("
+", [
+			sprintf(_('Fax to %s (%s): %s.'), $j['number'], $j['to'],
+				$ok ? _('sent') : $j['last']),
+			sprintf(_('Pages: %d of %d. Tries: %d.'), $e['pages'], $j['pages'], $j['attempts']),
+			sprintf(_('Queued %s.'), date('Y-m-d H:i', $j['created'])),
+		]);
+		$att = [];
+		$b = is_file($file) ? @file_get_contents($file) : false;
+		if ($b !== false)
+			$att = FaxMail::attachments('fax-' . preg_replace('/[^0-9+]/', '', $j['number']),
+						    $b, 'pdf', $s['fax_paper']);
+		list($headers, $body, $subj) = FaxMail::build($s['fax_email_from'], $subject,
+							      $text, $att);
+		if ($send === null)
+			$send = function ($to, $subject, $body, $headers) {
+				return mail($to, $subject, $body, $headers);
+			};
+		$sent = (bool)$send($j['email'], $subj, $body, $headers);
+		return [$sent, $sent ? sprintf(_('The result mailed to %s'), $j['email']) :
+			sprintf(_('The mail system did not take the result for %s'), $j['email'])];
+	}
+
+	/* job id taken out of the queue before its try (CANCELLED in the
+	   fax log).  [ok, message] */
+	public function cancelFax($id, $now = null)
+	{
+		$j = $this->getFaxJob($id);
+		if ($j === null)
+			return [false, sprintf(_('No fax job %s'), $id)];
+		if ($j['state'] === 'sending')
+			return [false, sprintf(_('Fax %s is on a call now'), $id)];
+		$j['last'] = 'CANCELLED';
+		return $this->finishFax($j, 'CANCELLED', null, $now === null ? time() : (int)$now);
+	}
+
 	/* the HTTP headers h (a list of lines) and the status code sent,
 	   when no output went before them (none from the command line) */
 	private static function headers(array $h, $code)
@@ -684,6 +941,9 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		/* (the fax log's hangup handler: always) */
 		$c[Dialplan::MAIL_CONTEXT] = ['s' => Dialplan::mailHandler(
 			$this->fwconsole())];
+		$c[Dialplan::FAXOUT_CONTEXT] = Dialplan::faxOut($s, $this->fwconsole());
+		$c[Dialplan::SENT_CONTEXT] = ['s' => Dialplan::sentHandler(
+			$this->fwconsole())];
 		return $c;
 	}
 
@@ -736,6 +996,27 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			$this->reload();
 			$this->message = ['success', sprintf(_('Fax recipient %s deleted'), $id)];
 			$_REQUEST['view'] = 'recipients';
+			return;
+		}
+		if ($action === 'send_fax') {
+			$docs = self::uploads(isset($_FILES['docs']) ? $_FILES['docs'] : null, $why);
+			$r = $why !== '' ? ['ok' => false, 'message' => $why,
+					    'errors' => ['docs' => $why]] :
+				$this->queueFax($req, $docs);
+			$this->errors = $r['errors'];
+			$this->posted = FaxSend::normalizeJob($req, $this->getSettings());
+			if ($r['ok']) {
+				$this->posted = null;
+				$this->runFaxQueue();
+			}
+			$this->message = [$r['ok'] ? 'success' : 'danger', $r['message']];
+			$_REQUEST['view'] = 'send';
+			return;
+		}
+		if ($action === 'cancel_fax' && isset($req['job'])) {
+			$r = $this->cancelFax((string)$req['job']);
+			$this->message = [$r[0] ? 'success' : 'danger', $r[1]];
+			$_REQUEST['view'] = 'send';
 			return;
 		}
 		if ($action === 'delete_fax' && isset($req['uniqueid'])) {
@@ -881,6 +1162,12 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		case 'recipients':
 			$body = $this->view('recipients', ['recipients' => $this->getRecipients(),
 				'settings' => $settings]);
+			break;
+		case 'send':
+			$body = $this->view('send', ['job' => $this->posted !== null ?
+					$this->posted : FaxSend::defaultJob($settings),
+				'jobs' => $this->getFaxJobs(), 'settings' => $settings,
+				'errors' => $this->errors]);
 			break;
 		case 'faxes':
 			$body = $this->view('faxes', ['faxes' => $this->getFaxes(),

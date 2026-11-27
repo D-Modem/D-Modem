@@ -11,7 +11,8 @@
 // calls out dialled in modem-out, the fax recipient sales (fax to email)
 // with <dir>/bin/fwconsole for its mail handler (fax2mail.php).
 // dmodem_test_module() is the same module for the other scripts
-// (dial.php, fax2mail.php).  extensions_dmodem.conf also has an inbound
+// (dial.php, fax2mail.php, sendfax.php); dmodem_test_store() keeps its
+// fax queue and fax log between them.  extensions_dmodem.conf also has an inbound
 // route 5551002 (ext-did-0001, a part of what Core writes) with the
 // module's fax detection.
 
@@ -47,6 +48,26 @@ function dmodem_test_module($dir, $engine, $port)
 		exit(1);
 	}
 	return $m;
+}
+
+/* the module's fax queue and fax log kept in <dir>/faxstore.json
+   between the test's scripts (each has its own store in memory): load
+   true reads them back, false writes them */
+function dmodem_test_store($dir, $load)
+{
+	$f = $dir . '/faxstore.json';
+	$c = 'FreePBX\\modules\\Dmodem';
+	if ($load) {
+		$all = is_file($f) ? json_decode(file_get_contents($f), true) : [];
+		foreach ((array)$all as $g => $rows)
+			FreePBX_Helpers::$kv[$c][$g] = $rows;
+		return;
+	}
+	$keep = [];
+	foreach (['faxjobs', 'faxlog'] as $g)
+		if (isset(FreePBX_Helpers::$kv[$c][$g]))
+			$keep[$g] = FreePBX_Helpers::$kv[$c][$g];
+	file_put_contents($f, json_encode($keep));
 }
 
 /* the inbound route form r posted (Core's page): the module's part */
