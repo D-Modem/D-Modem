@@ -19,6 +19,7 @@ use FreePBX\modules\Dmodem\Dialout;
 use FreePBX\modules\Dmodem\Cli;
 use FreePBX\modules\Dmodem\FaxMail;
 use FreePBX\modules\Dmodem\FaxPdf;
+use FreePBX\modules\Dmodem\FaxLog;
 
 $failed = 0;
 $passed = 0;
@@ -231,6 +232,11 @@ ok(strpos($dp, "[app-dmodem]\n") !== false, 'the app-dmodem context');
 ok(strpos($dp, "exten => bbs,1,NoOp(D-Modem profile bbs)\n") !== false, 'bbs starts at 1');
 ok(strpos($dp, "exten => bbs,n,DModem(bbs)\n") !== false, 'bbs runs DModem(bbs)');
 ok(strpos($dp, "exten => ppp,n,DModem(ppp)\n") !== false, 'ppp runs DModem(ppp)');
+ok(strpos($dp, "exten => bbs,n,Set(CHANNEL(hangup_handler_push)=app-dmodem-fax2mail,s,1())\n") !== false,
+   'bbs (with fax) pushes the fax log\'s handler');
+ok(strpos($dp, "exten => receivefax,n,Set(CHANNEL(hangup_handler_push)=app-dmodem-fax2mail,s,1())\n") !== false,
+   'receivefax pushes the fax log\'s handler');
+ok(strpos($dp, "[app-dmodem-fax2mail]\n") !== false, 'the fax log\'s handler without recipients');
 ok(strpos($dp, "exten => receivefax,n,DModemReceiveFax(/var/spool/asterisk/fax/\${STRFTIME(\${EPOCH},,%Y%m%d-%H%M%S)}-\${FILTER(0-9A-Za-z+,\${CALLERID(num)})}-\${UNIQUEID}.tif)\n") !== false,
    'receivefax runs DModemReceiveFax into fax_dir');
 same(substr_count($dp, ',n,Hangup()'), 3, 'each extension hangs up');
@@ -724,6 +730,73 @@ $r = $m->faxToMail('sales', '1700000000.5', $vars, $sender);
 ok($r[0] && end($mails)['to'] === 'sales@example.com' &&
    array_keys($parts(end($mails))) === ['text/plain', 'application/pdf', 'image/tiff'],
    'faxToMail: the recipient\'s address and attachments');
+
+/* the fax log */
+same(FaxLog::uniqueidOk('1700000000.5'), true, 'FaxLog: a uniqueid');
+same(FaxLog::uniqueidOk('1.2; rm'), false, 'FaxLog: not a uniqueid');
+same(FaxLog::fileName('../etc/passwd.tif'), '', 'FaxLog: no path in a file name');
+same(FaxLog::fileName('a-1.5.tif'), 'a-1.5.tif', 'FaxLog: a file name');
+$n = count($mails);
+$lines = [];
+same(Cli::run($m, ['fax2mail', 'sales', '1700000000.5', 'SUCCESS', '1', '5550100', '+1 555 0100', 'ACME', '14400'],
+	       ['send' => $sender], $say), 0, 'fwconsole dmodem fax2mail: logged and mailed');
+same(count($mails), $n + 1, 'fax2mail: one mail');
+$e = $m->getFax('1700000000.5');
+ok($e !== null && $e['recipient'] === 'sales' && $e['pages'] === 1 && $e['rate'] === 14400 &&
+   $e['cidname'] === 'ACME' && $e['file'] === basename($faxfile) && $e['mail_ok'],
+   'the fax log: the entry of the fax');
+same(Cli::run($m, ['fax2mail', '', '1700000000.8', 'FAILED', '0', '5550111', '', '', ''],
+	       ['send' => $sender], $say), 0, 'fax2mail without a recipient: logged only');
+same(count($mails), $n + 1, 'fax2mail without a recipient: no mail');
+same(array_keys($m->getFaxes()), ['1700000000.8', '1700000000.5'], 'the fax log: newest first');
+same($m->getFax('1700000000.8')['file'], '', 'the fax log: a failed fax without a file');
+same(Cli::run($m, ['fax2mail', '', '1.2;x'], [], $say), 1, 'fax2mail: a bad uniqueid refused');
+$lines = [];
+same(Cli::run($m, ['faxes'], [], $say), 0, 'fwconsole dmodem faxes');
+ok(count($lines) === 2 && strpos($lines[1], '1700000000.5') !== false && strpos($lines[1], 'sales') !== false,
+   'fwconsole dmodem faxes: a line for each fax');
+$d = $m->faxDocument($m->getFax('1700000000.5'), 'pdf');
+ok($d !== null && $d[0] === 'application/pdf' && strpos($d[2], '%PDF-') === 0, 'faxDocument: the PDF');
+$d = $m->faxDocument($m->getFax('1700000000.5'), 'tiff');
+ok($d !== null && $d[0] === 'image/tiff' && $d[2] === file_get_contents($faxfile), 'faxDocument: the TIFF');
+same($m->faxDocument($m->getFax('1700000000.8'), 'pdf'), null, 'faxDocument: none without a file');
+$setting = [];
+ok($m->ajaxRequest('faxpdf', $setting) && $setting['authenticate'] === true, 'Ajax: faxpdf, signed in only');
+ok(!$m->ajaxRequest('other', $setting), 'Ajax: no other command');
+$_REQUEST = ['command' => 'faxtiff', 'uniqueid' => '1700000000.5'];
+ob_start();
+ok($m->ajaxCustomHandler(), 'Ajax: the TIFF sent');
+same(ob_get_clean(), file_get_contents($faxfile), 'Ajax: the TIFF\'s bytes');
+$_REQUEST = ['command' => 'faxpdf', 'uniqueid' => '9.9'];
+ob_start();
+$m->ajaxCustomHandler();
+ok(strpos(ob_get_clean(), 'No such fax') !== false, 'Ajax: no such fax');
+$h = dmodem_get($m, ['view' => 'faxes']);
+ok(strpos($h, 'command=faxpdf&amp;uniqueid=1700000000.5') !== false && strpos($h, 'Sales &lt;team&gt;') !== false &&
+   strpos($h, 'No file') !== false, 'faxes page: the list, the links, the recipient\'s name');
+ok(strpos(dmodem_get($m, []), 'view=faxes') !== false, 'the page: a Faxes tab');
+/* fax_keep_days */
+ok(isset(Config::validateSettings(array_merge($m->getSettings(), ['fax_keep_days' => -1]))['fax_keep_days']),
+   'fax_keep_days: not below 0');
+$m->saveSettings(array_merge($m->getSettings(), ['fax_keep_days' => 30]));
+same($m->purgeFaxes(time() + 10 * 86400), 0, 'purge: nothing under 30 days');
+same($m->purgeFaxes(time() + 31 * 86400), 2, 'purge: the faxes over 30 days');
+ok(!file_exists($faxfile) && $m->getFaxes() === [], 'purge: the entries and the file gone');
+file_put_contents($faxfile, mh_white_tiff(1));
+$m->saveSettings(array_merge($m->getSettings(), ['fax_keep_days' => 0]));
+$m->faxReceived('', '1700000000.5', $vars);
+same($m->purgeFaxes(time() + 3650 * 86400), 0, 'purge: 0 days keeps all');
+dmodem_post($m, ['action' => 'delete_fax', 'uniqueid' => '1700000000.5']);
+ok($m->message[0] === 'success' && $m->getFax('1700000000.5') === null && !file_exists($faxfile),
+   'delete_fax: the entry and its file gone');
+dmodem_post($m, ['action' => 'delete_fax', 'uniqueid' => '1700000000.5']);
+same($m->message[0], 'danger', 'delete_fax: no such fax');
+$old = [];
+for ($i = 0; $i < FaxLog::MAX_ENTRIES + 3; $i++)
+	$old["1.$i"] = ['time' => $i];
+same(count(FaxLog::expired($old, 0, 0)), 3, 'FaxLog: the oldest above MAX_ENTRIES go');
+same(FaxLog::expired($old, 0, 0)[0], '1.2', 'FaxLog: the oldest go first');
+
 $m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => '/var/spool/asterisk/fax']));
 array_map('unlink', glob("$faxdir/*"));
 rmdir($faxdir);
@@ -749,8 +822,10 @@ ok(strpos($dp, "exten => fax-sales,n,Set(CHANNEL(hangup_handler_push)=app-dmodem
 ok(strpos($dp, "exten => fax-sales,n,DModemReceiveFax(/var/spool/asterisk/fax/") !== false,
    'the recipient\'s extension takes the fax');
 ok(strpos($dp, "[app-dmodem-fax2mail]\n") !== false &&
-   strpos($dp, "exten => s,1,System(/usr/sbin/fwconsole dmodem fax2mail '\${FILTER(a-z0-9_,\${ARG1})}' '\${FILTER(0-9.,\${UNIQUEID})}'") !== false,
-   'the mail handler: fwconsole dmodem fax2mail, its values filtered');
+   strpos($dp, "exten => s,1,ExecIf(\$[\"\${DMODEMFAXSTATUS}\" = \"\"]?Return())\n") !== false &&
+   strpos($dp, "exten => s,n,System(/usr/sbin/fwconsole dmodem fax2mail '\${FILTER(a-z0-9_,\${ARG1})}' '\${FILTER(0-9.,\${UNIQUEID})}'") !== false &&
+   strpos($dp, "'\${FILTER(0-9,\${DMODEMFAXRATE})}')\n") !== false,
+   'the mail handler: nothing without a fax, then fwconsole dmodem fax2mail, its values filtered');
 ok(strpos($dp, "exten => s,n,Return()\n") !== false, 'the mail handler returns');
 $cfg = new FakeConfig();
 $cfg->values['AMPSBIN'] = '/opt/freepbx/sbin';

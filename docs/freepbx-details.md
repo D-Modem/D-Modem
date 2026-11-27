@@ -2,7 +2,7 @@
 
 This page gives the technical details for [FreePBX: the D-Modem module](freepbx.md), the plain-English overview. Read the overview first. This page keeps the full details: the names in the code, the clauses of the Recommendations, the numbers and the test lists.
 
-`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.3, for FreePBX 16
+`frontend/freepbx/dmodem/` is a FreePBX module (version 16.0.4, for FreePBX 16
 and 17) for [app_dmodem](asterisk.md) or [dmodem-ari](ari.md). It
 gives these items:
 
@@ -36,7 +36,7 @@ command. The module is only PHP. Nothing in it is compiled.
    FreePBX and install it from the command line:
 
    ```
-   tar xzf dmodem-16.0.3.tgz -C /var/www/html/admin/modules/
+   tar xzf dmodem-16.0.4.tgz -C /var/www/html/admin/modules/
    fwconsole ma installlocal dmodem
    fwconsole reload
    ```
@@ -96,6 +96,9 @@ a profile if a route or a different object still refers to it.
   and the ring time (60 s; 5 to 300 s).
 - **Fax**, the fax settings of `[general]`:
   - the directory for received faxes (`/var/spool/asterisk/fax`);
+  - **Keep faxes** (0): the number of days that a received fax stays
+    in the [fax log](#faxes) and in the fax directory, 0 to 3650. 0
+    keeps all faxes;
   - our fax number (up to 20 digits, `+` and spaces);
   - the fax header (up to 63 characters): the text of the header line
     on the top of each page that D-Modem sends. The line also has the
@@ -159,6 +162,43 @@ file. The text of the message then gives the reason.
 The module gives the message to the mail system of the machine with the
 `mail()` function of PHP (on FreePBX, Postfix or Sendmail). Thus, the
 mail system of the machine must send mail.
+
+### Faxes
+
+The **Faxes** tab is the fax log. It shows each received fax, the
+newest fax first:
+
+| column | value |
+|---|---|
+| Date | The time when the call ended. |
+| From | The caller ID name and number. |
+| Fax number | The fax number of the other machine (its TSI). |
+| To | The fax recipient, if the fax came to a recipient. |
+| Pages, Status, Rate | `DMODEMFAXPAGES`, `DMODEMFAXSTATUS` and `DMODEMFAXRATE`. |
+| Email | **Sent** or **Not sent**, for a fax recipient. Put the mouse on it to see the message of the mail system. |
+
+For each fax:
+
+- **View PDF** opens the fax as a PDF file (the PDF paper size of the
+  settings).
+- **TIFF** downloads the fax file.
+- **Delete** deletes the entry and the fax file.
+
+The log gets the faxes of the fax destination, of the fax recipients and
+of the profiles with **Fax** on. A call that does not receive a fax
+(for example a data call to a profile) does not go into the log.
+
+The module deletes the faxes that are older than **Keep faxes** each
+time that a fax arrives. The log keeps 5000 faxes at most. When there
+are more, the module deletes the oldest faxes.
+
+The files go to the browser only through the Ajax handler of FreePBX
+(`ajax.php?module=dmodem&command=faxpdf|faxtiff&uniqueid=<id>`), and
+only for an administrator who is signed in. The module sends only a
+file of the fax directory that the log has.
+
+The fax log is not in the backup or in `fwconsole dmodem export`. The
+fax files are in the fax directory.
 
 ### Dial out
 
@@ -248,10 +288,12 @@ Apply Config also writes the `app-dmodem` context into
 ```
 [app-dmodem]
 exten => bbs,1,NoOp(D-Modem profile bbs)
+exten => bbs,n,Set(CHANNEL(hangup_handler_push)=app-dmodem-fax2mail,s,1())
 exten => bbs,n,DModem(bbs)
 exten => bbs,n,NoOp(D-Modem bbs: ${DMODEMSTATUS} ${DMODEMRATE})
 exten => bbs,n,Hangup()
 exten => receivefax,1,NoOp(D-Modem fax)
+exten => receivefax,n,Set(CHANNEL(hangup_handler_push)=app-dmodem-fax2mail,s,1())
 exten => receivefax,n,DModemReceiveFax(/var/spool/asterisk/fax/${STRFTIME(${EPOCH},,%Y%m%d-%H%M%S)}-${FILTER(0-9A-Za-z+,${CALLERID(num)})}-${UNIQUEID}.tif)
 ...
 exten => fax-sales,1,NoOp(D-Modem fax to sales)
@@ -260,20 +302,28 @@ exten => fax-sales,n,DModemReceiveFax(<the same file name>)
 ...
 
 [app-dmodem-fax2mail]
-exten => s,1,System(/usr/sbin/fwconsole dmodem fax2mail '${FILTER(a-z0-9_,${ARG1})}' '${FILTER(0-9.,${UNIQUEID})}' ...)
+exten => s,1,ExecIf($["${DMODEMFAXSTATUS}" = ""]?Return())
+exten => s,n,System(/usr/sbin/fwconsole dmodem fax2mail '${FILTER(a-z0-9_,${ARG1})}' '${FILTER(0-9.,${UNIQUEID})}' ...)
 exten => s,n,Return()
 ```
 
-Each fax recipient has an extension `fax-<id>`. The extension pushes a
-hangup handler, then receives the fax as `receivefax` does. When the call
-ends, the hangup handler runs `fwconsole dmodem fax2mail` with the id of
-the recipient and the results of the call: the unique ID, `DMODEMFAXSTATUS`,
-`DMODEMFAXPAGES`, the caller ID number, `DMODEMFAXREMOTE` and the caller
-ID name. `FILTER()` keeps only the characters that each value can have,
+The `receivefax` extension, each profile with **Fax** on, and each fax
+recipient push the hangup handler. Each fax recipient has an extension
+`fax-<id>`. It gives its id to the hangup handler, then receives the fax
+as `receivefax` does. The other extensions give no id.
+
+When the call ends, the hangup handler does nothing if the call did not
+receive a fax (`DMODEMFAXSTATUS` is empty). Else it runs
+`fwconsole dmodem fax2mail` with the id of the recipient (empty for no
+recipient) and the results of the call: the unique ID,
+`DMODEMFAXSTATUS`, `DMODEMFAXPAGES`, the caller ID number,
+`DMODEMFAXREMOTE`, the caller ID name and `DMODEMFAXRATE`. The command
+puts the fax into the [fax log](#faxes). For a recipient, it then sends
+the fax by email. `FILTER()` keeps only the characters that each value can have,
 and each value is in `'...'`. Thus, no data of the call gets to the shell
 as a command. The path of `fwconsole` is from the `AMPSBIN` setting of
 FreePBX (`/usr/sbin` if that setting is not a plain path). The module
-writes the `app-dmodem-fax2mail` context only if there are recipients.
+always writes the `app-dmodem-fax2mail` context.
 
 `fwconsole dmodem fax2mail` finds the fax file of the call by its unique
 ID (`*-<uniqueid>.tif` in the fax directory). If the call has the status
@@ -320,17 +370,22 @@ fwconsole dmodem profiles
 fwconsole dmodem export [file]          # the settings and profiles, as JSON
 fwconsole dmodem import <file> [--keep] # back in; --keep keeps the profiles
                                         # that are not in the file
-fwconsole dmodem fax2mail <recipient> <uniqueid> [status] [pages] [cid] [remote] [cidname]
-                                        # the fax of a call, by email
+fwconsole dmodem fax2mail <recipient|""> <uniqueid> [status] [pages] [cid] [remote] [cidname] [rate]
+                                        # the fax of a call into the log,
+                                        # and by email to a recipient
+fwconsole dmodem faxes                  # the fax log
 ```
 
 - `dial` is the Dial out page for scripts (cron, the mailer of a BBS).
 - `export` without a file shows the JSON. An export holds the ARI
   password. Thus, only its owner can read a file that it writes (mode
   0600).
-- `fax2mail` is the command of the hangup handler of a fax recipient
-  (refer to [What Apply Config writes](#what-apply-config-writes)). You
-  can also use it to send a fax again.
+- `fax2mail` is the command of the hangup handler (refer to
+  [What Apply Config writes](#what-apply-config-writes)). You can also
+  use it to send a fax again. An empty recipient (`""`) puts the fax
+  into the log only.
+- `faxes` shows the fax log: the date, the unique ID, the status, the
+  pages, the caller ID and the recipient of each fax.
 - `import` checks the settings, each profile and each fax recipient as
   the forms do (refer to
   [Backup and restore](#backup-and-restore)). After an import, run
@@ -382,7 +437,7 @@ The line check shows the items that are still incorrect.
 
 ## The module's code
 
-- `module.xml`: the name, version (16.0.3), menu item, console
+- `module.xml`: the name, version (16.0.4), menu item, console
   command and FreePBX versions of the module.
 - `Dmodem.class.php`: the BMO (the module object of FreePBX) class. It has the
   forms (`doConfigPageInit()`), the pages, `genConfig()` and
@@ -391,14 +446,19 @@ The line check shows the items that are still incorrect.
   export and import (`exportData()`, `importData()`) and the line check
   (`check()`), the fax recipients and `faxToMail()`, and the fax
   detection of the inbound routes (`myConfigPageInits()`,
-  `didFaxTab()`). The settings, profiles, fax recipients and the fax
-  detection of the routes are in the kvstore of the module.
+  `didFaxTab()`), and the fax log (`faxReceived()`, `getFaxes()`,
+  `deleteFax()`, `purgeFaxes()`, and `ajaxRequest()` and
+  `ajaxCustomHandler()` for the files). The settings, profiles, fax
+  recipients, the fax detection of the routes and the fax log are in
+  the kvstore of the module.
 - `lib/Config.php`: the defaults and checks of the settings and profiles, and
   `dmodem.conf` made from them. A `;` in a value is written `\;`, as
   Asterisk and dmodem-ari read it. No line breaks go through.
 - `lib/Dialplan.php`: the `app-dmodem` context, and the
   `app-dmodem-fax2mail` context of the hangup handler.
 - `lib/FaxPdf.php`: a TIFF file of a fax as a PDF file.
+- `lib/FaxLog.php`: the entry of the fax log, its checks, and the
+  entries to delete.
 - `lib/FaxMail.php`: the message of a fax (MIME, with the subject and
   text from the templates) to the mail system.
 - `lib/Apps.php`: the dialplan step class (`ext_dmodem_app`) for
@@ -447,6 +507,10 @@ It checks:
 - the message (its headers, its text and its attachments) to a stand-in
   mail system, and the fax recipients (forms, User Manager, the
   destination, the hangup handler, the pages);
+- the fax log: `fwconsole dmodem fax2mail` with and without a
+  recipient, `fwconsole dmodem faxes`, the PDF and TIFF through the
+  Ajax handler, the Faxes page, the delete action, **Keep faxes** and
+  the limit of 5000 faxes;
 - the fax detection of the inbound routes: the form of the route
   (added, changed, renamed, deleted, bad values), the steps in a route
   as Core writes it for the two engines, the tab and the destination
@@ -491,3 +555,7 @@ through the `extensions.class.php` of FreePBX instead of the stand-in.
    to the recipient. A fax machine calls the route. The fax must go to
    `fax-sales` and come as a second message. Then a call without a fax
    must go to the destination of the route (`app-dmodem,bbs,1`).
+7. The fax log: a fax to `app-dmodem,receivefax,1` (no recipient) must
+   run `fwconsole dmodem fax2mail` with an empty recipient, and go into
+   the log. The test then makes sure that each of the three faxes gave
+   its rate, and that the data calls did not run the command.

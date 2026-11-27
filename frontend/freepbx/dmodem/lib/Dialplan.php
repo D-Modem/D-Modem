@@ -18,7 +18,8 @@ class Dialplan
 	const FAX_EXTEN = 'receivefax';
 	/* a fax recipient's extension: this and its id */
 	const RECIPIENT_PREFIX = 'fax-';
-	/* the hangup handler's context: the fax to email */
+	/* the hangup handler's context: a received fax into the fax log,
+	   and to email for a recipient */
 	const MAIL_CONTEXT = 'app-dmodem-fax2mail';
 
 	/* the received fax's file name, in fax_dir: as app_dmodem names
@@ -30,12 +31,22 @@ class Dialplan
 			'-${FILTER(0-9A-Za-z+,${CALLERID(num)})}-${UNIQUEID}.tif';
 	}
 
-	/* the steps that receive a fax into fax_dir (s the settings) */
-	private static function receive(array $s, $label)
+	/* the step that pushes the hangup handler (the fax log, and the
+	   mail to recipient id: '' for none) */
+	public static function pushHandler($id = '')
+	{
+		return ['Set', 'CHANNEL(hangup_handler_push)=' . self::MAIL_CONTEXT .
+			',s,1(' . $id . ')'];
+	}
+
+	/* the steps that receive a fax into fax_dir (s the settings), the
+	   fax log's (and recipient id's mail) hangup handler first */
+	private static function receive(array $s, $label, $id = '')
 	{
 		$file = self::faxFile($s['fax_dir']);
 		return [
 			['NoOp', $label],
+			self::pushHandler($id),
 			$s['engine'] === 'ari' ?
 				['Stasis', $s['ari_app'] . ',receivefax,' . $file] :
 				['DModemReceiveFax', $file],
@@ -45,16 +56,19 @@ class Dialplan
 		];
 	}
 
-	/* the hangup handler (MAIL_CONTEXT, s): fwconsole (its path) dmodem
-	   fax2mail with the recipient's id (ARG1) and the call's results.
-	   Each value is filtered to the characters it can have, inside
-	   '...', so that nothing of the call reaches the shell as such */
+	/* the hangup handler (MAIL_CONTEXT, s): nothing for a call without
+	   a fax (no DMODEMFAXSTATUS); else fwconsole (its path) dmodem
+	   fax2mail with the recipient's id (ARG1, empty for none) and the
+	   call's results.  Each value is filtered to the characters it can
+	   have, inside '...', so that nothing of the call reaches the shell
+	   as such */
 	public static function mailHandler($fwconsole)
 	{
 		$q = function ($v) {
 			return "'" . $v . "'";
 		};
 		return [
+			['ExecIf', '$["${DMODEMFAXSTATUS}" = ""]?Return()'],
 			['System', $fwconsole . ' dmodem fax2mail ' . implode(' ', [
 				$q('${FILTER(a-z0-9_,${ARG1})}'),
 				$q('${FILTER(0-9.,${UNIQUEID})}'),
@@ -63,6 +77,7 @@ class Dialplan
 				$q('${FILTER(0-9+,${CALLERID(num)})}'),
 				$q('${FILTER(0-9+ ,${DMODEMFAXREMOTE})}'),
 				$q('${FILTER(A-Za-z0-9 .,${CALLERID(name)})}'),
+				$q('${FILTER(0-9,${DMODEMFAXRATE})}'),
 			])],
 			['Return', ''],
 		];
@@ -78,7 +93,7 @@ class Dialplan
 		$x = [];
 		ksort($profiles, SORT_STRING);
 		foreach ($profiles as $name => $p) {
-			$x[$name] = [
+			$steps = [
 				['NoOp', 'D-Modem profile ' . $name],
 				$ari ? ['Stasis', $s['ari_app'] . ',' . $name]
 				     : ['DModem', $name],
@@ -86,16 +101,17 @@ class Dialplan
 				 ': ${DMODEMSTATUS} ${DMODEMRATE}'],
 				['Hangup', ''],
 			];
+			/* a fax that the profile takes goes into the log */
+			if (!empty($p['fax']))
+				array_splice($steps, 1, 0, [self::pushHandler()]);
+			$x[$name] = $steps;
 		}
 		if ($s['fax_destination'])
 			$x[self::FAX_EXTEN] = self::receive($s, 'D-Modem fax');
 		ksort($recipients, SORT_STRING);
 		foreach ($recipients as $id => $r) {
-			$steps = self::receive($s, 'D-Modem fax to ' . $id);
-			array_splice($steps, 1, 0, [['Set',
-				'CHANNEL(hangup_handler_push)=' . self::MAIL_CONTEXT .
-				',s,1(' . $id . ')']]);
-			$x[self::RECIPIENT_PREFIX . $id] = $steps;
+			$x[self::RECIPIENT_PREFIX . $id] =
+				self::receive($s, 'D-Modem fax to ' . $id, $id);
 		}
 		return $x;
 	}

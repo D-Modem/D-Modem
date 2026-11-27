@@ -4,8 +4,9 @@
 //
 // Cli.php - fwconsole dmodem's subcommands (Console/Dmodem.class.php
 // hands them here, so they work, and are tested, without Symfony):
-// dial, profiles, export, import, fax2mail (a received fax to a
-// recipient's email address: the hangup handler of Dialplan::mailHandler()).
+// dial, profiles, export, import, fax2mail (a received fax into the fax
+// log, and to a recipient's email address: the hangup handler of
+// Dialplan::mailHandler()), faxes (the fax log).
 
 namespace FreePBX\modules\Dmodem;
 
@@ -69,19 +70,25 @@ class Cli
 				     count($r['imported']), count($r['recipients'])));
 			return $r['ok'] ? 0 : 1;
 		case 'fax2mail':
-			if (count($args) < 3 || count($args) > 8) {
-				$say(_('Usage: fwconsole dmodem fax2mail <recipient> <uniqueid> [status] [pages] [cid] [remote] [cidname]'));
+			if (count($args) < 3 || count($args) > 9) {
+				$say(_('Usage: fwconsole dmodem fax2mail <recipient|""> <uniqueid> [status] [pages] [cid] [remote] [cidname] [rate]'));
 				return 2;
 			}
 			$v = [];
-			foreach (['status', 'pages', 'cid', 'remote', 'cidname'] as $i => $k)
+			foreach (FaxLog::VARS as $i => $k)
 				$v[$k] = isset($args[$i + 3]) ? (string)$args[$i + 3] : '';
-			$r = $m->faxToMail($args[1], $args[2], $v,
+			$r = $m->faxReceived($args[1], $args[2], $v,
 				isset($opts['send']) ? $opts['send'] : null);
 			$say($r[1]);
 			return $r[0] ? 0 : 1;
+		case 'faxes':
+			foreach ($m->getFaxes() as $u => $e)
+				$say(sprintf('%s  %-16s %-8s %3d  %-16s %s', date('Y-m-d H:i', $e['time']),
+					     $u, FaxLog::status($e), $e['pages'], $e['cid'],
+					     $e['recipient']));
+			return 0;
 		default:
-			$say(_('Usage: fwconsole dmodem dial <profile> <number> | profiles | export [file] | import <file> | fax2mail <recipient> <uniqueid> ...'));
+			$say(_('Usage: fwconsole dmodem dial <profile> <number> | profiles | export [file] | import <file> | fax2mail <recipient> <uniqueid> ... | faxes'));
 			return 2;
 		}
 	}
