@@ -92,7 +92,7 @@ same($s, Config::defaultSettings(), 'install(): the default settings, typed');
 
 dmodem_post($m, ['action' => 'save_settings', 'engine' => 'app', 'debug' => '1',
 		 'fax_dir' => '/var/spool/asterisk/fax', 'fax_ident' => '+1 555 0100',
-		 'fax_max_rate' => '9600', 'fax_destination' => 'yes',
+		 'fax_header' => 'ACME; Ltd', 'fax_max_rate' => '9600', 'fax_destination' => 'yes',
 		 /* fax_ecm and fax_t38 unchecked: not posted */
 		 'ari_url' => 'http://127.0.0.1:8088', 'ari_user' => 'dmodem',
 		 'ari_password' => '', 'ari_app' => 'dmodem',
@@ -107,8 +107,9 @@ same($s['debug'], 1, 'debug an int');
 ok($GLOBALS['needreload'] > 0, 'saving asks for Apply Config');
 
 dmodem_post($m, ['action' => 'save_settings', 'engine' => 'nonsense', 'debug' => '9',
-		 'fax_dir' => "relative\npath", 'fax_ident' => 'abc', 'fax_max_rate' => '1']);
-foreach (['engine', 'debug', 'fax_dir', 'fax_ident', 'fax_max_rate'] as $k)
+		 'fax_dir' => "relative\npath", 'fax_ident' => 'abc', 'fax_max_rate' => '1',
+		 'fax_header' => str_repeat('x', 64)]);
+foreach (['engine', 'debug', 'fax_dir', 'fax_ident', 'fax_max_rate', 'fax_header'] as $k)
 	ok(isset($m->errors[$k]), "bad setting $k refused");
 same($m->getSettings()['debug'], 1, 'bad settings not kept');
 same($_REQUEST['view'], 'settings', 'bad settings: the form again');
@@ -201,6 +202,7 @@ same($c['bbs']['clear'], 'auto', 'clear: auto by default');
 same($c['bbs']['fax'], 'yes', 'fax yes');
 same($c['general']['fax_ecm'], 'no', 'fax_ecm no');
 same($c['general']['fax_ident'], '+1 555 0100', 'fax_ident');
+same($c['general']['fax_header'], 'ACME; Ltd', 'fax_header (its ; written \\;)');
 same($c['general']['fax_max_rate'], '9600', 'fax_max_rate');
 ok(!isset($c['ppp']['header']), 'exec has no header');
 same($c['ppp']['voice'] . ' ' . $c['ppp']['voice_listen'] . ' ' . $c['ppp']['voice_dsvd'],

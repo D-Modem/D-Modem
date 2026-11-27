@@ -837,6 +837,7 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 	cfg.dir = dir;
 	cfg.file = file;
 	cfg.ident = fs->ident;
+	cfg.header = fs->header[0] ? fs->header : NULL;
 	cfg.max_bps = fs->max_bps;
 	cfg.min_bps = fs->min_bps;
 	cfg.no_ecm = !fs->ecm;

@@ -478,18 +478,25 @@ std::string faxopt_var(const char *item)
 /* the channel's variables DMODEMFAXOPT_<ITEM> (as DMODEMFAXOPT() of
    app_dmodem sets them) into c.faxopt, in the order of
    dmbridge_faxopt_items: one request (EVAL() of them all, | between
-   them), so that the call does not wait for one for each */
+   them), so that the call does not wait for one for each.  The last
+   item (headerinfo, free text) is all that is after the last | before
+   it, so its text can have a | too */
 void fax_read_settings(Call &c)
 {
 	std::string expr = "EVAL(";
-	for (size_t k = 0; dmbridge_faxopt_items[k]; k++)
-		expr += (k ? "|${" : "${") + faxopt_var(dmbridge_faxopt_items[k]) +
+	size_t n = 0;
+	for (; dmbridge_faxopt_items[n]; n++)
+		expr += (n ? "|${" : "${") + faxopt_var(dmbridge_faxopt_items[n]) +
 			"}";
-	std::string v = get_var(c.id, expr + ")") + "|";
+	std::string v = get_var(c.id, expr + ")");
 	c.faxopt.clear();
-	for (size_t at = 0, bar; (bar = v.find('|', at)) != std::string::npos;
-	     at = bar + 1)
+	size_t at = 0, bar;
+	while (c.faxopt.size() + 1 < n &&
+	       (bar = v.find('|', at)) != std::string::npos) {
 		c.faxopt.push_back(v.substr(at, bar - at));
+		at = bar + 1;
+	}
+	c.faxopt.push_back(v.substr(at));
 }
 
 /* the channel's own fax settings (c.faxopt, read at the start of the
@@ -811,6 +818,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 	cfg.dir = dir;
 	cfg.file = file.c_str();
 	cfg.ident = fs.ident;
+	cfg.header = fs.header[0] ? fs.header : nullptr;
 	cfg.max_bps = fs.max_bps;
 	cfg.min_bps = fs.min_bps;
 	cfg.no_ecm = !fs.ecm;

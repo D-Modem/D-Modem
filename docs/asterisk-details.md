@@ -211,6 +211,7 @@ You can set and read these items:
 | `minrate` | The lowest rate (same values). The fax stops if the two machines cannot use this rate or a higher rate. |
 | `t38timeout` | The time in ms to wait for the answer to our T.38 request. |
 | `localstationid` | Our fax number (CSI or TSI), up to 20 characters. |
+| `headerinfo` | The text of the header line on each page that we send, up to 63 characters (refer to [Page header line](#page-header-line)). |
 
 You can only read these items. They give the result of the last fax on
 the channel:
@@ -235,6 +236,33 @@ exten => s,1,Set(DMODEMFAXOPT(minrate)=9600)
  same => n,Set(DMODEMFAXOPT(localstationid)=+1 555 0100)
  same => n,DModemReceiveFax(/var/spool/fax/in.tif)
  same => n,Verbose(1,${DMODEMFAXOPT(status)} ${DMODEMFAXOPT(pages)} pages)
+```
+
+### Page header line
+
+When `DMODEMFAXOPT(headerinfo)` or `fax_header` has a text, the module
+adds one header line to the top of each page that it sends. The line
+has these parts, from left to right:
+
+1. The date and the time when the fax starts (for example
+   `27-NOV-2026 09:15`).
+2. The header text.
+3. Our fax number (`ident`, `localstationid` or `fax_ident`).
+4. The page number (for example `P.2`).
+
+The module draws the line with its own font, and puts it above the
+contents of the page. Thus the header does not hide the contents. The
+page is longer by 18 rows (standard resolution) or 36 rows (fine
+resolution). The font has the capital letters, the digits, the space and
+the characters `! # % & ' ( ) * + , - . / : ; = ? @ _`. A small letter
+prints as a capital letter. Each other character prints as `?`. A
+colour page gets no header line.
+
+Example:
+
+```
+exten => s,1,Set(DMODEMFAXOPT(headerinfo)=ACME LTD)
+ same => n,DModemSendFax(/var/spool/fax/out.tif,+1 555 0100)
 ```
 
 ### Fax variables
@@ -285,6 +313,7 @@ Put these in `[general]` or in a profile. `DModemSendFax` and
 |---|---|---|
 | `fax_dir` | `/var/spool/asterisk/fax` (the spool directory of Asterisk + `/fax`) | The directory where `DModem()` puts the faxes that it receives. |
 | `fax_ident` | empty | Our fax number (CSI and TSI). |
+| `fax_header` | empty | The text of the header line on each page that we send. Empty: no header line. |
 | `fax_max_rate` | `14400` | The highest rate: 14400, 12000, 9600, 7200, 4800 or 2400. |
 | `fax_min_rate` | `0` (none) | The lowest rate (same values). |
 | `fax_ecm` | `yes` | Offer error correction mode. |

@@ -205,6 +205,11 @@ struct dmodem_fax_config {
 					   with & between them (the pages
 					   of each in turn) */
 	const char *ident;              /* our number (TSI/CSI), 20 chars */
+	const char *header;             /* sending: the header line's text
+					   (the sender's name) on each
+					   black and white page, with the
+					   date, ident and the page number;
+					   NULL: no header line */
 	int32_t max_bps;                /* 14400 if 0 */
 	int32_t min_bps;                /* no page below this rate (0:
 					   none) */

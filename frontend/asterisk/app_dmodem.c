@@ -318,6 +318,8 @@ static int faxopt_read(struct ast_channel *chan, const char *cmd,
 		snprintf(buf, len, "%d", f.t38_timeout);
 	else if (!strcasecmp(data, "localstationid"))
 		ast_copy_string(buf, f.ident, len);
+	else if (!strcasecmp(data, "headerinfo"))
+		ast_copy_string(buf, f.header, len);
 	else {
 		ast_log(LOG_WARNING, "DMODEMFAXOPT: unknown item '%s'\n",
 			data);
@@ -1118,6 +1120,7 @@ static int run_fax(struct ast_channel *chan, struct ast_format *fmt,
 	cfg.dir = dir;
 	cfg.file = file;
 	cfg.ident = fs->ident;
+	cfg.header = fs->header[0] ? fs->header : NULL;
 	cfg.max_bps = fs->max_bps;
 	cfg.min_bps = fs->min_bps;
 	cfg.no_ecm = !fs->ecm;
@@ -1774,7 +1777,9 @@ static const char send_descrip[] =
 	"files as one group 3 fax on a call placed to a fax machine (it waits\n"
 	"for the machine's DIS).  ident: our number (TSI), else\n"
 	"DMODEMFAXOPT(localstationid), else fax_ident of dmodem.conf\n"
-	"[general].\n"
+	"[general].  Each page has a header line (date, time, the header text,\n"
+	"ident and page number) when DMODEMFAXOPT(headerinfo) or fax_header\n"
+	"of [general] has a text.\n"
 	"  Options: d - each phase in the log; f - audio when T.38 fails (the\n"
 	"default); F - audio only, no T.38; z - ask for T.38 first; T - T.38\n"
 	"or no fax; s - AMI DModemFaxStatus events.\n"
@@ -1784,7 +1789,8 @@ static const char send_descrip[] =
 	"DMODEMFAXFILE; also res_fax's FAXSTATUS, FAXSTATUSSTRING, FAXERROR,\n"
 	"FAXPAGES, FAXBITRATE, FAXRESOLUTION, REMOTESTATIONID and\n"
 	"LOCALSTATIONID (unless fax_res_vars = no).  DMODEMFAXOPT() sets\n"
-	"ecm, maxrate, minrate, t38timeout and localstationid first.\n";
+	"ecm, maxrate, minrate, t38timeout, localstationid and headerinfo\n"
+	"first.\n";
 static const char app_recv[] = "DModemReceiveFax";
 static const char recv_synopsis[] = "Receive a fax into a TIFF file with DModem's fax";
 static const char recv_descrip[] =

@@ -25,6 +25,9 @@
     <!-- <param name="fax" value="true"/> -->
     <!-- <param name="fax-dir" value="/var/lib/freeswitch/storage/fax"/> -->
     <!-- <param name="fax-ident" value="+1 555 0100"/> -->
+    <!-- a header line on each page sent: date, time, this text, the
+         ident and the page number (empty: none) -->
+    <!-- <param name="fax-header" value="ACME LTD"/> -->
     <!-- <param name="fax-max-rate" value="14400"/> -->
     <!-- error correction mode offered (false: without) -->
     <!-- <param name="fax-ecm" value="true"/> -->

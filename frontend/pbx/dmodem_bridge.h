@@ -66,6 +66,8 @@ struct dmbridge_fax {
 	int on;                 /* a fax caller is received */
 	char dir[256];          /* ... into this directory */
 	char ident[21];         /* our number (CSI / TSI) */
+	char header[64];        /* sending: the text of the header line on
+				   each page (empty: no header line) */
 	int max_bps;
 	int min_bps;            /* no page below this rate (0: none) */
 	int ecm;                /* error correction mode offered */
@@ -120,7 +122,8 @@ int dmbridge_option_is(const char *name, const char *key);
 /* the built-in fax settings: on, into dir, 14400 bit/s, no lowest
    rate, ECM, T.38 (6000 ms for the answer), res_fax's variables too */
 void dmbridge_fax_defaults(struct dmbridge_fax *f, const char *dir);
-/* a fax option (fax, fax-dir, fax-ident, fax-max-rate, fax-min-rate,
+/* a fax option (fax, fax-dir, fax-ident, fax-header, fax-max-rate,
+   fax-min-rate,
    fax-ecm, fax-t38, fax-t38-timeout, fax-res-vars); 0 if name is
    something else */
 int dmbridge_fax_option(const struct dmbridge_host *h,
@@ -129,7 +132,8 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 
 /* the items of a call's own fax settings (DMODEMFAXOPT(item) of
    app_dmodem, the channel variables DMODEMFAXOPT_<ITEM> for all):
-   ecm, maxrate, minrate, t38timeout, localstationid; NULL at the end */
+   ecm, maxrate, minrate, t38timeout, localstationid, headerinfo; NULL
+   at the end */
 extern const char *const dmbridge_faxopt_items[];
 /* the fax setting item to value in *f: 0, or -1 if item is unknown or
    value is not one it takes (f unchanged) */
