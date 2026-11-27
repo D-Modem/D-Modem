@@ -33,6 +33,8 @@ nav:
       - Index: standards/README.md
       - "V.8": standards/v8.md
       - "V.8: technical details": standards/v8-details.md
+      - "V.8 bis": standards/v8bis.md
+      - "V.8 bis: technical details": standards/v8bis-details.md
       - "V.13": standards/v13.md
       - "V.13: technical details": standards/v13-details.md
       - "V.21": standards/v21.md

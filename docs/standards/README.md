@@ -22,7 +22,7 @@ A standard that has no link has no pages yet.
 | Recommendation | Subject |
 |---|---|
 | [V.8](v8.md) ([details](v8-details.md)) | The start of a data call: ANSam, CM, JM and CJ |
-| V.8 bis | Identification and selection of a mode before V.8 |
+| [V.8 bis](v8bis.md) ([details](v8bis-details.md)) | Identification and selection of a mode before V.8 |
 | [V.25](v25.md) ([details](v25-details.md)) | Answer tones, call tones and echo canceller disabling |
 | [V.13](v13.md) ([details](v13-details.md)) | Simulated carrier control |
 
