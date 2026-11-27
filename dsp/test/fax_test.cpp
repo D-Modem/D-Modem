@@ -280,6 +280,58 @@ TEST(V27ter, SegmentTimes)
 	}
 }
 
+/* the V.29 transmitter's data: ones for as long as it runs */
+static s16 v29_ones(void *)
+{
+	return 1;
+}
+
+/* the V.29 receiver's bits: discarded */
+static void v29_sink(void *, s16)
+{
+}
+
+/* the 4-wire V.29 receiver's circuit 109 (FaxRx with V29_ON_AMP,
+   V29_OFF_AMP and V29_OFF_MS) at 8000 Hz: after 1 s of silence and 2 s
+   of a V.29 9600 bit/s signal at dbm0, ON (true) or OFF; *off_ms: the
+   ms to OFF after the signal stops */
+static bool v29_109(double dbm0, double *off_ms)
+{
+	FaxTx t;
+	t.init(FM_V29_9600, 0, 8000, v29_ones, nullptr);
+	FaxRx r;
+	EXPECT_EQ(r.init(FM_V29_9600, 0, 8000, v29_sink, nullptr, nullptr), 0);
+	r.set_detector(V29_ON_AMP, V29_OFF_AMP, V29_OFF_MS);
+	/* the transmitter's rms (3446) to dbm0 (0 dBm0: a sine of rms
+	   15768) */
+	const double g = 15768 * pow(10, dbm0 / 20) / 3446;
+	for (int i = 0; i < 8000; i++)
+		r.sample(0);
+	for (int i = 0; i < 16000; i++)
+		r.sample(static_cast<float>(g * t.sample()));
+	bool on = r.carrier != 0;
+	int n = 0;
+	for (; r.carrier && n < 8000; n++)
+		r.sample(0);
+	*off_ms = n / 8.0;
+	r.release();
+	return on;
+}
+
+/* 5.2/V.29 (a leased line): circuit 109 ON above -26 dBm, OFF below
+   -31 dBm, ON to OFF in 30 +- 9 ms */
+TEST(V29, Circuit109)
+{
+	double off;
+	EXPECT_TRUE(v29_109(-25.5, &off));
+	EXPECT_FALSE(v29_109(-31.5, &off));
+	for (double l : { 0.0, -10.0, -20.0, -25.0 }) {
+		ASSERT_TRUE(v29_109(l, &off)) << l;
+		EXPECT_GE(off, 21) << l << " dBm0";
+		EXPECT_LE(off, 39) << l << " dBm0";
+	}
+}
+
 /*
  *    the page coding and TIFF files
  *

@@ -83,6 +83,14 @@ struct FaxTx {
 };
 
 
+/* V.29's circuit 109 (5.2/V.29) as the fax receiver's detector has
+   it: ON at -27 dBm0 (above -26), OFF at -30 dBm0 (below -31, 3 dB of
+   hysteresis), the OFF condition 20 ms (with the detector's 5 to 14 ms,
+   25 to 34 ms in all: 30 +- 9) */
+#define V29_ON_AMP      996.0f
+#define V29_OFF_AMP     706.0f
+#define V29_OFF_MS      20
+
 struct FaxRxMemory;
 
 struct FaxRx {
@@ -114,6 +122,11 @@ struct FaxRx {
 	float det_pwr, det_alpha;        /* fast power for carrier detection */
 	float det_floor, det_level;     /* noise floor, signal level */
 	s32 det_hold;                   /* samples before a carrier may start */
+	/* the detector's ON and OFF levels (tone amplitudes: 150 and 100,
+	   about -43.4 and -47 dBm0, unless set), and the samples that the
+	   OFF condition must last (0 unless set) */
+	float det_on_amp, det_off_amp;
+	s32 det_off_min, det_off_n;
 	float agc_alpha;                /* the normal AGC speed */
 	s32 onset;                      /* symbols since the carrier came on */
 	float sym_pow, mid_pow;         /* timing check on the alternations */
@@ -159,6 +172,9 @@ struct FaxRx {
 	/* V.17: the bridge word w, its symbols checked against the
 	   reference (strict): the reference made again.  -1: no memory */
 	s16 set_bridge(u16 w, s16 strict);
+	/* the carrier detector's levels (tone amplitudes) and the time
+	   (ms) the OFF condition must last: a leased line's (V.29) */
+	void set_detector(float on_amp, float off_amp, s32 off_ms);
 	/* free what init took */
 	void release();
 	void bits_out(s16 q, s16 n, s16 msb_first);

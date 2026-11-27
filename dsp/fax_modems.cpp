@@ -617,6 +617,8 @@ s16 FaxRx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_put_bit_t p
 			info(mod_).alpha, 6, 32, info(mod_).power))
 		return -1;
 	det_alpha = 1.0f / (0.005f * srate_);
+	det_on_amp = 150;
+	det_off_amp = 100;
 	det_hold = srate_ / 25;       /* learn the noise floor first */
 	det_floor = 1e12f;
 	agc_alpha = qam.agc_alpha;
@@ -1054,7 +1056,7 @@ void FaxRx::sample(float x)
 		det_floor += 0.002f * (det_pwr - det_floor);
 	if (det_hold > 0)
 		det_hold--;
-	if (!carrier && det_pwr > tone_power(150) &&
+	if (!carrier && det_pwr > tone_power(det_on_amp) &&
 	    det_pwr > 4 * det_floor && det_hold < srate / 100) {
 		carrier = 1;
 		det_level = det_pwr;
@@ -1070,9 +1072,11 @@ void FaxRx::sample(float x)
 			alt_end = -1;
 			sym_pow = mid_pow = 0;
 		}
-	} else if (carrier && (det_pwr < tone_power(100) ||
-				  det_pwr < 0.06f * det_level)) {
+	} else if (carrier && (det_pwr < tone_power(det_off_amp) ||
+				  det_pwr < 0.06f * det_level) &&
+		   ++det_off_n >= det_off_min) {
 		carrier = 0;
+		det_off_n = 0;
 		/* the end of the signal dies away (V.27ter has only 20 ms
 		   of silence before its training) */
 		det_hold = srate / 50;
@@ -1084,10 +1088,22 @@ void FaxRx::sample(float x)
 			nsteps = 0;
 		}
 	}
+	if (carrier && det_pwr >= tone_power(det_off_amp) &&
+	    det_pwr >= 0.06f * det_level)
+		det_off_n = 0;
 	if (carrier)
 		carrier_run = carrier_run > 0 ? carrier_run + 1 : 1;
 	else
 		carrier_run = carrier_run < 0 ? carrier_run - 1 : -1;
+}
+
+/* a leased line's carrier detector: ON over on_amp, OFF under off_amp
+   (tone amplitudes) once that has lasted off_ms */
+void FaxRx::set_detector(float on_amp, float off_amp, s32 off_ms)
+{
+	det_on_amp = on_amp;
+	det_off_amp = off_amp;
+	det_off_min = static_cast<s32>(off_ms * srate / 1000);
 }
 
 } // namespace dsp
