@@ -7,7 +7,8 @@
 #   ari_setup <etc dir>     Asterisk's HTTP server and an ARI user on
 #                           127.0.0.1:$ARI_PORT (18088), every module
 #                           loaded but app_dmodem, and the dialplan's
-#                           DModem(...), DModemSendFax(...) and
+#                           DModem(...), DModemSendFax(...),
+#                           DModemFaxDetect(...) and
 #                           DModemReceiveFax(...) as Stasis(dmodem,...)
 #   ari_start <run dir> <dmodem.conf>
 #                           dmodem-ari started (its log in
@@ -27,6 +28,7 @@ ari_sip_port=${ARI_SIP_PORT:-15190}
 ari_setup() {
 	sed -i -e 's/DModemSendFax(\(.*\))/Stasis(dmodem,sendfax,\1)/' \
 		-e 's/DModemReceiveFax(\(.*\))/Stasis(dmodem,receivefax,\1)/' \
+		-e 's/DModemFaxDetect(\(.*\))/Stasis(dmodem,faxdetect,\1)/' \
 		-e 's/DModem(\([a-z]*\),o)/Stasis(dmodem,\1,o)/' \
 		-e 's/DModem(\([a-z]*\))/Stasis(dmodem,\1)/' \
 		-e 's/DMODEMFAXOPT(\([a-z0-9]*\))/DMODEMFAXOPT_\U\1\E/g' \

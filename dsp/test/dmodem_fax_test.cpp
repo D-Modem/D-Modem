@@ -10,6 +10,7 @@
  */
 
 #include <fcntl.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,6 +21,7 @@
 #include "dmodem.h"
 #include "portable.h"
 #include "fax_util.h"
+#include "g711.h"
 
 class DmodemFax : public testing::TestWithParam<enum dmodem_law> {};
 
@@ -352,4 +354,52 @@ TEST(DmodemFaxFiles, MissingFileRefused)
 	EXPECT_EQ(dmodem_fax_create(&fc), nullptr);
 	fc.file = "&";
 	EXPECT_EQ(dmodem_fax_create(&fc), nullptr);
+}
+
+/*
+ *    fax detection (dmodem_faxdetect_*)
+ *
+ */
+
+/* ms of the tone of f Hz (0: silence) at amp, 20 ms at a time, into the
+   detector as G.711 (mu-law): 1 when it has heard a fax machine */
+static int detect_feed(struct dmodem_faxdetect *d, double f, double amp,
+		       int ms, long *t)
+{
+	int heard = 0;
+	for (int b = 0; b < ms / 20; b++) {
+		int16_t lin[160];
+		unsigned char g[160];
+		for (int i = 0; i < 160; i++, (*t)++)
+			lin[i] = static_cast<int16_t>(
+				amp * sin(2 * 3.14159265358979 * f * (double)*t / 8000));
+		for (int i = 0; i < 160; i++)
+			g[i] = dsp::g711::encode(0, lin[i]);
+		heard = dmodem_faxdetect_process_g711(d, g, 160);
+	}
+	return heard;
+}
+
+/* CNG (1100 Hz, 0.5 s on, 3 s off): heard within the first burst */
+TEST(DmodemFaxDetect, HearsCng)
+{
+	struct dmodem_faxdetect *d = dmodem_faxdetect_create(DMODEM_LAW_ULAW);
+	long t = 0;
+	ASSERT_NE(d, nullptr);
+	EXPECT_EQ(detect_feed(d, 0, 0, 1000, &t), 0);
+	EXPECT_EQ(detect_feed(d, 1100, 8000, 500, &t), 1);
+	dmodem_faxdetect_destroy(d);
+}
+
+/* silence, a 1700 Hz tone and V.25's 2100 Hz answer tone: no fax */
+TEST(DmodemFaxDetect, NotOtherTones)
+{
+	struct dmodem_faxdetect *d = dmodem_faxdetect_create(DMODEM_LAW_ULAW);
+	long t = 0;
+	ASSERT_NE(d, nullptr);
+	EXPECT_EQ(detect_feed(d, 0, 0, 2000, &t), 0);
+	EXPECT_EQ(detect_feed(d, 2100, 8000, 3000, &t), 0);
+	EXPECT_EQ(detect_feed(d, 1700, 8000, 3000, &t), 0);
+	dmodem_faxdetect_destroy(d);
+	dmodem_faxdetect_destroy(nullptr);
 }

@@ -110,6 +110,9 @@ struct t30_hdx_ops {
 /* V.34 half-duplex (v34.h) for t30_config's v34 */
 const struct t30_hdx_ops *t30_v34(void);
 
+/* t30_config's modems */
+enum { T30_MODEM_V27 = 1, T30_MODEM_V29 = 2, T30_MODEM_V17 = 4 };
+
 struct t30_config {
 	s16 sending;            /* calls and sends; else answers and
 				   receives */
@@ -119,6 +122,9 @@ struct t30_config {
 	s32 min_bps;            /* no page below this rate: sending, no
 				   step down past it; receiving, a DCS
 				   below it ends the call (0: none) */
+	u16 modems;             /* the modems that may carry pages: of
+				   T30_MODEM_V27, T30_MODEM_V29 and
+				   T30_MODEM_V17 (0: all three) */
 	s16 ecm;                /* offer and take error correction mode */
 	s32 srate;              /* sample rate of the audio (8000) */
 	/* sending: the next page, 1; no more, 0.  A page with file is a

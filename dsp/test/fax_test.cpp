@@ -1127,11 +1127,13 @@ INSTANTIATE_TEST_SUITE_P(Mcf, T30Lost, testing::Values(
  *
  */
 
-/* a sender (its rates up to tx_max, none below tx_min) to a receiver
-   (up to rx_max, none below rx_min), audio through G.711 mu-law: the
-   two results when both end (10 minutes of line at most) */
-static void min_rate_call(s32 tx_max, s32 tx_min, s32 rx_max, s32 rx_min,
-			  t30_status *sa, t30_status *sb)
+/* a sender (its rates up to tx_max, none below tx_min, on the modems
+   of tx_modems) to a receiver (up to rx_max, none below rx_min, on
+   rx_modems), audio through G.711 mu-law: the two results when both end
+   (10 minutes of line at most) */
+static void rate_call(s32 tx_max, s32 tx_min, u16 tx_modems, s32 rx_max,
+		      s32 rx_min, u16 rx_modems, t30_status *sa,
+		      t30_status *sb)
 {
 	std::string in = fax_file("min_in.tif"), out = fax_file("min_out.tif");
 	Doc tx, rx;
@@ -1145,6 +1147,7 @@ static void min_rate_call(s32 tx_max, s32 tx_min, s32 rx_max, s32 rx_min,
 	c.sending = 1;
 	c.max_bps = tx_max;
 	c.min_bps = tx_min;
+	c.modems = tx_modems;
 	c.ident = "+1 555 0100";
 	c.next_page = next_page;
 	c.ctx = &tx;
@@ -1152,6 +1155,7 @@ static void min_rate_call(s32 tx_max, s32 tx_min, s32 rx_max, s32 rx_min,
 	c.sending = 0;
 	c.max_bps = rx_max;
 	c.min_bps = rx_min;
+	c.modems = rx_modems;
 	c.ident = "+1 555 0199";
 	c.next_page = NULL;
 	c.page_received = page_received;
@@ -1173,6 +1177,13 @@ static void min_rate_call(s32 tx_max, s32 tx_min, s32 rx_max, s32 rx_min,
 	tx.in.close();
 	t30_free(a);
 	t30_free(b);
+}
+
+/* (rate_call() on all the modems) */
+static void min_rate_call(s32 tx_max, s32 tx_min, s32 rx_max, s32 rx_min,
+			  t30_status *sa, t30_status *sb)
+{
+	rate_call(tx_max, tx_min, 0, rx_max, rx_min, 0, sa, sb);
 }
 
 /* the sender's lowest rate above all the receiver has: nothing in
@@ -1208,6 +1219,54 @@ TEST(T30MinRate, DocumentAtOrAboveMin)
 	EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
 	EXPECT_EQ(sa.pages, 2);
 	EXPECT_GE(sa.bps, 9600);
+}
+
+/*
+ *    the modems (t30_config's modems)
+ *
+ */
+
+/* the sender on V.27ter only: the pages at 4800 bit/s */
+TEST(T30Modems, SenderV27Only)
+{
+	t30_status sa = {}, sb = {};
+	rate_call(14400, 0, T30_MODEM_V27, 14400, 0, 0, &sa, &sb);
+	EXPECT_EQ(sa.result, T30_OK) << t30_result_text(sa.result);
+	EXPECT_EQ(sa.pages, 2);
+	EXPECT_EQ(sa.bps, 4800);
+}
+
+/* the receiver on V.29 only: its DIS offers V.29, the pages at 9600 */
+TEST(T30Modems, ReceiverV29Only)
+{
+	t30_status sa = {}, sb = {};
+	rate_call(14400, 0, 0, 14400, 0, T30_MODEM_V29, &sa, &sb);
+	EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+	EXPECT_EQ(sb.pages, 2);
+	EXPECT_EQ(sb.bps, 9600);
+}
+
+/* the receiver on V.17 and V.27ter (its DIS must offer V.29 too): the
+   sender's V.17 goes */
+TEST(T30Modems, ReceiverV17V27)
+{
+	t30_status sa = {}, sb = {};
+	rate_call(14400, 0, 0, 14400, 0, T30_MODEM_V17 | T30_MODEM_V27, &sa,
+		  &sb);
+	EXPECT_EQ(sb.result, T30_OK) << t30_result_text(sb.result);
+	EXPECT_EQ(sb.bps, 14400);
+}
+
+/* the sender on V.29 only, the receiver on V.17 and V.27ter: the
+   sender's V.29 gets FTT, then no rate is left: no page */
+TEST(T30Modems, NoModemInCommon)
+{
+	t30_status sa = {}, sb = {};
+	rate_call(14400, 0, T30_MODEM_V29, 14400, 0,
+		  T30_MODEM_V17 | T30_MODEM_V27, &sa, &sb);
+	EXPECT_NE(sa.result, T30_OK);
+	EXPECT_EQ(sa.pages, 0);
+	EXPECT_EQ(sb.pages, 0);
 }
 
 /*

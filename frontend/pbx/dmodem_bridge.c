@@ -95,6 +95,7 @@ void dmbridge_fax_defaults(struct dmbridge_fax *f, const char *dir)
 	f->max_bps = 14400;
 	f->min_bps = 0;
 	f->ecm = 1;
+	f->modems = 0;
 	f->t38 = 1;
 	f->t38_timeout = 6000;
 	f->res_vars = 1;
@@ -121,7 +122,14 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 		f->t38_timeout = atoi(value) > 0 ? atoi(value) : 6000;
 	else if (dmbridge_option_is(name, "fax-res-vars"))
 		f->res_vars = h->is_true(value);
-	else if (dmbridge_option_is(name, "fax-ecm"))
+	else if (dmbridge_option_is(name, "fax-modems")) {
+		int m = dmbridge_fax_modems(value);
+		if (m < 0)
+			log_line(h, NULL, DMBRIDGE_WARNING,
+				 "fax_modems: not valid: %s", value);
+		else
+			f->modems = m;
+	} else if (dmbridge_option_is(name, "fax-ecm"))
 		f->ecm = h->is_true(value);
 	else if (dmbridge_option_is(name, "fax-t38"))
 		f->t38 = h->is_true(value);
@@ -133,8 +141,51 @@ int dmbridge_fax_option(const struct dmbridge_host *h,
 /* (see dmodem_bridge.h) */
 const char *const dmbridge_faxopt_items[] = {
 	"ecm", "maxrate", "minrate", "t38timeout", "localstationid",
-	"headerinfo", NULL
+	"headerinfo", "modems", NULL
 };
+
+/* (see dmodem_bridge.h) */
+int dmbridge_fax_modems(const char *list)
+{
+	int m = 0, any = 0;
+	const char *p = list;
+
+	if (!p || !*p || !strcasecmp(p, "all"))
+		return 0;
+	while (*p) {
+		size_t n = strcspn(p, ", |");
+		if (n == 3 && !strncasecmp(p, "v17", 3))
+			m |= DMODEM_FAX_V17;
+		else if (n == 3 && !strncasecmp(p, "v27", 3))
+			m |= DMODEM_FAX_V27;
+		else if (n == 3 && !strncasecmp(p, "v29", 3))
+			m |= DMODEM_FAX_V29;
+		else if (n == 3 && !strncasecmp(p, "v34", 3))
+			any = 1;
+		else if (n)
+			return -1;
+		p += n;
+		if (*p)
+			p++;
+	}
+	if (!m)
+		return any ? -1 : 0;
+	return m;
+}
+
+/* (see dmodem_bridge.h) */
+void dmbridge_fax_modems_text(int m, char *buf, size_t len)
+{
+	if (!m)
+		m = DMODEM_FAX_V17 | DMODEM_FAX_V27 | DMODEM_FAX_V29;
+	snprintf(buf, len, "%s%s%s%s%s",
+		 m & DMODEM_FAX_V17 ? "v17" : "",
+		 m & DMODEM_FAX_V17 && m & (DMODEM_FAX_V27 | DMODEM_FAX_V29) ?
+		 "," : "",
+		 m & DMODEM_FAX_V27 ? "v27" : "",
+		 m & DMODEM_FAX_V27 && m & DMODEM_FAX_V29 ? "," : "",
+		 m & DMODEM_FAX_V29 ? "v29" : "");
+}
 
 /* a fax rate that T.30 has: 2400 to 14400 in steps of 2400; 0 if not */
 static int fax_rate_value(const char *value)
@@ -169,6 +220,10 @@ int dmbridge_faxopt(const struct dmbridge_host *h, struct dmbridge_fax *f,
 		if (strlen(value) >= sizeof(f->ident))
 			return -1;
 		copy(f->ident, value, sizeof(f->ident));
+	} else if (!strcasecmp(item, "modems")) {
+		if ((v = dmbridge_fax_modems(value)) < 0)
+			return -1;
+		f->modems = v;
 	} else if (!strcasecmp(item, "headerinfo")) {
 		if (strlen(value) >= sizeof(f->header))
 			return -1;

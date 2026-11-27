@@ -95,6 +95,8 @@ struct SipLeg {
 	std::string rtp_addr;           /* the audio's other end */
 	s32 rtp_peer_port = 0;
 	bool accept_t38 = false;        /* a T.38 offer is answered */
+	bool t38_offered = false;       /* a T.38 offer came (answered or
+					   refused) */
 	T38State t38 = T38_NONE;
 	T38Params t38_peer;             /* the other end's, once on */
 };

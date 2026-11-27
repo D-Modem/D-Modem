@@ -196,6 +196,7 @@ These params go in `<settings>` or in a profile. The fax applications read only
 |---|---|---|
 | `fax-dir` | FreeSWITCH's storage directory + `/fax` | Where `dmodem` puts the faxes it receives. |
 | `fax-ident` | empty | Our fax number (CSI and TSI). |
+| `fax-modems` | `v17,v27,v29` | The modems that can send the pages (refer to [asterisk-details.md](asterisk-details.md#dmodemfaxopt)). |
 | `fax-header` | empty | The text of the header line on each page that we send. Empty: no header line (refer to [asterisk-details.md](asterisk-details.md#page-header-line)). |
 | `fax-max-rate` | `14400` | The fastest rate. |
 | `fax-min-rate` | `0` (none) | The lowest rate. The fax stops if the two machines cannot use this rate or a higher rate. |
