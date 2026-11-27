@@ -19,6 +19,8 @@ We made it with the emulated Courier (`half_courier`). The `AT&F` and
 `AT&W` commands of the firmware wrote it on an erased part. We also wrote
 the settings records that enable the options of the Courier into it.
 
+[PROVENANCE.md](PROVENANCE.md) gives the SHA-256 of each file.
+
 | File | Owner | From |
 |---|---|---|
 | `smartlink/dsplibs.o` | Smart Link Ltd. | Debian's `sl-modem` 2.9.11~20110321 |

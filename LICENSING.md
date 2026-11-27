@@ -64,7 +64,8 @@ and are licensed by them, under their own terms. **They are not subject to the t
 rest of this repository** (the AGPL, the commercial licence, or any other
 licence or permission given here), and no rights in them are granted
 here. They are only used by the interop tests; see
-[dsp/test/NOTICE.md](dsp/test/NOTICE.md). One file in these directories
+[dsp/test/NOTICE.md](dsp/test/NOTICE.md) and, for the source and the
+SHA-256 of each file, [dsp/test/PROVENANCE.md](dsp/test/PROVENANCE.md). One file in these directories
 is ours: `usr/courier-nvram.bin`, which the emulated Courier wrote (see
 NOTICE.md).
 
