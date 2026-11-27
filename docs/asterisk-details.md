@@ -183,6 +183,7 @@ of Asterisk, with one more option (`T`):
 | `F` | Use the audio only. Do not ask for T.38 and refuse the requests for T.38. |
 | `z` | `DModemSendFax` only: ask for T.38 before the fax starts, as `DModemReceiveFax` always does. |
 | `T` | Use T.38 only. If the channel cannot use T.38, or the other end refuses it or does not answer, the module sends or receives no fax and sets `FAXERROR` to `T38`. |
+| `s` | Send an AMI `DModemFaxStatus` event at each phase and each page (refer to [Fax CLI and AMI](#fax-cli-and-ami)). |
 
 You cannot use `F` and `T` together. Example:
 
@@ -296,6 +297,39 @@ frames. The receiving machine asks again for each frame that a line hit
 damaged. Thus the page arrives exactly as it was sent. Without ECM, the
 rows that a hit damaged arrive damaged. The two machines must offer ECM.
 `fax_ecm = no` disables it.
+
+### Fax CLI and AMI
+
+These CLI commands are the D-Modem equivalents of the `fax show`
+commands of `res_fax`:
+
+| command | what it shows |
+|---|---|
+| `dmodem fax show sessions` | One line for each DModem fax that runs now: the session number, the channel, the direction, T.38, the pages, the rate, the time and the phase. |
+| `dmodem fax show session <id>` | All the details of one fax that runs now. |
+| `dmodem fax show stats` | The totals since the module loaded: the sessions now, the attempts to send and to receive, the completed faxes, the failed faxes and the number of failures for each `FAXERROR` code. |
+| `dmodem fax show settings` | The fax settings of `[general]`. |
+| `dmodem fax show capabilities` | What the fax machine can do. |
+
+The module adds these AMI actions (class `reporting`):
+
+| action | response |
+|---|---|
+| `DModemFaxSessions` | One `DModemFaxSessionsEntry` event for each fax that runs, then `DModemFaxSessionsComplete`. |
+| `DModemFaxSession` | The `DModemFaxSession` event of the fax with the number in the header `SessionNumber`. |
+| `DModemFaxStats` | A `DModemFaxStats` event with `CurrentSessions`, `TransmitAttempts`, `ReceiveAttempts`, `CompletedFAXes` and `FailedFAXes`. |
+
+The module sends these AMI events (class `call`):
+
+| event | when | headers |
+|---|---|---|
+| `DModemSendFax` | At the end of each fax that the module sends. | `Channel`, `SessionNumber`, `Status`, `Error`, `StatusString`, `Pages`, `Rate`, `Resolution`, `ECM`, `Transport`, `LocalStationID`, `RemoteStationID`, `FileName` |
+| `DModemReceiveFax` | At the end of each fax that the module receives. | The same headers. |
+| `DModemFaxStatus` | With option `s`: at each phase and each page. | `Channel`, `SessionNumber`, `Operation`, `Status` (the phase), `Pages`, `FileName` |
+
+The module sends `DModemSendFax` or `DModemReceiveFax` also when a fax
+cannot start (for example, the file is not there). Then `Status` is
+`FAILED`.
 
 ### T.38
 

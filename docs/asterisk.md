@@ -93,6 +93,8 @@ The module is also a fax machine:
   Asterisk does. The applications have the options of `SendFAX` and
   `ReceiveFAX`, and also set their variables (`FAXSTATUS` and the
   other variables).
+- `dmodem fax show sessions` and `dmodem fax show stats` show the faxes
+  and the totals. The AMI has the events and actions for the faxes.
 
 Faxes can go through the audio. On SIP calls, they can go through T.38
 (fax over the internet), which is more reliable.

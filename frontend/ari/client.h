@@ -36,6 +36,10 @@ std::string url_encode(const std::string &s);
    none came) and body */
 s32 request(const Server &srv, const char *method, const std::string &path,
 	    std::string *body);
+/* the same with a JSON body (none if json is empty) */
+s32 request_json(const Server &srv, const char *method,
+		 const std::string &path, const std::string &json,
+		 std::string *body);
 
 /* a WebSocket client: the event stream of /ari/events */
 class WebSocket {
