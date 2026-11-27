@@ -828,8 +828,11 @@ ok(isset(Config::validateSettings(array_merge($st, ['fax_block' => 'junk']))['fa
    'settings: a bad block list refused');
 ok(isset(Config::validateSettings(array_merge($st, ['fax_allow_only' => true]))['fax_allow']),
    'settings: only the allow list needs a number on it');
-same(Config::validateSettings(array_merge($st, ['fax_block' => '1900*', 'fax_allow' => '5550100',
-	'fax_allow_only' => true])), [], 'settings: good lists');
+/* (only the keys of the lists: fax_dir is a temporary path, which is
+   not a good path on Windows) */
+same(array_intersect_key(Config::validateSettings(array_merge($st, ['fax_block' => '1900*',
+	'fax_allow' => '5550100', 'fax_allow_only' => true])),
+	['fax_block' => 1, 'fax_allow' => 1, 'fax_allow_only' => 1]), [], 'settings: good lists');
 $m->saveSettings(array_merge($st, ['fax_block' => "1900*\n"]));
 $n = count($mails);
 same(Cli::run($m, ['fax2mail', 'sales', '1700000000.9', 'SUCCESS', '1', '19005550123', '', 'JUNK', '9600'],
