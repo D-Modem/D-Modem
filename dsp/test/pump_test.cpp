@@ -13,9 +13,11 @@
  */
 
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -1054,5 +1056,242 @@ TEST(Fsk, V23CarrierOffTime)
 		const double b = fsk_off_ms(l, 390, 450, 75);
 		EXPECT_GE(b, 15.0) << l << " dBm0";
 		EXPECT_LE(b, 80.0) << l << " dBm0";
+	}
+}
+
+/* ms from the start of a mark tone at dbm0 (after 1 s of silence) to
+   carrier ON, for the FSK channel mark/space at baud, at 8000 Hz; 1000
+   if none in 1 s */
+static double fsk_on_ms(double dbm0, float mark, float space, float baud)
+{
+	dsp::FskDemod d;
+	d.init(mark, space, baud, 8000);
+	for (int i = 0; i < 8000; i++)
+		d.run(0);
+	const double a = 22300 * pow(10, dbm0 / 20);
+	for (int i = 0; i < 8000; i++) {
+		d.run(static_cast<float>(a * sin(2 * M_PI * mark * i / 8000.0)));
+		if (d.carrier)
+			return i / 8.0;
+	}
+	return 1000;
+}
+
+/* 8.3.2/V.23: circuit 109 (the 1200 baud channel) OFF to ON in 10 ms to
+   20 ms after the call set up, and circuit 122 (the 75 baud channel) in
+   less than 80 ms, from 3 dB over the ON level (-43 dBm) to 0 dBm0 */
+TEST(Fsk, V23CarrierOnTime)
+{
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -39.5 }) {
+		double fwd = fsk_on_ms(l, 1300, 2100, 1200);
+		EXPECT_GE(fwd, 10) << l;
+		EXPECT_LE(fwd, 20) << l;
+		EXPECT_LT(fsk_on_ms(l, 390, 450, 75), 80) << l;
+	}
+}
+
+/* the last time (s) in the samples of file that a 10 ms block goes from
+   below to above amplitude 500, before limit_s (at srate); -1 if none */
+static double fsk_onset(const std::string &file, double limit_s, int srate)
+{
+	FILE *f = fopen(file.c_str(), "rb");
+	if (!f)
+		return -1;
+	const int blk = srate / 100;
+	std::vector<s16> b(blk);
+	double at = -1;
+	bool was = false;
+	for (long n = 0; fread(b.data(), sizeof(s16), blk, f) ==
+		     static_cast<size_t>(blk); n += blk) {
+		if (n >= limit_s * srate)
+			break;
+		bool on = false;
+		for (s16 v : b)
+			on = on || abs(v) > 500;
+		if (on && !was)
+			at = static_cast<double>(n) / srate;
+		was = on;
+	}
+	fclose(f);
+	return at;
+}
+
+/* 8.2.2/V.21 and 8.3.2/V.23: in the call set up, circuit 109 (here the
+   CONNECT) comes ON 300 ms to 700 ms after the far mark starts, at each
+   V.21 side and at the V.23 caller (the V.23 answerer has circuit 122);
+   and the answerer before the caller, which then sends no data that the
+   answerer cannot receive yet */
+TEST(Fsk, CallSetupCarrierOnTime)
+{
+	for (int dp : { 21, 23 }) {
+		LoopbackConfig c = line(dp, 40, 6);
+		std::string dump = testing::TempDir() + "fsk_setup_" +
+			std::to_string(dp);
+		c.dump = dump.c_str();
+		LoopbackResult r = loopback_run(c);
+		ASSERT_TRUE(r.side[0].connected && r.side[1].connected) << dp;
+		for (int k = 0; k < (dp == 21 ? 2 : 1); k++) {
+			double con = r.side[k].connect_s;
+			double on = fsk_onset(dump + (k ? ".a" : ".c"), con,
+					      c.srate);
+			ASSERT_GE(on, 0) << dp << " side " << k;
+			EXPECT_GE(con - on, 0.29) << dp << " side " << k;
+			EXPECT_LE(con - on, 0.71) << dp << " side " << k;
+		}
+		EXPECT_LE(r.side[1].connect_s, r.side[0].connect_s) << dp;
+		remove((dump + ".a").c_str());
+		remove((dump + ".c").c_str());
+	}
+}
+
+/* V.22's circuit 109 (Circuit109 with dp_v22.cpp's settings) on the
+   answerer's band pass, 1200 Hz, at 8000 Hz: a tone at dbm0 for 1 s.
+   Its state at the end (from OFF, or from ON first at -20 dBm0 if
+   was_on); *off_ms (if not null): the ms to OFF after the tone stops,
+   at rate's OFF time */
+static bool v22_109(double dbm0, bool was_on, double *off_ms = nullptr,
+		    int rate = 1200)
+{
+	dsp::Biquad bp;
+	bp.bandpass(1200, 1.0f, 8000);
+	dsp::Circuit109 c;
+	c.init(V22_ON_AMP, V22_OFF_AMP, 8000);
+	auto run = [&](double a, int n, int &i) {
+		for (int k = 0; k < n; k++, i++)
+			c.run(bp.run(static_cast<float>(a * sin(2 * M_PI *
+				1200 * i / 8000.0))), V22_OFF_MS(rate), false,
+			      V22_BACK_MS);
+	};
+	int i = 0;
+	if (was_on)
+		run(22300 * 0.1, 8000, i);
+	run(22300 * pow(10, dbm0 / 20), 8000, i);
+	bool on = c.on() != 0;
+	if (off_ms) {
+		int n = 0;
+		while (c.on() && n < 8000) {
+			c.run(bp.run(0), V22_OFF_MS(rate), false, V22_BACK_MS);
+			n++;
+		}
+		*off_ms = n / 8.0;
+	}
+	return on;
+}
+
+/* V.26 ter's circuit 109 in data (Circuit109 with dp_v26.cpp's
+   settings) on an 1800 Hz tone at 8000 Hz: ON at -20 dBm0 for 1 s, then
+   1 s at dbm0. Its state then; *off_ms (if not null): the ms to OFF
+   after the tone stops; *on_ms (if not null): then, after 1 s of
+   silence, the ms to ON again at dbm0 (1000: none in 1 s).  bis: V.26
+   bis's (dp_v26bis.cpp: on the band of the forward channel, ON again
+   after V26B_BACK_MS) */
+static bool v26_109(double dbm0, double *off_ms = nullptr,
+		    double *on_ms = nullptr, bool bis = false)
+{
+	dsp::Circuit109 c;
+	c.init(V26_ON_AMP, V26_OFF_AMP, 8000, V26_SLOW_TC, V26_FAST_TC);
+	c.cd.on = 1;
+	dsp::Biquad bp;
+	bp.bandpass(1800, 0.75f, 8000);
+	int i = 0;
+	auto tone = [&](double a) {
+		return static_cast<float>(a * sin(2 * M_PI * 1800 * i++ /
+						  8000.0));
+	};
+	auto step = [&](float x) {
+		if (bis)
+			c.run(bp.run(x), V26_OFF_MS, true, 8);
+		else
+			c.run(x, V26_OFF_MS, true, V26_BACK_MS);
+	};
+	const double a = 22300 * pow(10, dbm0 / 20);
+	for (int k = 0; k < 8000; k++)
+		step(tone(22300 * 0.1));
+	for (int k = 0; k < 8000; k++)
+		step(tone(a));
+	bool on = c.on() != 0;
+	if (off_ms || on_ms) {
+		int n = 0;
+		for (; c.on() && n < 8000; n++)
+			step(0);
+		if (off_ms)
+			*off_ms = n / 8.0;
+		for (int k = 0; k < 8000; k++)
+			step(0);
+		for (n = 0; !c.on() && n < 8000; n++)
+			step(tone(a));
+		if (on_ms)
+			*on_ms = n / 8.0;
+	}
+	return on;
+}
+
+/* 3.3/V.26 ter: 109 ON above -43 dBm, OFF below -48 dBm, 2 dB of
+   hysteresis at least; ON to OFF in 5 to 15 ms; after a dropout, ON 40
+   to 50 ms after the level is over the threshold */
+TEST(V26, Circuit109)
+{
+	EXPECT_TRUE(v26_109(-45.5));
+	EXPECT_FALSE(v26_109(-48.5));
+	double off, on;
+	v26_109(-42.5, nullptr, &on);
+	EXPECT_LT(on, 1000);
+	v26_109(-44.5, nullptr, &on);
+	EXPECT_EQ(on, 1000);
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -40.0 }) {
+		v26_109(l, &off, &on);
+		EXPECT_GE(off, 5.0) << l << " dBm0";
+		EXPECT_LE(off, 15.0) << l << " dBm0";
+		EXPECT_GE(on, 40.0) << l << " dBm0";
+		EXPECT_LE(on, 50.0) << l << " dBm0";
+	}
+}
+
+/* Table 3/V.26 bis: the caller's circuit 109 in data, ON to OFF in 5 to
+   15 ms, OFF to ON after a dropout in 5 to 15 ms, from 3 dB over the ON
+   level; and in the call set up, 109 (the caller's CONNECT) 300 to 700
+   ms after the answerer's synchronizing signal starts */
+TEST(V26bis, Circuit109)
+{
+	EXPECT_TRUE(v26_109(-45.5, nullptr, nullptr, true));
+	EXPECT_FALSE(v26_109(-48.5, nullptr, nullptr, true));
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -40.0 }) {
+		double off, on;
+		v26_109(l, &off, &on, true);
+		EXPECT_GE(off, 5.0) << l << " dBm0";
+		EXPECT_LE(off, 15.0) << l << " dBm0";
+		EXPECT_GE(on, 5.0) << l << " dBm0";
+		EXPECT_LE(on, 15.0) << l << " dBm0";
+	}
+	LoopbackConfig c = line(226, 40, 6);
+	std::string dump = testing::TempDir() + "v26bis_setup";
+	c.dump = dump.c_str();
+	LoopbackResult r = loopback_run(c);
+	ASSERT_TRUE(r.side[0].connected);
+	double on = fsk_onset(dump + ".c", r.side[0].connect_s, c.srate);
+	ASSERT_GE(on, 0);
+	EXPECT_GE(r.side[0].connect_s - on, 0.29);
+	EXPECT_LE(r.side[0].connect_s - on, 0.71);
+	remove((dump + ".a").c_str());
+	remove((dump + ".c").c_str());
+}
+
+/* 3.3/V.22 and 3.3/V.22 bis: 109 ON above -43 dBm, OFF below -48 dBm,
+   2 dB of hysteresis at least; 109 ON to OFF in 10 to 24 ms (Table
+   3/V.22), 40 to 65 ms at 2400 bit/s (3.2/V.22 bis) */
+TEST(V22, Circuit109)
+{
+	EXPECT_TRUE(v22_109(-42.5, false));
+	EXPECT_FALSE(v22_109(-44.5, false));
+	EXPECT_TRUE(v22_109(-45.5, true));
+	EXPECT_FALSE(v22_109(-48.5, true));
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -42.0 }) {
+		double t;
+		v22_109(l, false, &t, 1200);
+		EXPECT_GE(t, 10.0) << l << " dBm0";
+		EXPECT_LE(t, 24.0) << l << " dBm0";
+		v22_109(l, false, &t, 2400);
+		EXPECT_GE(t, 40.0) << l << " dBm0";
+		EXPECT_LE(t, 65.0) << l << " dBm0";
 	}
 }

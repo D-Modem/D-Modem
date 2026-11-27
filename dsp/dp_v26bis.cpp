@@ -32,9 +32,9 @@
  *    caller:   on 32 symbols of the synchronizing signal in a row, the
  *              rate it shows, 2400 or 1200 bit/s (V.26 bis has no rate
  *              signal: the answerer's +MS picks it); the backward
- *              channel's mark, CONNECT once it has gone out for 150
- *              ms, and the link's data 1.5 s later (the mark until
- *              then)
+ *              channel's mark, CONNECT once it has gone out for 340
+ *              ms (109 ON 300 to 700 ms after the signal starts), and
+ *              the link's data 1.5 s later (the mark until then)
  *
  *    The forward channel's receiver uses no training: its equalizer and
  *    carrier loop adapt to its decisions on the eight points from the
@@ -80,6 +80,17 @@ namespace dsp {
 #define V26B_HOLD_MS    1500
 #define V26B_SYNC_RUN   32
 
+/* the caller's mark before its CONNECT (ms): with the 32 symbols that
+   find the synchronizing signal, circuit 109 ON about 370 ms after the
+   signal starts (300 to 700 ms in the call set up, Table 3) */
+#define V26B_CALL_MARK_MS 340
+
+/* circuit 109 in data (Table 3: ON to OFF 5 to 15 ms, OFF to ON 5 to
+   15 ms after the call set up), on the forward channel's band (the
+   backward channel's echo kept out): the levels and meters of V.26 ter's,
+   ON 8 ms after a dropout */
+#define V26B_BACK_MS    8
+
 /* the 8 points at 45 degree steps, radius sqrt(2): the forward channel's
    phase changes are odd steps at 2400 bit/s, even ones at 1200 */
 static const cplx v26b_points[8] = {
@@ -122,6 +133,8 @@ struct V26bisPump : PumpBase<V26bisPump, v26b_state>, QamRxCore<V26bisPump> {
 	float rx_mse;
 	float data_power;
 	s32 data_sym;           /* rx.symbols at CONNECT */
+	Biquad c109_bp;         /* the forward channel's band */
+	Circuit109 c109;        /* the carrier in data */
 
 	/* the backward channel: the caller's transmitter, the answerer's
 	   receiver */
@@ -225,11 +238,14 @@ void V26bisPump::rx_symbol()
 		s16 q = static_cast<s16>(a / 90) & 3;
 		b[0] = dibit[q][0];
 		b[1] = dibit[q][1];
-		modem_put_bits(modem, 1, b, 2);
+		/* no data to the link while 109 is OFF */
+		if (c109.on())
+			modem_put_bits(modem, 1, b, 2);
 	} else {
 		/* 90 or 270 */
 		b[0] = a >= 180;
-		modem_put_bits(modem, 1, b, 1);
+		if (c109.on())
+			modem_put_bits(modem, 1, b, 1);
 	}
 }
 
@@ -269,10 +285,15 @@ s16 V26bisPump::handshake()
 		}
 		break;
 	case B_MARK:
-		if (count >= ms2samples(V26B_MARK_MS, srate)) {
+		if (count >= ms2samples(V26B_CALL_MARK_MS, srate)) {
 			set_state(B_DATA);
 			data_power = rx.power;
 			data_sym = rx.symbols;
+			/* 109 ON, its meters at the level now */
+			c109.init(V26_ON_AMP, V26_OFF_AMP, srate, V26_SLOW_TC,
+				  V26_FAST_TC);
+			c109.slow.power = c109.fast.power = rx.power;
+			c109.cd.on = 1;
 			return connect_at(V26B_BC_BAUD, rate);
 		}
 		break;
@@ -317,7 +338,15 @@ s16 V26bisPump::sample(float x, float *y)
 	if (state == B_MARK || state == B_DATA)
 		*y = bc_tx.sample([this] { return link_bit(); });
 
-	qam_rx(x);
+	if (state != B_DATA) {
+		qam_rx(x);
+		return r;
+	}
+	/* in data, circuit 109 on the forward channel's band */
+	if (rx.sample(x))
+		rx_symbol();
+	c109.run(c109_bp.run(x), V26_OFF_MS, true, V26B_BACK_MS);
+	carrier_tick(c109.on());
 	return r;
 }
 
@@ -358,7 +387,8 @@ s16 V26bisPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	rate = max_rate > 0 && max_rate < 2400 ? 1200 : 2400;
 
 	if (caller_) {
-		carrier.init(150, 90);
+		carrier.init(V26_ON_AMP, V26_OFF_AMP);
+		c109_bp.bandpass(V26B_CARRIER, 0.75f, srate_);
 		if (rx.init(srate_, V26B_CARRIER, V26B_BAUD, V26B_ALPHA,
 			    V26B_SPAN, V26B_EQ_LEN, V26B_POWER))
 			return -1;

@@ -85,6 +85,7 @@ enum v22_state {
 	A_ANSTONE,
 	A_GAP,
 	A_USB1,
+	A_S1_END,       /* the caller's S1 heard: wait for its end */
 	A_S1,
 	A_SB1_1200,
 	A_SB1_2400,
@@ -137,8 +138,7 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	std::vector<float> mf;  /* matched filter taps */
 	std::vector<cplx> mf_buf;
 	s16 mf_len, mf_pos;
-	PowerMeter in_pwr;
-	CarrierDetect carrier;
+	Circuit109 carrier;
 	float agc_pwr, agc_alpha;
 
 	/* timing recovery */
@@ -397,7 +397,7 @@ void V22Pump::rx_bits(s16 dquad, s16 q34_16, s16 dq_raw)
 			memcpy(bits, b24, 4);
 	}
 
-	if (state == V22_DATA && carrier.on)
+	if (state == V22_DATA && carrier.on())
 		modem_put_bits(modem, 1, bits, rx_rate == 2400 ? 4 : 2);
 }
 
@@ -493,7 +493,7 @@ void V22Pump::rx_symbol(cplx y)
 
 	DSP_TRACE("%s: %" PRId32 " sym %6.2f %6.2f q %d dq %d th %5.2f c %d\n",
 		 caller ? "C" : "A", total, z.re, z.im, quad,
-		 (quad - rx_quad) & 3, theta, carrier.on);
+		 (quad - rx_quad) & 3, theta, carrier.on());
 	i = (quad - rx_quad) & 3;
 	if (i == dq2)
 		run_periodic++;
@@ -533,8 +533,8 @@ void V22Pump::rx_sample(float x)
 
 	/* carrier detector on the band passed input */
 	x = rx_bp.run(x);
-	in_pwr.run(x);
-	switch (carrier.run(in_pwr.power)) {
+	switch (carrier.run(x, V22_OFF_MS(rx_rate), state == V22_DATA,
+			    V22_BACK_MS)) {
 	case 1:
 		rx_reset();
 		DSP_DBG("%s: carrier on at %" PRId32 "\n", mode_name(), total);
@@ -543,7 +543,7 @@ void V22Pump::rx_sample(float x)
 		DSP_DBG("%s: carrier off at %" PRId32 "\n", mode_name(), total);
 		break;
 	}
-	carrier_tick(carrier.on);
+	carrier_tick(carrier.on());
 
 	/* down conversion and matched filter */
 	b = cplx_scale(rx_lo.next_cplx(), x);
@@ -593,7 +593,7 @@ void V22Pump::rx_sample(float x)
 				   mid.im * (prev_sym.im - s.im)) /
 				V22_SYM_POWER;
 			if (e > 1) e = 1; else if (e < -1) e = -1;
-			if (carrier.on) {
+			if (carrier.on()) {
 				t_adj += 0.001f * sps * e;
 				/* +-1000 ppm at most */
 				if (t_adj > 0.001f * sps)
@@ -612,7 +612,7 @@ void V22Pump::rx_sample(float x)
 	/* adaptation only with a carrier; the equalizer is frozen while
 	   the slicer may not match what the remote sends (1200 -> 2400) */
 	mu = state == V22_DATA ? 0.01f : 0.05f;
-	adapt = carrier.on && carrier_run > ms2samples(20, srate);
+	adapt = carrier.on() && carrier_run > ms2samples(20, srate);
 	eq_freeze = remote_bis && rx_rate == 1200 &&
 		total - s1_seen > ms2samples(350, srate);
 	eq_mu = mu;
@@ -698,8 +698,7 @@ s16 V22Pump::handshake()
 			DSP_DBG("%s: S1 received\n", mode_name());
 			remote_bis = 1;
 			s1_seen = total;
-			set_state(A_S1);
-			set_tx(TX_S1);
+			set_state(A_S1_END);
 		} else if (remote_sb1(MS2SYM(fast && !bis ? FAST_SB1_MS :
 					      270))) {
 			set_state(A_V22_SB1);
@@ -714,6 +713,16 @@ s16 V22Pump::handshake()
 			DSP_DBG("%s: no answer, falling back to V.21\n",
 				mode_name());
 			return hand_over(DP_V21, 1);
+		}
+		break;
+	case A_S1_END:
+		/* 6.3.1.1.2 b)/V.22 bis: at the end of the caller's S1
+		   (circuit 112 ON), our S1; 600 ms from then, 2400 bit/s.
+		   The fast connect (not in V.22 bis) keeps its own times. */
+		if (fast || run_s1 == 0 || ms >= 200) {
+			s1_seen = total;
+			set_state(A_S1);
+			set_tx(TX_S1);
 		}
 		break;
 	case A_S1:
@@ -774,6 +783,11 @@ s16 V22Pump::handshake()
 			remote_bis = 1;
 			s1_seen = total;
 		}
+		/* 6.3.1.1.1 c), d)/V.22 bis: 600 ms from the end of the
+		   answerer's S1; a run of 10 ms cannot come from scrambled
+		   data, so the last symbol of such a run marks the end */
+		if (!fast && remote_bis && run_s1 >= MS2SYM(10))
+			s1_seen = total;
 		if (remote_bis) {
 			if (total - s1_seen >=
 			    ms2samples(fast ? FAST_BIS_SB1_MS + 100 : 600,
@@ -899,8 +913,7 @@ s16 V22Pump::start(struct modem *m, enum DP_ID id, s16 caller_,
 	}
 	for (i = 0; i < mf_len; i++)
 		mf[i] /= sqrtf(sum);
-	in_pwr.init(0.03f, srate_);
-	carrier.init(180, 110);
+	carrier.init(V22_ON_AMP, V22_OFF_AMP, srate_);
 	agc_alpha = 1.0f / (0.05f * srate_);
 	t_next = sps / 2;
 	rx_rate = 1200;

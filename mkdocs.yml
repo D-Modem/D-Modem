@@ -33,10 +33,22 @@ nav:
       - Index: standards/README.md
       - "V.8": standards/v8.md
       - "V.8: technical details": standards/v8-details.md
+      - "V.8 bis": standards/v8bis.md
+      - "V.8 bis: technical details": standards/v8bis-details.md
       - "V.13": standards/v13.md
       - "V.13: technical details": standards/v13-details.md
       - "V.21": standards/v21.md
       - "V.21: technical details": standards/v21-details.md
+      - "V.22": standards/v22.md
+      - "V.22: technical details": standards/v22-details.md
+      - "V.22 bis": standards/v22bis.md
+      - "V.22 bis: technical details": standards/v22bis-details.md
+      - "V.23": standards/v23.md
+      - "V.23: technical details": standards/v23-details.md
+      - "V.26 bis": standards/v26bis.md
+      - "V.26 bis: technical details": standards/v26bis-details.md
+      - "V.26 ter": standards/v26ter.md
+      - "V.26 ter: technical details": standards/v26ter-details.md
       - "V.25": standards/v25.md
       - "V.25: technical details": standards/v25-details.md
   - The modem:

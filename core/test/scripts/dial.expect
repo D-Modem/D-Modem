@@ -10,85 +10,85 @@
     200 B: state 0, tx 0 rx 0, idle
     200 B< ATA\r
     200 A< ATD\r
-   8520 B: \r\n
-   8520 B: CONNECT 2400/LAPM/ZSTD\r\n
-   8600 A: 0\r1122\r\n
-   8600 A: 77\r\n
-   8600 A: 70\r\n
-   8600 until A '11\r': yes
-   8600 until B 'CONNECT': yes
-   8600 A: state 2, tx 2400 rx 2400, started
-   8600 B: state 2, tx 2400 rx 2400, started
-   9600 B: \r\n
-   9600 B: NO CARRIER\r\n
-   9600 until B 'NO CARRIER': yes
-  10100 A< ATV1&A0\r
-  10100 A: 11\r3\r\r\n
-  10100 A: OK\r\n
-  10100 A< ATDT5551234;A\r
-  10100 B< AT\\V0D\r
-  18420 A: \r\n
-  18420 A: CONNECT 2400\r\n
-  18500 B: \r\n
-  18500 B: CONNECT 2400\r\n
-  18500 until B 'CONNECT': yes
-  18500 until A 'CONNECT': yes
-  18500 A: state 2, tx 2400 rx 2400, started
-  18500 B: state 2, tx 2400 rx 2400, started
-  18520 B: \r\n
-  18520 B: NO CARRIER\r\n
-  19500 A: \r\n
-  19500 A: NO CARRIER\r\n
-  19500 until A 'NO CARRIER': yes
-  20000 A< ATD;\r
-  20020 A: \r\n
-  20020 A: OK\r\n
-  20020 until A 'OK': yes
-  20020 A< ATO\r
-  28040 A: \r\n
-  28040 A: NO ANSWER\r\n
-  28040 until A 'NO ANSWER': yes
-  28540 A< ATX4DT123;\r
-  30180 A: \r\n
-  30180 A: OK\r\n
-  30180 until A 'OK': yes
-  30180 A< ATDT45;\r
-  30600 A: \r\n
-  30600 A: OK\r\n
-  30600 until A 'OK': yes
-  30600 A< ATH\r
-  30600 A: \r\n
-  30600 A: OK\r\n
-  30620 A: \r\n
-  30620 A: NO CARRIER\r\n
-  30620 until A 'NO CARRIER': yes
-  31120 A< ATDT9W5;\r
-  35460 A: \r\n
-  35460 A: OK\r\n
-  35460 until A 'OK': yes
-  35460 A< ATH\r
-  35460 A: \r\n
-  35460 A: OK\r\n
-  35480 A: \r\n
-  35480 A: NO CARRIER\r\n
-  35480 until A 'NO CARRIER': yes
-  35980 A< ATDT9W5\r
-  45220 A: \r\n
-  45220 A: NO DIALTONE\r\n
-  45220 until A 'NO DIALTONE': yes
-  45720 A< ATS7=20DT9@5;\r
-  57060 A: \r\n
-  57060 A: OK\r\n
-  57060 until A 'OK': yes
-  57060 A< ATH\r
-  57060 A: \r\n
-  57060 A: OK\r\n
-  57080 A: \r\n
-  57080 A: NO CARRIER\r\n
-  57080 until A 'NO CARRIER': yes
-  57580 A< ATS7=8DT9@5\r
-  66820 A: \r\n
-  66820 A: NO ANSWER\r\n
-  66820 until A 'NO ANSWER': yes
-  67320 A: state 0, tx 2400 rx 2400, idle
-  67320 B: state 0, tx 2400 rx 2400, idle
+   8640 B: \r\n
+   8640 B: CONNECT 2400/LAPM/ZSTD\r\n
+   8720 A: 0\r1122\r\n
+   8720 A: 77\r\n
+   8720 A: 70\r\n
+   8720 until A '11\r': yes
+   8720 until B 'CONNECT': yes
+   8720 A: state 2, tx 2400 rx 2400, started
+   8720 B: state 2, tx 2400 rx 2400, started
+   9520 B: \r\n
+   9520 B: NO CARRIER\r\n
+   9520 until B 'NO CARRIER': yes
+  10020 A< ATV1&A0\r
+  10020 A: 11\r3\r\r\n
+  10020 A: OK\r\n
+  10020 A< ATDT5551234;A\r
+  10020 B< AT\\V0D\r
+  18460 A: \r\n
+  18460 A: CONNECT 2400\r\n
+  18540 B: \r\n
+  18540 B: CONNECT 2400\r\n
+  18540 until B 'CONNECT': yes
+  18540 until A 'CONNECT': yes
+  18540 A: state 2, tx 2400 rx 2400, started
+  18540 B: state 2, tx 2400 rx 2400, started
+  18560 B: \r\n
+  18560 B: NO CARRIER\r\n
+  19340 A: \r\n
+  19340 A: NO CARRIER\r\n
+  19340 until A 'NO CARRIER': yes
+  19840 A< ATD;\r
+  19860 A: \r\n
+  19860 A: OK\r\n
+  19860 until A 'OK': yes
+  19860 A< ATO\r
+  27880 A: \r\n
+  27880 A: NO ANSWER\r\n
+  27880 until A 'NO ANSWER': yes
+  28380 A< ATX4DT123;\r
+  30020 A: \r\n
+  30020 A: OK\r\n
+  30020 until A 'OK': yes
+  30020 A< ATDT45;\r
+  30440 A: \r\n
+  30440 A: OK\r\n
+  30440 until A 'OK': yes
+  30440 A< ATH\r
+  30440 A: \r\n
+  30440 A: OK\r\n
+  30460 A: \r\n
+  30460 A: NO CARRIER\r\n
+  30460 until A 'NO CARRIER': yes
+  30960 A< ATDT9W5;\r
+  35300 A: \r\n
+  35300 A: OK\r\n
+  35300 until A 'OK': yes
+  35300 A< ATH\r
+  35300 A: \r\n
+  35300 A: OK\r\n
+  35320 A: \r\n
+  35320 A: NO CARRIER\r\n
+  35320 until A 'NO CARRIER': yes
+  35820 A< ATDT9W5\r
+  45060 A: \r\n
+  45060 A: NO DIALTONE\r\n
+  45060 until A 'NO DIALTONE': yes
+  45560 A< ATS7=20DT9@5;\r
+  56900 A: \r\n
+  56900 A: OK\r\n
+  56900 until A 'OK': yes
+  56900 A< ATH\r
+  56900 A: \r\n
+  56900 A: OK\r\n
+  56920 A: \r\n
+  56920 A: NO CARRIER\r\n
+  56920 until A 'NO CARRIER': yes
+  57420 A< ATS7=8DT9@5\r
+  66660 A: \r\n
+  66660 A: NO ANSWER\r\n
+  66660 until A 'NO ANSWER': yes
+  67160 A: state 0, tx 2400 rx 2400, idle
+  67160 B: state 0, tx 2400 rx 2400, idle

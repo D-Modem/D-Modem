@@ -46,6 +46,7 @@
  */
 
 #include <algorithm>
+#include <cstring>
 
 #include "dm_types.h"
 #include "dsp.h"
@@ -445,6 +446,17 @@ int V8bisPump::sample(float x, float *y)
 		msgrx_.msgs.erase(msgrx_.msgs.begin());
 		if (!msg_decode(f.data(), f.size(), &m)) {
 			DSP_DBG("v8bis: a message we cannot read\n");
+			/* a known type with fields we cannot parse: NAK(1)
+			   (6.8, 9.8); an unknown type is ignored (8.3.1) */
+			if (!f.empty() && strcmp(type_name(f[0] & 0x0F), "?") &&
+			    (state == Vb::MR || state == Vb::CL ||
+			     state == Vb::ESI || state == Vb::WAIT_CL ||
+			     state == Vb::WAIT_ACK)) {
+				msgrx_.msgs.clear();
+				send(NAK1);
+				return finish(Then::FALLBACK,
+					      "a message we cannot read");
+			}
 			continue;
 		}
 		int r = message(m);
