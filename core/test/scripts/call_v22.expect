@@ -54,4 +54,4 @@
   25820 until A '3\r': yes
   26320 A: state 0, tx 300 rx 300, idle
   26320 B: state 0, tx 300 rx 300, idle
-  26320 A: B0001 The quick brown fox jumps over the lazy dog 012345678\xff\x00\x00\x00\x003\r
+  26320 A: B0001 The quick brown fox jumps over the lazy dog 012345678\xff\x003\r

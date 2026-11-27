@@ -12,12 +12,14 @@
  *    DSP_DEBUG=<level>   the pumps' log
  */
 
+#include <math.h>
 #include <stdlib.h>
 
 #include <string>
 
 #include <gtest/gtest.h>
 
+#include "dsp.h"
 #include "dsplibs.h"
 #include "codec_sim.h"
 #include "loopback.h"
@@ -980,5 +982,77 @@ TEST(ZyX, FrameMapper)
 		EXPECT_TRUE(f.decode(q, back)) << v.bps;
 		for (int j = 0; j < f.frame_bits(); j++)
 			EXPECT_EQ(back[j], bits[j]) << v.bps << " bit " << j;
+	}
+}
+
+/* the carrier detector of the FSK demodulator (V.21's channel 1, at 8000
+   Hz) after 1 s of a mark tone at dbm0; on (true) first for 1 s at -20
+   dBm0 if was_on */
+static bool fsk_carrier(double dbm0, bool was_on)
+{
+	dsp::FskDemod d;
+	d.init(980, 1180, 300, 8000);
+	int i = 0;
+	if (was_on)
+		for (; i < 8000; i++)
+			d.run(static_cast<float>(22300 * 0.1 *
+				sin(2 * M_PI * 980 * i / 8000.0)));
+	const double a = 22300 * pow(10, dbm0 / 20);
+	for (int k = 0; k < 8000; k++, i++)
+		d.run(static_cast<float>(a * sin(2 * M_PI * 980 * i / 8000.0)));
+	return d.carrier != 0;
+}
+
+/* 8.3/V.21 (and 4.3/V.23): the carrier on above -43 dBm, off below -48
+   dBm, with at least 2 dB between the two levels (0 dBm0 taken as 0 dBm) */
+TEST(Fsk, CarrierThresholds)
+{
+	EXPECT_TRUE(fsk_carrier(-42.5, false));
+	EXPECT_FALSE(fsk_carrier(-48.5, false));
+	EXPECT_FALSE(fsk_carrier(-48.5, true));
+	EXPECT_TRUE(fsk_carrier(-44.5, true));
+	EXPECT_FALSE(fsk_carrier(-44.5, false));
+}
+
+/* the ms from the end of 1 s of a mark tone at dbm0 (8000 Hz) to the
+   carrier detector's OFF, for the channel of mark, space and baud (the
+   default: V.21's channel 1); 1000 if it stays ON */
+static double fsk_off_ms(double dbm0, float mark = 980, float space = 1180,
+			 float baud = 300)
+{
+	dsp::FskDemod d;
+	d.init(mark, space, baud, 8000);
+	const double a = 22300 * pow(10, dbm0 / 20);
+	for (int i = 0; i < 8000; i++)
+		d.run(static_cast<float>(a * sin(2 * M_PI * mark * i / 8000.0)));
+	int n = 0;
+	while (d.carrier && n < 8000) {
+		d.run(0);
+		n++;
+	}
+	return n / 8.0;
+}
+
+/* 8.2.2/V.21: circuit 109 ON to OFF in 20 to 80 ms, from a loud carrier
+   and from a weak one */
+TEST(Fsk, CarrierOffTime)
+{
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -42.0 }) {
+		EXPECT_GE(fsk_off_ms(l), 20.0) << l << " dBm0";
+		EXPECT_LE(fsk_off_ms(l), 80.0) << l << " dBm0";
+	}
+}
+
+/* 8.3.2/V.23: circuit 109 (the 1200 baud channel) ON to OFF in 5 to 15
+   ms, circuit 122 (the 75 baud channel) in 15 to 80 ms */
+TEST(Fsk, V23CarrierOffTime)
+{
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -42.0 }) {
+		const double f = fsk_off_ms(l, 1300, 2100, 1200);
+		EXPECT_GE(f, 5.0) << l << " dBm0";
+		EXPECT_LE(f, 15.0) << l << " dBm0";
+		const double b = fsk_off_ms(l, 390, 450, 75);
+		EXPECT_GE(b, 15.0) << l << " dBm0";
+		EXPECT_LE(b, 80.0) << l << " dBm0";
 	}
 }

@@ -1304,6 +1304,34 @@ TEST_P(CoreCall, DataBothWaysAndHangup)
 		printf("A after the hangup: [%s]\n", p.got_a.c_str());
 }
 
+/* V.8 between two V.34 modems: each AT#UD has the CM and the JM (keys
+   4 and 5).  The CM: a data call; V.34; V.32bis, V.22bis; V.23 duplex,
+   V.21; LAPM; PSTN access.  The JM: the same, because the two modems
+   have the same menu (7.4/V.8) */
+TEST(Core, V8MenusConform)
+{
+	Pair p("+MS=34");
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.a->link_state() == LinkState::Online &&
+			q.b->link_state() == LinkState::Online; }, 40000));
+	p.run_until([](Pair &) { return false; }, 1100);
+	p.got_a.clear();
+	p.got_b.clear();
+	p.a->dte_input("+++", 3);
+	p.b->dte_input("+++", 3);
+	ASSERT_TRUE(p.run_until([](Pair &q) {
+		return q.got_a.find("OK") != std::string::npos &&
+			q.got_b.find("OK") != std::string::npos; }, 2000));
+	const std::string menu = "\"C14513942A0D\"";
+	for (Modem *m : { p.a, p.b }) {
+		std::string ud = cmd(m, m == p.a ? p.la : p.lb, "AT#UD\r");
+		EXPECT_NE(ud.find(" 4=" + menu), std::string::npos) << ud;
+		EXPECT_NE(ud.find(" 5=" + menu), std::string::npos) << ud;
+	}
+}
+
 /* an EBCDIC DTE on a call (+DEBC=1,1, V.22): its data as ASCII to the
    remote, the remote's as EBCDIC, CONNECT in EBCDIC, the escape as
    EBCDIC "+++" (0x4E 0x4E 0x4E), its OK in EBCDIC */
