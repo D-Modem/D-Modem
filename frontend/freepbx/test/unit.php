@@ -1072,6 +1072,7 @@ foreach (['number' => ['number' => '555;0100'], 'docs' => ['cover' => ''],
 same(FaxSend::kind('%PDF-1.4'), 'pdf', 'FaxSend: a PDF');
 same(FaxSend::kind("II*\0"), 'tiff', 'FaxSend: a TIFF');
 same(FaxSend::kind('<html>'), null, 'FaxSend: not a document');
+same(FaxSend::exec(['/nonexistent/gs', '-v'])[0], 127, 'send: a Ghostscript that is not there');
 $cmd = FaxSend::gsCommand('/usr/bin/gs', ['/a.pdf', '/b.pdf'], '/o.tif', 'a4');
 ok(in_array('-sDEVICE=tiffg4', $cmd, true) && in_array('-g1728x2292', $cmd, true) &&
    in_array('-dSAFER', $cmd, true) && array_slice($cmd, -2) === ['/a.pdf', '/b.pdf'],
@@ -1248,7 +1249,14 @@ ok(strpos($m->ucpConfigPage('group', [], 'showgroup')[0]['content'], 'inherit') 
 /* the faxes that the user sees */
 $udir = sys_get_temp_dir() . '/dmodem-ucp-' . getmypid();
 mkdir($udir);
-$m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => $udir, 'fax_keep_days' => 0]));
+/* a stand-in of Ghostscript for the widget, which runs the real
+   command: it writes a fax page to the -sOutputFile file */
+file_put_contents("$udir/page.tif", mh_white_tiff(1));
+file_put_contents("$udir/gs", "#!/bin/sh\nfor a; do case \"\$a\" in -sOutputFile=*) " .
+	"cp '$udir/page.tif' \"\${a#-sOutputFile=}\";; esac; done\n");
+chmod("$udir/gs", 0755);
+$m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => $udir, 'fax_keep_days' => 0,
+	'fax_ghostscript' => "$udir/gs"]));
 file_put_contents("$udir/20261127-1-5550100-1800001000.1.tif", mh_white_tiff(2));
 $m->faxReceived('sales', '1800001000.1', ['status' => 'SUCCESS', 'pages' => '1', 'cid' => '5550100',
 	'cidname' => 'ACME'], function () { return true; }, 1800001000);

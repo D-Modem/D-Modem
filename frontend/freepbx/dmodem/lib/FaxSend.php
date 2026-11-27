@@ -135,6 +135,9 @@ class FaxSend
 	/* command cmd (a list) run without a shell: [exit code, output] */
 	public static function exec(array $cmd)
 	{
+		/* a program that is not there: no warning from proc_open() */
+		if (strpos($cmd[0], '/') !== false && !is_executable($cmd[0]))
+			return [127, 'cannot run ' . $cmd[0]];
 		$p = @proc_open($cmd, [0 => ['file', '/dev/null', 'r'],
 				       1 => ['pipe', 'w'], 2 => ['redirect', 1]], $pipes);
 		if (!is_resource($p))
