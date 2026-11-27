@@ -57,13 +57,16 @@ with D-Modem under the AGPL and under the commercial licence alike.
 
 ## Not covered: the interop test binaries
 
-The closed modem drivers and objects in `dsp/test/` (`smartlink/`,
-`agere/`, `sm56/`, `pctel/`, `hsf/`, `broadcom/`) belong to their owners
+The closed modem drivers, objects and firmware images in `dsp/test/`
+(`smartlink/`, `agere/`, `sm56/`, `pctel/`, `hsf/`, `broadcom/`, `3com/`,
+`ess/`, `intel/`, `usr/`) belong to their owners
 and are licensed by them, under their own terms. **They are not subject to the terms of the
 rest of this repository** (the AGPL, the commercial licence, or any other
 licence or permission given here), and no rights in them are granted
 here. They are only used by the interop tests; see
-[dsp/test/NOTICE.md](dsp/test/NOTICE.md).
+[dsp/test/NOTICE.md](dsp/test/NOTICE.md). One file in these directories
+is ours: `usr/courier-nvram.bin`, which the emulated Courier wrote (see
+NOTICE.md).
 
 ## Fetched at build time
 
