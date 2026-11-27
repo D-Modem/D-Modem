@@ -391,6 +391,8 @@ struct Call {
 	std::string file, ident;        /* the faxes: Stasis(app,sendfax,file,
 					   ident,options) */
 	std::string fax_options;
+	std::vector<std::string> faxopt;        /* DMODEMFAXOPT_* (see
+						   fax_read_settings()) */
 	std::string state, caller, caller_name, exten, context;
 	std::atomic<bool> hungup{false};
 };
@@ -463,21 +465,46 @@ std::string fax_file_name(const Call &c, const char *dir)
 		(caller.empty() ? "unknown" : caller) + "-" + id + ".tif";
 }
 
-/* the channel's own fax settings over *f: its variables
-   DMODEMFAXOPT_<ITEM> (as DMODEMFAXOPT() of app_dmodem sets them) */
+/* the variable of a fax setting item: DMODEMFAXOPT_ and the item in
+   capitals */
+std::string faxopt_var(const char *item)
+{
+	std::string var = "DMODEMFAXOPT_";
+	for (const char *p = item; *p; p++)
+		var += static_cast<char>(toupper(static_cast<unsigned char>(*p)));
+	return var;
+}
+
+/* the channel's variables DMODEMFAXOPT_<ITEM> (as DMODEMFAXOPT() of
+   app_dmodem sets them) into c.faxopt, in the order of
+   dmbridge_faxopt_items: one request (EVAL() of them all, | between
+   them), so that the call does not wait for one for each */
+void fax_read_settings(Call &c)
+{
+	std::string expr = "EVAL(";
+	for (size_t k = 0; dmbridge_faxopt_items[k]; k++)
+		expr += (k ? "|${" : "${") + faxopt_var(dmbridge_faxopt_items[k]) +
+			"}";
+	std::string v = get_var(c.id, expr + ")") + "|";
+	c.faxopt.clear();
+	for (size_t at = 0, bar; (bar = v.find('|', at)) != std::string::npos;
+	     at = bar + 1)
+		c.faxopt.push_back(v.substr(at, bar - at));
+}
+
+/* the channel's own fax settings (c.faxopt, read at the start of the
+   call) over *f */
 void fax_channel_settings(const Call &c, struct dmbridge_fax *f)
 {
-	for (size_t k = 0; dmbridge_faxopt_items[k]; k++) {
-		std::string var = "DMODEMFAXOPT_";
-		for (const char *p = dmbridge_faxopt_items[k]; *p; p++)
-			var += static_cast<char>(
-				toupper(static_cast<unsigned char>(*p)));
-		std::string v = get_var(c.id, var);
+	for (size_t k = 0; dmbridge_faxopt_items[k] && k < c.faxopt.size();
+	     k++) {
+		const std::string &v = c.faxopt[k];
 		if (!v.empty() &&
 		    dmbridge_faxopt(&host, f, dmbridge_faxopt_items[k],
 				    v.c_str()))
 			say("WARNING %s: %s: not valid: '%s'", c.name.c_str(),
-			    var.c_str(), v.c_str());
+			    faxopt_var(dmbridge_faxopt_items[k]).c_str(),
+			    v.c_str());
 	}
 }
 
@@ -1354,6 +1381,7 @@ void run_call(std::shared_ptr<Call> c)
 	Line line;
 	bool up = false;
 
+	fax_read_settings(*c);
 	if (c->kind == MODEM) {
 		if (load_profile(c->profile, &p)) {
 			law = call_law(*c, p.law);
