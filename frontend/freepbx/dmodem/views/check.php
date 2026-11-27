@@ -3,7 +3,7 @@
 // Copyright (C) 2026 D-Modem Authors
 //
 // views/check.php - the line check: the engine's state and each PJSIP
-// endpoint's settings for modem calls.  Given $check (Dmodem::check()).
+// endpoint's settings for modem calls, what the fax machine can do.  Given $check (Dmodem::check()).
 
 if (!defined('FREEPBX_IS_AUTH')) {
 	die('No direct script access allowed');
@@ -29,6 +29,10 @@ $word = ['ok' => _('OK'), 'info' => _('Note'), 'warn' => _('Fix')];
 			<?php echo $check['engine_ok'] ? _('app_dmodem is loaded.')
 				: _('app_dmodem is not loaded: build it (frontend/asterisk/ in D-Modem), copy app_dmodem.so to Asterisk\'s modules and run module load app_dmodem.so.'); ?>
 		</div>
+	<?php endif; ?>
+	<?php if ($check['fax'] !== ''): ?>
+		<h3><?php echo _('Fax'); ?></h3>
+		<pre id="dmodem-fax-capabilities"><?php echo D::h($check['fax']); ?></pre>
 	<?php endif; ?>
 	<?php if (!$check['endpoints']): ?>
 		<div class="alert alert-info"><?php echo _('No PJSIP endpoints.'); ?></div>

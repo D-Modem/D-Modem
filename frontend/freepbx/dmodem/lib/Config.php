@@ -9,6 +9,8 @@
 namespace FreePBX\modules\Dmodem;
 
 require_once __DIR__ . '/Dialout.php';
+require_once __DIR__ . '/FaxMail.php';
+require_once __DIR__ . '/Dialplan.php';
 
 class Config
 {
@@ -30,7 +32,9 @@ class Config
 	const FAX_RATES = [14400, 12000, 9600, 7200, 4800, 2400];
 	/* names a profile can't have: dmodem.conf's [general], and the
 	   commands of dmodem-ari's Stasis() and the fax destination */
-	const RESERVED = ['general', 'receivefax', 'sendfax'];
+	const RESERVED = ['general', 'receivefax', 'sendfax', 'faxdetect'];
+	/* the paper sizes of the PDF of a fax (FaxPdf::PAPER) */
+	const PAPERS = ['letter', 'a4'];
 
 	/* the settings of a new install */
 	public static function defaultSettings()
@@ -43,9 +47,18 @@ class Config
 			/* the header line on each page sent (empty: none) */
 			'fax_header' => '',
 			'fax_max_rate' => 14400,
+			/* no page below this rate (0: none) */
+			'fax_min_rate' => 0,
 			'fax_ecm' => true,
 			'fax_t38' => true,
 			'fax_destination' => true,
+			/* fax-to-email (FaxMail): the PDF's paper, what goes
+			   with the message, its sender, subject and text */
+			'fax_paper' => 'letter',
+			'fax_attach' => 'pdf',
+			'fax_email_from' => '',
+			'fax_email_subject' => 'Fax from {cid} ({pages} pages)',
+			'fax_email_body' => "A fax came from {cid} (fax number {remote}): {pages} pages, {status}.\nReceived {date} for {recipient}.",
 			'ari_url' => 'http://127.0.0.1:8088',
 			'ari_user' => 'dmodem',
 			'ari_password' => '',
@@ -153,7 +166,8 @@ class Config
 		$e = [];
 		if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,39}$/', $p['name']))
 			$e['name'] = _('A name of 1 to 40 letters, digits, - and _, starting with a letter or digit');
-		elseif (in_array($p['name'], self::RESERVED, true))
+		elseif (in_array($p['name'], self::RESERVED, true) ||
+			strpos($p['name'], Dialplan::RECIPIENT_PREFIX) === 0)
 			$e['name'] = sprintf(_('"%s" is reserved'), $p['name']);
 		elseif (in_array($p['name'], $taken, true))
 			$e['name'] = _('There is a profile of that name already');
@@ -208,14 +222,33 @@ class Config
 			$e['engine'] = _('app or ari');
 		if (!self::intIn($s['debug'], 0, 3))
 			$e['debug'] = _('0 to 3');
-		if (!preg_match('#^/[^\x00\r\n;]{0,200}$#', $s['fax_dir']))
-			$e['fax_dir'] = _('An absolute path');
+		/* (its name goes into the fax-to-email command line) */
+		if (!preg_match('#^/[A-Za-z0-9/._-]{0,200}$#', $s['fax_dir']))
+			$e['fax_dir'] = _('An absolute path of letters, digits, /, ., _ and -');
 		if (!preg_match('/^[0-9+ ]{0,20}$/', $s['fax_ident']))
 			$e['fax_ident'] = _('Up to 20 digits, + and spaces');
 		if (!preg_match('/^[\x20-\x7e]{0,63}$/', $s['fax_header']))
 			$e['fax_header'] = _('Up to 63 characters, no line breaks');
 		if (!in_array($s['fax_max_rate'], self::FAX_RATES, true))
 			$e['fax_max_rate'] = _('One of the fax rates');
+		if ($s['fax_min_rate'] !== 0 &&
+		    !in_array($s['fax_min_rate'], self::FAX_RATES, true))
+			$e['fax_min_rate'] = _('None, or one of the fax rates');
+		elseif (!isset($e['fax_max_rate']) &&
+			$s['fax_min_rate'] > $s['fax_max_rate'])
+			$e['fax_min_rate'] = _('Not above the fastest rate');
+		if (!in_array($s['fax_paper'], self::PAPERS, true))
+			$e['fax_paper'] = _('Letter or A4');
+		if (!in_array($s['fax_attach'], FaxMail::ATTACH, true))
+			$e['fax_attach'] = _('PDF, TIFF or both');
+		if ($s['fax_email_from'] !== '' && !self::fromOk($s['fax_email_from']))
+			$e['fax_email_from'] = _('An email address, or Name <address>');
+		if (self::breaksLine($s['fax_email_subject']) ||
+		    strlen($s['fax_email_subject']) > 200)
+			$e['fax_email_subject'] = _('One line of 200 characters at most');
+		if (strpos($s['fax_email_body'], "\0") !== false ||
+		    strlen($s['fax_email_body']) > 4000)
+			$e['fax_email_body'] = _('4000 characters at most');
 		if (!preg_match('/^[A-Za-z0-9_.-]{1,79}$/', $s['dialout_context']))
 			$e['dialout_context'] = _('A dialplan context, e.g. from-internal');
 		if (!Dialout::callerIdOk($s['dialout_callerid']))
@@ -241,6 +274,63 @@ class Config
 					$e['sip_bind'] = _('address:port');
 			}
 		}
+		return $e;
+	}
+
+	/* true if f is a sender: an address, or Name <address> */
+	public static function fromOk($f)
+	{
+		if (FaxMail::addressOk($f))
+			return true;
+		return preg_match('/^([^<>"\x00-\x1f]{1,100}) <([^<>\s]+)>$/', $f, $m) === 1 &&
+			FaxMail::addressOk($m[2]);
+	}
+
+	/* a new fax recipient's fields: the id of its destination
+	   (app-dmodem,fax-<id>,1), its name, its email address (or its User
+	   Manager user's), what goes with the message ('' the settings') */
+	public static function defaultRecipient()
+	{
+		return [
+			'id' => '',
+			'name' => '',
+			'email' => '',
+			'user' => '',
+			'attach' => '',
+		];
+	}
+
+	/* a recipient from the form: see normalize() */
+	public static function normalizeRecipient(array $in)
+	{
+		$r = self::normalize($in, self::defaultRecipient());
+		$r['id'] = strtolower($r['id']);
+		return $r;
+	}
+
+	/* what is wrong with recipient r, field => message; taken: the ids
+	   of the others; users: User Manager's users (username => email),
+	   null if it is not installed */
+	public static function validateRecipient(array $r, array $taken = [],
+						 ?array $users = null)
+	{
+		$e = [];
+		if (!preg_match('/^[a-z0-9][a-z0-9_]{0,31}$/', $r['id']))
+			$e['id'] = _('An id of 1 to 32 letters, digits and _, starting with a letter or digit');
+		elseif (in_array($r['id'], $taken, true))
+			$e['id'] = _('There is a recipient of that id already');
+		if ($r['name'] === '' || self::breaksLine($r['name']) ||
+		    strlen($r['name']) > 100)
+			$e['name'] = _('A name, one line of 100 characters at most');
+		if ($r['user'] !== '' && ($users === null ||
+					  !array_key_exists($r['user'], $users)))
+			$e['user'] = _('A user of User Manager');
+		if ($r['email'] === '' && $r['user'] === '')
+			$e['email'] = _('An email address, or a User Manager user');
+		elseif ($r['email'] !== '' && !FaxMail::addressOk($r['email']))
+			$e['email'] = _('One email address');
+		if ($r['attach'] !== '' && !in_array($r['attach'], FaxMail::ATTACH, true))
+			$e['attach'] = _('The default, PDF, TIFF or both');
 		return $e;
 	}
 
@@ -285,6 +375,8 @@ class Config
 		if ($s['fax_header'] !== '')
 			$o[] = self::line('fax_header', $s['fax_header']);
 		$o[] = self::line('fax_max_rate', (int)$s['fax_max_rate']);
+		if ((int)$s['fax_min_rate'] > 0)
+			$o[] = self::line('fax_min_rate', (int)$s['fax_min_rate']);
 		$o[] = self::line('fax_ecm', (bool)$s['fax_ecm']);
 		$o[] = self::line('fax_t38', (bool)$s['fax_t38']);
 		if ($s['engine'] === 'ari') {

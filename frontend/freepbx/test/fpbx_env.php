@@ -142,11 +142,41 @@ class FakeFreePBX
 		return FreePBX::$modules[$name];
 	}
 
+	/* isset(FreePBX->Userman) and the like: the module is there */
+	public function __isset($name)
+	{
+		return isset(FreePBX::$modules[$name]);
+	}
+
 	/* files filename => contents written */
 	public function WriteConfig($conf)
 	{
 		foreach ($conf as $f => $c)
 			$this->written[$f] = $c;
+	}
+}
+
+/* User Manager: its users, as getAllUsers() gives them */
+class FakeUserman
+{
+	public $users = [];
+
+	/* the users: each an array of username, email and more */
+	public function getAllUsers()
+	{
+		return $this->users;
+	}
+}
+
+/* FreePBX's settings (Config): name => value */
+class FakeConfig
+{
+	public $values = [];
+
+	/* setting name's value, null if it is not set */
+	public function get($name)
+	{
+		return isset($this->values[$name]) ? $this->values[$name] : null;
 	}
 }
 

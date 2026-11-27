@@ -56,6 +56,10 @@ For the generated files, the code and the tests, refer to
 - **Fax.** With the fax destination, D-Modem answers as a fax machine and
   saves faxes to a folder. The fax destination is enabled. You can
   disable it in the settings.
+- **Fax to email.** A **fax recipient** is a destination that receives a
+  fax and sends it by email, as a PDF file, the TIFF file or both. The
+  address is the address of the recipient, or of a User Manager user. The
+  mail system of the machine must send mail.
 - **Dial out.** Make D-Modem call a remote modem (a BBS or a provider)
   with a profile, from the page or from a script:
 
@@ -63,8 +67,8 @@ For the generated files, the code and the tests, refer to
 
 - **Line check.** Shows the settings on your trunks and extensions that
   can cause problems for a modem call (refer to the subsequent section).
-- **Backup.** The Backup & Restore of FreePBX includes the settings and
-  profiles of D-Modem. `fwconsole dmodem export` and `import` do the same
+- **Backup.** The Backup & Restore of FreePBX includes the settings,
+  profiles and fax recipients of D-Modem. `fwconsole dmodem export` and `import` do the same
   from the command line.
 
 After you change an item, click **Apply Config**. If you use dmodem-ari,

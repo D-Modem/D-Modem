@@ -12,12 +12,13 @@ use FreePBX\modules\Dmodem as D;
 
 $tabs = [
 	'' => _('Profiles'),
+	'recipients' => _('Fax recipients'),
 	'settings' => _('Settings'),
 	'dialout' => _('Dial out'),
 	'check' => _('Line check'),
 	'dialplan' => _('Generated files'),
 ];
-$active = $view === 'form' ? '' : $view;
+$active = $view === 'form' ? '' : ($view === 'recipient' ? 'recipients' : $view);
 ?>
 <div class="container-fluid" id="dmodem">
 	<h1><?php echo _('D-Modem'); ?></h1>

@@ -13,6 +13,10 @@
 # module's line check runs on the live endpoints through the manager:
 # the test's endpoint allows both laws, which it must flag.  ARI=1: the
 # module set to dmodem-ari, which takes the calls through Stasis().
+# Last, fax to email: a fax machine (DModemSendFax) calls the fax
+# recipient's destination app-dmodem,fax-sales,1; when the call ends, its
+# mail handler runs fwconsole dmodem fax2mail (a stand-in: fax2mail.php),
+# and the mail must have the text, a PDF of the pages and the TIFF.
 set -e
 here=$(cd "$(dirname "$0")" && pwd)
 ast_test=$here/../../asterisk/test
@@ -32,6 +36,11 @@ exten => 5551000,1,Goto(app-dmodem,bbs,1)
 ; the dial-out context (FreePBX's from-internal: its outbound routes)
 [modem-out]
 exten => _X.,1,Dial(PJSIP/modem,30)
+ same => n,Hangup()
+
+; a fax machine for the fax-to-email case: it sends FAXDOC
+[fax-e2e-send]
+exten => s,1,DModemSendFax(${FAXDOC})
  same => n,Hangup()
 
 #include extensions_dmodem.conf
@@ -106,6 +115,36 @@ grep -q "Local/5551000@modem-out" "$run/console.log" ||
 echo "--- the line check"
 php "$here/linecheck.php" "$ami_port" modem warn "$engine" ||
 	{ echo "FAIL: the line check"; r=1; }
+
+echo "--- fax to email (the recipient sales' destination, its mail handler)"
+"$build/dsp/test/fax_doc" light "$run/doc.tif"
+$ast -rx "dialplan set global FAXDOC $run/doc.tif" >/dev/null
+$ast -rx "channel originate Local/fax-sales@app-dmodem/n extension s@fax-e2e-send" >/dev/null
+i=0; until ls "$run"/etc/mail-*.eml >/dev/null 2>&1 || [ $i -ge 240 ]; do
+	sleep 1; i=$((i+1))
+done
+cat "$run/etc/fax2mail.log" 2>/dev/null || true
+mail=$(ls "$run"/etc/mail-*.eml 2>/dev/null | head -1)
+if [ -n "$mail" ] && python3 -I - "$mail" <<'EOT'
+import email, sys
+m = email.message_from_binary_file(open(sys.argv[1], "rb"))
+parts = {p.get_content_type(): p.get_payload(decode=True) for p in m.walk()
+         if not p.is_multipart()}
+assert m["To"] == "sales@example.com", m["To"]
+assert m["Subject"].startswith("Fax from "), m["Subject"]
+assert b"2 pages, SUCCESS" in parts["text/plain"], parts["text/plain"]
+assert parts["application/pdf"].startswith(b"%PDF-1.4"), "no PDF"
+assert parts["application/pdf"].count(b"/Type /Page ") == 2, "not 2 pages"
+assert parts["image/tiff"][:4] == b"II*\0", "no TIFF"
+print("the mail: to %s, \"%s\", a PDF of 2 pages and the TIFF" % (m["To"], m["Subject"]))
+EOT
+then
+	echo "PASS: fax to email"
+else
+	echo "FAIL: fax to email"; r=1
+	grep -E "fax-sales|fax2mail|DMODEMFAX" "$run/console.log" | tail -20 || true
+	[ -z "$ARI" ] || ari_log "$run"
+fi
 
 $ast -rx "core stop now" >/dev/null 2>&1 || true
 [ $r -eq 0 ] && echo "PASS" || echo "FAIL"

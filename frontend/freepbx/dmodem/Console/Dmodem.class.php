@@ -9,6 +9,10 @@
 //   fwconsole dmodem export [file]           (stdout without a file)
 //   fwconsole dmodem import <file> [--keep]  (--keep: profiles the file
 //                                             hasn't stay)
+//   fwconsole dmodem fax2mail <recipient> <uniqueid> [status] [pages]
+//                    [cid] [remote] [cidname]
+//                                            (the fax of a call to its
+//                                             recipient's email address)
 
 namespace FreePBX\Console\Command;
 
@@ -24,10 +28,10 @@ class Dmodem extends Command
 	protected function configure()
 	{
 		$this->setName('dmodem')
-			->setDescription(_('D-Modem: dial out with a profile, list the profiles, export or import the settings'))
+			->setDescription(_('D-Modem: dial out with a profile, list the profiles, export or import the settings, mail a received fax'))
 			->setDefinition([
 				new InputArgument('args', InputArgument::IS_ARRAY,
-					_('dial <profile> <number> | profiles | export [file] | import <file>')),
+					_('dial <profile> <number> | profiles | export [file] | import <file> | fax2mail <recipient> <uniqueid> ...')),
 				new InputOption('callerid', null, InputOption::VALUE_REQUIRED,
 					_('dial: the caller ID (else the settings\')'), ''),
 				new InputOption('keep', null, InputOption::VALUE_NONE,

@@ -8,8 +8,10 @@
 // (the app-dmodem context, as FreePBX writes extensions_additional.conf).
 // The profiles: bbs (TCP 127.0.0.1:2323, sip_call.py's BBS) and term
 // (127.0.0.1:2324, its terminal, for calls out), the fax destination,
-// calls out dialled in modem-out.  dmodem_test_module() is the same
-// module for the other scripts (dial.php).
+// calls out dialled in modem-out, the fax recipient sales (fax to email)
+// with <dir>/bin/fwconsole for its mail handler (fax2mail.php).
+// dmodem_test_module() is the same module for the other scripts
+// (dial.php, fax2mail.php).
 
 require_once __DIR__ . '/fpbx_env.php';
 
@@ -29,6 +31,14 @@ function dmodem_test_module($dir, $engine, $port)
 	      'host' => '127.0.0.1', 'law' => 'auto', 'timeout' => '60', 'fax' => 'yes'];
 	dmodem_post($m, $p + ['name' => 'bbs', 'description' => 'the test BBS', 'port' => '2323']);
 	dmodem_post($m, $p + ['name' => 'term', 'description' => 'the test terminal', 'port' => '2324']);
+	/* a fax recipient; fwconsole (the mail handler's) in <dir>/bin */
+	$cfg = new FakeConfig();
+	$cfg->values['AMPSBIN'] = $dir . '/bin';
+	FreePBX::$modules['Config'] = $cfg;
+	if (!$m->errors)
+		dmodem_post($m, ['action' => 'save_recipient', 'original' => '', 'id' => 'sales',
+				 'name' => 'Sales', 'email' => 'sales@example.com', 'user' => '',
+				 'attach' => 'both']);
 	if ($m->errors) {
 		fwrite(STDERR, 'gen.php: ' . json_encode($m->errors) . "\n");
 		exit(1);
@@ -44,5 +54,13 @@ if (realpath($argv[0]) === __FILE__) {
 	file_put_contents($dir . '/dmodem.conf', $m->FreePBX->written['dmodem.conf']);
 	file_put_contents($dir . '/extensions_dmodem.conf', dmodem_dialplan($m));
 	@mkdir($dir . '/fax');
+	/* fwconsole as the mail handler runs it: dmodem fax2mail through
+	   fax2mail.php, the mail kept in <dir> */
+	@mkdir($dir . '/bin');
+	file_put_contents($dir . '/bin/fwconsole', "#!/bin/sh\nshift\nexec php " .
+		escapeshellarg(__DIR__ . '/fax2mail.php') . ' ' . escapeshellarg($dir) . ' ' .
+		escapeshellarg($engine) . ' ' . escapeshellarg(isset($argv[3]) ? $argv[3] : '18088') .
+		' "$@"' . "\n");
+	chmod($dir . '/bin/fwconsole', 0755);
 	echo "gen.php: dmodem.conf and extensions_dmodem.conf ($engine) in $dir\n";
 }

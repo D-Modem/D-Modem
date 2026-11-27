@@ -17,6 +17,8 @@ use FreePBX\modules\Dmodem\Dialplan;
 use FreePBX\modules\Dmodem\LineCheck;
 use FreePBX\modules\Dmodem\Dialout;
 use FreePBX\modules\Dmodem\Cli;
+use FreePBX\modules\Dmodem\FaxMail;
+use FreePBX\modules\Dmodem\FaxPdf;
 
 $failed = 0;
 $passed = 0;
@@ -438,10 +440,367 @@ Cli::run($m, ['profiles'], [], $say);
 ok(count($lines) === 1 && strpos($lines[0], 'bbs') === 0, 'fwconsole dmodem profiles');
 same(Cli::run($m, ['nonsense'], [], $say), 2, 'fwconsole dmodem: usage');
 
+/* --- fax to email: the PDF, the message, the recipients --- */
+
+/* a little-endian TIFF of one page: tags tag => [type, values] (3
+   SHORT, 4 LONG, 5 RATIONAL as [num, den] pairs), its one strip data */
+function tiff_page(array $tags, $data)
+{
+	$tags[273] = [4, [0]];
+	$tags[279] = [4, [strlen($data)]];
+	ksort($tags);
+	$n = count($tags);
+	$extra = '';
+	$extraAt = 8 + 2 + 12 * $n + 4;
+	$ifd = pack('v', $n);
+	$stripEntry = 0;
+	foreach ($tags as $tag => $tv) {
+		list($type, $vals) = $tv;
+		if ($tag === 273)
+			$stripEntry = strlen($ifd);
+		if ($type === 5) {
+			$ifd .= pack('vvVV', $tag, 5, count($vals), $extraAt + strlen($extra));
+			foreach ($vals as $pair)
+				$extra .= pack('VV', $pair[0], $pair[1]);
+		} else {
+			$v = $type === 3 ? pack('v', $vals[0]) . "\0\0" : pack('V', $vals[0]);
+			$ifd .= pack('vvV', $tag, $type, 1) . $v;
+		}
+	}
+	$ifd .= pack('V', 0);
+	$dataAt = $extraAt + strlen($extra);
+	/* the strip's offset now that it is known */
+	$ifd = substr_replace($ifd, pack('V', $dataAt), $stripEntry + 8, 4);
+	return 'II' . pack('vV', 42, 8) . $ifd . $extra . $data;
+}
+
+/* bits (a string of 0 and 1) as bytes, the first bit the high one,
+   0 to fill the last byte */
+function bits_bytes($bits)
+{
+	$bits .= str_repeat('0', (8 - strlen($bits) % 8) % 8);
+	$out = '';
+	foreach (str_split($bits, 8) as $b)
+		$out .= chr(bindec($b));
+	return $out;
+}
+
+/* an MH (T.4 1-D) page of rows white rows, 1728 pels, as a fax machine
+   writes it: EOL before each row, RTC at the end */
+function mh_white_tiff($rows)
+{
+	$eol = '000000000001';
+	$bits = '';
+	for ($i = 0; $i < $rows; $i++)
+		$bits .= $eol . '010011011' . '00110101';
+	$bits .= str_repeat($eol, 6);
+	return tiff_page([256 => [3, [1728]], 257 => [3, [$rows]], 258 => [3, [1]],
+		259 => [3, [3]], 262 => [3, [0]], 278 => [3, [$rows]],
+		282 => [5, [[204, 1]]], 283 => [5, [[98, 1]]], 292 => [4, [0]],
+		296 => [3, [2]]], bits_bytes($bits));
+}
+
+/* what is wrong with PDF p's structure (its xref to each object), ''
+   if nothing */
+function pdf_problem($p)
+{
+	if (strpos($p, '%PDF-1.4') !== 0)
+		return 'no header';
+	if (!preg_match('/startxref\n([0-9]+)\n%%EOF\n$/', $p, $m))
+		return 'no startxref';
+	$x = (int)$m[1];
+	if (substr($p, $x, 5) !== 'xref\n' && substr($p, $x, 4) !== 'xref')
+		return 'startxref not at the xref';
+	if (!preg_match('/^xref\n0 ([0-9]+)\n/', substr($p, $x), $h))
+		return 'a bad xref';
+	$lines = explode("\n", substr($p, $x + strlen($h[0])));
+	for ($id = 1; $id < (int)$h[1]; $id++) {
+		$off = (int)substr($lines[$id], 0, 10);
+		if (strpos(substr($p, $off, 20), $id . ' 0 obj') !== 0)
+			return "object $id not at its offset";
+	}
+	foreach (['/Type /Catalog', '/Type /Pages'] as $want)
+		if (strpos($p, $want) === false)
+			return "no $want";
+	return '';
+}
+
+$mh = mh_white_tiff(4);
+$pages = FaxPdf::pages($mh);
+same(count($pages), 1, 'FaxPdf: one page');
+same([$pages[0][0], $pages[0][1], $pages[0][2], $pages[0][3]], [1728, 4, 204.0, 98.0],
+     'FaxPdf: the page\'s size and resolution');
+$pdf = FaxPdf::fromTiff($mh, 'a4');
+same(pdf_problem($pdf), '', 'FaxPdf: a PDF of good structure');
+ok(strpos($pdf, '/Filter /CCITTFaxDecode /DecodeParms << /K 0 /Columns 1728 /EndOfLine true /Rows 4 >>') !== false,
+   'FaxPdf: the MH strip as it is (CCITTFaxDecode, K 0)');
+ok(strpos($pdf, '/MediaBox [0 0 595.28 841.89]') !== false, 'FaxPdf: A4 paper');
+ok(strpos(FaxPdf::fromTiff($mh), '/MediaBox [0 0 612 792]') !== false, 'FaxPdf: Letter by default');
+ok(strpos($pdf, "stream\n" . bits_bytes('0000000000010100')) !== false, 'FaxPdf: the coded data untouched');
+/* MMR, and T.4 2-D with byte-aligned EOLs */
+$t6 = tiff_page([256 => [3, [1728]], 257 => [3, [2]], 259 => [3, [4]], 262 => [3, [0]]], "\x00\x10\x01");
+ok(strpos(FaxPdf::fromTiff($t6), '<< /K -1 /Columns 1728 /Rows 2 >>') !== false, 'FaxPdf: MMR (K -1)');
+$t4 = tiff_page([256 => [3, [1728]], 257 => [3, [2]], 259 => [3, [3]], 262 => [3, [0]],
+		 292 => [4, [5]]], "\x00\x01");
+ok(strpos(FaxPdf::fromTiff($t4), '/K 1 /Columns 1728 /EndOfLine true /EncodedByteAlign true') !== false,
+   'FaxPdf: T.4 2-D with fill bits (K 1, EncodedByteAlign)');
+/* fill order 2: each byte's bits the other way round */
+$f2 = tiff_page([256 => [3, [8]], 257 => [3, [1]], 259 => [3, [1]], 262 => [3, [1]],
+		 266 => [3, [2]]], "\x01");
+ok(strpos(FaxPdf::fromTiff($f2), "stream\n\x80\nendstream") !== false, 'FaxPdf: fill order 2 reversed');
+/* uncompressed: 1 bit with 0 white, and colour */
+$u1 = tiff_page([256 => [3, [16]], 257 => [3, [2]], 259 => [3, [1]], 262 => [3, [0]]], "\xff\xff\x00\x00");
+ok(strpos(FaxPdf::fromTiff($u1), '/BitsPerComponent 1 /Decode [1 0]') !== false,
+   'FaxPdf: uncompressed, photometric 0 (0 white) decoded');
+$rgb = tiff_page([256 => [3, [2]], 257 => [3, [1]], 258 => [3, [8]], 259 => [3, [1]],
+		  262 => [3, [2]], 277 => [3, [3]]], "\xff\x00\x00\x00\x00\xff");
+ok(strpos(FaxPdf::fromTiff($rgb), '/ColorSpace /DeviceRGB /BitsPerComponent 8') !== false,
+   'FaxPdf: a colour page');
+/* what it does not take */
+foreach (['not a TIFF' => 'GIF89a......',
+	  'JPEG coding' => tiff_page([256 => [3, [8]], 257 => [3, [8]], 259 => [3, [7]]], 'x'),
+	  'a strip past the end' => substr($mh, 0, strlen($mh) - 10),
+	  'no size' => tiff_page([256 => [3, [0]], 257 => [3, [1]]], 'x')] as $what => $b) {
+	$threw = false;
+	try {
+		FaxPdf::fromTiff($b);
+	} catch (\RuntimeException $e) {
+		$threw = true;
+	}
+	ok($threw, "FaxPdf: refuses $what");
+}
+/* rendered, when Poppler is there: white, with the black rows black */
+$pdftoppm = trim((string)@shell_exec('command -v pdftoppm 2>/dev/null'));
+if ($pdftoppm !== '') {
+	$tmpd = sys_get_temp_dir() . '/dmodem-pdf-' . getmypid();
+	@mkdir($tmpd);
+	file_put_contents("$tmpd/u.pdf", FaxPdf::fromTiff(tiff_page([256 => [3, [64]],
+		257 => [3, [64]], 259 => [3, [1]], 262 => [3, [0]], 282 => [5, [[8, 1]]],
+		283 => [5, [[8, 1]]]], str_repeat("\xff", 256) . str_repeat("\x00", 256))));
+	shell_exec('pdftoppm -gray -r 9 ' . escapeshellarg("$tmpd/u.pdf") . ' ' . escapeshellarg("$tmpd/u"));
+	$pgm = glob("$tmpd/u*.pgm");
+	$px = $pgm ? file_get_contents($pgm[0]) : '';
+	/* an 8x8 inch image on Letter at 9 dpi: the top half black */
+	ok($px !== '' && strpos($px, "\x00\x00\x00\x00") !== false && strpos($px, "\xff\xff\xff\xff") !== false,
+	   'FaxPdf: Poppler renders it, black and white');
+	array_map('unlink', glob("$tmpd/*"));
+	rmdir($tmpd);
+} else {
+	echo "(no pdftoppm: the PDF not rendered)\n";
+}
+
+/* the message */
+same(FaxMail::fill('{cid} {pages} {nope} {recipient}', ['cid' => '555', 'pages' => 2]),
+     '555 2 {nope} ', 'fill: the fields, an unknown one left alone');
+foreach (['a@b.co' => true, "a@b.co\r\nBcc: x@y.z" => false, 'A <a@b.co>' => false,
+	  'a@b' => false, '' => false] as $a => $want)
+	same(FaxMail::addressOk($a), $want, 'addressOk ' . json_encode($a));
+list($hd, $bd, $sj) = FaxMail::build('Fax <fax@example.com>', "Fax \xc3\xa9\r\nBcc: x@y.z", 'Hello',
+	[['fax 1.pdf', 'application/pdf', '%PDF']], 'BOUND');
+ok(strpos($hd, "From: Fax <fax@example.com>\r\nMIME-Version: 1.0\r\n" .
+	   "Content-Type: multipart/mixed; boundary=\"BOUND\"") === 0, 'build: the headers');
+same($sj, '=?UTF-8?B?' . base64_encode("Fax \xc3\xa9 Bcc: x@y.z") . '?=',
+     'build: a subject not ASCII encoded, on one line');
+ok(strpos($bd, "Content-Disposition: attachment; filename=\"fax_1.pdf\"\r\n\r\n" .
+	   base64_encode('%PDF') . "\r\n--BOUND--\r\n") !== false, 'build: the attachment, its name made safe');
+ok(strpos($bd, base64_encode('Hello')) !== false, 'build: the text');
+
+$faxdir = sys_get_temp_dir() . '/dmodem-fax-' . getmypid();
+@mkdir($faxdir);
+$faxfile = "$faxdir/20261127-101500-5550100-1700000000.5.tif";
+file_put_contents($faxfile, mh_white_tiff(4));
+same(FaxMail::findFile($faxdir, '1700000000.5'), $faxfile, 'findFile: by the unique ID');
+same(FaxMail::findFile($faxdir, '1700000000.6'), null, 'findFile: none for another call');
+same(FaxMail::findFile($faxdir, '*'), null, 'findFile: no glob in the unique ID');
+
+$fs = array_merge(Config::defaultSettings(), ['fax_dir' => $faxdir,
+	'fax_email_from' => 'fax@example.com']);
+$mails = [];
+$sender = function ($to, $subject, $body, $headers) use (&$mails) {
+	$mails[] = compact('to', 'subject', 'body', 'headers');
+	return true;
+};
+/* the parts of a mail: content type => decoded bytes */
+$parts = function ($mail) {
+	preg_match('/boundary="([^"]+)"/', $mail['headers'], $b);
+	$out = [];
+	foreach (explode('--' . $b[1], $mail['body']) as $p) {
+		if (!preg_match('/Content-Type: ([a-z\/]+)/', $p, $t))
+			continue;
+		$split = strpos($p, "\r\n\r\n");
+		$out[$t[1]] = base64_decode(substr($p, $split + 4));
+	}
+	return $out;
+};
+$vars = ['status' => 'SUCCESS', 'pages' => '1', 'cid' => '5550100', 'remote' => '+1 555 0100',
+	 'cidname' => 'ACME'];
+$r = FaxMail::send($fs, ['email' => 'sales@example.com', 'name' => 'Sales', 'attach' => ''],
+		   '1700000000.5', $vars, $sender);
+ok($r[0] && strpos($r[1], 'mailed to sales@example.com') !== false, 'send: mailed');
+same($mails[0]['to'], 'sales@example.com', 'send: to the recipient');
+same($mails[0]['subject'], 'Fax from 5550100 (1 pages)', 'send: the subject from its template');
+$pp = $parts($mails[0]);
+same(array_keys($pp), ['text/plain', 'application/pdf'], 'send: the text and a PDF (the default)');
+same(pdf_problem($pp['application/pdf']), '', 'send: the PDF attached whole');
+ok(strpos($pp['text/plain'], 'A fax came from 5550100 (fax number +1 555 0100): 1 pages, SUCCESS.') === 0 &&
+   strpos($pp['text/plain'], 'for Sales.') !== false, 'send: the text from its template');
+ok(strpos($mails[0]['body'], 'filename="fax-5550100.pdf"') !== false, 'send: the PDF named by the caller');
+FaxMail::send($fs, ['email' => 'a@example.com', 'name' => 'A', 'attach' => 'both'],
+	      '1700000000.5', $vars, $sender);
+same(array_keys($parts($mails[1])), ['text/plain', 'application/pdf', 'image/tiff'],
+     'send: both, as the recipient has it');
+same($parts($mails[1])['image/tiff'], file_get_contents($faxfile), 'send: the TIFF as it is');
+FaxMail::send(array_merge($fs, ['fax_attach' => 'tiff']), ['email' => 'a@example.com', 'name' => 'A'],
+	      '1700000000.5', $vars, $sender);
+same(array_keys($parts($mails[2])), ['text/plain', 'image/tiff'], 'send: the TIFF, as the settings have it');
+/* a TIFF that FaxPdf does not take goes as the TIFF, and the text says why */
+file_put_contents("$faxdir/x-1700000000.7.tif", tiff_page([256 => [3, [8]], 257 => [3, [8]],
+	259 => [3, [7]]], 'x'));
+FaxMail::send($fs, ['email' => 'a@example.com', 'name' => 'A'], '1700000000.7', $vars, $sender);
+$pp = $parts($mails[3]);
+ok(array_keys($pp) === ['text/plain', 'image/tiff'] && strpos($pp['text/plain'], 'No PDF: a coding') !== false,
+   'send: no PDF, the TIFF instead, said in the text');
+ok(!FaxMail::send($fs, ['email' => 'a@example.com', 'name' => 'A'], '1700000000.9', $vars, $sender)[0],
+   'send: no fax file, no mail');
+ok(!FaxMail::send($fs, ['email' => '', 'name' => 'A'], '1700000000.5', $vars, $sender)[0],
+   'send: no address, no mail');
+ok(!FaxMail::send($fs, ['email' => 'a@example.com', 'name' => 'A'], '1700000000.5',
+		  ['status' => 'FAILED', 'pages' => '0'], $sender)[0], 'send: a failed call with no pages, no mail');
+same(count($mails), 4, 'send: nothing mailed for those');
+ok(!FaxMail::send($fs, ['email' => 'a@example.com', 'name' => 'A'], '1700000000.5', $vars,
+		  function () { return false; })[0], 'send: the mail system\'s refusal said');
+
+/* the settings */
+$set = $m->getSettings();
+foreach (['fax_min_rate' => 1000, 'fax_paper' => 'legal', 'fax_attach' => 'zip',
+	  'fax_email_from' => "a@b.co\nBcc: c@d.ef", 'fax_email_subject' => "a\nb"] as $k => $v)
+	ok(isset(Config::validateSettings(array_merge($set, [$k => $v]))[$k]), "bad setting $k refused");
+ok(isset(Config::validateSettings(array_merge($set, ['fax_min_rate' => 14400, 'fax_max_rate' => 9600]))['fax_min_rate']),
+   'fax_min_rate not above fax_max_rate');
+same(Config::validateSettings(array_merge($set, ['fax_min_rate' => 4800,
+	'fax_email_from' => 'Fax Server <fax@example.com>'])), [], 'good fax-to-email settings');
+ok(strpos(Config::render(array_merge($set, ['fax_min_rate' => 4800]), []), "fax_min_rate = 4800\n") !== false,
+   'dmodem.conf: fax_min_rate');
+$h = dmodem_get($m, ['view' => 'settings']);
+ok(strpos($h, 'name="fax_email_subject"') !== false && strpos($h, '<textarea') !== false,
+   'settings page: the fax-to-email section');
+
+/* the recipients */
+$sales = ['action' => 'save_recipient', 'original' => '', 'id' => 'Sales', 'name' => 'Sales <team>',
+	  'email' => 'sales@example.com', 'user' => '', 'attach' => ''];
+dmodem_post($m, $sales);
+same($m->errors, [], 'recipient sales saved');
+ok($m->getRecipient('sales') !== null, 'the id lowercased: sales');
+foreach (['id' => ['id' => '_x'], 'id ' => ['id' => 'sales'], 'name' => ['name' => ''],
+	  'email' => ['email' => 'nobody'], 'email ' => ['email' => ''],
+	  'user' => ['email' => '', 'user' => 'bob'], 'attach' => ['attach' => 'zip']] as $field => $over) {
+	dmodem_post($m, array_merge($sales, ['id' => 'other'], $over));
+	ok(isset($m->errors[trim($field)]), 'bad recipient field ' . trim($field) . ' refused');
+	ok($m->getRecipient('other') === null, 'a bad recipient is not kept (' . trim($field) . ')');
+}
+dmodem_post($m, array_merge($sales, ['original' => 'sales', 'id' => 'renamed', 'attach' => 'both']));
+ok($m->getRecipient('renamed') === null && $m->getRecipient('sales')['attach'] === 'both',
+   'a recipient edit keeps the id');
+ok(isset(Config::validateProfile(array_merge(Config::defaultProfile(), ['name' => 'fax-sales']))['name']),
+   'a profile cannot take a recipient\'s extension (fax-...)');
+/* User Manager: a user's address */
+$um = new FakeUserman();
+$um->users = [['username' => 'bob', 'email' => 'bob@example.com'], ['username' => 'nomail', 'email' => '']];
+FreePBX::$modules['Userman'] = $um;
+same($m->usermanUsers(), ['bob' => 'bob@example.com'], 'User Manager: the users with an address');
+dmodem_post($m, array_merge($sales, ['id' => 'bob', 'name' => 'Bob', 'email' => '', 'user' => 'bob']));
+same($m->errors, [], 'a recipient of a User Manager user');
+same($m->recipientAddress($m->getRecipient('bob'))['email'], 'bob@example.com', 'the user\'s address');
+$h = dmodem_get($m, ['view' => 'recipient', 'recipient' => 'bob']);
+ok(strpos($h, '<option value="bob" selected>bob (bob@example.com)</option>') !== false,
+   'recipient form: the User Manager users');
+unset(FreePBX::$modules['Userman']);
+same($m->usermanUsers(), null, 'no User Manager');
+same($m->recipientAddress($m->getRecipient('bob'))['email'], '', 'no User Manager: no address');
+ok(!$m->faxToMail('bob', '1700000000.5', $vars, $sender)[0], 'faxToMail: no address, no mail');
+ok(!$m->faxToMail('gone', '1700000000.5', $vars, $sender)[0], 'faxToMail: no such recipient');
+$m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => $faxdir]));
+$r = $m->faxToMail('sales', '1700000000.5', $vars, $sender);
+ok($r[0] && end($mails)['to'] === 'sales@example.com' &&
+   array_keys($parts(end($mails))) === ['text/plain', 'application/pdf', 'image/tiff'],
+   'faxToMail: the recipient\'s address and attachments');
+$m->saveSettings(array_merge($m->getSettings(), ['fax_dir' => '/var/spool/asterisk/fax']));
+array_map('unlink', glob("$faxdir/*"));
+rmdir($faxdir);
+$lines = [];
+same(Cli::run($m, ['fax2mail', 'sales'], [], $say), 2, 'fwconsole dmodem fax2mail: usage');
+same(Cli::run($m, ['fax2mail', 'gone', '1.2', 'SUCCESS', '1', '', '', ''], [], $say), 1,
+     'fwconsole dmodem fax2mail: no such recipient');
+ok(strpos(end($lines), 'No fax recipient gone') !== false, 'fwconsole dmodem fax2mail: says why');
+dmodem_post($m, ['action' => 'delete_recipient', 'recipient' => 'bob']);
+ok($m->getRecipient('bob') === null, 'recipient bob deleted');
+
+/* the recipient's destination and dialplan */
+$d = dmodem_destinations();
+ok(in_array('app-dmodem,fax-sales,1', array_column($d, 'destination'), true), 'a destination for the recipient');
+same(end($d)['description'], 'Fax to Sales <team>', 'the recipient\'s destination named');
+same(dmodem_getdestinfo('app-dmodem,fax-sales,1')['edit_url'],
+     'config.php?display=dmodem&view=recipient&recipient=sales', 'getdestinfo: the recipient\'s page');
+same(dmodem_getdestinfo('app-dmodem,fax-gone,1'), [], 'getdestinfo of a gone recipient: empty');
+$dp = dmodem_dialplan($m);
+ok(strpos($dp, "exten => fax-sales,1,NoOp(D-Modem fax to sales)\n") !== false, 'the recipient\'s extension');
+ok(strpos($dp, "exten => fax-sales,n,Set(CHANNEL(hangup_handler_push)=app-dmodem-fax2mail,s,1(sales))\n") !== false,
+   'the recipient\'s extension pushes the mail handler');
+ok(strpos($dp, "exten => fax-sales,n,DModemReceiveFax(/var/spool/asterisk/fax/") !== false,
+   'the recipient\'s extension takes the fax');
+ok(strpos($dp, "[app-dmodem-fax2mail]\n") !== false &&
+   strpos($dp, "exten => s,1,System(/usr/sbin/fwconsole dmodem fax2mail '\${FILTER(a-z0-9_,\${ARG1})}' '\${FILTER(0-9.,\${UNIQUEID})}'") !== false,
+   'the mail handler: fwconsole dmodem fax2mail, its values filtered');
+ok(strpos($dp, "exten => s,n,Return()\n") !== false, 'the mail handler returns');
+$cfg = new FakeConfig();
+$cfg->values['AMPSBIN'] = '/opt/freepbx/sbin';
+FreePBX::$modules['Config'] = $cfg;
+ok(strpos(dmodem_dialplan($m), 'System(/opt/freepbx/sbin/fwconsole dmodem fax2mail') !== false,
+   'the mail handler: fwconsole from AMPSBIN');
+$cfg->values['AMPSBIN'] = '/bin; rm -rf /';
+ok(strpos(dmodem_dialplan($m), 'System(/usr/sbin/fwconsole dmodem') !== false,
+   'the mail handler: a strange AMPSBIN not taken');
+unset(FreePBX::$modules['Config']);
+$GLOBALS['dest_usage']['app-dmodem,fax-sales,1'] = ['core' => ['inbound route 5551001']];
+dmodem_post($m, ['action' => 'delete_recipient', 'recipient' => 'sales']);
+ok($m->getRecipient('sales') !== null && $m->message[0] === 'danger', 'a recipient in use is not deleted');
+$GLOBALS['dest_usage'] = [];
+
+/* the pages */
+$h = dmodem_get($m, ['view' => 'recipients']);
+ok(strpos($h, 'Sales &lt;team&gt;') !== false && strpos($h, 'app-dmodem,fax-sales,1') !== false,
+   'recipients page: the name escaped, the destination');
+$h = dmodem_get($m, ['view' => 'recipient', 'recipient' => 'sales']);
+ok(strpos($h, 'value="sales@example.com"') !== false && strpos($h, 'readonly') !== false &&
+   strpos($h, 'action=delete_recipient&amp;recipient=sales') !== false, 'recipient form: its values, the delete URL');
+same(array_keys($m->getActionBar(['display' => 'dmodem', 'view' => 'recipient', 'recipient' => 'sales'])),
+     ['reset', 'submit', 'delete'], 'action bar: an existing recipient');
+same(array_keys($m->getActionBar(['display' => 'dmodem', 'view' => 'recipient'])),
+     ['reset', 'submit'], 'action bar: a new recipient');
+$h = dmodem_get($m, ['view' => 'dialplan']);
+ok(strpos($h, '[app-dmodem-fax2mail]') !== false, 'generated files page: the mail handler');
+
+/* the check page: what the fax machine can do */
+$am->out['dmodem fax show capabilities'] = "Technology:   DModem (libdmodem T.30)\nECM:          yes\n";
+$ck = $m->check($m->getSettings());
+ok(strpos($ck['fax'], 'DModem (libdmodem T.30)') !== false, 'check: app_dmodem\'s fax capabilities');
+ok(strpos($m->faxCapabilities(array_merge($m->getSettings(), ['engine' => 'ari', 'ari_t38' => true]), true),
+	  'T.38 (versions 0 to 3, on the SIP side)') !== false, 'check: dmodem-ari\'s fax capabilities');
+same($m->faxCapabilities($m->getSettings(), false), '', 'check: no engine, no fax capabilities');
+$h = dmodem_get($m, ['view' => 'check']);
+ok(strpos($h, 'id="dmodem-fax-capabilities"') !== false, 'check page: the fax capabilities');
+
+/* the ARI engine: the recipient through Stasis() */
+$dpa = Dialplan::render(Dialplan::build(array_merge($m->getSettings(), ['engine' => 'ari']), [],
+					$m->getRecipients()));
+ok(strpos($dpa, " same => n,Stasis(dmodem,receivefax,/var/spool/asterisk/fax/") !== false,
+   'ari: the recipient\'s fax through Stasis(<app>,receivefax,<file>)');
+
 /* --- export, import, backup and restore --- */
 
 $exp = $m->exportData();
-same(array_keys($exp), ['format', 'settings', 'profiles'], 'export: its parts');
+same(array_keys($exp), ['format', 'settings', 'profiles', 'recipients'], 'export: its parts');
+same(array_keys($exp['recipients']), ['sales'], 'export: the fax recipients');
 same($exp['settings']['fax_ecm'], false, 'export: settings as they are');
 $file = sys_get_temp_dir() . '/dmodem-unit-' . getmypid() . '.json';
 same(Cli::run($m, ['export', $file], [], $say), 0, 'fwconsole dmodem export <file>');
@@ -489,7 +848,7 @@ $rs = new \FreePBX\modules\Dmodem\Restore($m4->FreePBX, '17.0', null, 'tx2',
 	'/tmp', false);
 $rs->runRestore();
 same($m4->exportData(), $exp, 'restore: the settings and profiles back');
-ok(strpos(json_encode($rs->logged), '1 profiles restored') !== false, 'restore: logged');
+ok(strpos(json_encode($rs->logged), '1 profiles and 1 fax recipients restored') !== false, 'restore: logged');
 FreePBX_Helpers::$kv = $saved;
 FreePBX::$modules['Dmodem'] = $m;
 

@@ -18,9 +18,10 @@ class Restore extends Base\RestoreBase
 		foreach ($r['settings'] as $field => $why)
 			$this->log(sprintf(_('D-Modem: setting %s not restored: %s'), $field, $why), 'WARNING');
 		foreach ($r['skipped'] as $name => $why)
-			$this->log(sprintf(_('D-Modem: profile %s not restored: %s'), $name,
+			$this->log(sprintf(_('D-Modem: %s not restored: %s'), $name,
 					   implode('; ', $why)), 'WARNING');
-		$this->log(sprintf(_('D-Modem: %d profiles restored'), count($r['imported'])));
+		$this->log(sprintf(_('D-Modem: %d profiles and %d fax recipients restored'),
+				   count($r['imported']), count($r['recipients'])));
 	}
 
 	/* a FreePBX 13 backup: the module is newer, it has nothing there */

@@ -4,15 +4,17 @@
 //
 // Cli.php - fwconsole dmodem's subcommands (Console/Dmodem.class.php
 // hands them here, so they work, and are tested, without Symfony):
-// dial, profiles, export, import.
+// dial, profiles, export, import, fax2mail (a received fax to a
+// recipient's email address: the hangup handler of Dialplan::mailHandler()).
 
 namespace FreePBX\modules\Dmodem;
 
 class Cli
 {
 	/* subcommand args (a list) on module m, options opts (callerid,
-	   keep), its lines to say(); 0 if it went through, 1 if not, 2 for
-	   bad arguments */
+	   keep; send: the mail system for fax2mail, as FaxMail::send() has
+	   it, for the tests), its lines to say(); 0 if it went through, 1 if
+	   not, 2 for bad arguments */
 	public static function run($m, array $args, array $opts, callable $say)
 	{
 		$cmd = isset($args[0]) ? $args[0] : '';
@@ -61,13 +63,25 @@ class Cli
 			foreach ($r['settings'] as $f => $why)
 				$say(sprintf(_('setting %s not imported: %s'), $f, $why));
 			foreach ($r['skipped'] as $name => $why)
-				$say(sprintf(_('profile %s not imported: %s'), $name,
+				$say(sprintf(_('%s not imported: %s'), $name,
 					     implode('; ', $why)));
-			$say(sprintf(_('%d profiles imported; run fwconsole reload'),
-				     count($r['imported'])));
+			$say(sprintf(_('%d profiles and %d fax recipients imported; run fwconsole reload'),
+				     count($r['imported']), count($r['recipients'])));
 			return $r['ok'] ? 0 : 1;
+		case 'fax2mail':
+			if (count($args) < 3 || count($args) > 8) {
+				$say(_('Usage: fwconsole dmodem fax2mail <recipient> <uniqueid> [status] [pages] [cid] [remote] [cidname]'));
+				return 2;
+			}
+			$v = [];
+			foreach (['status', 'pages', 'cid', 'remote', 'cidname'] as $i => $k)
+				$v[$k] = isset($args[$i + 3]) ? (string)$args[$i + 3] : '';
+			$r = $m->faxToMail($args[1], $args[2], $v,
+				isset($opts['send']) ? $opts['send'] : null);
+			$say($r[1]);
+			return $r[0] ? 0 : 1;
 		default:
-			$say(_('Usage: fwconsole dmodem dial <profile> <number> | profiles | export [file] | import <file>'));
+			$say(_('Usage: fwconsole dmodem dial <profile> <number> | profiles | export [file] | import <file> | fax2mail <recipient> <uniqueid> ...'));
 			return 2;
 		}
 	}
