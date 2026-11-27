@@ -191,7 +191,7 @@ the modem profiles receive (default `/var/spool/asterisk/fax`).
 `<ident>` is our own number. It replaces `fax_ident`.
 
 `<options>` are the options of `DModemSendFax` and `DModemReceiveFax`:
-`d`, `f`, `F`, `z` and `T` (refer to
+`d`, `f`, `F`, `z`, `T` and `s` (refer to
 [asterisk-details.md](asterisk-details.md#fax-application-options)).
 For option `z` and option `T`, `dmodem-ari` must have its SIP side
 (`t38 = yes`).
@@ -216,6 +216,23 @@ Example:
 exten => 5551001,1,Set(DMODEMFAXOPT_MINRATE=9600)
  same => n,Stasis(dmodem,receivefax,/var/spool/fax/${UNIQUEID}.tif,,d)
 ```
+
+### Fax events and totals
+
+`dmodem-ari` cannot add CLI commands or AMI actions to Asterisk. It
+gives the same data in these ways:
+
+- At the end of each fax, it sends the ARI user event `DModemSendFax`
+  or `DModemReceiveFax` on the channel. AMI shows it as a `UserEvent`
+  with `UserEvent: DModemSendFax` (or `DModemReceiveFax`) and the same
+  headers as the AMI event of `app_dmodem` (refer to
+  [asterisk-details.md](asterisk-details.md#fax-cli-and-ami)).
+- With option `s`, it sends the user event `DModemFaxStatus` at each
+  phase and each page.
+- On the signal `SIGUSR1` (`kill -USR1 <pid>`), it writes the faxes that
+  run now and the totals since its start to its log: the attempts to
+  send and to receive, the completed faxes, the failed faxes and the
+  number of failures for each `FAXERROR` code.
 
 ### The variables
 

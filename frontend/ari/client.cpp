@@ -213,6 +213,14 @@ std::string url_encode(const std::string &s)
 s32 request(const Server &srv, const char *method, const std::string &path,
 	    std::string *body)
 {
+	return request_json(srv, method, path, std::string(), body);
+}
+
+/* see client.h */
+s32 request_json(const Server &srv, const char *method,
+		 const std::string &path, const std::string &json,
+		 std::string *body)
+{
 	std::string reply;
 	int fd = connect_to(srv), status = -1;
 	size_t end;
@@ -223,7 +231,10 @@ s32 request(const Server &srv, const char *method, const std::string &path,
 	if (fd < 0)
 		return -1;
 	if (!send_all(fd, head(srv, method, path) +
-		      "Content-Length: 0\r\nConnection: close\r\n\r\n")) {
+		      (json.empty() ? std::string() :
+		       std::string("Content-Type: application/json\r\n")) +
+		      "Content-Length: " + std::to_string(json.size()) +
+		      "\r\nConnection: close\r\n\r\n" + json)) {
 		::close(fd);
 		return -1;
 	}
