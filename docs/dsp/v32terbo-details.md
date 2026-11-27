@@ -194,7 +194,7 @@ has the details of the procedure.
 
 - `pump_test`: `v32terbo*` (clean, 27 dB, no band limit, 8000 Hz,
   300 ppm clock offset, an echo), and `V32Terbo.Rates` (19200 at 40 dB,
-  16800 at 29 dB, 14400 at 25 dB, each without a bit error).
+  16800 at 29 dB, 14400 at 25.5 dB, each without a bit error).
 - `V32bis.Renegotiation` of `pump_test`: a renegotiation of the caller
   and then of the answerer, to 9600 bit/s
   (`DSP_V32_RENEG=<ms>[:<bit/s>][a|c]`). The other modem answers without
