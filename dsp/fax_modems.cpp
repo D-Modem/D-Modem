@@ -192,6 +192,19 @@ static s16 trn_len(enum fax_mod m, s16 short_train)
 	return 1074;
 }
 
+/* V.27ter's times as symbols at its rate (Tables 3 and 5/V.27 ter),
+   as the line has them: the pulse shaping (50% roll-off) adds some 6 to
+   8 ms to the end of each signal.  Segment 1, the unmodulated carrier,
+   190 ms (185 to 200 on the line); segment 2, the silence, 27 ms (20 to
+   25); in the turn-off, 2 ms of ones after the data (segment A, the
+   data still in the modulator and the ones: 5 to 10) and 27 ms of
+   silence (segment B, 20; A and B 25 to 30).  (At 1200 baud, 2400
+   bit/s, a count of symbols for 1600 baud is a third longer) */
+static s32 v27_syms(enum fax_mod m, float ms)
+{
+	return static_cast<s32>(info(m).baud * ms / 1000 + 0.5f);
+}
+
 /* the scrambled ones before the data, symbols (V.27ter segment 5,
    V.29 and V.17 segment 4) */
 static s16 ones_len(enum fax_mod m)
@@ -327,11 +340,11 @@ static cplx fax_tx_symbol(FaxTx *t)
 	/* segment changes */
 	switch (t->seg) {
 	case SEG_CARRIER:
-		if (t->seg_sym >= 320)
+		if (t->seg_sym >= v27_syms(t->mod, 190))
 			t->next_segment(SEG_SILENCE);
 		break;
 	case SEG_SILENCE:
-		if (t->seg_sym >= (is_v27(t->mod) ? 32 : 48))
+		if (t->seg_sym >= (is_v27(t->mod) ? v27_syms(t->mod, 27) : 48))
 			t->next_segment(is_v27(t->mod) ? SEG_REVERSALS : SEG_ABAB);
 		break;
 	case SEG_REVERSALS:
@@ -370,11 +383,12 @@ static cplx fax_tx_symbol(FaxTx *t)
 	case SEG_SHUTDOWN:
 		/* V.17: 20 ms more of ones, the original library's receiver
 		   may lose the end of the data with its last frame */
-		if (t->seg_sym >= (is_v17(t->mod) ? 80 : 32))
+		if (t->seg_sym >= (is_v17(t->mod) ? 80 :
+				   is_v27(t->mod) ? v27_syms(t->mod, 2) : 32))
 			t->next_segment(SEG_TAIL);
 		break;
 	case SEG_TAIL:
-		if (t->seg_sym >= 48) {
+		if (t->seg_sym >= (is_v27(t->mod) ? v27_syms(t->mod, 27) : 48)) {
 			t->next_segment(SEG_DONE);
 			t->done = 1;
 		}

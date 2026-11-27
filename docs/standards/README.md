@@ -36,7 +36,7 @@ A standard that has no link has no pages yet.
 | [V.23](v23.md) ([details](v23-details.md)) | 1200/75 bit/s FSK |
 | [V.26 bis](v26bis.md) ([details](v26bis-details.md)) | 2400/1200 bit/s, with a 75 bit/s backward channel |
 | [V.26 ter](v26ter.md) ([details](v26ter-details.md)) | 2400 bit/s duplex, with echo cancellation |
-| V.27ter | 4800/2400 bit/s |
+| [V.27 ter](v27ter.md) ([details](v27ter-details.md)) | 4800/2400 bit/s |
 | V.29 | 9600 bit/s |
 | V.32 | 9600 bit/s duplex, with trellis coding |
 | V.32bis | 14400 bit/s duplex |

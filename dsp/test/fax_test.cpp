@@ -211,6 +211,75 @@ INSTANTIATE_TEST_SUITE_P(Class1, FaxModulation, testing::Values(
 	Loopback{ 146, 30, 0, 8000, 22 }, Loopback{ 146, 30, 144, 8000, 13 }),
 	loopback_name);
 
+/* the data bits that v27_get_bit() gave */
+static int v27_bits;
+
+/* the V.27 ter transmitter's data: 400 ones, then FAX_BIT_END */
+static s16 v27_get_bit(void *)
+{
+	return ++v27_bits > 400 ? FAX_BIT_END : 1;
+}
+
+/* the V.27 ter transmitter at mod (FM_V27_4800 or FM_V27_2400) at 8000
+   Hz, 400 data bits (ones), then the end: the times of its signal (ms):
+   [0] the unmodulated carrier (segment 1), [1] the silence after it
+   (segment 2), [2] the signal from the data's end to the last sample
+   with energy (segment A of the turn-off, with the pulse shaping's
+   tail), [3] from there to the end of the transmitter (segment B) */
+static std::vector<double> v27_times(enum fax_mod mod)
+{
+	FaxTx t;
+	v27_bits = 0;
+	t.init(mod, 0, 8000, v27_get_bit, nullptr);
+	std::vector<float> x;
+	long end_at = -1;
+	while (!t.done && x.size() < 8000 * 10) {
+		x.push_back(t.sample());
+		if (end_at < 0 && v27_bits > 400)
+			end_at = static_cast<long>(x.size());
+	}
+	/* the first run of 2 ms or more without energy (40 dB under the
+	   signal: the pulse shaping's tails below that), and its end */
+	long n = static_cast<long>(x.size()), i = 0, gap0 = -1, gap1 = -1;
+	for (long run = 0; i < n; i++) {
+		run = fabsf(x[i]) < 33 ? run + 1 : 0;
+		if (gap0 < 0 && run >= 16)
+			gap0 = i - 15;
+		if (gap0 >= 0 && run == 0) {
+			gap1 = i;
+			break;
+		}
+	}
+	long last = n - 1;
+	while (last > 0 && fabsf(x[last]) < 33)
+		last--;
+	return { gap0 / 8.0, (gap1 - gap0) / 8.0, (last - end_at) / 8.0,
+		 (n - 1 - last) / 8.0 };
+}
+
+/* Tables 3 and 5/V.27 ter on the line, with protection against talker
+   echo (the fax use): segment 1 185 to 200 ms, segment 2 20 to 25 ms;
+   in the turn-off 5 to 10 ms of the data's end and ones (segment A),
+   about 20 ms of silence (segment B), A and B 25 to 30 ms (1 ms more
+   allowed for the edges) */
+TEST(V27ter, SegmentTimes)
+{
+	for (enum fax_mod m : { FM_V27_4800, FM_V27_2400 }) {
+		std::vector<double> t = v27_times(m);
+		const char *r = m == FM_V27_4800 ? "4800" : "2400";
+		EXPECT_GE(t[0], 185) << r;
+		EXPECT_LE(t[0], 200) << r;
+		EXPECT_GE(t[1], 20) << r;
+		EXPECT_LE(t[1], 25) << r;
+		EXPECT_GE(t[2], 5) << r;
+		EXPECT_LE(t[2], 10) << r;
+		EXPECT_GE(t[3], 18) << r;
+		EXPECT_LE(t[3], 23) << r;
+		EXPECT_GE(t[2] + t[3], 25) << r;
+		EXPECT_LE(t[2] + t[3], 31) << r;
+	}
+}
+
 /*
  *    the page coding and TIFF files
  *
