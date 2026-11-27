@@ -3,7 +3,8 @@
 // Copyright (C) 2026 D-Modem Authors
 //
 // views/faxes.php - the fax log: each received fax, newest first, with
-// its PDF to view, its TIFF file to keep, and a delete button.  Given
+// its PDF to view, its TIFF file to keep, a block button for its caller
+// ID, and a delete button.  Given
 // $faxes, $recipients and $settings.
 
 if (!defined('FREEPBX_IS_AUTH')) {
@@ -11,6 +12,7 @@ if (!defined('FREEPBX_IS_AUTH')) {
 }
 use FreePBX\modules\Dmodem as D;
 use FreePBX\modules\Dmodem\FaxLog;
+use FreePBX\modules\Dmodem\FaxJunk;
 
 /* the Ajax link of command cmd for the fax of call u */
 $link = function ($cmd, $u) {
@@ -59,7 +61,9 @@ $link = function ($cmd, $u) {
 					<td><?php echo (int)$e['pages']; ?></td>
 					<td><?php echo D::h(FaxLog::status($e)); ?></td>
 					<td><?php echo $e['rate'] > 0 ? (int)$e['rate'] : ''; ?></td>
-					<td><?php if ($e['mail'] !== ''): ?>
+					<td><?php if ($e['blocked']): ?>
+						<span class="text-warning" title="<?php echo D::h($e['mail']); ?>"><?php echo _('Blocked'); ?></span>
+					<?php elseif ($e['mail'] !== ''): ?>
 						<span class="<?php echo $e['mail_ok'] ? 'text-success' : 'text-danger'; ?>"
 						      title="<?php echo D::h($e['mail']); ?>">
 							<?php echo $e['mail_ok'] ? _('Sent') : _('Not sent'); ?></span>
@@ -72,6 +76,15 @@ $link = function ($cmd, $u) {
 							   href="<?php echo $link('faxtiff', $u); ?>"><?php echo _('TIFF'); ?></a>
 						<?php else: ?>
 							<span class="text-muted"><?php echo _('No file'); ?></span>
+						<?php endif; ?>
+						<?php if ($e['direction'] === 'in' && !$e['blocked'] &&
+							  FaxJunk::digits($e['cid']) !== ''): ?>
+							<form method="post" action="?display=dmodem&amp;view=faxes" style="display: inline"
+							      onsubmit="return confirm(<?php echo D::h(json_encode(sprintf(_('Block the faxes from %s?'), FaxJunk::digits($e['cid'])))); ?>);">
+								<input type="hidden" name="action" value="block_caller">
+								<input type="hidden" name="uniqueid" value="<?php echo D::h($u); ?>">
+								<button type="submit" class="btn btn-warning btn-xs"><?php echo _('Block'); ?></button>
+							</form>
 						<?php endif; ?>
 						<form method="post" action="?display=dmodem&amp;view=faxes" style="display: inline"
 						      onsubmit="return confirm(<?php echo D::h(json_encode(_('Delete this fax and its file?'))); ?>);">

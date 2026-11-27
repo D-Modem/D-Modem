@@ -21,6 +21,7 @@ require_once __DIR__ . '/lib/FaxMail.php';
 require_once __DIR__ . '/lib/FaxLog.php';
 require_once __DIR__ . '/lib/FaxSend.php';
 require_once __DIR__ . '/lib/FaxCover.php';
+require_once __DIR__ . '/lib/FaxJunk.php';
 
 use FreePBX\modules\Dmodem\Config;
 use FreePBX\modules\Dmodem\Dialplan;
@@ -30,6 +31,7 @@ use FreePBX\modules\Dmodem\FaxMail;
 use FreePBX\modules\Dmodem\FaxLog;
 use FreePBX\modules\Dmodem\FaxPdf;
 use FreePBX\modules\Dmodem\FaxSend;
+use FreePBX\modules\Dmodem\FaxJunk;
 
 class Dmodem extends \FreePBX_Helpers implements \BMO
 {
@@ -383,7 +385,13 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$e = FaxLog::entry($id, $uniqueid, $vars,
 				   FaxMail::findFile($s['fax_dir'], $uniqueid), $now);
 		$r = [true, sprintf(_('Fax of call %s logged'), $uniqueid)];
-		if ($id !== '') {
+		/* junk fax control: a blocked fax is logged, not mailed */
+		$why = FaxJunk::blocked($e['cid'], $s);
+		if ($why !== '') {
+			$e['blocked'] = true;
+			$e['mail'] = $why;
+			$r = [true, sprintf(_('Fax of call %s blocked: %s'), $uniqueid, $why)];
+		} elseif ($id !== '') {
 			$r = $this->faxToMail($id, $uniqueid, $vars, $send);
 			$e['mail'] = $r[1];
 			$e['mail_ok'] = (bool)$r[0];
@@ -391,6 +399,27 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		$this->setConfig($e['uniqueid'], $e, self::FAXLOG);
 		$this->purgeFaxes($now);
 		return $r;
+	}
+
+	/* the caller ID of the received fax of call uniqueid added to the
+	   block list (fax_block).  [ok, message] */
+	public function blockCaller($uniqueid)
+	{
+		$e = $this->getFax($uniqueid);
+		if ($e === null || $e['direction'] !== 'in')
+			return [false, sprintf(_('No received fax %s'), $uniqueid)];
+		$d = FaxJunk::digits($e['cid']);
+		if ($d === '')
+			return [false, _('The fax has no caller ID number')];
+		$s = $this->getSettings();
+		if (FaxJunk::listed($d, $s['fax_allow']))
+			return [false, sprintf(_('%s is on the allow list'), $d)];
+		$s['fax_block'] = FaxJunk::add($s['fax_block'], $d);
+		$why = FaxJunk::listError($s['fax_block']);
+		if ($why !== '')
+			return [false, $why];
+		$this->saveSettings(['fax_block' => $s['fax_block']]);
+		return [true, sprintf(_('Faxes from %s are blocked from now on'), $d)];
 	}
 
 	/* the fax log: uniqueid => entry (FaxLog::entry()), the newest
@@ -801,7 +830,8 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	}
 
 	/* the faxes of the fax log that user uid sees in UCP: those
-	   received for its recipients, and those that it sent; the newest
+	   received for its recipients (not the blocked ones), and those
+	   that it sent; the newest
 	   first (uniqueid => entry) */
 	public function ucpFaxes($uid)
 	{
@@ -810,7 +840,8 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 		if (!$a['enabled'])
 			return $out;
 		foreach ($this->getFaxes() as $u => $e)
-			if (($e['direction'] === 'in' && in_array($e['recipient'], $a['recipients'], true)) ||
+			if (($e['direction'] === 'in' && !$e['blocked'] &&
+			     in_array($e['recipient'], $a['recipients'], true)) ||
 			    ($e['direction'] === 'out' && $e['user'] === (int)$uid))
 				$out[$u] = $e;
 		return $out;
@@ -1163,6 +1194,12 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			$r = $this->cancelFax((string)$req['job']);
 			$this->message = [$r[0] ? 'success' : 'danger', $r[1]];
 			$_REQUEST['view'] = 'send';
+			return;
+		}
+		if ($action === 'block_caller' && isset($req['uniqueid'])) {
+			$r = $this->blockCaller((string)$req['uniqueid']);
+			$this->message = [$r[0] ? 'success' : 'danger', $r[1]];
+			$_REQUEST['view'] = 'faxes';
 			return;
 		}
 		if ($action === 'delete_fax' && isset($req['uniqueid'])) {
