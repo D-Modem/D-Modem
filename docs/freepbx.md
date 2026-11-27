@@ -60,10 +60,11 @@ For the generated files, the code and the tests, refer to
   fax and sends it by email, as a PDF file, the TIFF file or both. The
   address is the address of the recipient, or of a User Manager user. The
   mail system of the machine must send mail.
-- **Send fax.** The **Send fax** tab sends PDF and TIFF files with an
-  optional cover page. A fax that fails is tried again, and the result
-  can go by email. Ghostscript must be installed. Scripts can use
-  `fwconsole dmodem sendfax`.
+- **Send fax.** The **Send fax** tab sends PDF, TIFF and Office files
+  with an optional cover page. A fax that fails is tried again, and the
+  result can go by email. Ghostscript must be installed, and
+  LibreOffice for Office files. Scripts can use `fwconsole dmodem
+  sendfax`, and programs can use the send API with a token.
 - **Faxes.** The **Faxes** tab shows each received and sent fax. You can view it
   as a PDF file, download the TIFF file or delete it. The module can
   delete old faxes.

@@ -42,6 +42,14 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	const DIDFAX = 'didfax';
 	const FAXLOG = 'faxlog';
 	const FAXJOBS = 'faxjobs';
+	/* the Ajax commands: the files of the fax log, and the send API */
+	const AJAX = ['faxpdf', 'faxtiff', 'sendfax', 'faxstatus'];
+	/* the commands of the send API, which a token also opens */
+	const API = ['sendfax', 'faxstatus'];
+	/* the runner of the Ghostscript and LibreOffice commands for the
+	   send API (FaxSend::make()); null: FaxSend::exec().  The tests
+	   give a stand-in */
+	public $faxRun = null;
 	/* the endpoints the check reads at most */
 	const MAX_ENDPOINTS = 200;
 	/* exportData()'s format */
@@ -511,20 +519,89 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	}
 
 	/* BMO Ajax: the commands that this module answers (faxpdf,
-	   faxtiff: a logged fax for a signed-in administrator) */
+	   faxtiff: a logged fax for a signed-in administrator; sendfax,
+	   faxstatus: the send API, for a signed-in administrator or a
+	   program with the token) */
 	public function ajaxRequest($command, &$setting)
 	{
-		if ($command !== 'faxpdf' && $command !== 'faxtiff')
+		if (!in_array($command, self::AJAX, true))
 			return false;
 		$setting['authenticate'] = true;
 		$setting['allowremote'] = false;
+		/* the send API: a program with the token, from anywhere */
+		if (in_array($command, self::API, true) && $this->apiTokenOk(self::apiToken())) {
+			$setting['authenticate'] = false;
+			$setting['allowremote'] = true;
+		}
 		return true;
 	}
 
-	/* BMO Ajax: no JSON answers (ajaxCustomHandler() sends the files) */
+	/* the token that the request gives: the X-Dmodem-Token header, or
+	   Authorization: Bearer <token>; '' for none */
+	public static function apiToken()
+	{
+		if (isset($_SERVER['HTTP_X_DMODEM_TOKEN']))
+			return trim((string)$_SERVER['HTTP_X_DMODEM_TOKEN']);
+		if (isset($_SERVER['HTTP_AUTHORIZATION']) &&
+		    preg_match('/^Bearer\s+(\S+)$/i', trim((string)$_SERVER['HTTP_AUTHORIZATION']), $m))
+			return $m[1];
+		return '';
+	}
+
+	/* true if token t is the token of the send API, and the API is on */
+	public function apiTokenOk($t)
+	{
+		$s = $this->getSettings();
+		return $s['fax_api'] && $s['fax_api_token'] !== '' && (string)$t !== '' &&
+			hash_equals($s['fax_api_token'], (string)$t);
+	}
+
+	/* BMO Ajax: the JSON answers of the send API (sendfax, faxstatus);
+	   false for the other commands (ajaxCustomHandler() sends the
+	   files) */
 	public function ajaxHandler()
 	{
+		$cmd = isset($_REQUEST['command']) ? (string)$_REQUEST['command'] : '';
+		if ($cmd === 'sendfax') {
+			if (!isset($_SERVER['REQUEST_METHOD']) || $_SERVER['REQUEST_METHOD'] !== 'POST')
+				return ['status' => false, 'message' => _('Send a fax with POST')];
+			$docs = self::uploads(isset($_FILES['docs']) ? $_FILES['docs'] : null, $why);
+			if ($why !== '')
+				return ['status' => false, 'message' => $why];
+			$q = $this->queueFax($_POST, $docs, null, $this->faxRun);
+			if ($q['ok'])
+				$this->runFaxQueue();
+			return ['status' => $q['ok'], 'message' => $q['message'], 'job' => $q['id'],
+				'errors' => $q['errors']];
+		}
+		if ($cmd === 'faxstatus') {
+			$id = isset($_REQUEST['job']) ? (string)$_REQUEST['job'] : '';
+			$st = $this->faxStatus($id);
+			return $st === null ? ['status' => false, 'message' => sprintf(_('No fax job %s'), $id)] :
+				['status' => true] + $st;
+		}
 		return false;
+	}
+
+	/* the state of job id: in the queue (queued, sending, retry) or
+	   done (its entry in the fax log, with the result).  null if
+	   there is no such job */
+	public function faxStatus($id)
+	{
+		if (!FaxSend::idOk($id))
+			return null;
+		$j = $this->getFaxJob($id);
+		if ($j !== null)
+			return ['job' => $id, 'state' => $j['state'], 'number' => $j['number'],
+				'pages' => (int)$j['pages'], 'attempts' => (int)$j['attempts'],
+				'next' => (int)$j['next'], 'last' => (string)$j['last']];
+		foreach ($this->getFaxes() as $u => $e)
+			if ($e['direction'] === 'out' && $e['job'] === $id)
+				return ['job' => $id, 'state' => 'done', 'number' => $e['number'],
+					'pages' => $e['pages'], 'attempts' => $e['attempts'],
+					'result' => FaxLog::status($e), 'uniqueid' => (string)$u,
+					'time' => $e['time']];
+		return null;
 	}
 
 	/* BMO Ajax: the fax of $_REQUEST['uniqueid'] sent to the browser,
@@ -533,6 +610,8 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 	public function ajaxCustomHandler()
 	{
 		$cmd = isset($_REQUEST['command']) ? (string)$_REQUEST['command'] : '';
+		if ($cmd !== 'faxpdf' && $cmd !== 'faxtiff')
+			return false;
 		$u = isset($_REQUEST['uniqueid']) ? (string)$_REQUEST['uniqueid'] : '';
 		$e = $this->getFax($u);
 		$this->sendDocument($e === null ? null :
@@ -1269,6 +1348,9 @@ class Dmodem extends \FreePBX_Helpers implements \BMO
 			/* a password left empty keeps the one there is */
 			if ($s['ari_password'] === '')
 				$s['ari_password'] = $this->getSettings()['ari_password'];
+			/* the same for the token of the send API */
+			if ($s['fax_api_token'] === '')
+				$s['fax_api_token'] = $this->getSettings()['fax_api_token'];
 			$this->errors = Config::validateSettings($s);
 			if ($this->errors) {
 				$this->posted = $s;

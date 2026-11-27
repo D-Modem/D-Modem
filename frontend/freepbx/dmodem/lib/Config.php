@@ -79,6 +79,12 @@ class Config
 			'fax_notify' => 'failure',
 			'fax_notify_email' => '',
 			'fax_ghostscript' => '/usr/bin/gs',
+			/* LibreOffice: Office documents to PDF ('': none) */
+			'fax_office' => '/usr/bin/soffice',
+			/* the send API (the Ajax commands sendfax and
+			   faxstatus with a token): on, and its token */
+			'fax_api' => false,
+			'fax_api_token' => '',
 			'fax_cover_name' => '',
 			'fax_cover_address' => '',
 			'fax_cover_phone' => '',
@@ -293,6 +299,12 @@ class Config
 			$e['fax_notify_email'] = _('An email address, or empty');
 		if (!preg_match('#^/[A-Za-z0-9/._-]{1,200}$#', $s['fax_ghostscript']))
 			$e['fax_ghostscript'] = _('An absolute path of letters, digits, /, ., _ and -');
+		if ($s['fax_office'] !== '' && !preg_match('#^/[A-Za-z0-9/._-]{1,200}$#', $s['fax_office']))
+			$e['fax_office'] = _('Empty, or an absolute path of letters, digits, /, ., _ and -');
+		if ($s['fax_api_token'] !== '' && !preg_match('/^[A-Za-z0-9_-]{32,128}$/', $s['fax_api_token']))
+			$e['fax_api_token'] = _('32 to 128 letters, digits, _ and -');
+		elseif ($s['fax_api'] && $s['fax_api_token'] === '')
+			$e['fax_api_token'] = _('The send API needs a token');
 		foreach (['fax_cover_name', 'fax_cover_phone', 'fax_cover_web',
 			  'fax_cover_footer'] as $k)
 			if (self::breaksLine($s[$k]) || strlen($s[$k]) > 100)

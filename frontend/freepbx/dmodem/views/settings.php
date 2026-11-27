@@ -153,6 +153,13 @@ foreach (Config::FAX_RATES as $r)
 	     _('The default address for the result.'));
 	$row('fax_ghostscript', _('Ghostscript'), $text('fax_ghostscript', $s['fax_ghostscript']),
 	     _('The gs program, which makes the fax pages from PDF files (on FreePBX: yum or apt install ghostscript).'));
+	$row('fax_office', _('LibreOffice'), $text('fax_office', $s['fax_office']),
+	     _('The soffice program, which makes PDF files from Office documents (Word, Excel, PowerPoint, OpenDocument, RTF, text). Empty: only PDF and TIFF files.'));
+	$row('fax_api', _('Send API'), $check('fax_api', $s['fax_api']),
+	     _('Programs send faxes and get their state through ajax.php?module=dmodem&command=sendfax and faxstatus, with the token in the X-Dmodem-Token header.'));
+	$row('fax_api_token', _('Send API token'), $text('fax_api_token', '', 'password'),
+	     ($s['fax_api_token'] !== '' ? _('A token is set. Empty: keep it.') . ' ' : '') .
+	     _('32 to 128 letters, digits, _ and -. For example, make one with: openssl rand -hex 32'));
 	$row('fax_cover_name', _('Cover page: company'), $text('fax_cover_name', $s['fax_cover_name']),
 	     _('Your company name, on the top of the cover page.'));
 	$row('fax_cover_address', _('Cover page: address'),

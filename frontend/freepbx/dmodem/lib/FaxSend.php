@@ -4,7 +4,8 @@
 //
 // lib/FaxSend.php - a fax that D-Modem sends: the job (the number, the
 // cover page, the tries, the email of the result), its fax file (the
-// documents and the cover page made into fax pages by Ghostscript), the
+// documents and the cover page made into fax pages by Ghostscript, an
+// Office document first made into a PDF file by LibreOffice), the
 // manager's Originate action of a try, and the job's next state after a
 // try.  The queue is in Dmodem.class.php (queueFax(), runFaxQueue(),
 // faxSent()); the dialplan of a try is in Dialplan.php (faxOut()).
@@ -27,6 +28,10 @@ class FaxSend
 	/* the seconds after the ring time that a try may take, after which
 	   a try without a result is a failure */
 	const MAX_TRY = 3600;
+	/* the file name extensions of the Office documents that LibreOffice
+	   makes into PDF files */
+	const OFFICE = ['doc', 'docx', 'odt', 'rtf', 'txt', 'xls', 'xlsx', 'ods',
+			'ppt', 'pptx', 'odp'];
 
 	/* a new job id: letters and digits only (the dialplan filters it
 	   so), not a call's uniqueid */
@@ -121,6 +126,32 @@ class FaxSend
 		return null;
 	}
 
+	/* the kind of document name with bytes b: pdf, tiff, office (an
+	   OFFICE name extension), or null for none of them */
+	public static function docKind($name, $b)
+	{
+		$k = self::kind($b);
+		if ($k !== null)
+			return $k;
+		return in_array(self::extension($name), self::OFFICE, true) ? 'office' : null;
+	}
+
+	/* the file name extension of name, in lower case ('' for none) */
+	public static function extension($name)
+	{
+		return strtolower((string)pathinfo((string)$name, PATHINFO_EXTENSION));
+	}
+
+	/* the command (a list: no shell) of LibreOffice soffice that makes
+	   the document file (an absolute path) into a PDF file in outdir,
+	   with its own profile in outdir (no profile of a user) */
+	public static function officeCommand($soffice, $file, $outdir)
+	{
+		return [$soffice, '-env:UserInstallation=file://' . $outdir . '/profile',
+			'--headless', '--norestore', '--convert-to', 'pdf',
+			'--outdir', $outdir, $file];
+	}
+
 	/* the command (a list: no shell) of Ghostscript gs that makes the
 	   PDF files pdfs (absolute paths: none starts with -) into the fax
 	   pages of out on paper */
@@ -149,7 +180,7 @@ class FaxSend
 
 	/* the fax file out of job j: the cover page (c: its company lines
 	   and the date) and the documents docs (a list of [name, bytes],
-	   PDF or TIFF) as fax pages, with settings s; run: the runner of
+	   PDF, TIFF or Office) as fax pages, with settings s; run: the runner of
 	   the commands (exec() if null).  [ok, message, pages] */
 	public static function make(array $s, array $j, array $docs, array $c, $out,
 				    ?callable $run = null)
@@ -163,8 +194,14 @@ class FaxSend
 		$r = null;
 		foreach ($docs as $i => $d) {
 			list($name, $b) = $d;
-			$kind = self::kind($b);
-			if ($kind === 'tiff') {
+			$kind = self::docKind($name, $b);
+			if ($kind === 'office') {
+				$why = self::office($s, $tmp, $i, $name, $b, $run);
+				if ($why !== '') {
+					$r = [false, $why, 0];
+					break;
+				}
+			} elseif ($kind === 'tiff') {
 				try {
 					$b = FaxPdf::fromTiff($b, $s['fax_paper']);
 				} catch (\RuntimeException $x) {
@@ -173,7 +210,7 @@ class FaxSend
 					break;
 				}
 			} elseif ($kind === null) {
-				$r = [false, sprintf(_('%s is not a PDF or TIFF file'), $name), 0];
+				$r = [false, sprintf(_('%s is not a PDF, TIFF or Office file'), $name), 0];
 				break;
 			}
 			$f = sprintf('%s/doc-%d.pdf', $tmp, $i);
@@ -199,13 +236,45 @@ class FaxSend
 			$r = self::convert($s, $pdfs, $out, $run, $all);
 			$pages = $all;
 		}
-		foreach (glob("$tmp/*") as $f)
-			self::remove($f);
-		if (is_dir($tmp))
-			rmdir($tmp);
+		self::removeTree($tmp);
 		if (!$r[0])
 			self::remove($out);
 		return [$r[0], $r[1], $r[0] ? $pages : 0];
+	}
+
+	/* Office document i (name, bytes b) made into a PDF file by
+	   LibreOffice (settings s, the runner run) in the folder tmp: b
+	   becomes the PDF.  '' if it is done, else why not */
+	private static function office(array $s, $tmp, $i, $name, &$b, callable $run)
+	{
+		if ($s['fax_office'] === '')
+			return sprintf(_('%s: Office documents need LibreOffice (Settings)'), $name);
+		$src = sprintf('%s/src-%d.%s', $tmp, $i, self::extension($name));
+		$pdf = sprintf('%s/src-%d.pdf', $tmp, $i);
+		file_put_contents($src, $b);
+		list($code, $text) = $run(self::officeCommand($s['fax_office'], $src, $tmp));
+		$out = is_file($pdf) ? (string)file_get_contents($pdf) : '';
+		self::remove($src);
+		self::remove($pdf);
+		if ($code !== 0 || self::kind($out) !== 'pdf')
+			return sprintf(_('LibreOffice (%s) did not make a PDF file of %s: %s'),
+				       $s['fax_office'], $name, trim(substr((string)$text, 0, 300)));
+		$b = $out;
+		return '';
+	}
+
+	/* folder d deleted with all that is in it, if it is there */
+	private static function removeTree($d)
+	{
+		if (!is_dir($d) || is_link($d))
+			return;
+		foreach (array_merge(glob("$d/*") ?: [], glob("$d/.[!.]*") ?: []) as $f) {
+			if (is_dir($f) && !is_link($f))
+				self::removeTree($f);
+			else
+				unlink($f);
+		}
+		rmdir($d);
 	}
 
 	/* file f deleted if it is there */
