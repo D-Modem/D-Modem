@@ -384,8 +384,9 @@ TEST(Jbig, ProgressiveArtificialImage)
 		const long *t = t30[6 - d];
 		SCOPED_TRACE(d);
 		EXPECT_EQ(st[d].tp_lines, t[0]);
-		if (d)
+		if (d) {
 			EXPECT_EQ(st[d].tp_exceptions, t[1]);
+		}
 		EXPECT_EQ(st[d].tp_pixels, t[2]);
 		EXPECT_EQ(st[d].dp_pixels, t[3]);
 		EXPECT_EQ(st[d].coded_pixels, t[4]);
@@ -503,8 +504,9 @@ TEST(Jbig, Tables)
 				if (rr13(p) == bit(p, 3))
 					seen |= 1 << bit(p, t);
 			}
-			if (seen)
+			if (seen) {
 				EXPECT_EQ(seen, 1 << v) << "phase " << ph << " index " << idx;
+			}
 		}
 		EXPECT_EQ(n, hits[ph]) << "phase " << ph;
 	}
@@ -527,8 +529,9 @@ TEST(Jbig, ResolutionReduction)
 	ASSERT_EQ(lo.bits.size(), 2u);
 	for (u32 y = 0; y < 5; y++)
 		for (u32 x = 0; x < 7; x++) {
-			if (y > 0 && x > 0 && x < 6)
+			if (y > 0 && x > 0 && x < 6) {
 				EXPECT_EQ((lo.bits[0][y * lo.stride() + x / 8] >> (7 - (x & 7))) & 1, 1);
+			}
 			EXPECT_EQ((lo.bits[1][y * lo.stride() + x / 8] >> (7 - (x & 7))) & 1, 0);
 		}
 }
