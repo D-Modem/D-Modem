@@ -19,6 +19,7 @@
    bits through modem_dp.h, read and set parameters through modem_param.h,
    and dsplibs.h is the rest of the library's interface (both ways) */
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 
 #include "dm_types.h"
@@ -222,6 +223,26 @@ struct Resampler {
 	/* one input sample in; returns the number of outputs (0 to 2) */
 	s16 run(float x, float out[2]);
 };
+
+/* sin, cos and atan2 of floats, calculated in double and rounded once:
+   the same on every C library (their float functions can differ in the
+   last bit, and an adaptive receiver then goes another way).  For the
+   receivers' carrier and clock loops. */
+static inline float dsp_sinf(float x)
+{
+	return static_cast<float>(sin(static_cast<double>(x)));
+}
+/* (see dsp_sinf()) */
+static inline float dsp_cosf(float x)
+{
+	return static_cast<float>(cos(static_cast<double>(x)));
+}
+/* (see dsp_sinf()) */
+static inline float dsp_atan2f(float y, float x)
+{
+	return static_cast<float>(atan2(static_cast<double>(y),
+					static_cast<double>(x)));
+}
 
 /* dB helper: power of a sine of amplitude 'a' */
 static inline float tone_power(float a) { return a * a / 2; }
