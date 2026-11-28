@@ -1696,6 +1696,16 @@ void Modem::update_status(Status s)
 		if (s == ST_EC_RELEASE && state_ != EC_DISC &&
 		    (state_ == ONLINE || state_ == COMMAND_ONLINE)) {
 			u32 w = dp_hangup();
+			/* X.75's and V.120's last response (the UA or DM to
+			   the remote's DISC) goes on the line first: the link
+			   runs on for 40 ms */
+			if (link_->protocol() == dlink::Protocol::X75 ||
+			    link_->protocol() == dlink::Protocol::V120) {
+				set_state(EC_DISC);
+				carrier_ = false;
+				later(Later::Stop, std::max<u32>(w, srate_ / 25));
+				break;
+			}
 			hup(false);
 			if (w > STOP_SAMPLES)
 				later(Later::Stop, w);

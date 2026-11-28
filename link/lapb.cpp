@@ -44,6 +44,11 @@ static const u8 U_SABM = 0x2f, U_SABME = 0x6f, U_DM = 0x0f, U_DISC = 0x43,
 	U_UA = 0x63, U_FRMR = 0x87, U_XID = 0xaf;
 static const u8 PF = 0x10, PF_EXT = 0x01;
 
+/* the W, X, Y and Z bits of an FRMR's third information octet (X.75
+   Table 12): the control field undefined, an information field not
+   permitted, the information field too long, N(R) not valid */
+static const u8 FR_W = 0x01, FR_X = 0x02, FR_Y = 0x04, FR_Z = 0x08;
+
 /* T1 when the data pump's rate is not known: a 64 kbit/s B-channel */
 static const s32 T1_NO_RATE = 64000;
 
@@ -108,21 +113,33 @@ void Lapb::start()
 	link_->set_timer(4 * t1_bits(), Link::Timer::T1);
 }
 
-/* we hang up: DISC, T1 for its answer */
+/* we hang up: DISC (which ends the frame rejection condition), T1 for
+   its answer */
 void Lapb::disconnect()
 {
 	state_ = DISC;
+	frmr_ = false;
 	ctrl(cmd_addr_, U_DISC | PF);
 	timer_start();
 }
 
 /* the received characters the DTE did not take, offered again: once it
-   has them all our receiver is no longer busy, which an RR says */
+   has them all our receiver is no longer busy, which an RR says, or a
+   REJ when I frames were dropped while busy (X.75 2.4.5.8).  In the
+   frame rejection condition no S frame goes */
 void Lapb::push_rest()
 {
 	if (state_ != DATA || backlog_.empty() || !backlog_.push(link_))
 		return;
 	busy_ = false;
+	if (frmr_)
+		return;
+	if (discarded_) {
+		discarded_ = false;
+		reject_ = true;
+		super(cmd_addr_, S_REJ, false);
+		return;
+	}
 	super(cmd_addr_, S_RR, false);
 }
 
@@ -132,12 +149,12 @@ void Lapb::push_rest()
  *
  */
 
-/* the sequence reset: V(S), V(A), V(R) 0, neither side busy, the I
-   frames held dropped */
+/* the sequence reset: V(S), V(A), V(R) 0, neither side busy, no frame
+   rejection condition, the I frames held dropped */
 void Lapb::reset()
 {
-	vs_ = va_ = vr_ = 0;
-	reject_ = busy_ = peer_busy_ = false;
+	vs_ = va_ = vr_ = nr_sent_ = 0;
+	reject_ = busy_ = peer_busy_ = discarded_ = frmr_ = false;
 	sent_ = next_ = free_ = 0;
 	zwait_ = zon_ = false;
 }
@@ -197,8 +214,9 @@ void Lapb::timer_stop()
 
 /* T1 has run out: the called end that has heard nothing sets the link
    up itself; below N2 tries the frame awaiting an answer again (SABM,
-   DISC, or a poll in the data phase), T1 again; at N2 the link is
-   down (in the data phase after our DISC) */
+   DISC, our FRMR, or a poll in the data phase), T1 again; at N2 the
+   link is down, or in the data phase it is reset with a SABM (X.75
+   2.4.5.9, 2.4.8.3) */
 void Lapb::t1_timeout()
 {
 	if (state_ == IDLE) {
@@ -215,6 +233,8 @@ void Lapb::t1_timeout()
 			ctrl(cmd_addr_, static_cast<u8>(sabm_ | PF));
 		else if (state_ == DISC)
 			ctrl(cmd_addr_, U_DISC | PF);
+		else if (frmr_)
+			frmr_send(false);
 		else if (zwait_)
 			zdes_xid(true);
 		else
@@ -230,14 +250,19 @@ void Lapb::t1_timeout()
 		release("no answer to DISC");
 		break;
 	case DATA:
+		if (frmr_) {
+			link_->logf("%s: no reset after our FRMR: link reset.",
+				    tag_);
+			establish();
+			break;
+		}
 		if (zwait_) {
 			link_->logf("%s: no answer to XID.", tag_);
 			zdes_agree();
 			break;
 		}
-		link_->logf("%s: no answer to %d polls.", tag_, N2);
-		disconnect();
-		tries_ = N2 - 1;
+		link_->logf("%s: no answer to %d polls: link reset.", tag_, N2);
+		establish();
 		break;
 	case IDLE:
 		break;
@@ -250,9 +275,10 @@ void Lapb::t1_timeout()
  *
  */
 
-/* a U frame queued: address addr, control octet c; dropped when the
-   ring is full */
-void Lapb::ctrl(const u8 *addr, u8 c)
+/* a control frame queued: address addr, control octet c, then n more
+   octets from ext (an S frame's second control octet, an FRMR's
+   information field); dropped when the ring is full */
+void Lapb::ctrl(const u8 *addr, u8 c, const u8 *ext, s16 n)
 {
 	s16 nf = static_cast<s16>((ctrl_free_ + 1) % CTRL_FRAMES);
 	if (nf == ctrl_tx_) {
@@ -262,7 +288,9 @@ void Lapb::ctrl(const u8 *addr, u8 c)
 	Frame &f = ctrl_frame_[ctrl_free_];
 	memcpy(f.buf, addr, alen_);
 	f.buf[alen_] = c;
-	f.size = static_cast<s16>(alen_ + 1);
+	if (n)
+		memcpy(f.buf + alen_ + 1, ext, n);
+	f.size = static_cast<s16>(alen_ + 1 + n);
 	ctrl_free_ = nf;
 }
 
@@ -270,16 +298,41 @@ void Lapb::ctrl(const u8 *addr, u8 c)
    mode a second control octet) */
 void Lapb::super(const u8 *addr, u8 fn, bool pf)
 {
+	nr_sent_ = vr_;
 	if (modulus_mask_ == 7) {
 		ctrl(addr, static_cast<u8>(vr_ << 5 | (pf ? PF : 0) | fn));
 		return;
 	}
-	ctrl(addr, fn);
-	Frame &f = ctrl_frame_[(ctrl_free_ + CTRL_FRAMES - 1) % CTRL_FRAMES];
-	if (f.size != alen_ + 1 || f.buf[alen_] != fn)
-		return;         /* (dropped: the ring was full) */
-	f.buf[alen_ + 1] = static_cast<u8>(vr_ << 1 | (pf ? PF_EXT : 0));
-	f.size = static_cast<s16>(alen_ + 2);
+	const u8 c2 = static_cast<u8>(vr_ << 1 | (pf ? PF_EXT : 0));
+	ctrl(addr, fn, &c2, 1);
+}
+
+/* X.75's frame rejection condition (2.3.5.4) for f, a command (cmd) or
+   a response that cannot be corrected by a retransmission: why's W, X,
+   Y and Z bits, our FRMR (F 1 for a command with P 1), T1 for the
+   remote's reset.  Only X.75's data phase; else (and in V.120) f is
+   only dropped */
+void Lapb::frame_reject(const Frame *f, bool cmd, u8 why)
+{
+	if (variant_ != Variant::X75 || state_ != DATA)
+		return;
+	const u8 c = f->buf[alen_];
+	frmr_info_[0] = c;
+	frmr_info_[1] = static_cast<u8>(vs_ << 1 | (cmd ? 0 : 0x10) | vr_ << 5);
+	frmr_info_[2] = why;
+	link_->logf("err: %s: FRMR for 0x%02x (W%d X%d Y%d Z%d).", tag_, c,
+		    why & FR_W ? 1 : 0, why & FR_X ? 1 : 0, why & FR_Y ? 1 : 0,
+		    why & FR_Z ? 1 : 0);
+	frmr_ = true;
+	frmr_send(cmd && (c & PF));
+	timer_start();
+}
+
+/* our FRMR (again), with the same information field; F fin */
+void Lapb::frmr_send(bool fin)
+{
+	ctrl(rsp_addr_, static_cast<u8>(U_FRMR | (fin ? PF : 0)), frmr_info_,
+	     sizeof(frmr_info_));
 }
 
 /* an I frame can go: the remote not busy, fewer than k outstanding, and
@@ -322,7 +375,7 @@ Frame *Lapb::next_tx_frame()
 			xid_pending_[i] = false;
 			return &xid_frame_[i];
 		}
-	if (state_ != DATA || !tx_info())
+	if (state_ != DATA || frmr_ || !tx_info())
 		return nullptr;
 	Frame *f = &info_[next_].frame;
 	memcpy(f->buf, cmd_addr_, alen_);
@@ -334,6 +387,7 @@ Frame *Lapb::next_tx_frame()
 	}
 	if (variant_ == Variant::V120)
 		f->buf[info_at_ - 1] = V120_HEADER;
+	nr_sent_ = vr_;
 	vs_ = seq(vs_ + 1);
 	next_ = static_cast<s16>((next_ + 1) % INFO_FRAMES);
 	if (!link_->timer())
@@ -355,7 +409,7 @@ void Lapb::tx_complete(Frame *f)
  */
 
 /* an N(R) we can be sent: from V(A) to the last N(S) we sent; else
-   the frame is taken for noise (logged, counted as an error) */
+   logged and counted as an error (the caller's FRMR in X.75) */
 bool Lapb::nr_ok(u8 nr)
 {
 	/* (the I frames sent and not acknowledged, our ring's count) */
@@ -397,9 +451,11 @@ void Lapb::go_back()
 	link_->stats().tx_again += n;
 }
 
-/* an I frame in the data phase: its N(R) first; dropped while we are
-   busy or out of sequence (one REJ until the frame comes); else its
-   information to the DTE (what it does not take kept, our receiver
+/* an I frame in the data phase: its N(R) first (not valid: X.75's
+   FRMR); dropped while we are busy (a REJ when the busy condition
+   ends) or out of sequence (one REJ until the frame comes); in X.75 an
+   N(S) past the window we gave (2.3.4.10's invalid N(S)) an FRMR; else
+   its information to the DTE (what it does not take kept, our receiver
    busy meanwhile), V(R) on, and an RR unless an I frame of ours
    acknowledges it */
 void Lapb::rx_info(Frame *f, bool pf)
@@ -410,10 +466,13 @@ void Lapb::rx_info(Frame *f, bool pf)
 		return;
 	(void)fn;
 	(void)p;
-	if (!nr_ok(nr))
+	if (!nr_ok(nr)) {
+		frame_reject(f, true, FR_Z);
 		return;
+	}
 	ack(nr);
 	if (busy_) {
+		discarded_ = true;
 		if (pf)
 			super(rsp_addr_, S_RNR, true);
 		return;
@@ -422,6 +481,12 @@ void Lapb::rx_info(Frame *f, bool pf)
 	   again) */
 	if (zwait_)
 		return;
+	if (variant_ == Variant::X75 && ns == vr_ &&
+	    seq_diff(vr_, nr_sent_) >= LAPB_WIN) {
+		link_->logf("err: %s: N(S) %d past our window.", tag_, ns);
+		frame_reject(f, true, FR_W);
+		return;
+	}
 	if (ns != vr_) {
 		if (!reject_) {
 			reject_ = true;
@@ -464,8 +529,10 @@ void Lapb::rx_super(Frame *f, bool cmd)
 	if (!parse(f, fn, ns, nr, pf))
 		return;
 	const u8 c = f->buf[alen_];
-	if (!nr_ok(nr))
+	if (!nr_ok(nr)) {
+		frame_reject(f, cmd, FR_Z);
 		return;
+	}
 	switch (fn) {
 	case S_RR:
 		peer_busy_ = false;
@@ -478,6 +545,7 @@ void Lapb::rx_super(Frame *f, bool cmd)
 		break;
 	default:
 		link_->logf("err: %s: unknown S frame 0x%02x.", tag_, c);
+		frame_reject(f, cmd, FR_W);
 		return;
 	}
 	ack(nr);
@@ -499,9 +567,14 @@ void Lapb::rx_super(Frame *f, bool cmd)
 }
 
 /* a U frame: our mode's SABM (X.75's) or SABME (V.120's) sets the link
-   up (again) and is always taken; DISC releases it (a DM while
-   disconnected); UA ends our set-up or release; DM ends the link; FRMR
-   sets it up again; the other mode's set-up is refused with a DM */
+   up (again); DISC releases it (a DM while disconnected); UA ends our
+   set-up or release; DM ends the link; FRMR sets it up again; the
+   other mode's set-up is refused with a DM.  A SABM and a DISC that
+   cross give a DM and the disconnected phase, two SABMs that cross a
+   UA each and the data phase on the UA (X.75 2.4.4.5).  While
+   disconnected another command with P 1 gets a DM (2.4.4.4.1); in
+   X.75's data phase an unknown U frame, or one with an information
+   field, gets an FRMR */
 void Lapb::rx_unnum(Frame *f, bool cmd)
 {
 	const u8 c = f->buf[alen_];
@@ -509,6 +582,12 @@ void Lapb::rx_unnum(Frame *f, bool cmd)
 	const u8 t = static_cast<u8>(c & ~PF);
 	if (t == U_XID) {
 		zdes_rx_xid(f, cmd);
+		return;
+	}
+	if (variant_ == Variant::X75 && t != U_FRMR && f->count != alen_ + 1) {
+		link_->logf("err: %s: U frame 0x%02x of %d octets.", tag_, c,
+			    f->count);
+		frame_reject(f, cmd, FR_W | FR_X);
 		return;
 	}
 	if (cmd) {
@@ -519,7 +598,16 @@ void Lapb::rx_unnum(Frame *f, bool cmd)
 				ctrl(rsp_addr_, static_cast<u8>(U_DM | pf));
 				break;
 			}
+			if (state_ == DISC) {
+				ctrl(rsp_addr_, static_cast<u8>(U_DM | pf));
+				release("SABM and DISC crossed");
+				break;
+			}
 			ctrl(rsp_addr_, static_cast<u8>(U_UA | pf));
+			if (state_ == ESTAB) {
+				link_->logf("%s: SABMs crossed.", tag_);
+				break;
+			}
 			connect();
 			break;
 		case U_DISC:
@@ -527,11 +615,22 @@ void Lapb::rx_unnum(Frame *f, bool cmd)
 				ctrl(rsp_addr_, static_cast<u8>(U_DM | pf));
 				break;
 			}
+			if (state_ == ESTAB) {
+				ctrl(rsp_addr_, static_cast<u8>(U_DM | pf));
+				release("SABM and DISC crossed");
+				break;
+			}
 			ctrl(rsp_addr_, static_cast<u8>(U_UA | pf));
 			release("by the remote");
 			break;
 		default:
+			if (state_ == IDLE) {
+				if (pf)
+					ctrl(rsp_addr_, U_DM | PF);
+				break;
+			}
 			link_->logf("%s: U command 0x%02x ignored.", tag_, c);
+			frame_reject(f, cmd, FR_W);
 			break;
 		}
 		return;
@@ -550,12 +649,19 @@ void Lapb::rx_unnum(Frame *f, bool cmd)
 			release("DM");
 		break;
 	case U_FRMR:
-		link_->logf("err: %s: FRMR: set up again.", tag_);
+		/* (its information field logged: X.75 2.3.4.10) */
+		if (f->count >= alen_ + 4)
+			link_->logf("err: %s: FRMR %02x %02x %02x: set up again.",
+				    tag_, f->buf[alen_ + 1], f->buf[alen_ + 2],
+				    f->buf[alen_ + 3]);
+		else
+			link_->logf("err: %s: FRMR: set up again.", tag_);
 		if (state_ == DATA)
 			establish();
 		break;
 	default:
 		link_->logf("%s: U response 0x%02x ignored.", tag_, c);
+		frame_reject(f, cmd, FR_W);
 		break;
 	}
 }
@@ -586,11 +692,14 @@ bool Lapb::parse(const Frame *f, u8 &fn, u8 &ns, u8 &nr, bool &pf) const
 	return true;
 }
 
-/* a good frame from Hdlc: one at neither of our addresses, too short,
-   or with too long an information field, dropped; I and S frames
-   counted only in the data phase (a poll while disconnected gets a
-   DM), U frames in every state.  The remote's commands come at our
-   response address */
+/* a good frame from Hdlc: one at neither of our addresses or too short
+   dropped; I and S frames counted only in the data phase (a poll while
+   disconnected gets a DM), U frames in every state.  The remote's
+   commands come at our response address.  In X.75's frame rejection
+   condition only a SABM, a DISC or an FRMR is taken, and each other
+   frame gets our FRMR again (2.4.8.3); an I frame with too long an
+   information field, an I frame as a response or an S frame of the
+   wrong length gets an FRMR (in V.120 it is dropped) */
 void Lapb::rx_complete(Frame *f)
 {
 	const bool at_rsp = f->count > alen_ &&
@@ -605,15 +714,17 @@ void Lapb::rx_complete(Frame *f)
 	heard_ = true;
 	const bool cmd = at_rsp;
 	const u8 c = f->buf[alen_];
+	if (frmr_) {
+		const u8 t = static_cast<u8>(c & ~PF);
+		const bool reset = (c & 3) == 3 &&
+			(cmd ? t == sabm_ || t == U_DISC : t == U_FRMR);
+		if (!reset) {
+			frmr_send(cmd && (c & PF));
+			return;
+		}
+	}
 	if ((c & 3) == 3) {
 		rx_unnum(f, cmd);
-		return;
-	}
-	const s16 head = static_cast<s16>(alen_ + (modulus_mask_ == 7 ? 1 : 2) +
-					  (variant_ == Variant::V120 ? 1 : 0));
-	if (f->count - head > LAPB_RX_INFO) {
-		link_->logf("err: %s: I frame of %d octets dropped.", tag_,
-			    f->count - head);
 		return;
 	}
 	u8 fn, ns, nr;
@@ -626,12 +737,24 @@ void Lapb::rx_complete(Frame *f)
 		return;
 	}
 	if (!(c & 1)) {
+		const s16 head = static_cast<s16>(alen_ +
+			(modulus_mask_ == 7 ? 1 : 2) +
+			(variant_ == Variant::V120 ? 1 : 0));
+		if (f->count - head > LAPB_RX_INFO) {
+			link_->logf("err: %s: I frame of %d octets dropped.",
+				    tag_, f->count - head);
+			frame_reject(f, cmd, FR_Y);
+			return;
+		}
 		if (cmd)
 			rx_info(f, pf);
+		else
+			frame_reject(f, cmd, FR_W);
 		return;
 	}
 	if (f->count != alen_ + (modulus_mask_ == 7 ? 1 : 2)) {
 		link_->logf("err: %s: S frame of %d octets.", tag_, f->count);
+		frame_reject(f, cmd, FR_W | FR_X);
 		return;
 	}
 	rx_super(f, cmd);

@@ -135,9 +135,24 @@ mailers expected it.
   our largest frames and two of the largest frames of the far end. T1 is counted in
   transmitted bits. N2 is 4 tries.
 - **Recovery:** the modem sends lost frames again after a REJ, or after T1
-  expires and the modem polls the link.
+  expires and the modem polls the link. After N2 polls with no answer,
+  the modem resets the link with SABM. If the SABM gets no answer N2
+  times, the call ends.
+- **Busy:** when the DTE does not read, the modem sends RNR. When the DTE
+  reads again, the modem sends REJ if it discarded I frames, else RR.
+- **Frame reject:** a frame with an N(R) that is not valid, an unknown
+  control field, a wrong length or too much information gets FRMR. The
+  modem then waits for the SABM of the far end, and sends the FRMR again
+  for each other frame. After N2 × T1, it resets the link itself. An
+  FRMR from the far end gives a link reset.
+- **Commands that cross:** two SABMs give a UA from each end, and the
+  data phase starts at the UA. A SABM and a DISC give DM, and the call
+  ends.
 - **Release:** `ATH` sends DISC. A DISC or DM from the far end gives
-  `NO CARRIER`.
+  `NO CARRIER`. The line stays on for 40 ms after the remote end ends
+  the link, so that our UA goes out.
+- **Standard:** refer to [X.75](standards/x75.md) and [its technical
+  details](standards/x75-details.md).
 - **Not done:** V.42bis compression over X.75, which some ISDN
   adapters offered.
 
@@ -186,8 +201,9 @@ protocol of North American ISDN terminal adapters.
   its commands have C/R 0 (address `08 01`), and the commands of the called end
   have C/R 1 (address `0A 01`).
 - **Extended mode:** SABME, sequence numbers modulo 128 in two control
-  octets, and a window of 7 frames. Recovery and timers are the same as
-  for X.75.
+  octets, and a window of 7 frames. Recovery, timers, the busy
+  condition and the commands that cross are the same as for X.75. V.120
+  sends no FRMR: it discards those frames.
 - **Terminal adaption header:** the information of each I frame starts with
   the one octet header of V.120, `0x83` (asynchronous mode, each frame
   complete). The modem removes each header that the far end sends, with its extension
