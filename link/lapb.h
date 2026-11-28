@@ -10,7 +10,9 @@
  *
  *    X.75: basic mode (modulo 8, SABM), a window of 7 frames, REJ
  *    recovery, T1 of 1 s counted in transmitted bits and N2 of 4 tries,
- *    as isdn4linux's X.75 had them.  The calling end commands with
+ *    as isdn4linux's X.75 had them.  An error that a retransmission
+ *    cannot correct gives an FRMR (X.75 2.3.4.10) and the frame
+ *    rejection condition until the remote resets the link.  The calling end commands with
  *    address B (0x01) and the called end with A (0x03), each answering
  *    at the other's; the calling end sends the SABM.  XID only for
  *    ZyXEL's encryption (S102, below): nothing else is negotiated.
@@ -97,8 +99,12 @@ private:
 	s32 t1_bits() const;
 	void timer_start();
 	void timer_stop();
-	void ctrl(const u8 *addr, u8 c);
+	void ctrl(const u8 *addr, u8 c, const u8 *ext = nullptr, s16 n = 0);
 	void super(const u8 *addr, u8 fn, bool pf);
+	/* X.75's frame rejection condition (2.3.5.4, 2.4.8.3): its
+	   FRMR, and the FRMR sent again */
+	void frame_reject(const Frame *f, bool cmd, u8 why);
+	void frmr_send(bool fin);
 	/* n modulo 8 or 128 */
 	u8 seq(s16 n) const { return static_cast<u8>(n & modulus_mask_); }
 	/* b - a, modulo 8 or 128 */
@@ -129,6 +135,10 @@ private:
 	bool busy_ = false;             /* we cannot take more */
 	bool peer_busy_ = false;
 	bool heard_ = false;            /* a frame came from the remote */
+	bool discarded_ = false;        /* I frames dropped while busy */
+	bool frmr_ = false;             /* the frame rejection condition */
+	u8 frmr_info_[3] = {};          /* our FRMR's information field */
+	u8 nr_sent_ = 0;                /* the last N(R) we sent */
 	u8 cmd_addr_[2] = {}, rsp_addr_[2] = {};
 	u8 vs_ = 0, va_ = 0, vr_ = 0;
 	s16 tries_ = 0;
@@ -139,7 +149,9 @@ private:
 	s16 ctrl_tx_ = 0, ctrl_free_ = 0;
 	Slot info_[INFO_FRAMES];
 	Frame ctrl_frame_[CTRL_FRAMES];
-	u8 ctrl_buf_[CTRL_FRAMES][4];
+	/* (the largest: X.75's FRMR, 1 address, 1 control and 3
+	   information octets) */
+	u8 ctrl_buf_[CTRL_FRAMES][5];
 	/* received characters the DTE has not taken */
 	DteBacklog<LAPB_RX_INFO> backlog_;
 

@@ -552,7 +552,8 @@ TEST(Clear, X75Dropout)
 						   << a.data.size();
 }
 
-/* ATH at the caller: its DISC, NO CARRIER at the answerer too */
+/* ATH at the caller: its DISC, the answerer's UA, NO CARRIER at the
+   answerer too */
 TEST(Clear, X75Release)
 {
 	debug();
@@ -567,6 +568,380 @@ TEST(Clear, X75Release)
 		disc = disc || (f.size() == 2 && f[0] == 0x01 &&
 				(f[1] & ~0x10) == 0x43);
 	EXPECT_TRUE(disc);
+	/* (the answerer's UA to the DISC on the line too: its second) */
+	auto fa = hdlc_frames(l.tap_ac);
+	EXPECT_GE(std::count(fa.begin(), fa.end(),
+			     std::vector<unsigned char>{ 0x01, 0x73 }), 2);
+}
+
+namespace {
+
+/* a scripted X.75 peer's side of the line: HDLC frames (FCS added, zero
+   insertion) between flags, each octet's first bit its most
+   significant, as hdlc_frames() reads them */
+struct HdlcTx {
+	std::deque<int> bits;
+	/* one flag's bits */
+	void flag()
+	{
+		static const int f[8] = { 0, 1, 1, 1, 1, 1, 1, 0 };
+		bits.insert(bits.end(), f, f + 8);
+	}
+	/* f with its FCS between flags */
+	void frame(std::vector<unsigned char> f)
+	{
+		unsigned fcs = ~fcs16(f.data(), f.size()) & 0xffff;
+		f.push_back(static_cast<unsigned char>(fcs));
+		f.push_back(static_cast<unsigned char>(fcs >> 8));
+		flag();
+		int ones = 0;
+		for (unsigned char o : f)
+			for (int k = 0; k < 8; k++) {
+				int b = o >> k & 1;
+				bits.push_back(b);
+				ones = b ? ones + 1 : 0;
+				if (ones == 5) {
+					bits.push_back(0);
+					ones = 0;
+				}
+			}
+		flag();
+	}
+	/* the next n octets: the queued bits, then flags */
+	std::vector<unsigned char> octets(size_t n)
+	{
+		while (bits.size() < n * 8)
+			flag();
+		std::vector<unsigned char> o(n, 0);
+		for (size_t i = 0; i < n; i++)
+			for (int k = 0; k < 8; k++) {
+				o[i] = static_cast<unsigned char>(o[i] << 1 |
+								  bits.front());
+				bits.pop_front();
+			}
+		return o;
+	}
+};
+
+/* the good HDLC frames (without FCS) in octets as they come, as
+   hdlc_frames() finds them, decoded bit by bit */
+struct HdlcRx {
+	std::vector<std::vector<unsigned char>> frames;
+	std::vector<int> bits;
+	int ones = 0;
+	bool in = false;
+	/* the octets o, each one's first bit its most significant */
+	void feed(const std::vector<unsigned char> &o)
+	{
+		for (unsigned char c : o)
+			for (int k = 7; k >= 0; k--)
+				bit(c >> k & 1);
+	}
+	/* one bit: a flag (0, six 1s, 0) ends a frame (its last 6 bits
+	   the flag's), seven 1s abort it, a 0 after five 1s is taken
+	   out */
+	void bit(int b)
+	{
+		if (b) {
+			if (++ones >= 7)
+				in = false;
+			else if (ones <= 5 && in)
+				bits.push_back(1);
+			return;
+		}
+		if (ones == 6) {
+			if (in && bits.size() >= 6) {
+				bits.resize(bits.size() - 6);
+				end_frame();
+			}
+			bits.clear();
+			in = true;
+			ones = 0;
+			return;
+		}
+		if (ones != 5 && in)
+			bits.push_back(0);
+		ones = 0;
+	}
+	/* the bits as octets (low bit first): a frame if the FCS is
+	   good */
+	void end_frame()
+	{
+		if (bits.size() % 8 || bits.size() < 32)
+			return;
+		std::vector<unsigned char> f(bits.size() / 8, 0);
+		for (size_t i = 0; i < bits.size(); i++)
+			f[i / 8] = static_cast<unsigned char>(f[i / 8] |
+							      bits[i] << (i % 8));
+		if (fcs16(f.data(), f.size()) != 0xf0b8)
+			return;
+		f.resize(f.size() - 2);
+		frames.push_back(f);
+	}
+};
+
+/* the scripted caller: what it sends, and the answerer's frames */
+struct Peer {
+	HdlcTx tx;
+	HdlcRx rx;
+};
+
+/* a scripted caller against the answerer a: the peer's frames on the
+   line toward a, a's frames decoded; secs, or until stop(a's frames).
+   With read false the answerer's DTE does not read */
+template <class Stop>
+const std::vector<std::vector<unsigned char>> &run_peer(
+	Channel &l, Peer &peer, End &a, double secs, Stop stop,
+	bool read = true)
+{
+	const size_t n = 160;
+	std::vector<unsigned char> ao(n);
+	long end = l.t + static_cast<long>(secs * 8000);
+	while (l.t < end) {
+		std::vector<unsigned char> ai = peer.tx.octets(n);
+		dmodem_process_g711(a.m, ai.data(), ao.data(),
+				    static_cast<int32_t>(n));
+		l.t += static_cast<long>(n);
+		peer.rx.feed(ao);
+		if (read)
+			a.take();
+		else
+			dmodem_poll_dte(a.m);
+		if (stop(peer.rx.frames))
+			break;
+	}
+	return peer.rx.frames;
+}
+
+/* f among fs from index from */
+bool has(const std::vector<std::vector<unsigned char>> &fs,
+	 const std::vector<unsigned char> &f, size_t from = 0)
+{
+	return from < fs.size() &&
+		std::find(fs.begin() + static_cast<long>(from), fs.end(), f) !=
+		fs.end();
+}
+
+/* the answerer online with a scripted caller: flags, then the
+   caller's SABM (01h 3Fh) and the answerer's UA (01h 73h) */
+bool peer_up(Channel &l, Peer &peer, End &a)
+{
+	if (dmodem_answer(a.m))
+		return false;
+	run_peer(l, peer, a, 0.3, [](const auto &) { return false; });
+	peer.tx.frame({ 0x01, 0x3f });
+	auto &fa = run_peer(l, peer, a, 1, [&](const auto &fs) {
+		return has(fs, { 0x01, 0x73 }) && a.online;
+	});
+	return has(fa, { 0x01, 0x73 }) && a.online;
+}
+
+} // namespace
+
+/* X.75 2.3.4.10 and 2.4.8.3: an I frame whose N(R) acknowledges a frame
+   never sent gets an FRMR (Z, the rejected control field, V(S) and
+   V(R)), its data stays from the DTE; in the frame rejection condition
+   a poll gets the FRMR again with F 1; the caller's SABM resets the
+   link and data goes again */
+TEST(Clear, X75FrameReject)
+{
+	debug();
+	Channel l;
+	Peer peer;
+	End a("answerer", "ATE0+MS=CLEAR\r");
+	ASSERT_TRUE(peer_up(l, peer, a)) << a.text;
+	a.data.clear();
+	peer.tx.frame({ 0x01, 0x60, 'n', 'o' });
+	auto &fa = run_peer(l, peer, a, 1, [](const auto &fs) {
+		return has(fs, { 0x01, 0x87, 0x60, 0x00, 0x08 });
+	});
+	EXPECT_TRUE(has(fa, { 0x01, 0x87, 0x60, 0x00, 0x08 }));
+	peer.tx.frame({ 0x01, 0x11 });
+	run_peer(l, peer, a, 1, [](const auto &fs) {
+		return has(fs, { 0x01, 0x97, 0x60, 0x00, 0x08 });
+	});
+	EXPECT_TRUE(has(fa, { 0x01, 0x97, 0x60, 0x00, 0x08 }));
+	peer.tx.frame({ 0x01, 0x3f });
+	peer.tx.frame({ 0x01, 0x00, 'o', 'k' });
+	run_peer(l, peer, a, 1, [&](const auto &) { return !a.data.empty(); });
+	EXPECT_EQ(a.data, "ok");
+}
+
+/* X.75 2.3.4.10: an S frame with an information field gets an FRMR
+   with W and X; an unknown S frame (SREJ, 0Dh) one with W */
+TEST(Clear, X75FrameRejectFormat)
+{
+	debug();
+	Channel l;
+	Peer peer;
+	End a("answerer", "ATE0+MS=CLEAR\r");
+	ASSERT_TRUE(peer_up(l, peer, a)) << a.text;
+	peer.tx.frame({ 0x01, 0x01, 0x55 });
+	auto &fa = run_peer(l, peer, a, 1, [](const auto &fs) {
+		return has(fs, { 0x01, 0x87, 0x01, 0x00, 0x03 });
+	});
+	EXPECT_TRUE(has(fa, { 0x01, 0x87, 0x01, 0x00, 0x03 }));
+	peer.tx.frame({ 0x01, 0x3f });
+	peer.tx.frame({ 0x01, 0x0d });
+	run_peer(l, peer, a, 1, [](const auto &fs) {
+		return has(fs, { 0x01, 0x87, 0x0d, 0x00, 0x01 });
+	});
+	EXPECT_TRUE(has(fa, { 0x01, 0x87, 0x0d, 0x00, 0x01 }));
+}
+
+/* X.75 2.4.4.5.1: the called end's SABM (03h 3Fh, after 4 T1s with no
+   SABM) and the caller's cross: a UA from each, and the answerer takes
+   I frames only after the caller's UA */
+TEST(Clear, X75SabmsCross)
+{
+	debug();
+	Channel l;
+	Peer peer;
+	End a("answerer", "ATE0+MS=CLEAR\r");
+	ASSERT_EQ(dmodem_answer(a.m), 0);
+	auto &fa = run_peer(l, peer, a, 10, [](const auto &fs) {
+		return has(fs, { 0x03, 0x3f });
+	});
+	ASSERT_TRUE(has(fa, { 0x03, 0x3f }));
+	peer.tx.frame({ 0x01, 0x3f });
+	peer.tx.frame({ 0x01, 0x00, 'n', 'o' });
+	run_peer(l, peer, a, 1, [](const auto &fs) {
+		return has(fs, { 0x01, 0x73 });
+	});
+	EXPECT_TRUE(has(fa, { 0x01, 0x73 }));
+	run_peer(l, peer, a, 0.2, [](const auto &) { return false; });
+	EXPECT_EQ(a.data.find("no"), std::string::npos) << a.data;
+	peer.tx.frame({ 0x03, 0x73 });
+	peer.tx.frame({ 0x01, 0x00, 'o', 'k' });
+	run_peer(l, peer, a, 1, [&](const auto &) {
+		return a.data.find("ok") != std::string::npos;
+	});
+	EXPECT_NE(a.data.find("ok"), std::string::npos) << a.data;
+}
+
+/* X.75 2.4.7.2 and 2.4.4.5.2: the caller's FRMR (at 03h) makes the
+   answerer reset the link with a SABM (03h 3Fh); the caller's DISC
+   crosses it: a DM (01h 1Fh), no UA, and NO CARRIER */
+TEST(Clear, X75DiscCrossesSabm)
+{
+	debug();
+	Channel l;
+	Peer peer;
+	End a("answerer", "ATE0+MS=CLEAR\r");
+	ASSERT_TRUE(peer_up(l, peer, a)) << a.text;
+	size_t first = peer.rx.frames.size();
+	peer.tx.frame({ 0x03, 0x87, 0x00, 0x00, 0x01 });
+	auto &fa = run_peer(l, peer, a, 1, [&](const auto &fs) {
+		return has(fs, { 0x03, 0x3f }, first);
+	});
+	ASSERT_TRUE(has(fa, { 0x03, 0x3f }, first));
+	first = fa.size();
+	peer.tx.frame({ 0x01, 0x53 });
+	run_peer(l, peer, a, 1, [&](const auto &fs) {
+		return has(fs, { 0x01, 0x1f }, first);
+	});
+	EXPECT_TRUE(has(fa, { 0x01, 0x1f }, first));
+	EXPECT_FALSE(has(fa, { 0x01, 0x73 }, first));
+	run_peer(l, peer, a, 1, [&](const auto &) { return a.no_carriers > 0; });
+	EXPECT_EQ(a.no_carriers, 1) << a.text;
+}
+
+/* X.75 2.4.5.9: the caller goes silent with an I frame of the answerer
+   not acknowledged: N2 polls (RR, P 1), then a link reset with a SABM
+   (03h 3Fh), and no DISC */
+TEST(Clear, X75ResetAfterN2)
+{
+	debug();
+	Channel l;
+	Peer peer;
+	End a("answerer", "ATE0+MS=CLEAR\r");
+	ASSERT_TRUE(peer_up(l, peer, a)) << a.text;
+	a.dte.write_some("data\r\n", 0);
+	const size_t first = peer.rx.frames.size();
+	auto &fa = run_peer(l, peer, a, 12, [&](const auto &fs) {
+		return has(fs, { 0x03, 0x3f }, first);
+	});
+	int polls = 0;
+	bool disc = false;
+	for (size_t i = first; i < fa.size(); i++) {
+		if (fa[i] == std::vector<unsigned char>{ 0x03, 0x11 })
+			polls++;
+		disc = disc || (fa[i].size() == 2 && fa[i][0] == 0x03 &&
+				(fa[i][1] & ~0x10) == 0x43);
+	}
+	EXPECT_EQ(polls, 4);
+	EXPECT_TRUE(has(fa, { 0x03, 0x3f }, first));
+	EXPECT_FALSE(disc);
+}
+
+/* X.75 2.4.5.8: the answerer's DTE does not read, so its receiver gets
+   busy (RNR); an I frame that comes then is dropped; once the DTE
+   reads again, the busy condition ends with a REJ (03h, 09h with
+   N(R)), not an RR */
+TEST(Clear, X75BusyEndsWithRej)
+{
+	debug();
+	Channel l;
+	Peer peer;
+	End a("answerer", "ATE0+MS=CLEAR\r");
+	ASSERT_TRUE(peer_up(l, peer, a)) << a.text;
+	a.data.clear();
+	std::string sent;
+	unsigned vs = 0, va = 0;
+	size_t seen = peer.rx.frames.size();
+	bool rnr = false;
+	/* (I frames of 1000 octets while the window lets them go, until
+	   an RNR) */
+	auto send = [&] {
+		std::vector<unsigned char> f = { 0x01,
+			static_cast<unsigned char>(vs << 1) };
+		for (int k = 0; k < 1000; k++) {
+			char c = static_cast<char>('a' + (sent.size() + k) % 26);
+			f.push_back(static_cast<unsigned char>(c));
+		}
+		sent.append(f.begin() + 2, f.end());
+		peer.tx.frame(f);
+		vs = (vs + 1) & 7;
+	};
+	auto acks = [&](const std::vector<std::vector<unsigned char>> &fs) {
+		for (; seen < fs.size(); seen++) {
+			const auto &f = fs[seen];
+			if (f.size() != 2 || f[0] != 0x01 || !(f[1] & 1) ||
+			    (f[1] & 3) == 3)
+				continue;
+			va = f[1] >> 5;
+			if ((f[1] & 0x0f) == 0x05)
+				rnr = true;
+		}
+	};
+	while (!rnr && sent.size() < 8000000) {
+		while (((vs - va) & 7) < 7 && peer.tx.bits.size() < 64000)
+			send();
+		run_peer(l, peer, a, 0.2, [](const auto &) { return false; },
+			 false);
+		acks(peer.rx.frames);
+	}
+	ASSERT_TRUE(rnr);
+	/* (one more that it drops: the old frames' N(S) start again
+	   after the REJ) */
+	if (((vs - va) & 7) == 0)
+		send();
+	run_peer(l, peer, a, 1, [](const auto &) { return false; }, false);
+	const size_t before = peer.rx.frames.size();
+	bool rej = false, rr = false;
+	run_peer(l, peer, a, 2, [&](const auto &fs) {
+		for (size_t i = before; i < fs.size(); i++) {
+			if (fs[i].size() == 2 && fs[i][0] == 0x03 &&
+			    (fs[i][1] & 0x1f) == 0x09)
+				rej = true;
+			if (fs[i].size() == 2 && fs[i][0] == 0x03 &&
+			    (fs[i][1] & 0x1f) == 0x01)
+				rr = true;
+		}
+		return rej || rr;
+	});
+	EXPECT_TRUE(rej);
+	EXPECT_FALSE(rr);
 }
 
 /* PPP (+B2=5): the caller's DTE sends async frames (control characters
