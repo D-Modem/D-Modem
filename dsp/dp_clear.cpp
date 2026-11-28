@@ -36,7 +36,11 @@
  *    then S and X ON; CONNECT at the user rate once in sync and the
  *    other's X is ON.  The user's bits go to the link layer while its S
  *    bits are ON (ones otherwise, and while out of sync).  56000 bit/s
- *    has no frames, and connects at once.  An answerer with no V.110
+ *    has no frames, and connects at once.  The data phase ends as
+ *    7.1.4/V.110 has it: S OFF, X ON and the D bits 0 for our hangup
+ *    (hangup()) until the far end answers with S OFF, and the same
+ *    answer for the far end's; out of sync for 3 s, S and X OFF
+ *    (7.1.5): the call then ends.  An answerer with no V.110
  *    rate of its own looks for frames at each intermediate rate while it
  *    waits for flags: the first in sync, by its E bits, gives the rate.
  *
@@ -78,13 +82,27 @@ public:
 		  s32 max_frag);
 	~ClearPump() override;
 	s16 process(void *in, void *out, s32 cnt) override;
+	s16 hangup() override;
 
 private:
+	/* V.110's exit from the data phase (7.1.4, 7.1.5/V.110): none,
+	   ours (we hang up), the far end's (we answer it), or ours after
+	   the frames were lost too long */
+	enum class Exit : u8 { None, Ours, Theirs, Lost };
+	/* frames of the exit sent before the call ends; the far end's
+	   frames that ask for it; the longest wait for its answer (ms); the
+	   time out of sync in the data phase (3 s) before our exit */
+	static constexpr s16 EXIT_FRAMES = 3;
+	static constexpr s16 EXIT_HEARD = 2;
+	static constexpr s16 EXIT_MS = 1000;
+	static constexpr s32 LOST_OCTETS = 3 * 8000;
+
 	u8 source();
 	void sink(u8 v);
 	void put_bits(const u8 *b, s32 n);
 	void v110_start(const V110Rate *r, const V110Sync *synced);
 	s16 v110_rx(u8 r);
+	void v110_exit_rx(const V110Frame &f);
 	u8 v110_tx();
 	s16 clear_rx(u8 r);
 	u8 clear_tx(s16 &ret);
@@ -109,6 +127,11 @@ private:
 	s16 ir_bits_ = 8;               /* intermediate rate's bits an octet */
 	u8 tx_bits_[80] = {};
 	s16 tx_pos_ = 80;
+	Exit exit_ = Exit::None;
+	s16 exit_sent_ = 0;             /* frames of our exit sent */
+	s16 exit_heard_ = 0;            /* the far end's in a row */
+	bool exit_answered_ = false;    /* the far end answered ours */
+	s32 lost_ = 0;                  /* octets out of sync in data */
 };
 
 /* the pump at 8000 Hz (a clear channel has no other rate): the core's
@@ -258,6 +281,8 @@ s16 ClearPump::v110_rx(u8 r)
 		if (!rx_sync_.put((r >> (7 - i)) & 1))
 			continue;
 		const V110Frame &f = rx_sync_.frame();
+		if (state == ClearSt::DATA)
+			v110_exit_rx(f);
 		if (state == ClearSt::SYNC && !f.x) {
 			set_state(ClearSt::DATA);
 			if (rt)
@@ -273,7 +298,50 @@ s16 ClearPump::v110_rx(u8 r)
 			std::fill_n(user, v110_->user_bits, 1);
 		put_bits(user, v110_->user_bits);
 	}
+	if (state == ClearSt::DATA) {
+		lost_ = rx_sync_.synced() ? 0 : lost_ + 1;
+		if (lost_ >= LOST_OCTETS && exit_ == Exit::None) {
+			DSP_DBG("clear: V.110 out of sync for 3 s: our "
+				"disconnect\n");
+			exit_ = Exit::Lost;
+		}
+		if (exit_ == Exit::Ours && lost_ > 0)
+			exit_answered_ = true;
+		if (exit_ != Exit::None && exit_sent_ >= EXIT_FRAMES &&
+		    (exit_ != Exit::Ours || exit_answered_)) {
+			DSP_DBG("clear: V.110 disconnected\n");
+			ret = DPSTAT_ERROR;
+		}
+	}
 	return ret;
+}
+
+/* a frame received in the data phase: the far end's disconnect (S OFF
+   and its D bits 0, EXIT_HEARD frames in a row) answered with ours, or
+   its answer to ours (S OFF) */
+void ClearPump::v110_exit_rx(const V110Frame &f)
+{
+	const bool zeros = std::all_of(f.d, f.d + 48,
+				       [](u8 b) { return b == 0; });
+	exit_heard_ = f.s && zeros ? static_cast<s16>(exit_heard_ + 1) : 0;
+	if (exit_ == Exit::Ours && f.s)
+		exit_answered_ = true;
+	if (exit_ == Exit::None && exit_heard_ >= EXIT_HEARD) {
+		DSP_DBG("clear: V.110: the far end disconnects\n");
+		exit_ = Exit::Theirs;
+	}
+}
+
+/* see pump.h: in V.110's data phase, our disconnect (S OFF, X ON, the
+   D bits 0) until the far end answers, for up to EXIT_MS */
+s16 ClearPump::hangup()
+{
+	if (!v110_ || v110_->fill == V110Fill::Octet56 ||
+	    state != ClearSt::DATA || exit_ != Exit::None)
+		return 0;
+	DSP_DBG("clear: V.110: our disconnect\n");
+	exit_ = Exit::Ours;
+	return EXIT_MS;
 }
 
 /* an octet of V.110 to send: the next bits of our frames (S and X ON
@@ -292,10 +360,24 @@ u8 ClearPump::v110_tx()
 		V110Frame f;
 		u8 user[48];
 		std::fill_n(user, 48, 1);
-		if (state == ClearSt::DATA && rx_sync_.synced())
+		const bool synced = rx_sync_.synced();
+		if (exit_ != Exit::None)
+			std::fill_n(user, 48, 0);
+		else if (state == ClearSt::DATA && synced)
 			modem_get_bits(modem, 1, user, v110_->user_bits);
 		adapt_.to_frame(f, user);
-		f.s = f.x = rx_sync_.synced() ? 0 : 1;
+		if (exit_ != Exit::None) {
+			/* 7.1.4.1: S OFF, X ON; 7.1.5 e): all OFF */
+			f.s = 1;
+			f.x = exit_ == Exit::Lost ? 1 : 0;
+			exit_sent_++;
+		} else if (state == ClearSt::DATA) {
+			/* 7.1.5 b): out of sync, X OFF alone */
+			f.s = 0;
+			f.x = synced ? 0 : 1;
+		} else {
+			f.s = f.x = synced ? 0 : 1;
+		}
 		v110_frame_bits(tx_bits_, f);
 		tx_pos_ = 0;
 	}

@@ -243,6 +243,10 @@ type command of 3GPP TS 27.007.
 | `71` | 9600 | 16 kbit/s |
 | `75`, `79` | 14400, 19200 | 32 kbit/s |
 | `80`, `81` | 28800, 38400 | 64 kbit/s |
+
+Asynchronous 14400 and 28800 bit/s go on the frames of 19200 and 38400
+bit/s (RA0, Table 8/V.110). The modem adds stop elements, so that the
+characters come at the user rate. `CONNECT` gives the user rate.
 | `83` | 56000 (7 bits in each octet, no frames) | 64 kbit/s |
 
 `<name>` selects how the data of the user goes:
@@ -272,6 +276,17 @@ looks for it again.
 
 At 56000 bit/s, there are no frames. Thus, the modem connects immediately.
 
+### How a V.110 call ends
+
+- **`ATH`:** the modem sends frames with S OFF, X ON and the D bits 0
+  (7.1.4/V.110). The other end answers with the same frames, or with S
+  OFF. Then the modem stops, after 1 s at most.
+- **The other end ends the call:** the modem answers its frames with
+  the same frames, and gives `NO CARRIER`.
+- **Lost frames:** the modem sets X OFF and looks for the frames again.
+  After 3 s with no frames, it sends frames with S and X OFF and the D
+  bits 0, and gives `NO CARRIER`.
+
 ### An answerer that finds the rate itself
 
 An answerer with `AT+CBST=0` looks for the V.110 frames of the caller at each
@@ -282,12 +297,14 @@ to E3 bits of the frames.
 - It finds all rates from 600 to 38400 bit/s, which include 7200, 12000
   and 24000. These rates have no `<speed>` value of their own.
 - It finds 300 bit/s as 600 (300 uses the frames of 600), and it does not find
-  56000 (56000 has no frames). For those two rates, also set `+CBST` on
+  56000 (56000 has no frames). It finds asynchronous 14400 and 28800 as
+  19200 and 38400 (their frames). For those rates, also set `+CBST` on
   the answerer.
 
 ### Not done
 
-48000 bit/s, and the network independent clocking bits (E4 to E6).
+48000 bit/s, and the network independent clocking bits (E4 to E6). For
+the full list, refer to [V.110: technical details](standards/v110-details.md#v110-in-d-modem).
 
 ## dmodemd: SIP in CLEARMODE
 

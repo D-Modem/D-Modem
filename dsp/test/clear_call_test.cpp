@@ -1003,6 +1003,12 @@ const std::pair<int, unsigned> CBST_RATES[] = {
 struct V110Seen {
 	int frames = 0, bad = 0, rest_not_ones = 0;
 	unsigned e123 = 0, s = 1, x = 1;
+	std::vector<unsigned> e7;       /* each good frame's E7 */
+	std::vector<unsigned char> d;   /* each good frame's 48 D bits */
+	std::vector<unsigned> sx;       /* each good frame's S | X << 1 */
+	/* the good frames with S OFF and the D bits 0 (a disconnect,
+	   7.1.4/V.110), and how many of them had X ON */
+	int exits = 0, exits_x_on = 0;
 };
 
 /* (see V110Seen) line's frames with k bits an octet */
@@ -1043,8 +1049,21 @@ V110Seen v110_seen(const std::vector<unsigned char> &line, int k)
 		v.frames++;
 		const unsigned char *f = bits.data() + at;
 		v.e123 = f[41] | f[42] << 1 | f[43] << 2;
+		v.e7.push_back(f[47]);
+		bool zeros = true;
+		for (int o : { 1, 2, 3, 4, 6, 7, 8, 9 })
+			for (int b = 1; b < 7; b++) {
+				v.d.push_back(f[o * 8 + b]);
+				zeros = zeros && !f[o * 8 + b];
+			}
 		v.s = f[15] | f[31] | f[39] | f[55] | f[71] | f[79];
 		v.x = f[23] | f[63];
+		v.sx.push_back(v.s | v.x << 1);
+		if (v.s && zeros) {
+			v.exits++;
+			if (!v.x)
+				v.exits_x_on++;
+		}
 	}
 	return v;
 }
@@ -1110,20 +1129,172 @@ TEST(Clear, V110Frames)
 	EXPECT_EQ(v.e123, 0x6u);
 	EXPECT_EQ(v.s, 0u);
 	EXPECT_EQ(v.x, 0u);
-	/* 1200 bit/s: 8 kbit/s, E1-E3 0, 1, 0; 14400: 32 kbit/s, 1, 0, 1 */
-	for (auto [speed, k, e] : { std::tuple{ 66, 1, 0x2u },
-				    std::tuple{ 75, 4, 0x5u },
-				    std::tuple{ 81, 8, 0x6u } }) {
+	/* 1200 bit/s: 8 kbit/s, E1-E3 0, 1, 0; 14400 synchronous: 32
+	   kbit/s, 1, 0, 1; 14400 asynchronous: 19200's frames (RA0), 0,
+	   1, 1 */
+	for (auto [speed, name, k, e] : { std::tuple{ 66, 0, 1, 0x2u },
+					  std::tuple{ 75, 1, 4, 0x5u },
+					  std::tuple{ 75, 0, 4, 0x6u },
+					  std::tuple{ 81, 0, 8, 0x6u } }) {
 		Channel m;
-		End c2("caller", cbst_init("ATE0X3\\N0", speed).c_str()),
-			a2("answerer", cbst_init("ATE0\\N0", speed).c_str());
+		End c2("caller",
+		       cbst_init("ATE0X3\\N0", speed, name).c_str()),
+			a2("answerer",
+			   cbst_init("ATE0\\N0", speed, name).c_str());
 		ASSERT_TRUE(call(m, c2, a2, 2)) << c2.text << a2.text;
 		run(m, c2, a2, 0.3, [] { return false; });
 		V110Seen w = v110_seen(from_start(m.tap_ca), k);
-		EXPECT_EQ(w.bad, 0) << speed;
-		EXPECT_EQ(w.rest_not_ones, 0) << speed;
-		EXPECT_EQ(w.e123, e) << speed;
+		EXPECT_EQ(w.bad, 0) << speed << "," << name;
+		EXPECT_EQ(w.rest_not_ones, 0) << speed << "," << name;
+		EXPECT_EQ(w.e123, e) << speed << "," << name;
 	}
+}
+
+/* asynchronous 14400 and 28800 bit/s (RA0, 5.3.3 and Table 8/V.110):
+   on the frames of 19200 and 38400 bit/s, CONNECT at the user rate,
+   and the characters no faster than the user rate: stop elements
+   added, so that two start bits are 13 or more bits apart */
+TEST(Clear, V110Ra0)
+{
+	debug();
+	for (auto [speed, rate, k] : { std::tuple{ 75, 14400, 4 },
+				       std::tuple{ 80, 28800, 8 } }) {
+		SCOPED_TRACE(rate);
+		Channel l;
+		End c("caller", cbst_init("ATE0X3\\N0", speed).c_str()),
+			a("answerer", cbst_init("ATE0X3\\N0", speed).c_str());
+		ASSERT_TRUE(call(l, c, a, 2)) << c.text << a.text;
+		EXPECT_NE(c.text.find("CONNECT " + std::to_string(rate)),
+			  std::string::npos) << c.text;
+		EXPECT_NE(a.text.find("CONNECT " + std::to_string(rate)),
+			  std::string::npos) << a.text;
+		run(l, c, a, 0.1, [] { return false; });
+		EXPECT_TRUE(exchange(l, c, a, rate / 20, 5));
+		V110Seen v = v110_seen(from_start(l.tap_ca), k);
+		EXPECT_EQ(v.bad, 0);
+		EXPECT_EQ(v.e123, 0x6u);
+		/* the characters on the D bits: the gaps between them */
+		size_t chars = 0, close = 0, bits = 0, first = 0, last = 0;
+		for (size_t i = 0; i + 10 <= v.d.size();) {
+			if (v.d[i]) {
+				i++;
+				continue;
+			}
+			if (chars) {
+				if (i - last < 13)
+					close++;
+			} else {
+				first = i;
+			}
+			last = i;
+			chars++;
+			i += 10;
+		}
+		bits = last - first;
+		ASSERT_GT(chars, size_t(rate / 40));
+		EXPECT_EQ(close, 0u);
+		/* back to back in a burst: 40/3 bits a character (13, 13,
+		   14, ...) */
+		EXPECT_GE(bits * 3 + 40, (chars - 1) * 40);
+	}
+}
+
+/* E7 (Table 5/V.110): 1 in every frame, but at 600 bit/s (300 bit/s
+   rides on it) 0 in every fourth, for the 4 x 80 bit multiframe of
+   X.30 (Note 2) */
+TEST(Clear, V110E7)
+{
+	debug();
+	for (auto [speed, k, every4] : { std::tuple{ 65, 1, true },
+					 std::tuple{ 66, 1, false },
+					 std::tuple{ 75, 4, false } }) {
+		SCOPED_TRACE(speed);
+		Channel l;
+		End c("caller", cbst_init("ATE0X3\\N0", speed).c_str()),
+			a("answerer", cbst_init("ATE0\\N0", speed).c_str());
+		ASSERT_TRUE(call(l, c, a, 3)) << c.text << a.text;
+		run(l, c, a, 0.3, [] { return false; });
+		V110Seen v = v110_seen(from_start(l.tap_ca), k);
+		ASSERT_GT(v.e7.size(), 8u);
+		size_t zeros = 0, first = v.e7.size();
+		for (size_t i = 0; i < v.e7.size(); i++)
+			if (!v.e7[i]) {
+				zeros++;
+				first = std::min(first, i);
+			}
+		if (!every4) {
+			EXPECT_EQ(zeros, 0u);
+			continue;
+		}
+		ASSERT_LT(first, 4u);
+		for (size_t i = 0; i < v.e7.size(); i++)
+			EXPECT_EQ(v.e7[i], (i % 4 == first % 4) ? 0u : 1u) << i;
+	}
+}
+
+/* ATH at the caller (7.1.4/V.110): its frames S OFF, X ON, the D
+   bits 0; the answerer's the same in answer; NO CARRIER at both ends
+   at once */
+TEST(Clear, V110Disconnect)
+{
+	debug();
+	Channel l;
+	End c("caller", cbst_init("ATE0X3\\N0", 71).c_str()),
+		a("answerer", cbst_init("ATE0X3\\N0", 71).c_str());
+	ASSERT_TRUE(call(l, c, a, 2)) << c.text << a.text;
+	run(l, c, a, 0.2, [] { return false; });
+	dmodem_hangup(c.m);
+	run(l, c, a, 0.5, [&] {
+		return a.no_carriers > 0 && c.no_carriers > 0;
+	});
+	EXPECT_EQ(a.no_carriers, 1) << a.text;
+	EXPECT_EQ(c.no_carriers, 1) << c.text;
+	V110Seen vc = v110_seen(from_start(l.tap_ca), 2),
+		va = v110_seen(from_start(l.tap_ac), 2);
+	EXPECT_GE(vc.exits_x_on, 3);
+	EXPECT_EQ(vc.exits, vc.exits_x_on);
+	EXPECT_GE(va.exits_x_on, 3);
+	EXPECT_EQ(va.exits, va.exits_x_on);
+}
+
+/* the frames lost (7.1.5/V.110): S stays ON and X goes OFF while out
+   of sync; back within 3 s, the data goes on; lost for longer, S and X
+   OFF with the D bits 0, and the call ends */
+TEST(Clear, V110LostSync)
+{
+	debug();
+	{
+		Channel l;
+		End c("caller", cbst_init("ATE0X3\\N0", 71).c_str()),
+			a("answerer", cbst_init("ATE0X3\\N0", 71).c_str());
+		ASSERT_TRUE(call(l, c, a, 2)) << c.text << a.text;
+		l.drop_at = static_cast<double>(l.t) / 8000 + 0.1;
+		l.drop_s = 1;
+		run(l, c, a, 1.5, [] { return false; });
+		EXPECT_EQ(c.no_carriers + a.no_carriers, 0);
+		V110Seen v = v110_seen(from_start(l.tap_ca), 2);
+		EXPECT_EQ(v.exits, 0);
+		/* (from the data phase on: S and X ON) */
+		auto on = std::find(v.sx.begin(), v.sx.end(), 0u);
+		EXPECT_NE(std::find(on, v.sx.end(), 2u), v.sx.end())
+			<< "no frame with S ON and X OFF";
+		EXPECT_EQ(std::find(on, v.sx.end(), 3u), v.sx.end())
+			<< "S OFF out of sync";
+		EXPECT_TRUE(exchange(l, c, a, 500, 3));
+	}
+	Channel l;
+	End c("caller", cbst_init("ATE0X3\\N0", 71).c_str()),
+		a("answerer", cbst_init("ATE0X3\\N0", 71).c_str());
+	ASSERT_TRUE(call(l, c, a, 2)) << c.text << a.text;
+	l.drop_at = static_cast<double>(l.t) / 8000 + 0.1;
+	l.drop_s = 10;
+	run(l, c, a, 5, [&] {
+		return a.no_carriers > 0 && c.no_carriers > 0;
+	});
+	EXPECT_EQ(c.no_carriers, 1) << c.text;
+	EXPECT_EQ(a.no_carriers, 1) << a.text;
+	V110Seen v = v110_seen(from_start(l.tap_ca), 2);
+	EXPECT_GE(v.exits - v.exits_x_on, 3);
 }
 
 /* an answerer with no V.110 rate of its own (+CBST=0, the default)
@@ -1132,8 +1303,10 @@ TEST(Clear, V110FoundByAnswerer)
 {
 	debug();
 	for (auto [speed, rate] : CBST_RATES) {
-		if (rate == 300 || rate == 56000)
-			continue;       /* (600's frames; no frames) */
+		if (rate == 300 || rate == 56000 || rate == 14400 ||
+		    rate == 28800)
+			continue;       /* (600's, 19200's and 38400's frames;
+					   no frames) */
 		SCOPED_TRACE(rate);
 		Channel l;
 		End c("caller", cbst_init("ATE0X3\\N0", speed).c_str()),

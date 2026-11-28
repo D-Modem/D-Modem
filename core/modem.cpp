@@ -1599,8 +1599,17 @@ void Modem::update_status(Status s)
 		   modem's link whatever +B2 says */
 		v110_ = clear_channel() && DCORE_HAS(dp_runtime_v110) &&
 			dp_runtime_ && dp_runtime_v110(dp_runtime_);
-		if (v110_ && !kept("+CBST")[1])
+		if (v110_ && !kept("+CBST")[1]) {
 			link_->set_b2(dlink::B2::Modem);
+			/* RA0: the user rate's characters on the frames
+			   of a faster one, and the user rate in CONNECT */
+			const s32 user = cbst_rate(),
+				frames = cbst_frame_rate();
+			if (user && frames != user) {
+				link_->set_async_pace(user, frames);
+				tx_rate_ = rx_rate_ = static_cast<u32>(user);
+			}
+		}
 		set_state(EC_ESTAB);
 		/* V.70: V.8 bis chose DSVD; V.76's initiator is V.8 bis's,
 		   the answerer here (6.1.4/V.70) */
@@ -2520,7 +2529,8 @@ void Modem::change_dp()
 		} else if (clear_channel()) {
 			id = DP_CLEAR;
 			if (DCORE_HAS(dp_runtime_set_v110) && dp_runtime_)
-				dp_runtime_set_v110(dp_runtime_, cbst_rate());
+				dp_runtime_set_v110(dp_runtime_,
+						     cbst_frame_rate());
 		} else if (host_.analog_line(*this) && id == DP_CLEAR)
 			id = DP_V34;
 		drv = id == DP_V34 || id == DP_V90 || id == DP_V91 ||
@@ -2687,6 +2697,19 @@ s32 Modem::cbst_rate() const
 	case 81: return 38400;
 	case 83: return 56000;
 	default: return 0;
+	}
+}
+
+/* see dcore.h */
+s32 Modem::cbst_frame_rate() const
+{
+	const s32 user = cbst_rate();
+	if (kept("+CBST")[1])
+		return user;
+	switch (user) {
+	case 14400: return 19200;
+	case 28800: return 38400;
+	default: return user;
 	}
 }
 
