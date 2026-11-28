@@ -1100,7 +1100,7 @@ TEST(DmodemCxx, VoiceDuplex)
 "\r\nOK\r\n");
 	ASSERT_TRUE(m.command("AT+VLS?"));
 	run(1);
-	EXPECT_EQ(dte, "\r\n+VLS=1\r\n\r\nOK\r\n");
+	EXPECT_EQ(dte, "\r\n1\r\n\r\nOK\r\n");
 	ASSERT_TRUE(m.command("AT+VLS=0"));
 }
 

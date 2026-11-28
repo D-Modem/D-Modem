@@ -325,7 +325,7 @@
       0 A: OK\r\n
       0 A< AT+VCID=?\r
       0 A: AT+VCID=?\r\r\n
-      0 A: 0,1,2\r\n
+      0 A: (0-2)\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VCID=0\r

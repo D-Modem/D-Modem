@@ -656,6 +656,16 @@ int CID_report(struct modem *m, unsigned cid_val, int packet,
 	return 0;
 }
 
+/* see dsplibs.h */
+int CID_message(void *obj, void *buf, int max)
+{
+	const CallerId *c = static_cast<const CallerId *>(obj);
+	if (!c || c->len <= 0 || c->len > max)
+		return 0;
+	std::memcpy(buf, c->msg, c->len);
+	return c->len;
+}
+
 /* CallerId::process() for the C interface */
 int CID_process(void *obj, void *in, int count)
 {

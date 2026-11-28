@@ -90,6 +90,15 @@ int CID_report(struct modem *m, unsigned cid_val, int packet,
 	return -1;
 }
 
+/* its caller ID receiver keeps no message for +VRID: none */
+int CID_message(void *cid, void *buf, int max)
+{
+	(void)cid;
+	(void)buf;
+	(void)max;
+	return 0;
+}
+
 /* its voice engine tells of no call progress tones: none heard */
 void VOICE_tones(void *obj, struct voice_tones *t)
 {

@@ -214,7 +214,7 @@ const struct Kept {
 	/* V.251's V.8 and V.8 bis controls: <v8o>, <v8a> (the modem's own
 	   V.8 both ways), <v8cf> (none of the DTE's), <v8b> (0 none, 1
 	   V.8 bis at the start of a data call: modem.cpp's v8bis_call()) */
-	{ "+A8E", 4, { 1, 1, 0, 0 }, "(1),(1),(0),(0,1)" },
+	{ "+A8E", 4, { 1, 1, 0, 0 }, "(1,6),(1,5),(0),(0,1)" },
 	/* D-Modem's own: V.70's DSVD offered and chosen in V.8 bis
 	   (<v8b> 1), its data channel the DTE's; modem.cpp's
 	   dsvd_offered() */
@@ -2253,7 +2253,9 @@ s16 Modem::at_CID(char *p, s16 *len)
 	const char *q = p + (*p == '#' ? 4 : 5);
 
 	if (q[0] == '=' && q[1] == '?') {
-		puts("0,1,2");
+		/* +VCID: a range in parentheses (6.3.3.4.2/V.253);
+		   Rockwell's #CID: the list */
+		puts(*p == '#' ? "0,1,2" : "(0-2)");
 		crlf();
 		q += 2;
 	} else if (q[0] == '?') {
@@ -2271,13 +2273,42 @@ s16 Modem::at_CID(char *p, s16 *len)
 	return 0;
 }
 
+/* +VRID[=<rmode>] (V.253 9.1.3), in any mode: the last caller ID
+   message again, 0 its fields (DATE, TIME, NMBR, NAME), 1 the message
+   in hexadecimal (MESG); in voice mode as a packet, as it came.
+   Nothing if no caller ID came.  +VRID=? gives (0,1) */
+s16 Modem::at_VRID(char *p, s16 *len)
+{
+	const char *q = p + 5;
+
+	if (q[0] == '=' && q[1] == '?') {
+		puts("(0,1)");
+		crlf();
+		*len = static_cast<s16>(q + 2 - p);
+		return 0;
+	}
+	s16 mode = 0;
+	if (q[0] == '=') {
+		if (q[1] != '0' && q[1] != '1')
+			return -1;
+		mode = q[1] - '0';
+		q += 2;
+	}
+	*len = static_cast<s16>(q - p);
+	if (!cid_last_.empty())
+		CID_report(handle(), mode ? 2 : 1, mode_ == MODEM_MODE_VOICE,
+			   cid_last_.data(), static_cast<int>(cid_last_.size()));
+	return 0;
+}
+
 /* +VSM (V.253 10.2.8): the format of the voice samples to and from the
    DTE (voice_codec.h).  =? lists each format, ? gives the setting,
    =<cml>[,<vsr>[,<scs>[,<sel>]]] sets it: a rate left out is 8000 (or
    the one the format runs at); <scs> and <sel>, silence compression's,
-   are taken (0 to 255) and kept for ?, though the modem compresses no
-   silence, as its =? says.  ERROR for a format it has not or a rate the
-   format does not run at, the setting kept. */
+   are taken (0 to 255) and kept for ? (which gives the four values),
+   though the modem compresses no silence, as its =? says.  ERROR for a
+   format it has not or a rate the format does not run at, the setting
+   kept. */
 s16 Modem::at_VSM(char *p, s16 *len)
 {
 	const char *q = p + 4, *e;
@@ -2297,7 +2328,8 @@ s16 Modem::at_VSM(char *p, s16 *len)
 		}
 		q += 2;
 	} else if (q[0] == '?') {
-		puts("+VSM=" + dec(voice_info_.comp_method) + "," +
+		/* the values only (6.3.3.2.2/V.253) */
+		puts(dec(voice_info_.comp_method) + "," +
 		     dec(voice_info_.sample_rate) + "," + dec(vsm_scs_) +
 		     "," + dec(vsm_sel_));
 		crlf();
@@ -2350,6 +2382,8 @@ s16 Modem::at_voice(char *p, s16 *len, bool hash)
 
 	if (!hash && starts_nocase(p + 2, "CID"))
 		return at_CID(p, len);
+	if (!hash && starts_nocase(p + 2, "RID"))
+		return at_VRID(p, len);
 	if ((mode_ != MODEM_MODE_VOICE && !hash) || !p[2] || !p[3])
 		return -1;
 	cmd[0] = static_cast<char>(upper(p[2]));
@@ -2388,15 +2422,21 @@ s16 Modem::at_voice(char *p, s16 *len, bool hash)
 			}
 			q += 2;
 		} else if (q[0] == '=' && q[1] == '?') {
-			std::string line = "+V" + std::string(name) + "=";
+			/* V.253 6.3.3.4.3: each range in parentheses (#V:
+			   the old "#Vxx=lo-hi") */
+			std::string line = hash ?
+				"+V" + std::string(name) + "=" : "";
 			for (s16 i = 0; i < s.n; i++)
-				line += (i ? "," : "") + dec(s.lo[i]) + "-" +
-					dec(s.hi[i]);
+				line += std::string(i ? "," : "") +
+					(hash ? "" : "(") + dec(s.lo[i]) + "-" +
+					dec(s.hi[i]) + (hash ? "" : ")");
 			puts(line);
 			crlf();
 			q += 2;
 		} else if (q[0] == '?') {
-			std::string line = "+V" + std::string(name) + "=";
+			/* V.253 6.3.3.2.2: the values only (#V: "+Vxx=") */
+			std::string line = hash ?
+				"+V" + std::string(name) + "=" : "";
 			for (s16 i = 0; i < s.n; i++)
 				line += (i ? "," : "") + dec(v[i]);
 			puts(line);
@@ -2429,6 +2469,12 @@ s16 Modem::at_voice(char *p, s16 *len, bool hash)
 	const std::string_view c = cmd;
 	if (mode_ != MODEM_MODE_VOICE)
 		return -1;
+	/* an action's test (6.3.3.1.2/V.253): OK, as it has no values */
+	if ((c == "IP" || c == "TX" || c == "RX" || c == "TR") &&
+	    q[0] == '=' && q[1] == '?') {
+		*len = 6;
+		return 0;
+	}
 	if (c == "IP") {
 		voice_init();
 		*len = 4;
@@ -2445,12 +2491,16 @@ s16 Modem::at_voice(char *p, s16 *len, bool hash)
 		return -1;
 	/* +VTS: the tone settings, or a tone or a DTMF digit played */
 	if (q[0] == '?' || (q[0] == '=' && q[1] == '?')) {
+		/* the values, and the ranges in parentheses (10.1.5.2/
+		   V.253); #VTS: the old "+VTS=" forms */
+		const std::string head = hash ? "+VTS=" : "";
 		if (q[0] == '?')
-			puts("+VTS=" + dec(voice_info_.tone1_freq) + "," +
+			puts(head + dec(voice_info_.tone1_freq) + "," +
 			     dec(voice_info_.tone2_freq) + "," +
 			     dec(voice_info_.tone_duration));
 		else
-			puts("+VTS=0-4000,0-4000,0-6000");
+			puts(hash ? "+VTS=0-4000,0-4000,0-6000" :
+			     "(0-4000),(0-4000),(0-6000)");
 		crlf();
 		*len = q[0] == '?' ? 5 : 6;
 		return 0;

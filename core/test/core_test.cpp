@@ -663,7 +663,7 @@ TEST(Core, VoiceLineGone)
 	EXPECT_EQ(run(1), "\r\nOK\r\n");
 	EXPECT_EQ(gone(), "\x10l");
 	EXPECT_FALSE(m->started());
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n0\r\n\r\nOK\r\n");
 
 	EXPECT_EQ(taken("AT+VRX\r").substr(0, 9), "\r\nCONNECT");
 	EXPECT_EQ(gone(), "\x10"
@@ -675,7 +675,7 @@ TEST(Core, VoiceLineGone)
 	EXPECT_EQ(taken("AT+VTX\r"), "\r\nCONNECT\r\n");
 	EXPECT_EQ(gone(), "\x10l");
 	EXPECT_EQ(cmd(m, l, "AT\rx\x10\x10\x10~"), "");
-	EXPECT_EQ(cmd(m, l, "\x10\x03" "AT+VLS?\r"), "\r\nOK\r\n\r\n+VLS=0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "\x10\x03" "AT+VLS?\r"), "\r\nOK\r\n\r\n0\r\n\r\nOK\r\n");
 
 	EXPECT_EQ(taken("AT+VTR\r").substr(0, 9), "\r\nCONNECT");
 	EXPECT_EQ(gone(), "\x10l");
@@ -701,7 +701,7 @@ TEST(Core, VoiceLineGone)
 	EXPECT_EQ(l.out, "\r\nERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "ATD5551000\r"), "");
 	EXPECT_EQ(gone(), "\r\nERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n0\r\n\r\nOK\r\n");
 	delete m;
 }
 
@@ -745,15 +745,15 @@ TEST(Core, VoiceHashDialect)
 	EXPECT_EQ(cmd(m, l, "AT#VBS=2\r"), "\r\nERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "AT#VBS=4\r"), "\r\nERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "AT#VBS=16#VSR=7200\r"), "\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "\r\n+VSM=129,7200,0,0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "\r\n129,7200,0,0\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT#VSM=128,8000\r"), "\r\nERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "AT#VSM=129,8000#VBS=4\r"), "\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT#VBS=?;#VSM?\r"),
 		  "\r\n4,8,16\r\n129,8000\r\n\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "\r\n+VSM=133,8000,0,0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "\r\n133,8000,0,0\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT#VSR=7200\r"), "\r\nERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "AT#VBS=8\r"), "\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "\r\n+VSM=1,8000,0,0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VSM?\r"), "\r\n1,8000,0,0\r\n\r\nOK\r\n");
 
 	/* the line taken: VCON, as a number with ATV0 */
 	EXPECT_EQ(cmd(m, l, "AT#VLS=0A\r"), "");
@@ -1010,7 +1010,8 @@ TEST(Core, CallerIdOnTheCall)
 
 /* a SIP call's caller (caller_id()) after its first RING, as +VCID asks:
    formatted (1), the MDMF message in hex (2), a voice mode packet, none
-   (0), withheld and unknown fields; only the first RING has it */
+   (0), withheld and unknown fields; only the first RING has it; +VRID
+   gives the last one again */
 TEST(Core, CallerIdFromLine)
 {
 	Line l;
@@ -1043,6 +1044,16 @@ TEST(Core, CallerIdFromLine)
 		  "4FB3\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VCID=0\r"), "\r\nOK\r\n");
 	EXPECT_EQ(ring("10301043", "5551000", "Bob"), "\r\nRING\r\n");
+	/* +VRID (V.253 9.1.3): the last call's caller again, with +VCID
+	   0 too: formatted (0, the default) or in hex (1) */
+	EXPECT_EQ(cmd(m, l, "AT+VRID\r"),
+		  "\r\nDATE = 1030\r\nTIME = 1043\r\nNMBR = 5551000\r\n"
+		  "NAME = Bob\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VRID=0\r"), cmd(m, l, "AT+VRID\r"));
+	EXPECT_EQ(cmd(m, l, "AT+VRID=1\r").substr(0, 15),
+		  "\r\nMESG = 801801");
+	EXPECT_EQ(cmd(m, l, "AT+VRID=?\r"), "\r\n(0,1)\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VRID=2\r"), "\r\nERROR\r\n");
 	/* voice mode: the packet */
 	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8;+VCID=1\r"), "\r\nOK\r\n");
 	std::string v = ring("", "5551000", "Bob");
@@ -1088,7 +1099,7 @@ TEST(Core, VoiceHandset)
 	EXPECT_EQ(run(1), "\r\nOK\r\n");
 	EXPECT_TRUE(m->started());
 	EXPECT_EQ(l.last_hook, -1);             /* still on hook */
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=14\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n14\r\n\r\nOK\r\n");
 	cmd(m, l, "AT+VRX\r");
 	EXPECT_EQ(run(1).substr(0, 9), "\r\nCONNECT");
 	run(5);
@@ -1097,7 +1108,7 @@ TEST(Core, VoiceHandset)
 	EXPECT_NE(l.out.find("\x10\x03\r\nOK\r\n"), std::string::npos);
 	EXPECT_EQ(cmd(m, l, "AT+VLS=15\r"), "\r\nOK\r\n");
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=15\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n15\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VLS=1\r"), "\r\nOK\r\n");
 	EXPECT_EQ(l.last_hook, MODEM_HOOK_OFF);
 	EXPECT_EQ(cmd(m, l, "AT+VLS=14\r"), "\r\nOK\r\n");
@@ -1120,7 +1131,8 @@ TEST(Core, VoiceHandset)
 /* V.253's event reports: +VLS=? lists each device with the events it
    reports in the transmit, receive and command states (Table 1's bits,
    event 0 leftmost); +VEM, the speakerphone's reports, 0 or 1, back to
-   0 with +VIP; neither outside voice mode */
+   0 with +VIP; neither outside voice mode; the test (=?) of the
+   actions +VIP, +VTX, +VRX and +VTR: OK */
 TEST(Core, VoiceEvents)
 {
 	Line l;
@@ -1130,15 +1142,19 @@ TEST(Core, VoiceEvents)
 	EXPECT_EQ(cmd(m, l, "AT+FCLASS=8\r"), "\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VLS=?\r"),
 		  "\r\n0,\"\",00000000,00000000,90000000\r\n1,\"T\",0B043060,0B043060,0B043060\r\n\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n+VLS=0\r\n\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n+VEM=0\r\n\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM=?\r"), "\r\n+VEM=0-1\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VLS?\r"), "\r\n0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM=?\r"), "\r\n(0-1)\r\n\r\nOK\r\n");
+	/* an action's test (V.253 6.3.3.1.2): OK */
+	for (const char *a : { "AT+VIP=?\r", "AT+VTX=?\r", "AT+VRX=?\r",
+			       "AT+VTR=?\r" })
+		EXPECT_EQ(cmd(m, l, a), "\r\nOK\r\n") << a;
 	EXPECT_EQ(cmd(m, l, "AT+VEM=1\r"), "\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n+VEM=1\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n1\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VEM=2\r"), "\r\nERROR\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n+VEM=1\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n1\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+VIP\r"), "\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n+VEM=0\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+VEM?\r"), "\r\n0\r\n\r\nOK\r\n");
 	delete m;
 }
 
@@ -2952,7 +2968,7 @@ TEST(Core, A8e)
 	Line l;
 	Modem *m = make(l, "A");
 	EXPECT_EQ(cmd(m, l, "AT+A8E?\r"), "AT+A8E?\r\r\n+A8E: 1,1,0,0\r\n\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+A8E=?\r"), "AT+A8E=?\r\r\n+A8E: (1),(1),(0),(0,1)\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+A8E=?\r"), "AT+A8E=?\r\r\n+A8E: (1,6),(1,5),(0),(0,1)\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+A8E=1,1,,1\r"), "AT+A8E=1,1,,1\r\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+A8E?\r"), "AT+A8E?\r\r\n+A8E: 1,1,0,1\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+A8E=,,,2\r"), "AT+A8E=,,,2\r\r\nERROR\r\n");
