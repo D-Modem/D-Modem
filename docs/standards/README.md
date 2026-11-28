@@ -54,8 +54,8 @@ A standard that has no link has no pages yet.
 | Recommendation | Subject |
 |---|---|
 | V.42 | Error correction (LAPM) |
-| V.42bis | Data compression |
-| V.44 | Data compression (LZJH) |
+| [V.42 bis](v42bis.md) ([details](v42bis-details.md)) | Data compression |
+| [V.44](v44.md) ([details](v44-details.md)) | Data compression (LZJH) |
 | X.75 | LAPB for packet-switched signalling |
 
 ## Voice and data together

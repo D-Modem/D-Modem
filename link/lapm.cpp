@@ -89,10 +89,13 @@ enum {
 	SEQ_MASK = 0x7f,                /* sequence numbers modulo 128 */
 	XID_DELAY = 384,                /* the originator's flags before its
 					   first XID (48 octets) */
-	NO_LIMIT = INT32_C(1) << 30,    /* a V.44 parameter the remote does
-					   not limit */
+	NO_LIMIT = INT32_C(1) << 30,    /* the largest received value that
+					   we keep */
 	V42BIS_DFLT_N2 = 512,           /* V.42bis's defaults (5.1) */
 	V42BIS_DFLT_N7 = 6,
+	V44_DFLT_P1 = 1024,             /* V.44's defaults (Table 10/V.44);
+					   P3's is 3 x P1 */
+	V44_DFLT_P2 = 255,
 	XID_MAX = 90 + HAYES_SETS_LEN,  /* our longest XID frame (V.42bis
 					   and V.44 both offered, and the
 					   Hayes sets) */
@@ -674,12 +677,18 @@ s16 Lapm::tx_xid(u8 addr)
 		p = put_id(p, PI_V44_SET, "V44");
 		p = put_param(p, PI_V44_C0, 0, 1);
 		p = put_param(p, PI_V44_P0, p0_44, 1);
+		/* T: our encoder, R: our decoder (after XID they can
+		   differ) */
+		auto rx = [](s32 r, s32 t) { return r < 0 ? t : r; };
 		p = put_param(p, PI_V44_P1T, c.v44_codewords, 2);
-		p = put_param(p, PI_V44_P1R, c.v44_codewords, 2);
+		p = put_param(p, PI_V44_P1R,
+			      rx(c.v44_codewords_r, c.v44_codewords), 2);
 		p = put_param(p, PI_V44_P2T, c.v44_max_string, 1);
-		p = put_param(p, PI_V44_P2R, c.v44_max_string, 1);
+		p = put_param(p, PI_V44_P2R,
+			      rx(c.v44_max_string_r, c.v44_max_string), 1);
 		p = put_param(p, PI_V44_P3T, c.v44_history, 2);
-		p = put_param(p, PI_V44_P3R, c.v44_history, 2);
+		p = put_param(p, PI_V44_P3R,
+			      rx(c.v44_history_r, c.v44_history), 2);
 	}
 	if (mnp_upgrade() && (!response || mnp_agreed_)) {
 		if (!user)
@@ -1083,6 +1092,10 @@ void Lapm::rx_unnum_cmd(Frame *f)
 		   defaults */
 		if (!rx_xid(f, false) && state_ == IDLE && !was_up_ && !v76_)
 			xid_defaults();
+		if (xid_bad_) {
+			xid_error();
+			break;
+		}
 		tx_xid(rsp_addr_);
 		/* MNP 10 agreed: MNP once the response is out */
 		if (mnp_agreed_) {
@@ -1196,6 +1209,11 @@ void Lapm::rx_unnum_rsp(Frame *f)
 			release(true);
 			break;
 		}
+		if (xid_bad_) {
+			config_ = false;
+			xid_error();
+			break;
+		}
 		config_ = false;
 		timer_stop();
 		/* HST both ways: a DM (F 0) as the Courier sends, then HST,
@@ -1262,7 +1280,8 @@ bool Lapm::rx_xid(Frame *f, bool response)
 	r.zstd_window = ZSTD_WINDOW_LOG;
 	r.dict_size = V42BIS_DFLT_N2;
 	r.max_string = V42BIS_DFLT_N7;
-	r.v44_codewords = r.v44_max_string = r.v44_history = NO_LIMIT;
+	/* V.44's parameters that the XID does not have: the defaults */
+	s32 p1t = -1, p1r = -1, p2t = -1, p2r = -1, p3t = -1, p3r = -1;
 	/* Table 11a's directions are the initiator's (its Note 2): ours
 	   when this answers our command */
 	u16 &info_i = response ? tx_info_ : rx_info_;
@@ -1328,16 +1347,22 @@ bool Lapm::rx_xid(Frame *f, bool response)
 			v44_p0 = v;
 			break;
 		case PI_V44_P1T:
+			p1t = v;
+			break;
 		case PI_V44_P1R:
-			r.v44_codewords = std::min(r.v44_codewords, v);
+			p1r = v;
 			break;
 		case PI_V44_P2T:
+			p2t = v;
+			break;
 		case PI_V44_P2R:
-			r.v44_max_string = std::min(r.v44_max_string, v);
+			p2r = v;
 			break;
 		case PI_V44_P3T:
+			p3t = v;
+			break;
 		case PI_V44_P3R:
-			r.v44_history = std::min(r.v44_history, v);
+			p3r = v;
 			break;
 		case PI_HST_SET:
 			/* (PI_MNPI's too) */
@@ -1359,6 +1384,15 @@ bool Lapm::rx_xid(Frame *f, bool response)
 	};
 
 	for_each_group(x, len, param, priv, user);
+
+	/* V.44: T is the direction of the remote's encoder, R of its
+	   decoder, in a command and in a response (7.4/V.44) */
+	r.v44_codewords = p1t >= 0 ? p1t : V44_DFLT_P1;
+	r.v44_codewords_r = p1r >= 0 ? p1r : V44_DFLT_P1;
+	r.v44_max_string = p2t >= 0 ? p2t : V44_DFLT_P2;
+	r.v44_max_string_r = p2r >= 0 ? p2r : V44_DFLT_P2;
+	r.v44_history = p3t >= 0 ? p3t : 3 * r.v44_codewords;
+	r.v44_history_r = p3r >= 0 ? p3r : 3 * r.v44_codewords_r;
 
 	/* V.44 when its set is named and it asks for a direction: its P0
 	   then says which */
@@ -1416,7 +1450,7 @@ bool Lapm::rx_xid(Frame *f, bool response)
 		    r.zstd ? (r.v44 ? " (zstd, V.44)" : " (zstd)") :
 		    r.v44 ? " (V.44)" : "", tx_win_, rx_win_, tx_info_,
 		    rx_info_, r.fcs32 ? ", FCS-32" : "");
-	link_->update_config(r);
+	xid_bad_ = !link_->update_config(r);
 	return true;
 }
 
@@ -1445,6 +1479,24 @@ void Lapm::xid_defaults()
 	r.ec = r.detect = true;
 	link_->logf("ec: no XID agreed: V.42's defaults.");
 	link_->update_config(r);
+}
+
+/* a procedural error in the remote's XID (a compression parameter less
+   than its minimum, 5.1/V.42bis, 7.4/V.44): the connection stops.  In
+   the data phase DISC; before it, no response and no SABME */
+void Lapm::xid_error()
+{
+	xid_bad_ = false;
+	link_->logf("err: ec: XID with a compression parameter out of "
+		    "range: procedural error, release.");
+	if (state_ == DATA) {
+		disconnect();
+		return;
+	}
+	reset();
+	state_ = IDLE;
+	timer_stop();
+	link_->status(Status::Released);
 }
 
 /* whether the XID response f answers an XID of ours from before our

@@ -7,8 +7,12 @@
  *    As the Agere modem does it: the encoder and decoder start in
  *    compressed mode (codewords from 4, 6 bits, ordinals of 7 bits); the
  *    encoder sends REINIT when the dictionary or the history is full and
- *    FLUSH when the DTE has no more for now, and stays in compressed
- *    mode.
+ *    FLUSH when the DTE has no more for now.  Its compressibility test
+ *    (7.11.5) compares the bits of the tokens for the last WINDOW
+ *    characters with their 8 bits each: transparent mode above
+ *    TO_TRANSPARENT, compressed mode again below TO_COMPRESSED.  The gap
+ *    pays for ETM, ECM and the new dictionary after ECM.  After a change
+ *    the mode stays for HOLD characters.
  *
  */
 
@@ -20,7 +24,24 @@
 
 namespace dlink {
 
-enum { HASH = 4096 };
+enum {
+	HASH = 4096,
+	/* the compressibility test (7.11.5): an estimate of the tokens'
+	   bits for the last WINDOW characters, from what they cost as
+	   octets */
+	WINDOW = 256,
+	EST_START = WINDOW * 8,
+	TO_TRANSPARENT = EST_START + WINDOW / 8,
+	TO_COMPRESSED = EST_START - WINDOW / 4,
+	/* the characters in a mode before the next change: the dictionary
+	   after ECM is new, and learns less fast than the estimate says */
+	HOLD = 2 * WINDOW,
+	/* the commands after the escape character (Table 9) */
+	CMD_ECM = 0,
+	CMD_EID = 1,
+	CMD_EPM = 2,
+	ESCAPE_STEP = 51,       /* the escape character's step (7.14) */
+};
 
 /* the encoder's hash of a string's first two characters */
 static u16 hash2(u8 a, u8 b)
@@ -58,6 +79,10 @@ s16 V44::init(s32 codewords, s32 max_string, s32 history)
 	obuf_.clear();
 	ohead_ = 0;
 	raw_bits_ = cmp_bits_ = 0;
+	tok_bits_ = 0;
+	est_ = EST_START;
+	hold_ = 0;
+	test_ = true;
 	prev_type_ = NONE;
 	primed_ = false;
 	reset();
@@ -78,6 +103,12 @@ s16 V44::config(s32 codewords, s32 max_string, s32 history)
 	n8_ = history;
 	end_ = 0;
 	primed_ = false;
+	/* compressed mode, the escape character 0 (7.5) */
+	transparent_ = escape_ = false;
+	escape_char_ = 0;
+	est_ = EST_START;
+	hold_ = 0;
+	prev_type_ = NONE;
 	reset();
 	return 0;
 }
@@ -144,6 +175,7 @@ s32 V44::prime(const u8 *text, s32 n)
 	V44 enc;
 	if (enc.init(n2_, n7_, n8_))
 		return 0;
+	enc.test_ = false;              /* (compressed mode only) */
 	/* no more than the dictionary has room for, the lookahead's
 	   strings (two a character at most) and the flush's included, nor
 	   half the history: no REINIT */
@@ -250,6 +282,9 @@ void V44::after_token(s16 type, u32 value)
 /* the encoder: n bits of v into the octets, the lowest first */
 void V44::put_bits(u32 v, s16 n)
 {
+	tok_bits_ += n;
+	if (transparent_)
+		return;                 /* (counted for the test only) */
 	bits_ |= v << nbits_;
 	nbits_ += n;
 	cmp_bits_ += n;
@@ -355,9 +390,12 @@ s32 V44::find(u32 pos, u32 avail, s16 *len) const
 	return best;
 }
 
-/* one token (a codeword maybe extended) for the characters at hp_ */
+/* one token (a codeword maybe extended) for the characters at hp_; in
+   transparent mode the characters go out as octets.  The estimate of
+   the test gets the token's bits */
 void V44::step()
 {
+	const u32 h0 = hp_, t0 = tok_bits_;
 	u32 avail = end_ - hp_;
 	s16 len;
 	s32 cw = find(hp_, avail, &len);
@@ -384,9 +422,73 @@ void V44::step()
 			after_token(EXT, n);
 		}
 	}
+	if (transparent_)
+		for (u32 k = h0; k < hp_; k++)
+			put_transparent(hist_[k]);
+	est_ = est_ + (tok_bits_ - t0) - est_ * (hp_ - h0) / WINDOW;
+	hold_ = hold_ > hp_ - h0 ? hold_ - (hp_ - h0) : 0;
 	if (c1_ >= static_cast<u32>(n2_) ||
 	    hp_ >= static_cast<u32>(n8_))
 		reinit();
+}
+
+/* one step, then the compressibility test (if it is on) */
+void V44::advance()
+{
+	step();
+	if (test_)
+		test_mode();
+}
+
+/* the compressibility test (7.11.5).  To transparent mode (6.5.1): the
+   characters so far as tokens, ETM and zeros to the octet boundary.  To
+   compressed mode (6.5.2): the characters so far as octets, then the
+   dictionary from the start, the escape character and ECM */
+void V44::test_mode()
+{
+	if (hold_)
+		return;
+	if (!transparent_) {
+		if (est_ <= TO_TRANSPARENT)
+			return;
+		while (hp_ < end_)
+			step();
+		put_control(ETM);
+		if (nbits_)
+			put_bits(0, 8 - nbits_);
+		transparent_ = true;
+		hold_ = HOLD;
+		return;
+	}
+	if (est_ >= TO_COMPRESSED)
+		return;
+	while (hp_ < end_)
+		step();
+	restart();
+	end_ = hp_;
+	obuf_.push_back(escape_char_);
+	obuf_.push_back(CMD_ECM);
+	cmp_bits_ += 16;
+	transparent_ = false;
+	prev_type_ = NONE;
+	hold_ = HOLD;
+}
+
+/* transparent mode: ch as an octet; the escape character as itself and
+   EID, and the escape character 51 more (7.14).  The test compares the
+   tokens with the octets that go, so each EID takes 8 bits from the
+   estimate */
+void V44::put_transparent(u8 ch)
+{
+	obuf_.push_back(ch);
+	cmp_bits_ += 8;
+	if (ch == escape_char_) {
+		obuf_.push_back(CMD_EID);
+		cmp_bits_ += 8;
+		/* in the test, EID is 8 bits less for the tokens */
+		est_ = est_ > 8 ? est_ - 8 : 0;
+		escape_char_ = static_cast<u8>(escape_char_ + ESCAPE_STEP);
+	}
 }
 
 /* the encoder: one character from the DTE into the history; tokens for
@@ -399,28 +501,45 @@ s16 V44::encode(u8 ch)
 	if (end_ == static_cast<u32>(n8_)) {
 		/* the history is full: what is in it, then REINIT */
 		while (end_ == static_cast<u32>(n8_))
-			step();
+			advance();
 	}
 	hist_[end_++] = ch;
 	raw_bits_ += 8;
 	/* enough to look ahead for the longest string */
 	while (end_ - hp_ > static_cast<u32>(n7_))
-		step();
+		advance();
 	return 0;
 }
 
-/* all the characters so far, then FLUSH and the rest of the octet */
+/* all the characters so far, then FLUSH and the rest of the octet; in
+   transparent mode the characters only (7.13) */
 s16 V44::flush_encoder()
 {
 	if (!ready())
 		return 0;
-	if (hp_ == end_ && prev_type_ == NONE && !nbits_)
+	if (hp_ == end_ && (transparent_ || (prev_type_ == NONE && !nbits_)))
 		return 0;               /* nothing since the last flush */
 	while (hp_ < end_)
-		step();
+		advance();
+	if (transparent_) {
+		/* the test as if FLUSH (and half an octet of zeros) went
+		   too */
+		est_ += 1 + c2_ + 4;
+		if (test_)
+			test_mode();
+		return 0;
+	}
+	if (prev_type_ == NONE && !nbits_)
+		return 0;               /* (ETM, then ECM: on an octet) */
+	/* FLUSH and its zeros count in the test: with a flush after each
+	   few characters, transparent mode can cost less */
+	const u32 t0 = tok_bits_;
 	put_control(FLUSH);
 	if (nbits_)
 		put_bits(0, 8 - nbits_);
+	est_ += tok_bits_ - t0;
+	if (test_)
+		test_mode();
 	return 0;
 }
 
@@ -624,16 +743,21 @@ s16 V44::run_decoder()
 			u8 b = in_[in_pos_++];
 			if (escape_) {
 				escape_ = false;
-				if (b == 0) {
+				if (b == CMD_ECM) {
 					/* ECM: compressed again, from the
 					   start */
 					transparent_ = false;
 					prev_type_ = NONE;
 					restart();
-				} else if (b == 1) {
+				} else if (b == CMD_EID) {
 					obuf_.push_back(escape_char_);
-					escape_char_ += 0x33;
-				} else if (b != 2) {
+					escape_char_ = static_cast<u8>(
+						escape_char_ + ESCAPE_STEP);
+				} else {
+					/* EPM (parameter mode, 7.4.2) is not
+					   possible: our C0 asks for XID
+					   negotiation.  It and the others are
+					   procedural errors */
 					return -1;
 				}
 			} else if (b == escape_char_) {

@@ -570,10 +570,14 @@ void Link::sync_indicate(u8 code, const u8 *par, s16 n)
 
 /* XID: the directions both modems want (remote's P0, already from our
    side, and ours); zstd if both offer it (Annex F/V.cvm), else V.44
-   if both have it, else V.42bis, either with the
-   smaller of the two modems' parameters, the same both ways (6.4/V.42bis);
-   no compression if they cannot be had */
-void Link::update_config(const Config &remote)
+   if both have it, else V.42bis.  V.42bis has the smaller of the two
+   modems' parameters, the same both ways (5.1/V.42bis).  V.44 has the
+   smaller of our P1T and the remote's P1R for our encoder, and of our
+   P1R and the remote's P1T for our decoder, and the same for P2 and P3
+   (7.4/V.44).  A parameter of the selected compression less than its
+   minimum is a procedural error: false.  No compression if they cannot
+   be had */
+bool Link::update_config(const Config &remote)
 {
 	s16 dir = remote.comp & cfg_.comp;
 
@@ -610,29 +614,59 @@ void Link::update_config(const Config &remote)
 			cfg_.comp = 0;
 			cfg_.v44 = cfg_.zstd = false;
 			owner_->negotiated(cfg_);
-			return;
+			return true;
 		}
 	}
 
 	if (dir && cfg_.zstd && remote.zstd && start_zstd(dir, remote)) {
 		owner_->negotiated(cfg_);
-		return;
+		return true;
 	}
 	cfg_.zstd = false;
 	/* V.44 and V.42bis in the directions each may have */
 	const s16 dir44 = dir & cfg_.comp44, dir42 = dir & cfg_.comp42;
 	if (dir44 && remote.v44 && cfg_.v44 && enc44_.ready()) {
-		s32 n2 = std::min(cfg_.v44_codewords, remote.v44_codewords);
+		if (remote.v44_codewords < V44_MIN_CODEWORDS ||
+		    remote.v44_codewords_r < V44_MIN_CODEWORDS ||
+		    remote.v44_max_string < V44_MIN_STRING ||
+		    remote.v44_max_string_r < V44_MIN_STRING ||
+		    remote.v44_history < V44_MIN_HISTORY ||
+		    remote.v44_history_r < V44_MIN_HISTORY) {
+			logf("err: v44: P1 %" PRId32 "/%" PRId32 ", P2 %" PRId32
+			     "/%" PRId32 ", P3 %" PRId32 "/%" PRId32
+			     ": out of range", remote.v44_codewords,
+			     remote.v44_codewords_r, remote.v44_max_string,
+			     remote.v44_max_string_r, remote.v44_history,
+			     remote.v44_history_r);
+			return false;
+		}
+		/* ours: the same both ways until XID agrees */
+		auto rx = [](s32 r, s32 t) { return r < 0 ? t : r; };
+		/* our encoder: our T against the remote's R */
+		s32 n2 = std::min(cfg_.v44_codewords, remote.v44_codewords_r);
 		s32 n7 = std::min(cfg_.v44_max_string,
-				      remote.v44_max_string);
-		s32 n8 = std::min(cfg_.v44_history, remote.v44_history);
-		if (!enc44_.config(n2, n7, n8) && !dec44_.config(n2, n7, n8)) {
+				  remote.v44_max_string_r);
+		s32 n8 = std::min(cfg_.v44_history, remote.v44_history_r);
+		/* our decoder: our R against the remote's T */
+		s32 r2 = std::min(rx(cfg_.v44_codewords_r, cfg_.v44_codewords),
+				  remote.v44_codewords);
+		s32 r7 = std::min(rx(cfg_.v44_max_string_r,
+				     cfg_.v44_max_string),
+				  remote.v44_max_string);
+		s32 r8 = std::min(rx(cfg_.v44_history_r, cfg_.v44_history),
+				  remote.v44_history);
+		if (!enc44_.config(n2, n7, n8) && !dec44_.config(r2, r7, r8)) {
 			cfg_.comp = dir44;
 			cfg_.v44_codewords = n2;
 			cfg_.v44_max_string = n7;
 			cfg_.v44_history = n8;
+			cfg_.v44_codewords_r = r2;
+			cfg_.v44_max_string_r = r7;
+			cfg_.v44_history_r = r8;
 			logf("v44: %" PRId32 " codewords, strings of %" PRId32
-			     ", history %" PRId32, n2, n7, n8);
+			     ", history %" PRId32 " (encoder); %" PRId32 ", %"
+			     PRId32 ", %" PRId32 " (decoder)", n2, n7, n8, r2,
+			     r7, r8);
 			/* V.cvm's preset dictionary, both ways alike */
 			if (cfg_.v44_preset) {
 				const std::vector<u8> &p = v44_preset();
@@ -646,21 +680,29 @@ void Link::update_config(const Config &remote)
 				else {
 					/* (both ends alike: then neither) */
 					enc44_.config(n2, n7, n8);
-					dec44_.config(n2, n7, n8);
+					dec44_.config(r2, r7, r8);
 					logf("err: v44: preset dictionary not "
 					     "taken (%" PRId32 "/%" PRId32 ")",
 					     a, b);
 				}
 			}
 			owner_->negotiated(cfg_);
-			return;
+			return true;
 		}
 		logf("err: v44: setup failed (%" PRId32 "/%" PRId32 "/%" PRId32
-		     ").", n2, n7, n8);
+		     ", %" PRId32 "/%" PRId32 "/%" PRId32 ").", n2, n7, n8, r2,
+		     r7, r8);
 	}
 	cfg_.v44 = false;
 	cfg_.comp = 0;
 	if (dir42) {
+		if (remote.dict_size < V42BIS_MIN_CODEWORDS ||
+		    remote.max_string < V42BIS_MIN_STRING) {
+			logf("err: v42bis: P1 %" PRId32 ", P2 %" PRId32
+			     ": out of range", remote.dict_size,
+			     remote.max_string);
+			return false;
+		}
 		s32 n2 = std::min(cfg_.dict_size, remote.dict_size);
 		s32 n7 = std::min(cfg_.max_string, remote.max_string);
 		if (!enc_.config(n2, n7) && !dec_.config(n2, n7)) {
@@ -682,6 +724,7 @@ void Link::update_config(const Config &remote)
 		logf("hayes: ADC both ways");
 	}
 	owner_->negotiated(cfg_);
+	return true;
 }
 
 /* (see link.h): the coders at the LRs' N2 and N7 (each is made at

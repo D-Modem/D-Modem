@@ -21,6 +21,8 @@ namespace dlink {
 enum {
 	V42BIS_MAX_CODEWORDS = 2048,    /* N2 we offer */
 	V42BIS_MAX_STRING = 34,         /* N7 we offer */
+	V42BIS_MIN_CODEWORDS = 512,     /* P1's minimum and default (5.1) */
+	V42BIS_MIN_STRING = 6,          /* P2's minimum and default (5.1) */
 };
 
 class V42bis {

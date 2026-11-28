@@ -123,9 +123,19 @@ struct Config {
 	/* V.44 offered with compression; after XID: it, rather than
 	   V.42bis, is what the call has */
 	bool v44 = true;
+	/* V.44's P1, P2 and P3 (Table 10/V.44).  The transmit ones: what we
+	   offer, for the two directions; in the remote's XID, its P1T, P2T
+	   and P3T (its encoder, our decoder); after XID, our encoder's
+	   N2T, N7T and N8T */
 	s32 v44_codewords = V44_MAX_CODEWORDS;
 	s32 v44_max_string = V44_MAX_STRING;
 	s32 v44_history = V44_MAX_HISTORY;
+	/* the receive ones: -1 (as the transmit ones) in what we offer; in
+	   the remote's XID, its P1R, P2R and P3R (its decoder, our
+	   encoder); after XID, our decoder's N2R, N7R and N8R */
+	s32 v44_codewords_r = -1;
+	s32 v44_max_string_r = -1;
+	s32 v44_history_r = -1;
 	/* V.cvm: both DCEs have the preset dictionary (v44_preset.h);
 	   V.44, if XID agrees on it, starts from it */
 	bool v44_preset = false;
@@ -438,8 +448,10 @@ public:
 	   through V.42bis when it is on in that direction */
 	s16 read_chars(u8 *buf, s16 n);
 	s16 write_chars(const u8 *buf, s16 n);
-	/* LAPM's XID: what the remote wants (Config's V.42bis part) */
-	void update_config(const Config &remote);
+	/* LAPM's XID: what the remote wants (Config's V.42bis part); false
+	   on a procedural error (a parameter of the selected compression
+	   less than its minimum): the connection stops */
+	bool update_config(const Config &remote);
 	/* the rate (bit/s) HST is to start at, both having offered it in
 	   XID; 0 if not */
 	s32 hst_rate() const { return hst_bps_; }
