@@ -6,7 +6,8 @@
  *                  a thread on an anonymous SIP line, its DTE on stdin
  *                  and stdout.  The log of the modem goes to stderr.
  *
- *    usage: embed_cat [-p sip_port] [-L] [-d log_level] [-s]
+ *    usage: embed_cat [-p sip_port] [-L] [-d log_level] [-S sip_log_level]
+ *                     [-s]
  *
  *    At the end of stdin, the program closes its descriptor.  Then the
  *    modem stops, and the program writes "exit <status>" to stderr.
@@ -40,7 +41,7 @@ int main(int argc, char *argv[])
 {
 	dmodem_embed_config cfg;
 	dmodem_embed *e;
-	int fd, i, in_open = 1, stop = 0;
+	int fd, i, in_open = 1, stop = 0, sip_log_level = 1;
 	char buf[4096];
 
 	dmodem_embed_config_init(&cfg);
@@ -53,9 +54,11 @@ int main(int argc, char *argv[])
 			stop = 1;
 		else if (!strcmp(argv[i], "-d") && i + 1 < argc)
 			cfg.log_level = atoi(argv[++i]);
+		else if (!strcmp(argv[i], "-S") && i + 1 < argc)
+			sip_log_level = atoi(argv[++i]);
 	}
 	/* (no account: anonymous) */
-	cfg.sip_log_level = 1;
+	cfg.sip_log_level = sip_log_level;
 	fprintf(stderr, "D-Modem %s, lines 0x%x\n", dmodem_embed_version(),
 		dmodem_embed_lines());
 	e = dmodem_embed_new();
