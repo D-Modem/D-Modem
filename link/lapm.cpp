@@ -421,6 +421,8 @@ void Lapm::configure()
 	}
 	tx_xid(cmd_addr_);
 	timer_start();
+	if (zstd_last(0))
+		link_->set_timer(2 * t401_bits(), Link::Timer::T401);
 }
 
 /* T401 (9.2.1), in bits: 2 s (Config::t401_s) at the data pump's rate
@@ -474,20 +476,17 @@ void Lapm::t401_timeout()
 	if (state_ == DATA)
 		link_->stats().timeouts++;
 	if (rtx_count_ < MAX_RTX) {
-		rtx_count_++;
-		/* an XID unanswered by a remote whose ADP said it has
-		   V.42: offered again without zstd's private set, which
-		   an older V.42 takes for a reason to ignore the frame
-		   (the USRobotics Courier answering); after V.8, whose
-		   first XIDs a noisy start of the line may take, from
-		   the third XID on */
-		if (config_ && !was_up_ && link_->caller() &&
-		    link_->phase_v42() &&
-		    (!link_->detect_far() || rtx_count_ >= ZSTD_RETRY_V8) &&
-		    link_->cfg().zstd && !no_zstd_) {
+		/* the last XID with zstd unanswered (zstd_last()): a new
+		   negotiation (8.10.2) with an XID without zstd's private
+		   set, T401 and N400 from the start */
+		if (zstd_last(rtx_count_)) {
 			no_zstd_ = true;
 			link_->logf("ec: XID unanswered: offered without zstd.");
+			tx_xid(cmd_addr_);
+			timer_start();
+			return;
 		}
+		rtx_count_++;
 		if (config_)
 			tx_xid(cmd_addr_);
 		else if (state_ == ESTAB)
@@ -496,7 +495,8 @@ void Lapm::t401_timeout()
 			tx_unnum(cmd_addr_, static_cast<u8>(U_DISC | PF));
 		else
 			tx_super(cmd_addr_, busy_ ? S_RNR : S_RR, 1);
-		link_->set_timer(t401_bits(), Link::Timer::T401);
+		link_->set_timer((config_ && zstd_last(rtx_count_) ? 2 : 1) *
+				 t401_bits(), Link::Timer::T401);
 		return;
 	}
 	rtx_count_ = 0;
@@ -524,6 +524,24 @@ void Lapm::t401_timeout()
 	case IDLE:
 		break;
 	}
+}
+
+
+/* whether our XID sent after n retransmissions is the last that offers
+   zstd: we negotiate before the link is first up, as the originator,
+   with zstd still offered, and the remote's ADP said it has V.42.  An
+   older V.42 ignores an XID with zstd's private set (the USRobotics
+   Courier answering), so after this XID the offer has no zstd: after
+   the first XID, or after V.8 (whose first XIDs a noisy start of the
+   line may take) after the second.  Its T401 runs twice as long (9.2.1
+   sets no value), so that a late response to it comes before an XID
+   with another offer goes: XID responses have no sequence number */
+bool Lapm::zstd_last(s16 n) const
+{
+	const s16 last = link_->detect_far() ? ZSTD_RETRY_V8 - 1 : 0;
+	return config_ && !was_up_ && !v76_ && link_->caller() &&
+		link_->phase_v42() && link_->cfg().zstd && !no_zstd_ &&
+		n >= last;
 }
 
 

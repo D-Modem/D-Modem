@@ -97,6 +97,7 @@ private:
 	s16 tx_unnum(u8 addr, u8 ctrl);
 	s16 tx_super(u8 addr, u8 ctrl, s16 pf);
 	s16 tx_xid(u8 addr);
+	bool zstd_last(s16 n) const;
 	bool rx_xid(Frame *f, bool response);
 	void xid_defaults();
 	void xid_error();
