@@ -2414,8 +2414,9 @@ TEST(Link, LapmXidOutOfRangeThenSabme)
 			{ 0x46, 0x05 }, { 0x43, 0x00ff }, { 0x48, 0x01ff } };
 		for (auto &w : low) {
 			std::vector<uint8_t> y = x;
-			auto at = std::search(y.begin(), y.end(), "V44",
-					      "V44" + 3);
+			static const char v44[] = "V44";
+			auto at = std::search(y.begin(), y.end(), v44,
+					      v44 + 3);
 			bool done = false;
 			for (size_t i = at - y.begin() + 3; i + 1 < y.size();
 			     i += 2 + y[i + 1])
