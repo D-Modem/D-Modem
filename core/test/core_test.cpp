@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -2623,6 +2624,14 @@ static const TextCall text_calls[] = {
 	  "+MV18R: 7" },
 	{ "+MS=V18;+MV18R=1", "+MS=V23C,0", 1200, 75, "Hello\n",
 	  "Hello\n", "+MV18R: 6" },
+	/* Table A.1 and A.2/V.18: = and + in figures, # and & sent as $
+	   and +, the backspace 00000 */
+	{ "+MS=BAUDOT", "+MS=BAUDOT", 45, 0, "1=2+3#4&5\b6\r\n",
+	  "1=2+3$4+5\b6\r\n", nullptr },
+	/* 5.2.5/V.18: automoding finds a TTY at 50 bit/s by its bits'
+	   length */
+	{ "+MBAUDOT=50,1400,1800,0;+MS=BAUDOT", "+MV18S=1;+MV18R=1", 50, 0,
+	  "GA 12\r\n", "GA 12\r\n", "+MV18R: 2" },
 };
 
 /* each case's name */
@@ -2633,13 +2642,266 @@ static std::string text_name(const testing::TestParamInfo<TextCall> &i)
 		"V18Dtmf", "V18AnswersV21", "V18AnswersBell103",
 		"V18AnswersMinitel", "V18V18", "V18CallsV21",
 		"V18CallsBell103", "V18CallsMinitel", "V18CallsV21Modem",
-		"V18CallsBell103Modem", "V18CallsV23Modem",
+		"V18CallsBell103Modem", "V18CallsV23Modem", "TtyCodeTable",
+		"V18Tty50",
 	};
 	return names[i.index];
 }
 
 INSTANTIATE_TEST_SUITE_P(Modes, CoreText, testing::ValuesIn(text_calls),
 			 text_name);
+
+/* a modem's line signal, in 20 ms blocks: each block's strongest tone
+   of V.18's (0 for silence) */
+static std::vector<int> v18_blocks(const std::vector<int16_t> &x)
+{
+	static const int f[] = { 980, 1180, 1300, 1400, 1650, 1800, 2100,
+				 2225, 697, 1209 };
+	std::vector<int> out;
+	for (size_t at = 0; at + 160 <= x.size(); at += 160) {
+		float best = 100.0f * 100.0f / 2, e = 0, p2100 = 0;
+		int tone = 0;
+		for (int k : f) {
+			dsp::Goertzel g;
+			g.init(static_cast<float>(k), 160, 8000);
+			for (size_t i = 0; i < 160; i++)
+				g.run(x[at + i]);
+			if (g.power > best) {
+				best = g.power;
+				tone = k;
+			}
+			if (k == 2100)
+				p2100 = g.power;
+		}
+		/* (ANSam's phase reversal spreads its block toward 2225
+		   Hz) */
+		if (tone == 2225 && p2100 > 0.3f * best)
+			tone = 2100;
+		for (size_t i = 0; i < 160; i++)
+			e += static_cast<float>(x[at + i]) * x[at + i];
+		/* (a block with energy, but no tone of the list: a mix) */
+		if (!tone && e / 160 > 100.0f * 100.0f / 2)
+			tone = -1;
+		out.push_back(tone);
+	}
+	/* (a block between two of the same tone: a phase reversal) */
+	for (size_t i = 1; i + 1 < out.size(); i++)
+		if (out[i - 1] == out[i + 1] && out[i - 1] > 0)
+			out[i] = out[i - 1];
+	return out;
+}
+
+/* the 5-bit codes on a line signal x at baud (1400 and 1800 Hz), and
+   each one's start, in samples */
+static std::vector<std::pair<int, size_t>> v18_codes(
+	const std::vector<int16_t> &x, float baud)
+{
+	dsp::FskDemod d;
+	dsp::Uart u;
+	d.init(1400, 1800, baud, 8000);
+	u.init(baud, 5, 8000);
+	std::vector<std::pair<int, size_t>> out;
+	size_t start = 0;
+	for (size_t i = 0; i < x.size(); i++) {
+		d.run(x[i]);
+		bool was = u.busy;
+		int32_t v = u.run(d.last_dec, d.carrier);
+		if (!was && u.busy)
+			start = i;
+		if (v >= 0)
+			out.push_back({ static_cast<int>(v), start });
+	}
+	return out;
+}
+
+/* A.4/V.18: LTRS before the first character (here a figure), the shift
+   again after 72 characters, and DEL as LTRS */
+TEST(CoreV18, FiveBitShifts)
+{
+	Pair p("");
+	for (Modem *m : { p.a, p.b })
+		m->dte_input("AT+MS=BAUDOT\r", 13);
+	p.step();
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	for (int t = 0; t < 5000 && p.a->link_state() != LinkState::Online;
+	     t += 20)
+		p.step();
+	ASSERT_EQ(p.a->link_state(), LinkState::Online);
+	std::string line = "1" + std::string(80, 'E') + "\x7f" + "E";
+	p.a->dte_input(line.data(), line.size());
+	std::vector<int16_t> tap;
+	for (int t = 0; t < 20000; t += 20) {
+		p.step();
+		tap.insert(tap.end(), p.oa.begin(), p.oa.end());
+	}
+	auto codes = v18_codes(tap, 45.45f);
+	ASSERT_GE(codes.size(), 84u);
+	EXPECT_EQ(codes[0].first, 0x1F);
+	EXPECT_EQ(codes[1].first, 0x1B);
+	EXPECT_EQ(codes[2].first, 0x17);
+	int run = 0, longest = 0, es = 0;
+	bool del_ltrs = false;
+	for (size_t i = 0; i < codes.size(); i++) {
+		int c = codes[i].first;
+		if (c == 0x1F || c == 0x1B) {
+			run = 0;
+			/* (DEL: a LTRS between the 80th and the 81st E) */
+			if (es == 80)
+				del_ltrs = true;
+			continue;
+		}
+		longest = std::max(longest, ++run);
+		es += c == 0x01;
+	}
+	EXPECT_EQ(es, 81);
+	EXPECT_LE(longest, 72);
+	EXPECT_TRUE(del_ltrs);
+}
+
+/* C.1/V.18: EDT's carrier 300 ms before the first character */
+TEST(CoreV18, EdtLead)
+{
+	Pair p("");
+	for (Modem *m : { p.a, p.b })
+		m->dte_input("AT+MS=EDT\r", 10);
+	p.step();
+	EXPECT_EQ(p.b->answer(), 0);
+	EXPECT_EQ(p.a->dial(""), 0);
+	for (int t = 0; t < 5000 && p.a->link_state() != LinkState::Online;
+	     t += 20)
+		p.step();
+	ASSERT_EQ(p.a->link_state(), LinkState::Online);
+	p.a->dte_input("A", 1);
+	std::vector<int16_t> tap;
+	for (int t = 0; t < 2000; t += 20) {
+		p.step();
+		tap.insert(tap.end(), p.oa.begin(), p.oa.end());
+	}
+	/* the first sample of the carrier, and the start bit's (the
+	   first 1180 Hz block) */
+	auto blocks = v18_blocks(tap);
+	int on = -1, space = -1;
+	for (size_t i = 0; i < blocks.size(); i++) {
+		if (on < 0 && blocks[i] != 0)
+			on = static_cast<int>(i);
+		if (on >= 0 && space < 0 && blocks[i] == 1180)
+			space = static_cast<int>(i);
+	}
+	ASSERT_GE(on, 0);
+	ASSERT_GT(space, on);
+	EXPECT_GE((space - on) * 20, 280);
+	EXPECT_LE((space - on) * 20, 340);
+}
+
+/* the runs of a block list: (tone, first block, blocks) */
+static std::vector<std::array<int, 3>> v18_runs(const std::vector<int> &b)
+{
+	std::vector<std::array<int, 3>> out;
+	for (size_t i = 0; i < b.size(); i++) {
+		if (!out.empty() && out.back()[0] == b[i])
+			out.back()[2]++;
+		else
+			out.push_back({ b[i], static_cast<int>(i), 1 });
+	}
+	return out;
+}
+
+/* 5.2.12/V.18: a silent caller.  After Ta (3 s) the probes start with
+   ANSam (1 s) and 75 ms of silence; the 5-bit message at 47.6 bit/s
+   (A.3); Tm (3 s) of silence after a message; a carrier probe as ANSam,
+   75 ms of silence and its carrier for Tc (6 s) */
+TEST(CoreV18, Probes)
+{
+	Pair p("");
+	p.b->dte_input("AT+MV18S=1\r", 11);
+	p.step();
+	EXPECT_EQ(p.b->answer(), 0);
+	std::vector<int16_t> tap;
+	for (int t = 0; t < 32000; t += 20) {
+		p.step();
+		tap.insert(tap.end(), p.ob.begin(), p.ob.end());
+	}
+	auto runs = v18_runs(v18_blocks(tap));
+	/* the first signal: ANSam */
+	size_t k = 0;
+	while (k < runs.size() && runs[k][0] == 0)
+		k++;
+	ASSERT_LT(k + 2, runs.size());
+	EXPECT_EQ(runs[k][0], 2100);
+	/* (after the answer's 2 s of silence and Ta) */
+	EXPECT_NEAR(runs[k][1] * 20, 5000, 100);
+	EXPECT_NEAR(runs[k][2] * 20, 1000, 40);
+	/* the silence, to the 5-bit message's mark */
+	size_t f = k + 1;
+	while (f < runs.size() && runs[f][0] != 1400)
+		f++;
+	ASSERT_LT(f, runs.size());
+	EXPECT_NEAR((runs[f][1] - runs[k][1] - runs[k][2]) * 20, 75, 25);
+	/* the message's rate: two characters' start bits 7.5 bits apart */
+	size_t from = static_cast<size_t>(runs[f][1]) * 160;
+	std::vector<int16_t> msg(tap.begin() + static_cast<long>(from),
+				 tap.begin() + static_cast<long>(from) + 8000);
+	auto codes = v18_codes(msg, 47.6f);
+	ASSERT_GE(codes.size(), 2u);
+	EXPECT_NEAR((codes[1].second - codes[0].second) / 8.0,
+		    7.5 * 1000 / 47.6, 3);
+	/* the silence after the message (its signal 1400/1800 Hz) */
+	size_t m = f;
+	while (m < runs.size() && runs[m][0] != 0 &&
+	       runs[m][0] != 980 && runs[m][0] != 1180)
+		m++;
+	while (m < runs.size() && runs[m][0] != 0)
+		m++;
+	ASSERT_LT(m, runs.size());
+	EXPECT_GE(runs[m][2] * 20, 2900);
+	/* the V.21 probe: ANSam, 75 ms of silence, 1650 Hz for 6 s */
+	size_t v = 0;
+	for (size_t i = 2; i < runs.size(); i++)
+		if (runs[i][0] == 1650 && runs[i][2] > 50) {
+			v = i;
+			break;
+		}
+	ASSERT_GT(v, 2u);
+	EXPECT_EQ(runs[v - 2][0], 2100);
+	EXPECT_NEAR(runs[v - 2][2] * 20, 1000, 40);
+	EXPECT_EQ(runs[v - 1][0], 0);
+	EXPECT_NEAR(runs[v - 1][2] * 20, 75, 25);
+	EXPECT_NEAR(runs[v][2] * 20, 6000, 40);
+}
+
+/* 5.2.10/V.18: a calling tone (1300 Hz for 600 ms, once the answerer
+   listens after its 2 s of silence) and 1 s of silence: the probes at
+   once (their ANSam), not after Ta (at 5 s) */
+TEST(CoreV18, CallingToneProbes)
+{
+	Pair p("");
+	p.b->dte_input("AT+MV18S=1\r", 11);
+	p.step();
+	EXPECT_EQ(p.b->answer(), 0);
+	std::vector<int16_t> in(160), out(160), tap;
+	double ph = 0;
+	for (int t = 0; t < 6000; t += 20) {
+		for (int i = 0; i < 160; i++) {
+			bool on = t >= 2500 && t < 3100;
+			in[i] = on ? static_cast<int16_t>(
+				8000 * sin(2 * M_PI * ph)) : 0;
+			ph += 1300.0 / 8000;
+		}
+		p.b->process(in.data(), out.data(), 160);
+		now += 20;
+		p.b->poll();
+		tap.insert(tap.end(), out.begin(), out.end());
+	}
+	auto runs = v18_runs(v18_blocks(tap));
+	size_t k = 0;
+	while (k < runs.size() && runs[k][0] == 0)
+		k++;
+	ASSERT_LT(k, runs.size());
+	EXPECT_EQ(runs[k][0], 2100);
+	/* (the tone's end at 3100 ms, 1 s of silence) */
+	EXPECT_NEAR(runs[k][1] * 20, 4100, 100);
+}
 
 /* Contact ID: B the receiver (answering), A the panel (calling) */
 class CoreContactId : public testing::Test {
