@@ -1528,7 +1528,8 @@ void Lapm::rx_break(const u8 *x, s16 n, u8 pf)
 
 /* a procedural error in the remote's XID (a compression parameter less
    than its minimum, 5.1/V.42bis, 7.4/V.44): the connection stops.  In
-   the data phase DISC; before it, no response and no SABME */
+   the data phase DISC; before it, no response and no SABME, and V.42's
+   defaults for a SABME that comes after it */
 void Lapm::xid_error()
 {
 	xid_bad_ = false;
@@ -1538,6 +1539,10 @@ void Lapm::xid_error()
 		disconnect();
 		return;
 	}
+	/* no XID agreed: if a SABME comes after all, the link has no
+	   compression (V.42's defaults), not what we asked for */
+	if (!was_up_ && !v76_)
+		xid_defaults();
 	reset();
 	state_ = IDLE;
 	timer_stop();
