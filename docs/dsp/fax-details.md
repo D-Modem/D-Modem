@@ -54,6 +54,16 @@ at a time. It reads nothing after `<DLE><ETX>`:
   `OK`.
 - In `+FTH`, an empty frame (only `<DLE><ETX>`) ends the transmission
   with `OK` (8.3.5/T.31). A frame of one octet goes out with no change.
+- `+FTM` sends ones after the training until the first data of the
+  DTE, and zeros when its buffer is empty after the data (8.3.3/T.31).
+- When the DTE sends no data for 5 s (`+FTH` after its `CONNECT`, or
+  `+FTM` with its buffer empty), the carrier stops and the result is
+  `ERROR` (8.3.3 and 8.3.5/T.31).
+
+The parameters `+FAR` (0), `+FCL`, `+FDD` (0), `+FIT` and `+FLO` are
+in `core/at.cpp`. `+FIT=<time>,<action>` hangs up after `<time>`
+seconds in command state with no character from the DTE. With
+`<action>` 0, `+FCLASS` is 0 after the hangup (8.5.4/T.31).
 
 `core/test/scripts/fax_dte.txt` tests the three items. It runs in
 `core_equiv` as `CoreScript.FaxDteUntilsCome`.

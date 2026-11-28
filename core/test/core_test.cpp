@@ -4408,3 +4408,74 @@ TEST(Core, ZfaxPoll)
 		return !p.a->started() && !p.b->started();
 	}, 30000));
 }
+
+/* T.31's class 1 parameters (Table 5, 8.5, Annex A): +FAR (0), +FCL
+   (0-255), +FDD (0), +FIT (0-255, 0 or 1) and +FLO (as +IFC) are taken
+   and read back; +FTS=? and +FRS=? give their range */
+TEST(Core, FaxClass1Parameters)
+{
+	Line l;
+	Modem *m = make(l, "class1");
+	cmd(m, l, "ATE0+FCLASS=1\r");
+	EXPECT_EQ(cmd(m, l, "AT+FAR=0\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FAR=1\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FCL=50\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FCL?\r"), "\r\n+FCL: 50\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FDD=0\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FIT=30,1\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FIT?\r"), "\r\n+FIT: 30,1\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FIT=256,0\r"), "\r\nERROR\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FLO=?\r"), "\r\n(0-2)\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FLO=1\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+IFC?\r"), "\r\n+IFC: 1,1\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FLO?\r"), "\r\n1\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+IFC=2,0\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FLO?\r"), "\r\n255\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FTS=?\r"), "\r\n(0-255)\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FRS=?\r"), "\r\n(0-255)\r\n\r\nOK\r\n");
+	delete m;
+}
+
+/* class 1 (T.31 8.3.5 c), 8.5.4): the answerer's +FTH=3 after CED,
+   with no frame from the DTE for 5 s, ends with ERROR; then +FIT=3,0
+   hangs up 3 s after that result, and +FCLASS is 0 again */
+TEST(Core, FaxClass1DteTimeouts)
+{
+	Pair p("");
+	auto until = [&p](auto cond, int ms) {
+		for (int t = 0; t < ms; t += 20) {
+			if (cond())
+				return t;
+			p.step();
+		}
+		return cond() ? ms : -1;
+	};
+	p.a->dte_input("AT+FCLASS=1\r", 12);
+	p.b->dte_input("AT+FCLASS=1;+FIT=3,0\r", 21);
+	p.step();
+	p.got_a.clear();
+	p.got_b.clear();
+	p.b->dte_input("ATA\r", 4);
+	p.a->dte_input("ATD\r", 4);
+	ASSERT_GE(until([&] {
+		return p.got_b.find("CONNECT") != std::string::npos;
+	}, 10000), 0) << p.got_b;
+	p.got_b.clear();
+	int t = until([&] {
+		return p.got_b.find("ERROR") != std::string::npos;
+	}, 10000);
+	EXPECT_GE(t, 4800) << p.got_b;
+	EXPECT_LE(t, 5400) << p.got_b;
+	p.got_b.clear();
+	t = until([&] {
+		return p.got_b.find("NO CARRIER") != std::string::npos;
+	}, 10000);
+	EXPECT_GE(t, 2800) << p.got_b;
+	EXPECT_LE(t, 3400) << p.got_b;
+	ASSERT_GE(until([&] { return !p.b->started(); }, 3000), 0);
+	p.step();
+	p.got_b.clear();
+	p.b->dte_input("AT+FCLASS?\r", 11);
+	p.step();
+	EXPECT_NE(p.got_b.find("\r\n0\r\n"), std::string::npos) << p.got_b;
+}

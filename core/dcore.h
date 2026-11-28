@@ -548,7 +548,7 @@ public:
 	static const char *const author, *const product, *const version;
 	/* the extended parameters of other modems' setup strings it keeps
 	   (at most), their values (at most) */
-	enum { KEPT_PARAMS = 30, KEPT_VALUES = 9 };
+	enum { KEPT_PARAMS = 40, KEPT_VALUES = 9 };
 
 private:
 	enum State {
@@ -636,6 +636,7 @@ private:
 	/* the # voice settings' defaults (#VTD, #VSD, ...) */
 	void hash_init();
 	void fax_process(s16 *in, s16 *out, s32 n);
+	void fit_tick(s32 n);
 	s16 fax_start();
 	void fax_engine_delete();
 	void fax2_reset();
@@ -730,6 +731,7 @@ private:
 	s16 at_text(char *p, s16 *len);
 	s16 at_PMH(char *p, s16 *len);
 	s16 at_FCLASS(char *p, s16 *len);
+	s16 at_FLO(char *p, s16 *len);
 	s16 at_zfax(char *p, s16 *len);
 	s16 at_CK(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);
@@ -1112,6 +1114,11 @@ private:
 	   fax_ class 2's (FAX2_*) */
 	u8 fax_class_ = 1;
 	bool fax2_ = false;
+	/* +FIT (T.31 8.5.4): the samples in command state, off hook in a
+	   fax mode, with no character from the DTE; +FCLASS=0 due when the
+	   line is free after a timeout with <action> 0 */
+	u32 fit_idle_ = 0;
+	bool fit_reset_ = false;
 	/* class 2, 2.0 or 6, the engine class 2's (else class 1 or 1.0) */
 	bool fax2_class() const {
 		return fax_class_ == 2 || fax_class_ == 20 || fax_class_ == 6;

@@ -79,6 +79,8 @@ nav:
       - "T.4: technical details": standards/t4-details.md
       - "T.6": standards/t6.md
       - "T.6: technical details": standards/t6-details.md
+      - "T.31": standards/t31.md
+      - "T.31: technical details": standards/t31-details.md
       - "V.42": standards/v42.md
       - "V.42: technical details": standards/v42-details.md
       - "V.42 bis": standards/v42bis.md

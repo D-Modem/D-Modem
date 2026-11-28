@@ -591,6 +591,12 @@ s16 Modem::set_state(State s)
 		command_ = true;
 		link_->set_online(false);
 		link_->stop();
+		/* (+FIT's <action> 0: +FCLASS=0 once the line is free) */
+		if (fit_reset_) {
+			fit_reset_ = false;
+			hash_voice_ = false;
+			set_mode(MODEM_MODE_DATA);
+		}
 		break;
 	case DP_ESTAB:
 		command_ = false;
@@ -1982,6 +1988,7 @@ s32 Modem::dte_input(const char *buf, s32 n)
 
 	if (n <= 0)
 		return 0;
+	fit_idle_ = 0;
 	if ((state_ == DP_ESTAB || state_ == EC_ESTAB) && !command_) {
 		logf("a character from the DTE: hanging up\n");
 		set_cause(Cause::AnyKey);
@@ -2342,6 +2349,7 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 	count_ += n;
 	samples_at_ms_ = host_.now_ms();
 	shift_tick();
+	fit_tick(n);
 	if (later_ != Later::None &&
 	    static_cast<s64>(count_ - later_at_) >= 0)
 		later(later_, 0);
@@ -4922,6 +4930,7 @@ void Modem::fax_process(s16 *in, s16 *out, s32 n)
 	switch (st) {
 	case FAX_STATUS_OK:
 		set_state(COMMAND_ONLINE);
+		fit_idle_ = 0;
 		report(Result::Ok);
 		command_ = true;
 		commands_due_ = true;
@@ -4939,12 +4948,14 @@ void Modem::fax_process(s16 *in, s16 *out, s32 n)
 		break;
 	case FAX_STATUS_NOCARRIER:
 		set_state(COMMAND_ONLINE);
+		fit_idle_ = 0;
 		report(Result::NoCarrier);
 		command_ = true;
 		commands_due_ = true;
 		break;
 	case FAX_STATUS_FRAME_ERROR:
 		set_state(COMMAND_ONLINE);
+		fit_idle_ = 0;
 		report(Result::Error);
 		command_ = true;
 		commands_due_ = true;
@@ -4955,6 +4966,28 @@ void Modem::fax_process(s16 *in, s16 *out, s32 n)
 	default:
 		break;
 	}
+}
+
+/* +FIT=<time>,<action> (T.31 8.5.4, Tables 8 and 9): in command state,
+   off hook in a fax mode, <time> seconds without a character from the
+   DTE hang up; with <action> 0, +FCLASS=0 follows once the line is
+   free (set_state()).  The time starts again at each final result
+   code */
+void Modem::fit_tick(s32 n)
+{
+	const u32 *fit = kept("+FIT");
+	if (mode_ != MODEM_MODE_FAX || !fax_ || !command_ || !fit[0] ||
+	    (state_ != ONLINE && state_ != COMMAND_ONLINE)) {
+		fit_idle_ = 0;
+		return;
+	}
+	fit_idle_ += static_cast<u32>(n);
+	if (fit_idle_ < fit[0] * static_cast<u32>(srate_))
+		return;
+	logf("+FIT: %u s without the DTE: hanging up\n", fit[0]);
+	fit_idle_ = 0;
+	fit_reset_ = fit[1] == 0;
+	hangup();
 }
 
 /* the fax engine freed (class 2's session and hangup status kept for

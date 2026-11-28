@@ -60,6 +60,9 @@ using namespace dsp;
 #define FRAME_QUEUE 8
 #define TX_BUF 16384            /* FTM data from the DTE */
 #define RX_OUT 4096
+/* +FTH after its CONNECT, +FTM with its buffer empty: so long without
+   the DTE's data, then ERROR (T.31 8.3.3, 8.3.5) */
+#define DTE_WAIT_MS 5000
 
 /* T.38: data octets in a packet (V.21: 7, T.38 7.5), the tails after
    the data (HDLC, T.4) before no-signal, the ECM frames waiting to go */
@@ -143,6 +146,10 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	u8 hframe[HDLC_MAX - 2];
 	s16 hlen;               /* bytes of the frame being built */
 	s16 hready;             /* frame complete, waiting to be sent */
+	/* samples that +FTH or +FTM waited for the DTE's data (DTE_WAIT_MS);
+	   ftm_data: +FTM's first data came (ones go out before it) */
+	s32 dte_idle;
+	s16 ftm_data;
 
 	/* receiver */
 	FaxRx rx;
@@ -247,6 +254,8 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	void read_dte();
 	void fth_close();
 	bool fth_closing() const;
+	bool fth_waiting() const;
+	void dte_timeout();
 	void start_tx(enum fax_mod mod, s16 short_train, fax_get_bit_t get_bit);
 	s16 start_rx(enum fax_mod mod, s16 short_train, fax_put_bit_t put_bit);
 	void set_state(enum c1_state s);
@@ -446,8 +455,11 @@ static s16 ftm_get_bit(void *ctx)
 		if (f->head == f->tail) {
 			if (f->eod)
 				return FAX_BIT_END;
-			return 0;               /* underrun: fill */
+			/* ones until the first data (T.31 8.3.3), then
+			   zeros (underrun: fill) */
+			return f->ftm_data ? 0 : 1;
 		}
+		f->ftm_data = 1;
 		f->byte = f->buf[f->tail];
 		f->tail = (f->tail + 1) % TX_BUF;
 		f->nbits = 8;
@@ -1120,6 +1132,29 @@ void Fax::set_state(enum c1_state s)
 	DSP_DBG("fax: state %d -> %d\n", state, s);
 	state = s;
 	count = 0;
+	dte_idle = 0;
+}
+
+/* +FTH waits for the DTE's next frame: none being built, none to go,
+   no end asked for (and on T.38 none going out: the final frame's time
+   is not the DTE's) */
+bool Fax::fth_waiting() const
+{
+	return !hlen && !hready && !dle && !fth_closing() &&
+		!(t38 && t38_hpos >= 0);
+}
+
+/* the DTE sent nothing for DTE_WAIT_MS samples in +FTH or +FTM: the
+   carrier off, the data dropped, ERROR (T.31 8.3.3, 8.3.5 c)) */
+void Fax::dte_timeout()
+{
+	DSP_DBG("fax: no data from the DTE for %d ms: ERROR\n",
+		DTE_WAIT_MS);
+	stop_tx();
+	head = tail = nbits = 0;
+	hlen = hready = 0;
+	set_state(C1_IDLE);
+	report_status(FAX_STATUS_FRAME_ERROR);
 }
 
 /* +FTH=3: HDLC on V.21 channel 2, CONNECT at once for the first
@@ -1165,6 +1200,7 @@ void Fax::begin_ftm(enum fax_mod mod, s16 short_train)
 	stop_tx();
 	set_state(C1_FTM);
 	head = tail = nbits = 0;
+	ftm_data = 0;
 	start_tx(mod, short_train, ftm_get_bit);
 	report_status(FAX_STATUS_CONNECT);
 }
@@ -1744,6 +1780,15 @@ int FAX_process(void *obj, void *in, void *out, int count)
 			}
 			if (f->count >= ms2samples(FAX_CED_END_MS, f->srate))
 				f->begin_fth();
+			break;
+		case C1_FTH:
+		case C1_FTM:
+			if (f->state == C1_FTH ? !f->fth_waiting() :
+			    f->head != f->tail || f->eod)
+				f->dte_idle = 0;
+			else if (++f->dte_idle >=
+				 ms2samples(DTE_WAIT_MS, f->srate))
+				f->dte_timeout();
 			break;
 		case C1_FTS:
 			if (f->count >= f->duration) {

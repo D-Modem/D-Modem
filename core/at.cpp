@@ -261,6 +261,13 @@ const struct Kept {
 	/* +FAA=1, adaptive answer: modem.cpp reads it */
 	{ "+FAA", 1, { 0 }, "(0,1)" },
 	{ "+FPR", 1, { 0 }, "(0,1,2,4,8,10,18)" },
+	/* T.31 8.5: +FAR (adaptive reception: off only), +FCL (the
+	   carrier loss time, kept with no effect: the receivers' own),
+	   +FDD (<DLE><SUB>: 0 only), +FIT (modem.cpp's fit_tick()) */
+	{ "+FAR", 1, { 0 }, "(0)" },
+	{ "+FCL", 1, { 0 }, "(0-255)" },
+	{ "+FDD", 1, { 0 }, "(0)" },
+	{ "+FIT", 2, { 0, 0 }, "(0-255),(0,1)" },
 	{ "-SEC", 1, { 0 }, "(0,1),(0-30)" },
 	/* ETC's transmit filter (3Com's AT+EF, core/etc.h): its set of
 	   taps; modem.cpp reads it */
@@ -2084,6 +2091,8 @@ s16 Modem::at_fax(char *p, s16 *len)
 
 	if (what == '3' && kind == '4')
 		return at_F34(p, len);
+	if (what == 'L' && kind == 'O')
+		return at_FLO(p, len);
 	if (what == 'M' && identity(kind)) {
 		puts(identity(kind));
 		crlf();
@@ -2096,6 +2105,12 @@ s16 Modem::at_fax(char *p, s16 *len)
 	q += 3;
 	switch (kind) {
 	case 'S':
+		if (*q == '?') {
+			puts("(0-255)");
+			crlf();
+			*len = static_cast<s16>(q + 1 - p);
+			return 0;
+		}
 		cmd = what == 'T' ? FAX_CMD_FTS : FAX_CMD_FRS;
 		v = number(q, &e);
 		if (e == q)
@@ -2129,6 +2144,39 @@ s16 Modem::at_fax(char *p, s16 *len)
 	}
 	*len = static_cast<s16>(e - p);
 	return fax_command(cmd, static_cast<u32>(v));
+}
+
+/* +FLO (T.31 Annex A, Table A.2): +FLO=<n> is +IFC=<n>,<n> (0 none, 1
+   DC1/DC3, 2 circuits 106 and 133); +FLO? gives n, or 255 when +IFC's
+   two values are not the same one of these; +FLO=? the range */
+s16 Modem::at_FLO(char *p, s16 *len)
+{
+	const char *q = p + 4, *e, *end;
+	s16 i = kept_index("+IFC");
+
+	for (end = q; *end && *end != ';'; end++)
+		;
+	*len = static_cast<s16>(end - p);
+	if (q[0] == '?' && q + 1 == end) {
+		u32 a = kept_[i][0], b = kept_[i][1];
+		puts(dec(a == b && a <= 2 ? a : 255));
+		crlf();
+		return 0;
+	}
+	if (q[0] == '=' && q[1] == '?' && q + 2 == end) {
+		puts("(0-2)");
+		crlf();
+		return 0;
+	}
+	if (q[0] != '=')
+		return -1;
+	q++;
+	u32 v = decimal(q, &e);
+	if (e == q || e != end || v > 2)
+		return -1;
+	kept_[i][0] = kept_[i][1] = v;
+	kept_n_[i] = 2;
+	return 0;
 }
 
 /* +F34 (T.31 class 1.0): +F34=<maxp>,<minp>,<prefc>[,<maxp2>,<minp2>]
