@@ -132,7 +132,7 @@ static std::vector<uint8_t> v44_roundtrip(const char *name,
 }
 
 /* V.44 round trips (text, flushes, small parameters, noise, repeats,
-   a mix), and the decoder's transparent mode */
+   a mix), the encoder's transparent mode (7.11.5) and the decoder's */
 TEST(Link, V44)
 {
 	rnd_state = 12345;
@@ -143,19 +143,39 @@ TEST(Link, V44)
 	line = v44_roundtrip("text", t, 4096, 255, 12288, 0);
 	CHECK(line.size() < t.size() / 2, "text: %zu octets", line.size());
 	v44_roundtrip("text, flush every 100", t, 4096, 255, 12288, 100);
-	v44_roundtrip("text, flush every one", text(5000), 4096, 255, 12288, 1);
+	line = v44_roundtrip("text, flush every one", text(5000), 4096, 255,
+			     12288, 1);
+	/* FLUSH after each character costs more than the character:
+	   transparent mode */
+	CHECK(line.size() < 5000 + 16, "flush every one: %zu octets",
+	      line.size());
 	v44_roundtrip("text, 256 codewords, strings of 32, history 512", t,
 		      256, 32, 512, 0);
 	v44_roundtrip("text, 1024 codewords, strings of 100", t, 1024, 100,
 		      4096, 37);
-	v44_roundtrip("noise (8 bit ordinals)", z, 4096, 255, 12288, 0);
+	line = v44_roundtrip("noise (transparent mode)", z, 4096, 255, 12288, 0);
+	/* ETM, and one EID for each escape character (1 in 256) */
+	CHECK(line.size() < z.size() * 101 / 100, "noise: %zu octets",
+	      line.size());
+	CHECK(line.size() > 1 && line[1] != 0, "noise: no ETM");
 	v44_roundtrip("repeats (extensions)", rep, 4096, 255, 12288, 0);
 	std::vector<uint8_t> mixed = text(30000);
 	std::vector<uint8_t> z2 = noise(30000);
 	mixed.insert(mixed.end(), z2.begin(), z2.end());
 	std::vector<uint8_t> t2 = text(30000);
 	mixed.insert(mixed.end(), t2.begin(), t2.end());
-	v44_roundtrip("text, noise, text", mixed, 4096, 255, 12288, 0);
+	line = v44_roundtrip("text, noise, text", mixed, 4096, 255, 12288, 0);
+	/* transparent mode for the noise, then compressed again */
+	CHECK(line.size() < 30000 + 2 * 30000 / 2, "text, noise, text: %zu",
+	      line.size());
+	/* noise, then each escape character value in turn, many times:
+	   EID in transparent mode, the escape character 51 more each time */
+	std::vector<uint8_t> esc = noise(3000);
+	for (int i = 0; i < 3000; i++)
+		esc.push_back(static_cast<uint8_t>(i * 51));
+	v44_roundtrip("noise, escape characters", esc, 4096, 255, 12288, 0);
+	v44_roundtrip("noise, escape characters, flush every 7", esc, 1024,
+		      32, 1024, 7);
 
 	/* transparent mode (the decoder only): ETM, then octets with the
 	   escape character 0 (EID: the character; ECM: compressed again,
@@ -184,6 +204,14 @@ TEST(Link, V44)
 	std::vector<uint8_t> want = { 'h', 'i', 0, 'A' };
 	CHECK(o == want, "transparent: %zu octets", o.size());
 	printf("  transparent mode, EID, ECM: ok\n");
+
+	/* EPM (parameter mode, 7.4.2) is a procedural error: our C0 asks
+	   for XID negotiation */
+	V44 dec2;
+	CHECK(!dec2.init(4096, 255, 12288), "init");
+	CHECK(dec2.decode(0x01) >= 0 && dec2.decode(0x00) >= 0 &&
+		      dec2.decode(0x02) < 0, "EPM: no error");
+	printf("  transparent mode, EPM: an error\n");
 }
 
 /* typical short messages of a slow mobile data call */

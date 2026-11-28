@@ -26,8 +26,14 @@
  *    extension the extended string.  The codeword size (C2, from 6) and
  *    the ordinal size (C5, from 7) grow by STEPUP; REINIT starts the
  *    dictionary and history again, which the encoder sends when either
- *    is full.  FLUSH ends the data so far on an octet.  The decoder also
- *    takes transparent mode (ETM: octets with an escape character).
+ *    is full.  FLUSH ends the data so far on an octet.
+ *
+ *    Transparent mode (6.5): when the tokens cost more bits than the
+ *    characters (7.11.5), the encoder sends ETM and then the characters
+ *    as octets, with the escape character and EID for each escape
+ *    character in the data.  It continues to make the tokens without
+ *    sending them, and when they cost fewer bits again it sends the
+ *    escape character and ECM and starts the dictionary again.
  *
  *    A preset dictionary (prime()): before the data, both ends take the
  *    same text into the dictionary and the history as if it had gone
@@ -118,6 +124,13 @@ private:
 	void put_codeword(u32 cw);
 	void put_extension(s16 n);
 	void reinit();
+	/* one step, then the compressibility test */
+	void advance();
+	/* the compressibility test: to transparent mode or back */
+	void test_mode();
+	/* transparent mode: one character as an octet (EID after the
+	   escape character) */
+	void put_transparent(u8 ch);
 	s32 find(u32 pos, u32 avail, s16 *len) const;
 	/* decoder */
 	bool get_bits(s16 n, u32 *v);
@@ -143,7 +156,15 @@ private:
 	u32 end_ = 0;                           /* characters in hist_ */
 	u32 bits_ = 0;
 	s16 nbits_ = 0;
-	/* decoder */
+	u32 tok_bits_ = 0;                      /* the tokens' bits, sent
+						   or not (the test) */
+	u32 est_ = 0;                           /* the tokens' bits for the
+						   last characters (7.11.5) */
+	u32 hold_ = 0;                          /* characters before the
+						   test can change the mode */
+	bool test_ = true;                      /* the test is on (prime()
+						   turns it off) */
+	/* decoder; transparent_ and escape_char_ also the encoder's */
 	bool transparent_ = false;
 	bool escape_ = false;
 	u8 escape_char_ = 0;

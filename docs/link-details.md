@@ -215,7 +215,7 @@ are in [x2-upgrade-details.md](x2-upgrade-details.md).
 
 | Area | Tests | What they check |
 |---|---|---|
-| Compression | `V44`, `V44Preset`, `Zstd`, `ZstdDict`, `V42bis`, `V42bisStepup` | V.42bis, V.44 and zstd round trips (text, noise, escape characters, repeats, small dictionaries, flushes); V.44's transparent mode; V.cvm's preset dictionary and zstd dictionary; two V.42bis STEPUPs taken and a third a C-ERROR |
+| Compression | `V44`, `V44Preset`, `Zstd`, `ZstdDict`, `V42bis`, `V42bisStepup` | V.42bis, V.44 and zstd round trips (text, noise, escape characters, repeats, small dictionaries, flushes); V.44's transparent mode (the encoder's test and the decoder; EPM an error); V.cvm's preset dictionary and zstd dictionary; two V.42bis STEPUPs taken and a third a C-ERROR |
 | HDLC | `Hdlc`, `HdlcFcs32`, `BitsMasked` | 200 frames through a bit error; CRC-32's check value, frames with an FCS-32 (runs of 1s among them) to receivers that take FCS-32, FCS-16 or both, and one with a bit error dropped; every item to the pump `nbits` wide with nothing above it, in every mode |
 | LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmFcs32`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; the 32-bit FCS (the caller's XID with and without it, the answerer's response, a SABME with each FCS, FCS-16 when either side has it off, and the data with bit errors); no compression; one direction only; each V.42bis parameter the smaller of the two |
 | HST | `LapmHst`, `Hst` | a recorded Courier's XID command and response: the answerer's response with HST and its turn on the DM; the caller's DM (FCS-16) and its SABME first after HST is up; the start rate between two Links; without HST, LAPM as before; the HST link against a Courier's first frames, and between two Links, with the turns of the channels |
@@ -257,10 +257,18 @@ of the remote. The result is the same in the two directions.
   when the dictionary or the history is full (the Agere decoder accepts
   no more history than that).
 - It sends FLUSH, with the remaining bits of the octet, when the DTE has
-  no more data at that time. It stays in compressed mode.
-- The decoder also accepts transparent mode (ETM, escapes as in V.42bis,
-  ECM back). The Agere encoder changes to this mode on data that does
-  not compress.
+  no more data at that time.
+- Its compressibility test compares the bits of the codes for the last
+  256 characters with 8 bits for each character. When the codes cost
+  more, it sends ETM and then the characters as octets (transparent
+  mode). When they cost less again, it sends the escape character and
+  ECM, and starts the dictionary again. After each change, the mode
+  stays for 512 characters. Refer to [V.44: technical
+  details](standards/v44-details.md).
+- The decoder accepts transparent mode: ETM, then EID for the escape
+  character in the data, and ECM back. The escape character starts at 0
+  and increases by 51 after each EID. EPM is an error. The Agere encoder
+  also changes to transparent mode on data that does not compress.
 
 **Against the Agere modem** (`ctest -R agere_v44`), 60000 octets of
 text, binary octets, repeats and noise go through in each direction at
