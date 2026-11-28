@@ -48,6 +48,10 @@ namespace {
 #define ID_SOP          0
 #define ID_SOST         1
 #define MAX_WIDTH       4864    /* A3 at 400 pels an inch */
+#define SOP_MASK_CODER  12      /* the octet of the SOP's mask coder
+				   (after ff d8, APP13, the length, "MRC" 0,
+				   the version and the mode); the image
+				   layers' coder after it */
 
 #define MASK_DARK       128     /* a mask pel: its lightness below */
 #define MASK_EDGE       80      /* ... and lighter by this near it */
@@ -97,6 +101,29 @@ void segment(std::vector<unsigned char> *out, u32 len, unsigned char n)
 	out->push_back('R');
 	out->push_back('C');
 	out->push_back(n);
+}
+
+/* the header of the APP13 segment at data[pos] (its ff ed): *seg_len
+   its length after the APP13, *params where its parameters start.  A
+   length of 0 tells that the 4-octet optional length follows the
+   identifier (T.44 9.2); 1 to 5 are reserved.  false when the segment
+   is not whole or its length is not valid */
+bool seg_head(const unsigned char *data, size_t len, size_t pos, size_t *seg_len, size_t *params)
+{
+	if (pos + 4 > len || data[pos] != 0xff || data[pos + 1] != APP13)
+		return false;
+	size_t sl = get16(data + pos + 2), hl = 2 + 4;
+	if (sl == 0) {
+		if (pos + 12 > len)
+			return false;
+		sl = get32(data + pos + 8);
+		hl = 2 + 4 + 4;
+	}
+	if (sl < hl || sl > len - pos - 2)
+		return false;
+	*seg_len = sl;
+	*params = pos + 2 + hl;
+	return true;
 }
 
 /* each pel's lightness */
@@ -409,6 +436,7 @@ void t44_encode(const T44Image &img, const T44Options &opt, std::vector<unsigned
 	out->push_back(M_EOI);              /* the termination number */
 
 	const u32 sh = opt.stripe ? opt.stripe : 256;
+	bool any_mask = false, any_image = false;
 	for (u32 y0 = 0; y0 < h; y0 += sh) {
 		const u32 rows = std::min(sh, h - y0);
 		unsigned char fgm[3] = {0, 0, 0}, bgm[3] = {255, 255, 255};
@@ -453,7 +481,15 @@ void t44_encode(const T44Image &img, const T44Options &opt, std::vector<unsigned
 		out->insert(out->end(), m.begin(), m.end());
 		out->insert(out->end(), bg.begin(), bg.end());
 		out->insert(out->end(), fg.begin(), fg.end());
+		any_mask |= (type & 0x02) != 0;
+		any_image |= (type & 0x05) != 0;
 	}
+	/* the SOP's coders: 0 for a layer that no stripe codes (T.44
+	   9.2.1) */
+	if (!any_mask)
+		(*out)[SOP_MASK_CODER] = 0;
+	if (!any_image)
+		(*out)[SOP_MASK_CODER + 1] = 0;
 	out->push_back(0xff);
 	out->push_back(M_EOI);
 	out->push_back(0xff);
@@ -468,22 +504,11 @@ s16 t44_decode(const unsigned char *data, size_t len, u32 max_rows, T44Image *im
 	if (len < 4 || data[0] != 0xff || data[1] != M_SOI || data[2] != 0xff || data[3] != APP13)
 		return -1;
 	/* the SOP */
-	size_t pos = 4;
-	if (pos + 2 > len)
+	size_t sl, p;
+	if (!seg_head(data, len, 2, &sl, &p) || memcmp(data + 6, "MRC", 3) != 0 ||
+	    data[9] != ID_SOP)
 		return -1;
-	size_t sl = get16(data + pos), hl = 2;
-	if (sl == 0) {
-		if (pos + 6 > len)
-			return -1;
-		sl = get32(data + pos + 2);
-		hl = 6;
-	}
-	if (sl < hl + 4 || pos + sl > len)
-		return -1;
-	size_t end = pos + sl, p = pos + hl;
-	if (memcmp(data + p, "MRC", 3) != 0 || data[p + 3] != ID_SOP)
-		return -1;
-	p += 4;
+	size_t end = 2 + 2 + sl, pos;
 	if (p + 2 > end || data[p + 1] != MRC_MODE)
 		return -1;              /* (modes 2 and up: their SOSt differs) */
 	p += 2;
@@ -519,25 +544,16 @@ s16 t44_decode(const unsigned char *data, size_t len, u32 max_rows, T44Image *im
 			pos++;
 			continue;
 		}
-		if (pos + 4 > len)
+		size_t gl, q;
+		if (!seg_head(data, len, pos, &gl, &q))
 			break;
-		size_t gl = get16(data + pos + 2), ghl = 2;
-		if (gl == 0) {
-			if (pos + 8 > len)
-				break;
-			gl = get32(data + pos + 4);
-			ghl = 6;
-		}
-		if (gl < ghl + 4 || pos + 2 + gl > len)
-			break;
-		const unsigned char *g = data + pos + 2 + ghl;
+		const unsigned char *g = data + pos + 4;
 		size_t gend = pos + 2 + gl;
 		if (memcmp(g, "MRC", 3) != 0 || g[3] != ID_SOST) {
 			pos = gend;     /* (an optional segment, skipped) */
 			continue;
 		}
 		/* a stripe: its SOSt */
-		size_t q = pos + 2 + ghl + 4;
 		u32 type;
 		if (!coders(data, gend, &q, &type) || q + 6 + 16 + 8 > gend)
 			break;

@@ -108,10 +108,10 @@ A standard that has no link has no pages yet.
 | [T.38](t38.md) ([details](t38-details.md)) | Fax over IP |
 | [T.82](t82.md) ([details](t82-details.md)) | JBIG coding of bi-level images |
 | [T.85](t85.md) ([details](t85-details.md)) | JBIG for fax pages |
-| T.42 | Colour fax with JPEG |
-| T.43 | Lossless colour and grey-scale fax |
-| T.44 | Mixed raster content |
-| T.434 | Binary file transfer |
+| [T.42](t42.md) ([details](t42-details.md)) | Colour fax with JPEG |
+| [T.43](t43.md) ([details](t43-details.md)) | Lossless colour and grey-scale fax |
+| [T.44](t44.md) ([details](t44-details.md)) | Mixed raster content |
+| [T.434](t434.md) ([details](t434-details.md)) | Binary file transfer |
 
 ## Related standards
 

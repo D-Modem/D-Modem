@@ -117,6 +117,25 @@ TEST(T434, TakesOtherCoders)
 	EXPECT_EQ(t434_length(m.data(), m.size()), (long)m.size());
 }
 
+/* mime-media-type as Annex A tags it: [32] of a type that is itself
+   [32] EXPLICIT SEQUENCE */
+TEST(T434, MimeTaggedTwice)
+{
+	Bytes m = {
+		0x77, 0x1c,
+		0x30, 0x1a,
+		0xbf, 0x20, 0x11,
+		0xbf, 0x20, 0x0e,
+		0x30, 0x0c, 0x16, 0x0a, 't', 'e', 'x', 't', '/', 'p', 'l', 'a', 'i', 'n',
+		0xbe, 0x04, 0x04, 0x02, 'a', 'b',
+	};
+	std::vector<BftFile> fs;
+	ASSERT_EQ(t434_decode(m.data(), m.size(), &fs), 0);
+	ASSERT_EQ(fs.size(), 1u);
+	EXPECT_EQ(fs[0].mime, "text/plain");
+	EXPECT_EQ(std::string(fs[0].data.begin(), fs[0].data.end()), "ab");
+}
+
 /* the length while the message comes (0 until it is whole), of two in a
    row the first, and -1 for what is no message */
 TEST(T434, Length)
