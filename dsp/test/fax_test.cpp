@@ -211,6 +211,183 @@ INSTANTIATE_TEST_SUITE_P(Class1, FaxModulation, testing::Values(
 	Loopback{ 146, 30, 0, 8000, 22 }, Loopback{ 146, 30, 144, 8000, 13 }),
 	loopback_name);
 
+/* the data bits that v27_get_bit() gave */
+static int v27_bits;
+
+/* the V.27 ter transmitter's data: 400 ones, then FAX_BIT_END */
+static s16 v27_get_bit(void *)
+{
+	return ++v27_bits > 400 ? FAX_BIT_END : 1;
+}
+
+/* the V.27 ter transmitter at mod (FM_V27_4800 or FM_V27_2400) at 8000
+   Hz, 400 data bits (ones), then the end: the times of its signal (ms):
+   [0] the unmodulated carrier (segment 1), [1] the silence after it
+   (segment 2), [2] the signal from the data's end to the last sample
+   with energy (segment A of the turn-off, with the pulse shaping's
+   tail), [3] from there to the end of the transmitter (segment B) */
+static std::vector<double> v27_times(enum fax_mod mod)
+{
+	FaxTx t;
+	v27_bits = 0;
+	t.init(mod, 0, 8000, v27_get_bit, nullptr);
+	std::vector<float> x;
+	long end_at = -1;
+	while (!t.done && x.size() < 8000 * 10) {
+		x.push_back(t.sample());
+		if (end_at < 0 && v27_bits > 400)
+			end_at = static_cast<long>(x.size());
+	}
+	/* the first run of 2 ms or more without energy (40 dB under the
+	   signal: the pulse shaping's tails below that), and its end */
+	long n = static_cast<long>(x.size()), i = 0, gap0 = -1, gap1 = -1;
+	for (long run = 0; i < n; i++) {
+		run = fabsf(x[i]) < 33 ? run + 1 : 0;
+		if (gap0 < 0 && run >= 16)
+			gap0 = i - 15;
+		if (gap0 >= 0 && run == 0) {
+			gap1 = i;
+			break;
+		}
+	}
+	long last = n - 1;
+	while (last > 0 && fabsf(x[last]) < 33)
+		last--;
+	return { gap0 / 8.0, (gap1 - gap0) / 8.0, (last - end_at) / 8.0,
+		 (n - 1 - last) / 8.0 };
+}
+
+/* Tables 3 and 5/V.27 ter on the line, with protection against talker
+   echo (the fax use): segment 1 185 to 200 ms, segment 2 20 to 25 ms;
+   in the turn-off 5 to 10 ms of the data's end and ones (segment A),
+   about 20 ms of silence (segment B), A and B 25 to 30 ms (1 ms more
+   allowed for the edges) */
+TEST(V27ter, SegmentTimes)
+{
+	for (enum fax_mod m : { FM_V27_4800, FM_V27_2400 }) {
+		std::vector<double> t = v27_times(m);
+		const char *r = m == FM_V27_4800 ? "4800" : "2400";
+		EXPECT_GE(t[0], 185) << r;
+		EXPECT_LE(t[0], 200) << r;
+		EXPECT_GE(t[1], 20) << r;
+		EXPECT_LE(t[1], 25) << r;
+		EXPECT_GE(t[2], 5) << r;
+		EXPECT_LE(t[2], 10) << r;
+		EXPECT_GE(t[3], 18) << r;
+		EXPECT_LE(t[3], 23) << r;
+		EXPECT_GE(t[2] + t[3], 25) << r;
+		EXPECT_LE(t[2] + t[3], 31) << r;
+	}
+}
+
+/* the V.29 transmitter's data: ones for as long as it runs */
+static s16 v29_ones(void *)
+{
+	return 1;
+}
+
+/* the V.29 receiver's bits: discarded */
+static void v29_sink(void *, s16)
+{
+}
+
+/* the 4-wire V.29 receiver's circuit 109 (FaxRx with V29_ON_AMP,
+   V29_OFF_AMP and V29_OFF_MS) at 8000 Hz: after 1 s of silence and 2 s
+   of a V.29 9600 bit/s signal at dbm0, ON (true) or OFF; *off_ms: the
+   ms to OFF after the signal stops */
+static bool v29_109(double dbm0, double *off_ms)
+{
+	FaxTx t;
+	t.init(FM_V29_9600, 0, 8000, v29_ones, nullptr);
+	FaxRx r;
+	EXPECT_EQ(r.init(FM_V29_9600, 0, 8000, v29_sink, nullptr, nullptr), 0);
+	r.set_detector(V29_ON_AMP, V29_OFF_AMP, V29_OFF_MS);
+	/* the transmitter's rms (3446) to dbm0 (0 dBm0: a sine of rms
+	   15768) */
+	const double g = 15768 * pow(10, dbm0 / 20) / 3446;
+	for (int i = 0; i < 8000; i++)
+		r.sample(0);
+	for (int i = 0; i < 16000; i++)
+		r.sample(static_cast<float>(g * t.sample()));
+	bool on = r.carrier != 0;
+	int n = 0;
+	for (; r.carrier && n < 8000; n++)
+		r.sample(0);
+	*off_ms = n / 8.0;
+	r.release();
+	return on;
+}
+
+/* 5.2/V.29 (a leased line): circuit 109 ON above -26 dBm, OFF below
+   -31 dBm, ON to OFF in 30 +- 9 ms */
+TEST(V29, Circuit109)
+{
+	double off;
+	EXPECT_TRUE(v29_109(-25.5, &off));
+	EXPECT_FALSE(v29_109(-31.5, &off));
+	for (double l : { 0.0, -10.0, -20.0, -25.0 }) {
+		ASSERT_TRUE(v29_109(l, &off)) << l;
+		EXPECT_GE(off, 21) << l << " dBm0";
+		EXPECT_LE(off, 39) << l << " dBm0";
+	}
+}
+
+/* the V.17 receiver's circuit 109 at 8000 Hz (v33: the 4-wire V.33
+   receiver's, with V33_ON_AMP, V33_OFF_AMP and V33_OFF_MS): after 1 s
+   of silence and 2 s of a V.17 14400 bit/s signal (ones) at dbm0, ON
+   (true) or OFF; *off_ms: the ms to OFF after the signal stops */
+static bool v17_109(double dbm0, double *off_ms, bool v33 = false)
+{
+	FaxTx t;
+	t.init(FM_V17_14400, 0, 8000, v29_ones, nullptr);
+	FaxRx r;
+	EXPECT_EQ(r.init(FM_V17_14400, 0, 8000, v29_sink, nullptr, nullptr),
+		  0);
+	if (v33)
+		r.set_detector(V33_ON_AMP, V33_OFF_AMP, V33_OFF_MS);
+	/* the transmitter's rms (3920) to dbm0 */
+	const double g = 15768 * pow(10, dbm0 / 20) / 3920;
+	for (int i = 0; i < 8000; i++)
+		r.sample(0);
+	for (int i = 0; i < 16000; i++)
+		r.sample(static_cast<float>(g * t.sample()));
+	bool on = r.carrier != 0;
+	int n = 0;
+	for (; r.carrier && n < 8000; n++)
+		r.sample(0);
+	*off_ms = n / 8.0;
+	r.release();
+	return on;
+}
+
+/* 3.6 and 3.7/V.17: circuit 109 ON above -43 dBm, OFF below -48 dBm,
+   ON to OFF 30 to 50 ms after the level falls */
+TEST(V17, Circuit109)
+{
+	double off;
+	EXPECT_TRUE(v17_109(-42.5, &off));
+	EXPECT_FALSE(v17_109(-48.5, &off));
+	for (double l : { 0.0, -10.0, -20.0, -30.0, -40.0 }) {
+		ASSERT_TRUE(v17_109(l, &off)) << l;
+		EXPECT_GE(off, 30) << l << " dBm0";
+		EXPECT_LE(off, 50) << l << " dBm0";
+	}
+}
+
+/* 5.2/V.33 (a leased line): circuit 109 ON above -26 dBm, OFF below
+   -33 dBm, ON to OFF in 40 +- 10 ms */
+TEST(V33, Circuit109)
+{
+	double off;
+	EXPECT_TRUE(v17_109(-25.5, &off, true));
+	EXPECT_FALSE(v17_109(-33.5, &off, true));
+	for (double l : { 0.0, -10.0, -20.0, -25.0 }) {
+		ASSERT_TRUE(v17_109(l, &off, true)) << l;
+		EXPECT_GE(off, 30) << l << " dBm0";
+		EXPECT_LE(off, 50) << l << " dBm0";
+	}
+}
+
 /*
  *    the page coding and TIFF files
  *

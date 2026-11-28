@@ -49,6 +49,18 @@ nav:
       - "V.26 bis: technical details": standards/v26bis-details.md
       - "V.26 ter": standards/v26ter.md
       - "V.26 ter: technical details": standards/v26ter-details.md
+      - "V.27 ter": standards/v27ter.md
+      - "V.27 ter: technical details": standards/v27ter-details.md
+      - "V.29": standards/v29.md
+      - "V.29: technical details": standards/v29-details.md
+      - "V.32": standards/v32.md
+      - "V.32: technical details": standards/v32-details.md
+      - "V.32 bis": standards/v32bis.md
+      - "V.32 bis: technical details": standards/v32bis-details.md
+      - "V.33": standards/v33.md
+      - "V.33: technical details": standards/v33-details.md
+      - "V.17": standards/v17.md
+      - "V.17: technical details": standards/v17-details.md
       - "V.25": standards/v25.md
       - "V.25: technical details": standards/v25-details.md
   - The modem:

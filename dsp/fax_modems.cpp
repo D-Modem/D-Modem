@@ -43,6 +43,9 @@ enum {
 #define V17_BRIDGE_WORD 0x8880
 /* how much slower the V.17 AGC is in the data than in the training */
 #define V17_DATA_AGC_SLOWER 16
+/* the data symbols with the training gain of the timing loop after a
+   V.17 short train (see data_start()) */
+#define V17_ST_FAST_SYMS 100
 
 static const s16 cdba_to_abcd[4] = { 2, 3, 1, 0 };
 static const s16 dibit_to_step[4] = { 1, 0, 2, 3 };
@@ -192,6 +195,19 @@ static s16 trn_len(enum fax_mod m, s16 short_train)
 	return 1074;
 }
 
+/* V.27ter's times as symbols at its rate (Tables 3 and 5/V.27 ter),
+   as the line has them: the pulse shaping (50% roll-off) adds some 6 to
+   8 ms to the end of each signal.  Segment 1, the unmodulated carrier,
+   190 ms (185 to 200 on the line); segment 2, the silence, 27 ms (20 to
+   25); in the turn-off, 2 ms of ones after the data (segment A, the
+   data still in the modulator and the ones: 5 to 10) and 27 ms of
+   silence (segment B, 20; A and B 25 to 30).  (At 1200 baud, 2400
+   bit/s, a count of symbols for 1600 baud is a third longer) */
+static s32 v27_syms(enum fax_mod m, float ms)
+{
+	return static_cast<s32>(info(m).baud * ms / 1000 + 0.5f);
+}
+
 /* the scrambled ones before the data, symbols (V.27ter segment 5,
    V.29 and V.17 segment 4) */
 static s16 ones_len(enum fax_mod m)
@@ -327,11 +343,11 @@ static cplx fax_tx_symbol(FaxTx *t)
 	/* segment changes */
 	switch (t->seg) {
 	case SEG_CARRIER:
-		if (t->seg_sym >= 320)
+		if (t->seg_sym >= v27_syms(t->mod, 190))
 			t->next_segment(SEG_SILENCE);
 		break;
 	case SEG_SILENCE:
-		if (t->seg_sym >= (is_v27(t->mod) ? 32 : 48))
+		if (t->seg_sym >= (is_v27(t->mod) ? v27_syms(t->mod, 27) : 48))
 			t->next_segment(is_v27(t->mod) ? SEG_REVERSALS : SEG_ABAB);
 		break;
 	case SEG_REVERSALS:
@@ -370,11 +386,12 @@ static cplx fax_tx_symbol(FaxTx *t)
 	case SEG_SHUTDOWN:
 		/* V.17: 20 ms more of ones, the original library's receiver
 		   may lose the end of the data with its last frame */
-		if (t->seg_sym >= (is_v17(t->mod) ? 80 : 32))
+		if (t->seg_sym >= (is_v17(t->mod) ? 80 :
+				   is_v27(t->mod) ? v27_syms(t->mod, 2) : 32))
 			t->next_segment(SEG_TAIL);
 		break;
 	case SEG_TAIL:
-		if (t->seg_sym >= 48) {
+		if (t->seg_sym >= (is_v27(t->mod) ? v27_syms(t->mod, 27) : 48)) {
 			t->next_segment(SEG_DONE);
 			t->done = 1;
 		}
@@ -603,6 +620,11 @@ s16 FaxRx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_put_bit_t p
 			info(mod_).alpha, 6, 32, info(mod_).power))
 		return -1;
 	det_alpha = 1.0f / (0.005f * srate_);
+	det_on_amp = 150;
+	det_off_amp = 100;
+	/* (V.17: OFF 30 to 50 ms after the signal falls; V.27ter 5 to 15
+	   ms, the detector's own) */
+	det_off_min = is_v17(mod_) ? V17_OFF_MS * srate_ / 1000 : 0;
 	det_hold = srate_ / 25;       /* learn the noise floor first */
 	det_floor = 1e12f;
 	agc_alpha = qam.agc_alpha;
@@ -692,7 +714,11 @@ void FaxRx::data_start()
 	qam.agc_target *= r;
 	qam.agc_pwr *= r;
 	qam.agc_alpha = agc_alpha / V17_DATA_AGC_SLOWER;
-	qam.kt_p = 0.015f * qam.sps;
+	/* after a short train the timing is still the long train's: the
+	   loop stays at its training gain to take up the new phase.  (With
+	   the 0.015 gain, 3 of 46 page timings against spandsp, whose
+	   segment 4 is 48 symbols long, lost the first rows of the page.) */
+	qam.kt_p = (short_train ? 0.03f : 0.015f) * qam.sps;
 }
 
 /* a data symbol: the decision (V.17: the Viterbi decoder's, late), the
@@ -786,6 +812,8 @@ void FaxRx::data_symbol()
 			zpow / info(mod).data_power);
 	/* the timing loop slows down once it has surely settled (a short
 	   train leaves it little time) */
+	if (data_sym == V17_ST_FAST_SYMS)
+		qam.kt_p = 0.015f * qam.sps;
 	if (data_sym == 1000) {
 		qam.kt_p = 0.005f * qam.sps;
 		qam.kt_gi = 0.003f;
@@ -1040,7 +1068,7 @@ void FaxRx::sample(float x)
 		det_floor += 0.002f * (det_pwr - det_floor);
 	if (det_hold > 0)
 		det_hold--;
-	if (!carrier && det_pwr > tone_power(150) &&
+	if (!carrier && det_pwr > tone_power(det_on_amp) &&
 	    det_pwr > 4 * det_floor && det_hold < srate / 100) {
 		carrier = 1;
 		det_level = det_pwr;
@@ -1056,9 +1084,11 @@ void FaxRx::sample(float x)
 			alt_end = -1;
 			sym_pow = mid_pow = 0;
 		}
-	} else if (carrier && (det_pwr < tone_power(100) ||
-				  det_pwr < 0.06f * det_level)) {
+	} else if (carrier && (det_pwr < tone_power(det_off_amp) ||
+				  det_pwr < 0.06f * det_level) &&
+		   ++det_off_n >= det_off_min) {
 		carrier = 0;
+		det_off_n = 0;
 		/* the end of the signal dies away (V.27ter has only 20 ms
 		   of silence before its training) */
 		det_hold = srate / 50;
@@ -1070,10 +1100,22 @@ void FaxRx::sample(float x)
 			nsteps = 0;
 		}
 	}
+	if (carrier && det_pwr >= tone_power(det_off_amp) &&
+	    det_pwr >= 0.06f * det_level)
+		det_off_n = 0;
 	if (carrier)
 		carrier_run = carrier_run > 0 ? carrier_run + 1 : 1;
 	else
 		carrier_run = carrier_run < 0 ? carrier_run - 1 : -1;
+}
+
+/* a leased line's carrier detector: ON over on_amp, OFF under off_amp
+   (tone amplitudes) once that has lasted off_ms */
+void FaxRx::set_detector(float on_amp, float off_amp, s32 off_ms)
+{
+	det_on_amp = on_amp;
+	det_off_amp = off_amp;
+	det_off_min = static_cast<s32>(off_ms * srate / 1000);
 }
 
 } // namespace dsp

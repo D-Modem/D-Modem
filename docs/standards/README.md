@@ -36,12 +36,12 @@ A standard that has no link has no pages yet.
 | [V.23](v23.md) ([details](v23-details.md)) | 1200/75 bit/s FSK |
 | [V.26 bis](v26bis.md) ([details](v26bis-details.md)) | 2400/1200 bit/s, with a 75 bit/s backward channel |
 | [V.26 ter](v26ter.md) ([details](v26ter-details.md)) | 2400 bit/s duplex, with echo cancellation |
-| V.27ter | 4800/2400 bit/s |
-| V.29 | 9600 bit/s |
-| V.32 | 9600 bit/s duplex, with trellis coding |
-| V.32bis | 14400 bit/s duplex |
-| V.33 | 14400 bit/s on 4-wire leased circuits |
-| V.17 | 14400 bit/s for fax |
+| [V.27 ter](v27ter.md) ([details](v27ter-details.md)) | 4800/2400 bit/s |
+| [V.29](v29.md) ([details](v29-details.md)) | 9600 bit/s |
+| [V.32](v32.md) ([details](v32-details.md)) | 9600 bit/s duplex, with trellis coding |
+| [V.32 bis](v32bis.md) ([details](v32bis-details.md)) | 14400 bit/s duplex |
+| [V.33](v33.md) ([details](v33-details.md)) | 14400 bit/s on 4-wire leased circuits |
+| [V.17](v17.md) ([details](v17-details.md)) | 14400 bit/s for fax |
 | V.34 | 33600 bit/s duplex |
 | V.90 | 56000 bit/s downstream, with a digital modem and an analogue modem |
 | V.91 | PCM between two digital modems |
