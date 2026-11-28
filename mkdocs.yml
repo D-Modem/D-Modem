@@ -95,6 +95,8 @@ nav:
       - "T.43: technical details": standards/t43-details.md
       - "T.44": standards/t44.md
       - "T.44: technical details": standards/t44-details.md
+      - "T.45": standards/t45.md
+      - "T.45: technical details": standards/t45-details.md
       - "T.434": standards/t434.md
       - "T.434: technical details": standards/t434-details.md
       - "V.42": standards/v42.md

@@ -111,6 +111,7 @@ A standard that has no link has no pages yet.
 | [T.42](t42.md) ([details](t42-details.md)) | Colour fax with JPEG |
 | [T.43](t43.md) ([details](t43-details.md)) | Lossless colour and grey-scale fax |
 | [T.44](t44.md) ([details](t44-details.md)) | Mixed raster content |
+| [T.45](t45.md) ([details](t45-details.md)) | Run-length colour encoding |
 | [T.434](t434.md) ([details](t434-details.md)) | Binary file transfer |
 
 ## Related standards

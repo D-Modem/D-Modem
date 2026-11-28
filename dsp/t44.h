@@ -2,11 +2,12 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 D-Modem Authors
  *
- *    t44.h - ITU-T T.44 mixed raster content (MRC), mode 1, for T.4
- *            Annex H: a colour or grey page in stripes of up to three
- *            layers, a bi-level mask (the text's shapes, sharp) that
- *            picks between a background and a foreground image (each
- *            JPEG or T.43 at its own resolution, or one colour)
+ *    t44.h - ITU-T T.44 mixed raster content (MRC), modes 1 to 3, for
+ *            T.4 Annex H: a colour or grey page in stripes of layers,
+ *            a bi-level mask (the text's shapes, sharp) that picks
+ *            between a background and a foreground image (each JPEG
+ *            or T.43 at its own resolution, or one colour); in mode 3
+ *            more pairs of a mask and an image over them
  *
  */
 
@@ -47,17 +48,23 @@ struct T44Options {
 					   images' with text over them (the
 					   mask's or a half of it) */
 	s16 quality = 75;               /* their JPEG's */
+	s16 mode = 1;                   /* 1; 2 (each layer with its SLC,
+					   Annex A); 3 (2, and text of a few
+					   flat colours as a mask and a
+					   colour each) */
 };
 
 /* the page whose stripes have a mask: text or lines over the rest */
 bool t44_worth(const T44Image &img);
 
-/* the page (at img.dpi, its width the mask's) as MRC mode 1: SOP, its
-   stripes (SOSt, the mask, background, foreground), EOP */
+/* the page (at img.dpi, its width the mask's) as MRC in opt.mode: SOP,
+   its stripes (mode 1: SOSt, the mask, background, foreground; modes
+   2 and 3: SOSt, then an SLC, EOH and the coded data for each layer),
+   EOP */
 void t44_encode(const T44Image &img, const T44Options &opt, std::vector<unsigned char> *out);
 
-/* an MRC page (mode 1, any coders of Tables 1 and 2 but JBIG2 and
-   T.45) to an image of at most max_rows lines: grey if all of it is,
+/* an MRC page (modes 1 to 3, any coders of Tables 1 and 2 but JBIG2,
+   T.45 and YCC) to an image of at most max_rows lines: grey if all of it is,
    else sRGB.  0 when whole, 1 when it ended early (the stripes so far),
    -1 when it is none */
 s16 t44_decode(const unsigned char *data, size_t len, u32 max_rows, T44Image *img);
