@@ -416,6 +416,41 @@ TEST(T4, TiffRoundTrip)
 	EXPECT_TRUE(same_pages(doc, copy));
 }
 
+/* T.4 4.2 (MR, k 1, 2 and 4, with fill and EOLs on octets) and T.6
+   (MMR) of the test pages, read back by our decoder: the same rows */
+TEST(T4, MrAndMmrRoundTrip)
+{
+	for (int fine = 0; fine < 2; fine++) {
+		T4Page p, back;
+		T4Bits bits;
+		test_page(&p, fine, 3 + fine, 300);
+		for (int k : {1, 2, 4, 0}) {
+			for (int fill : {0, 300}) {
+				bits.release();
+				if (k)
+					p.encode_mr(&bits, (s16)k, (s16)fill, (s16)(fill != 0), 1);
+				else if (fill)
+					continue;
+				else
+					p.encode_mmr(&bits);
+				back.release();
+				back.init(p.width, p.fine);
+				ASSERT_GE(back.decode(bits.buf.data(), (bits.n + 7) / 8, k ? 3 : 4,
+						      k ? 1 : 0, 1, p.rows), 0)
+					<< "fine " << fine << " k " << k << " fill " << fill;
+				EXPECT_EQ(back.rows, p.rows) << "k " << k << " fill " << fill;
+				EXPECT_EQ(back.bad_rows, 0) << "k " << k << " fill " << fill;
+				EXPECT_EQ(memcmp(back.bits.data(), p.bits.data(),
+						 (size_t)p.rows * T4_STRIDE(p.width)), 0)
+					<< "fine " << fine << " k " << k << " fill " << fill;
+			}
+		}
+		bits.release();
+		back.release();
+		p.release();
+	}
+}
+
 /* libtiff (tiffcp) codes our document again each way; we read it */
 class T4Libtiff : public testing::TestWithParam<const char *> {};
 
@@ -623,6 +658,11 @@ static void send_document(const Session &s, const std::string &in)
 	EXPECT_EQ(!!sa.ecm, s.ecm);
 	EXPECT_EQ(!!sa.t85, s.ecm && !s.no_t85);
 	EXPECT_EQ(!!sb.t85, s.ecm && !s.no_t85);
+	/* T.4 4.2 and T.6: MR without ECM, MMR with ECM if not T.85 */
+	EXPECT_EQ(!!sa.mr, !s.ecm);
+	EXPECT_EQ(!!sb.mr, !s.ecm);
+	EXPECT_EQ(!!sa.mmr, s.ecm && s.no_t85);
+	EXPECT_EQ(!!sb.mmr, s.ecm && s.no_t85);
 	EXPECT_STREQ(sa.remote_ident, "+1 555 0199");
 	EXPECT_STREQ(sb.remote_ident, "+1 555 0100");
 	printf("%d pages at %d bit/s%s%s in %.1f s\n", sa.pages, sa.bps,

@@ -408,6 +408,120 @@ void T4Page::encode_mh(T4Bits *out, s16 min_bits, s16 align, s16 rtc) const
 
 
 /*
+ *    the MR and MMR encoders
+ */
+
+/* a mode code (Table 4): M_PASS, M_HORIZ or M_V0 + d */
+void T4Bits::put_mode(s16 mode)
+{
+	put_code(code_of(mode_codes, mode));
+}
+
+/* one row two dimensionally (T.4 4.2.1.3): its n changes ch against
+   the nref changes ref of the row above; both end with the width
+   twice, as row_changes() gives them */
+void T4Bits::put_2d(s16 width, const s16 *ref, s16 nref, const s16 *ch, s16 n)
+{
+	s16 a0 = -1, colour = 0, i, j = 0, a1, a2, b1, b2;
+
+	while (a0 < width) {
+		/* a1: the next change on this row right of a0; a2 the one
+		   after it */
+		while (j < n && ch[j] <= a0)
+			j++;
+		a1 = j < n ? ch[j] : width;
+		a2 = j + 1 < n ? ch[j + 1] : width;
+		/* b1: the first change on the row above right of a0 to the
+		   colour opposite a0's; b2 the one after it */
+		for (i = 0; i < nref; i++)
+			if (ref[i] > a0 && (i & 1) == colour)
+				break;
+		b1 = i < nref ? ref[i] : width;
+		b2 = i + 1 < nref ? ref[i + 1] : width;
+		if (b2 < a1) {
+			put_mode(M_PASS);
+			a0 = b2;
+		} else if (a1 - b1 >= -3 && a1 - b1 <= 3) {
+			put_mode(M_V0 + (a1 - b1));
+			a0 = a1;
+			colour ^= 1;
+		} else {
+			s16 x = a0 < 0 ? 0 : a0;
+			put_mode(M_HORIZ);
+			put_run(a1 - x, colour);
+			put_run(a2 - a1, !colour);
+			a0 = a2;
+		}
+	}
+}
+
+/* the page in MR (T.4 4.2): after each EOL a tag bit, 1 for a row in
+   MH, 0 for one coded against the row above; one row in MH, then at
+   most k - 1 in two dimensions (k: 2 at standard resolution, 4 at
+   fine).  min_bits, align and rtc as encode_mh() (RTC: six EOL + 1) */
+void T4Page::encode_mr(T4Bits *out, s16 k, s16 min_bits, s16 align, s16 rtc) const
+{
+	s16 stride = T4_STRIDE(width), i;
+	s32 y;
+	std::vector<s16> ch_, ref_;
+
+	if (k < 1 || !alloc_zeroed(ch_, width + 2) || !alloc_zeroed(ref_, width + 2))
+		return;
+	s16 *ch = ch_.data(), *ref = ref_.data(), nref = 0;
+	for (y = 0; y < rows; y++) {
+		size_t start = out->n;
+		const unsigned char *row = bits.data() + static_cast<size_t>(y) * stride;
+		s16 n = row_changes(row, width, ch);
+		s16 one_d = y % k == 0;
+		out->put_eol(align);
+		out->put(one_d, 1);
+		if (one_d) {
+			s16 a0 = 0;
+			for (i = 0; i <= n; i++) {
+				s16 end = i < n ? ch[i] : width;
+				out->put_run(end - a0, i & 1);
+				a0 = end;
+			}
+		} else {
+			out->put_2d(width, ref, nref, ch, n);
+		}
+		while (out->n - start < static_cast<size_t>(min_bits))
+			out->put(0, 1);
+		nref = row_changes(row, width, ref);
+	}
+	if (rtc)
+		for (i = 0; i < 6; i++) {
+			out->put_eol(align);
+			out->put(1, 1);
+		}
+}
+
+/* the page in MMR (T.6): each row coded against the row above (a white
+   row above the first), no EOLs, no fill, EOFB (two EOLs) at the end,
+   then zeros to the end of the octet */
+void T4Page::encode_mmr(T4Bits *out) const
+{
+	s16 stride = T4_STRIDE(width);
+	std::vector<s16> ch_, ref_;
+
+	if (!alloc_zeroed(ch_, width + 2) || !alloc_zeroed(ref_, width + 2))
+		return;
+	s16 *ch = ch_.data(), *ref = ref_.data(), nref = 0;
+	ref[0] = ref[1] = width;
+	for (s32 y = 0; y < rows; y++) {
+		const unsigned char *row = bits.data() + static_cast<size_t>(y) * stride;
+		s16 n = row_changes(row, width, ch);
+		out->put_2d(width, ref, nref, ch, n);
+		nref = row_changes(row, width, ref);
+	}
+	out->put(1, EOL_BITS);
+	out->put(1, EOL_BITS);
+	while (out->n % 8)
+		out->put(0, 1);
+}
+
+
+/*
  *    decoders
  */
 

@@ -43,9 +43,20 @@ There is no EOL between the lines, and no fill.
 |---|---|
 | Decoder | `T4Page::decode()` with compression 4 (TIFF). An EOFB, or any code word that is not in Table 1, ends the page. |
 | Code words | The tables of T.4 (`T.4: technical details`), the same as Tables 1 to 3 of T.6 |
-| Encoder | Not implemented |
-| On the line | Not offered in the DIS (bit 31 is 0). A fax call sends and receives MH and MR. |
+| Encoder | `T4Page::encode_mmr()`: each line against the line above (a white line above the first), no EOL, EOFB at the end, padded to an octet |
+| On the line | With ECM only. The DIS sets bit 31. A sender sends MMR when bit 31 of the DIS is 1 and no other coding (T.85, T.42, T.43, T.44, T.434) is in use. |
 | Uncompressed mode | Not implemented |
 
 The tests `T4Libtiff` (`dsp/test/fax_test.cpp`) decode MMR pages that
-libtiff codes (the `g4` case).
+libtiff codes (the `g4` case). The tests
+`SpandspT4.OurEncoderIntoSpandsp` and `SpandspT4Random` send our MMR
+pages into the decoder of spandsp.
+
+## Corrections (2026-11)
+
+| Error | Correction |
+|---|---|
+| There was no MMR encoder. A fax call did not offer or send MMR. | `encode_mmr()` codes MMR. With ECM, the DIS sets bit 31, and a call sends and receives MMR. |
+
+The tests `T30Pair.SendsTheDocument` (`dsp/test/fax_test.cpp`, the
+`_ecm` cases with T.85 off) send pages in MMR.

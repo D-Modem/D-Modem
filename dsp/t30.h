@@ -168,6 +168,8 @@ struct t30_config {
 				   registers and settings; NULL: none) */
 	s16 no_t85;             /* with ECM, offer and use only MH and MR,
 				   not T.85 (JBIG) */
+	s16 mh_only;            /* send the pages in MH: not in MR, nor in
+				   MMR (T.6) with ECM */
 	s16 no_colour;          /* with ECM, offer and send no colour or
 				   grey-scale pages in T.42 (JPEG) */
 	s16 no_t43;             /* ... nor in T.43 (lossless JBIG), only
@@ -191,6 +193,8 @@ struct t30_status {
 	s32 bps;                /* the rate of the pages */
 	s16 fine;
 	s16 ecm;                /* the call has error correction mode */
+	s16 mr;                 /* its pages in MR (T.4 two dimensional) */
+	s16 mmr;                /* ... in MMR (T.6), with ECM */
 	s16 t85;                /* its pages in T.85 (JBIG) */
 	s16 jpeg;               /* in T.42 (JPEG): 1 grey, 2 colour */
 	s16 t43;                /* in T.43 (JBIG): 1 grey, 2 colour */

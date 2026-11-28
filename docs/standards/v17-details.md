@@ -119,9 +119,12 @@ the data and after it. It does not get errors in the data.
 | Error | Correction |
 |---|---|
 | Circuit 109 went OFF 5 ms to 14 ms after the signal stopped (30 ms to 50 ms required). | `V17_OFF_MS` adds 27 ms before OFF. Circuit 109 goes OFF 34 ms to 41 ms after the signal stops. |
+| The transmitter put its symbols at 1/4 of a sample period. At this phase the receiver of spandsp had approximately 3 dB more error. At 14400 bit/s, after a short train, an MR page through mu-law lost 12 bits. | The symbols are at 1/6 of a sample period. The errors are smallest at this phase, at all rates. |
 | After a short train with 48 symbols of segment 4 (as V.17 specifies), the timing loop was too slow at the start of the data. With 3 of 46 start times against spandsp, the first rows of the page were bad. | The timing loop keeps its training gain for the first 100 data symbols (`V17_ST_FAST_SYMS`). All 46 start times now give a correct page. |
 
 The test `V17.Circuit109` (`dsp/test/fax_test.cpp`) measures the levels
 and the OFF time. The tests `Calls/T30Spandsp.SendsTheDocument`
 (`dsp/test/t30_spandsp.cpp`) send pages from spandsp, with the short
-train of V.17.
+train of V.17. The test `SpandspV17Ours.ShortTrainPageIntoSpandsp`
+(`dsp/test/spandsp_test.cpp`) sends our TCF and an MR page into the
+receiver of spandsp at all four rates.
