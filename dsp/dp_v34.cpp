@@ -621,6 +621,8 @@ struct V34Moh {
 	s32 mh_seen;            /* when */
 	s16 moh_resp;           /* what we answer it with */
 	s16 moh_drop;           /* MHcda after our MHnack: disconnect */
+	s32 moh_ack_end;        /* the end of our first MHack (-1: not yet):
+				   T1 counts from it (9.10.2.1/V.92) */
 	s32 moh_end;            /* on hold (or reconnecting): disconnect then
 				   unless phase 1 has come */
 	s16 moh_req;            /* what we send of ours: MHreq, then MHfrr or
@@ -2756,6 +2758,7 @@ void V34Moh<P>::moh_respond(s16 sig)
 		sig == MH_ACK ? " (on hold)" : "");
 	moh_resp = sig;
 	moh_drop = 0;
+	moh_ack_end = -1;
 	self.cctx.make_mh(sig, sig == MH_ACK ? moh_t1 : sig);
 	self.cc_send();
 	self.rt_blocks = self.rt_heard = self.quiet_blocks = 0;
@@ -2769,10 +2772,13 @@ template <class P>
 void V34Moh<P>::moh_hold(s16 secs)
 {
 	P &self = static_cast<P &>(*this);
-	DSP_DBG("v34: on hold%s, ANSam for %d s\n",
-		moh_resp == MH_ACK ? "" : " (reconnect)", secs);
-	moh_end = secs ? self.total + static_cast<s32>(secs) * self.srate :
-		-1;
+	/* on hold: T1 from the end of our first MHack (9.10.2.1/V.92) */
+	s32 from = moh_resp == MH_ACK && moh_ack_end >= 0 ? moh_ack_end :
+		self.total;
+	DSP_DBG("v34: on hold%s, ANSam for %d s, from %" PRId32 " ms ago\n",
+		moh_resp == MH_ACK ? "" : " (reconnect)", secs,
+		(self.total - from) * 1000 / self.srate);
+	moh_end = secs ? from + static_cast<s32>(secs) * self.srate : -1;
 	/* phase 1 from scratch (9.10.2.1/V.92: what earlier phase 1
 	   signals said does not count) */
 	self.caller = 0;
@@ -5224,7 +5230,9 @@ s16 V34Qc<P>::qc_step(s32 c)
 			   silence */
 			self.ccr.init(2400);
 			self.set_state(QCA_TONEQ);
-		} else if (c >= ms2samples(2000, self.srate)) {
+		} else if (c >= ms2samples(2000 - 75, self.srate)) {
+			/* (2 s from the end of QCA1d, our 75 ms of silence
+			   in them) */
 			DSP_DBG("v34: no TONEq: V.8\n");
 			self.pcm_tx = 0;
 			self.v90tx.fclock = nullptr;
@@ -5298,7 +5306,8 @@ s16 V34Moh<P>::moh_step(s32 c)
 				break;
 			}
 			/* none in 2 s and a round trip: retrain */
-			if (c >= ms2samples(600 + 2500, self.srate)) {
+			if (c >= ms2samples(600 + 2000, self.srate) +
+			    self.rtd) {
 				DSP_DBG("v34: no answer to MHreq\n");
 				self.retrain("no answer to MHreq");
 			}
@@ -5347,6 +5356,8 @@ s16 V34Moh<P>::moh_step(s32 c)
 	case MOH_RESP:
 		/* repeated, each right after the one before (9.10.1/V.92) */
 		if (!self.cc_busy()) {
+			if (moh_resp == MH_ACK && moh_ack_end < 0)
+				moh_ack_end = self.total;
 			self.cctx.make_mh(moh_resp,
 				     moh_resp == MH_ACK ? moh_t1 : moh_resp);
 			self.cc_send();
@@ -7945,6 +7956,7 @@ s16 V34Pump::start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_, s32 
 	if (moh_t1 < 0 || moh_t1 > 13)
 		moh_t1 = 5;
 	ev_mh = moh_resp = moh_drop = 0;
+	moh_ack_end = -1;
 	moh_end = 0;
 	/* PCM upstream: DSP_V92_PCMUP=0 does not offer it */
 	pcmup_ok = env_on("DSP_V92_PCMUP");
