@@ -1413,6 +1413,14 @@ public:
 				say(3, "call %" PRIu32 ": %" PRIu32 " SRTP "
 				    "packets failed their check", serial_,
 				    bad_);
+			if (ticks_late_ || ticks_reset_)
+				say(3, "call %" PRIu32 ": audio clock: %"
+				    PRIu32 " ticks late by 20 ms or more (by "
+				    "%" PRIu32 " ms at the most), %" PRIu32
+				    " starts over; the modem's answer took %"
+				    PRIu32 " ms at the most", serial_,
+				    ticks_late_, late_ms_max_, ticks_reset_,
+				    answer_ms_max_);
 		}
 		if (modem_ >= 0) {
 			say(4, "audio socket %d closed", modem_);
@@ -1502,6 +1510,11 @@ private:
 	};
 	std::vector<Past> past_;
 	u32 red_sent_ = 0;
+	/* the audio thread's clock: the ticks that woke a tick or more
+	   late, the latest of them (ms), its starts over from now; the
+	   modem's slowest answer to a frame (ms) */
+	u32 ticks_late_ = 0, late_ms_max_ = 0, ticks_reset_ = 0;
+	u32 answer_ms_max_ = 0;
 	std::vector<dmd::red::Block> blocks_;
 
 	/* the hook flash being sent (RFC 4733): its timestamp, length and
@@ -1911,9 +1924,18 @@ private:
 			if (quit_)
 				break;
 			clock_gettime(CLOCK_MONOTONIC, &now);
-			if ((now.tv_sec - next.tv_sec) * INT64_C(1000000000) +
-			    (now.tv_nsec - next.tv_nsec) > LATE_NS)
+			s64 lag = (now.tv_sec - next.tv_sec) *
+				INT64_C(1000000000) +
+				(now.tv_nsec - next.tv_nsec);
+			if (lag >= TICK_NS) {
+				ticks_late_++;
+				late_ms_max_ = std::max(late_ms_max_,
+					static_cast<u32>(lag / 1000000));
+			}
+			if (lag > LATE_NS) {
+				ticks_reset_++;
 				next = now;
+			}
 			{
 				std::lock_guard<std::mutex> lk(mu_);
 				on = active_;
@@ -1961,6 +1983,14 @@ private:
 			if (!read_all(modem_, out, FRAME)) {
 				failed("read failed or ended");
 				break;
+			}
+			{
+				struct timespec t;
+				clock_gettime(CLOCK_MONOTONIC, &t);
+				s64 ms = (t.tv_sec - now.tv_sec) * 1000 +
+					(t.tv_nsec - now.tv_nsec) / 1000000;
+				answer_ms_max_ = std::max(answer_ms_max_,
+					static_cast<u32>(ms));
 			}
 			rec.tx(out, FRAME);
 			bool quiet = rl_ && relay_frame(sse, te, send, peer,
