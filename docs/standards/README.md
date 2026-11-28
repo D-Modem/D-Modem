@@ -74,7 +74,7 @@ A standard that has no link has no pages yet.
 | Recommendation | Subject |
 |---|---|
 | [V.110](v110.md) ([details](v110-details.md)) | Rate adaption on an ISDN B-channel |
-| V.120 | HDLC rate adaption on an ISDN B-channel |
+| [V.120](v120.md) ([details](v120-details.md)) | HDLC rate adaption on an ISDN B-channel |
 | V.150.1 | Modem relay over IP |
 | V.152 | Voice band data over IP |
 

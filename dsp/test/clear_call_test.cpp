@@ -1411,8 +1411,9 @@ TEST(Clear, HdlcPeerWithoutOnes)
 	EXPECT_TRUE(ua);
 }
 
-/* V.120 (+B2=9): Q.921's frames for logical link 256 (address 08 01
-   for the caller's commands, 0A 01 for the answerer's), set up with
+/* V.120 (+B2=9): the frames for logical link 256 (address 08 01 for
+   the commands of the two ends, C/R 0, and 0A 01 for their responses,
+   C/R 1: Table 4/V.120), set up with
    SABME, I frames in extended mode (two control octets) whose
    information starts with the terminal adaption header 0x83; the data
    through byte for byte, CONNECT 64000/V.120; DISC on hangup */
@@ -1432,7 +1433,7 @@ TEST(Clear, V120)
 	ASSERT_GE(fc.size(), 2u);
 	ASSERT_GE(fa.size(), 2u);
 	EXPECT_EQ(fc[0], (std::vector<unsigned char>{ 0x08, 0x01, 0x7f }));
-	EXPECT_EQ(fa[0], (std::vector<unsigned char>{ 0x08, 0x01, 0x73 }));
+	EXPECT_EQ(fa[0], (std::vector<unsigned char>{ 0x0a, 0x01, 0x73 }));
 	bool ci = false, ai = false;
 	for (auto &f : fc)
 		if (f.size() > 5 && !(f[2] & 1)) {
@@ -1445,7 +1446,8 @@ TEST(Clear, V120)
 		}
 	for (auto &f : fa)
 		if (f.size() > 5 && !(f[2] & 1)) {
-			EXPECT_EQ(f[0], 0x0a);
+			EXPECT_EQ(f[0], 0x08);
+			EXPECT_EQ(f[1], 0x01);
 			EXPECT_EQ(f[4], 0x83);
 			ai = true;
 			break;

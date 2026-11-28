@@ -196,10 +196,10 @@ to it as its own number. On an mISDN card, the
 `AT+B2=9` selects V.120 (`link/lapb.cpp`, B2 protocol 9 of CAPI), the
 protocol of North American ISDN terminal adapters.
 
-- **Addressing:** the frames of Q.921, with a two octet address for logical
-  link 256 (the default of V.120). The calling end takes the user side. Thus,
-  its commands have C/R 0 (address `08 01`), and the commands of the called end
-  have C/R 1 (address `0A 01`).
+- **Addressing:** a two octet address for logical link 256 (the default
+  of V.120). The C/R bit is the same for the two directions (Table
+  4/V.120): the commands of the two ends have C/R 0 (address `08 01`),
+  and their responses have C/R 1 (address `0A 01`).
 - **Extended mode:** SABME, sequence numbers modulo 128 in two control
   octets, and a window of 7 frames. Recovery, timers, the busy
   condition and the commands that cross are the same as for X.75. V.120
@@ -209,6 +209,7 @@ protocol of North American ISDN terminal adapters.
   complete). The modem removes each header that the far end sends, with its extension
   octets.
 - **Result codes:** `CONNECT 64000/V.120` with `\V1`. `ATH` sends DISC.
+- **More:** refer to [V.120: technical details](standards/v120-details.md#v120-in-d-modem).
 - **Not done:**
   - logical links other than 256, or more than one at a time;
   - UI frames;
