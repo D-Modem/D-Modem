@@ -73,6 +73,10 @@ public:
 	s16 config(s32 codewords, s32 max_string, s32 history);
 	/* frees it all (not ready() any more) */
 	void exit();
+	/* C-INIT (7.5) in the call: the initial state with the agreed
+	   parameters (the preset's, after prime()), compressed mode, the
+	   escape character 0, and the output not yet taken dropped */
+	void c_init();
 	/* after config(): the preset dictionary, the first of text's n
 	   characters that the dictionary and half the history have room
 	   for (the same in the encoder and the decoder of the same

@@ -53,7 +53,7 @@ A standard that has no link has no pages yet.
 
 | Recommendation | Subject |
 |---|---|
-| V.42 | Error correction (LAPM) |
+| [V.42](v42.md) ([details](v42-details.md)) | Error correction (LAPM) |
 | [V.42 bis](v42bis.md) ([details](v42bis-details.md)) | Data compression |
 | [V.44](v44.md) ([details](v44-details.md)) | Data compression (LZJH) |
 | X.75 | LAPB for packet-switched signalling |

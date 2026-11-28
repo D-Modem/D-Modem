@@ -40,6 +40,8 @@ public:
 	s16 config(s32 dict_size, s32 max_string);
 	/* frees the dictionary (not ready() any more) */
 	void exit();
+	/* C-INIT (5.2): the initial state again, the output dropped */
+	void c_init();
 	/* init() was done */
 	bool ready() const { return dict_ != nullptr; }
 

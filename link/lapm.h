@@ -100,6 +100,7 @@ private:
 	bool rx_xid(Frame *f, bool response);
 	void xid_defaults();
 	void xid_error();
+	void rx_break(const u8 *x, s16 n, u8 pf);
 	bool xid_stale(const Frame *f) const;
 	void fcs_seen(const Frame *f, bool sabme);
 	s16 tx_info();
@@ -141,6 +142,8 @@ private:
 	bool xid_done_ = false;
 	/* the remote's last XID had a procedural error (xid_error()) */
 	bool xid_bad_ = false;
+	/* the break receive state variable V(RB) (8.13.2.3): 0 or 1 */
+	u8 vrb_ = 0;
 	/* the remote's XID had the Hayes HMP set (hayes_xid.h): our
 	   response has the Hayes sets too */
 	bool hayes_rx_ = false;

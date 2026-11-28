@@ -45,6 +45,15 @@ It is C++, in `namespace dlink`.
     come back at the low rates of V.cvm (`Lapm::t401_bits()`).
   - N400 = 5 retransmissions (of an XID, SABME, DISC or the polls of the
     data phase) before LAPM stops.
+  - The break (8.13/V.42): a BRK in a UI command gets a BRKACK with
+    N(RB) = V(RB) and F = P. A repeated BRK gets the same BRKACK. The DTE
+    interface has no break signal, so the link only logs the break. A
+    destructive break (D = 1) discards the data not yet delivered and
+    not yet sent, sets the sequence variables to 0, and starts the
+    compression again (`Lapm::rx_break()`). We never send a BRK.
+  - When LAPM is up again in the data phase (an SABME), V.42bis or V.44
+    starts again from its initial state, as at the other end (C-INIT,
+    5.2/V.42bis, 7.5/V.44: `Link::comp_restart()`).
   - Parameter negotiation in XID, with the private parameters of V.42bis
     (and the zstd set after them) and the user data subfield of V.44.
   - If no XID is agreed before the link is first up, the two ends use
@@ -236,7 +245,7 @@ are in [x2-upgrade-details.md](x2-upgrade-details.md).
 |---|---|---|
 | Compression | `V44`, `V44Preset`, `Zstd`, `ZstdDict`, `V42bis`, `V42bisStepup` | V.42bis, V.44 and zstd round trips (text, noise, escape characters, repeats, small dictionaries, flushes); V.44's transparent mode (the encoder's test and the decoder; EPM an error); V.cvm's preset dictionary and zstd dictionary; two V.42bis STEPUPs taken and a third a C-ERROR |
 | HDLC | `Hdlc`, `HdlcFcs32`, `BitsMasked` | 200 frames through a bit error; CRC-32's check value, frames with an FCS-32 (runs of 1s among them) to receivers that take FCS-32, FCS-16 or both, and one with a bit error dropped; every item to the pump `nbits` wide with nothing above it, in every mode |
-| LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmFcs32`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters`, `LapmV44Directions`, `LapmV44Defaults`, `LapmXidOutOfRange` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; the 32-bit FCS (the caller's XID with and without it, the answerer's response, a SABME with each FCS, FCS-16 when either side has it off, and the data with bit errors); no compression; one direction only; each V.42bis parameter the smaller of the two; V.44's parameters for each direction, its defaults, and a parameter less than its minimum (the connection stops) |
+| LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmFcs32`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters`, `LapmV44Directions`, `LapmV44Defaults`, `LapmXidOutOfRange`, `LapmBreak`, `LapmReestablishCInit` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; the 32-bit FCS (the caller's XID with and without it, the answerer's response, a SABME with each FCS, FCS-16 when either side has it off, and the data with bit errors); no compression; one direction only; each V.42bis parameter the smaller of the two; V.44's parameters for each direction, its defaults, and a parameter less than its minimum (the connection stops); BRK and BRKACK, a destructive break; V.44 new again after a second SABME |
 | HST | `LapmHst`, `Hst` | a recorded Courier's XID command and response: the answerer's response with HST and its turn on the DM; the caller's DM (FCS-16) and its SABME first after HST is up; the start rate between two Links; without HST, LAPM as before; the HST link against a Courier's first frames, and between two Links, with the turns of the channels |
 | LAPM faults | `LapmBadFrames`, `LapmNrPastVs`, `LapmUnsolicitedDm`, `LapmBitErrors`, `LapmSlowDte`, `LapmCompressedSlowDte`, `LapmN400` | frames LAPM must drop; an N(R) past V(S) ignored; an unsolicited DM (F = 0) while idle, which asks for the link (8.8/V.42: an SABME, not the link up; ignored after a release); REJ and T401 recovery; a slow DTE (RNR); five retransmissions of an unanswered XID and five polls with the line cut, no more |
 | XID not agreed | `LapmSabmeWithoutXid`, `LapmBadXidThenSabme`, `LapmCallerXidNotAgreed` | an SABME with no XID, and an XID command with no general format, at the answerer; a DM (F = 0) to the first XID, a DM after the XID was sent again, and an XID response that LAPM cannot read, at the originator: the defaults of V.42 (no compression, FCS-16) with the data unchanged each way, or the release |

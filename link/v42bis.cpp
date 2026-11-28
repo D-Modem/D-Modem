@@ -94,6 +94,17 @@ s16 V42bis::config(s32 dict_size, s32 max_string)
 	return 0;
 }
 
+/* C-INIT in the call (5.2: a re-establishment, a destructive break):
+   the initial state of 6.2 and 7.2 with the agreed parameters, and the
+   output not yet taken dropped */
+void V42bis::c_init()
+{
+	if (!ready())
+		return;
+	dict_init();
+	olen_ = ohead_ = 0;
+}
+
 /* frees the dictionary and drops any output: not ready(), no codewords
    (so config() fails); harmless when repeated */
 void V42bis::exit()
