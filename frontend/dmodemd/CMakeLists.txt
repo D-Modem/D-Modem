@@ -16,6 +16,10 @@ if(WIN32)
 	# POSIX; with --driver's frames
 	# (platforms/windows/winmodem/wire.cpp)
 	list(APPEND _front windows_dte.cpp)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "MacOS9")
+	# (the classic Mac OS: no ptys. The built-in modem gives its DTE
+	# on a socket, FdDte.)
+	list(APPEND _front pipe_modem.cpp dsvd_audio.cpp)
 else()
 	list(APPEND _front pty.cpp pipe_modem.cpp dsvd_audio.cpp)
 endif()

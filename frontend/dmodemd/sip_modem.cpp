@@ -24,12 +24,12 @@
 
 #include "dm_types.h"
 #include "portable.h"
-#ifndef _WIN32
+#include "sip_modem.h"
+#ifdef DMODEMD_HAVE_PTY
 #include "pty.h"
 #endif
 #include "run_loop.h"
 #include "sip.h"
-#include "sip_modem.h"
 
 #define ERR(fmt, ...) dcore::log_printf(0, "error: " fmt, ##__VA_ARGS__)
 #define DBG(fmt, ...) dcore::log_printf(1, "dmodemd: " fmt, ##__VA_ARGS__)
@@ -538,7 +538,7 @@ void Control::act(const char *s, dcore::Modem &m, SipLine &line)
  *    the DTEs
  */
 
-#ifndef _WIN32
+#ifdef DMODEMD_HAVE_PTY
 /* see sip_modem.h */
 int PtyDte::fd() const
 {

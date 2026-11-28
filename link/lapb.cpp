@@ -17,6 +17,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <random>
 
 #include "dm_types.h"
@@ -789,6 +790,23 @@ static u32 zdes_random()
 	/* (every Mac OS X: the libc++ for Mac OS X 10.4 and 10.5 has no
 	   std::random_device) */
 	return static_cast<u32>(arc4random());
+#elif defined(macintosh)
+	/* (the classic Mac OS: the C++ library's std::random_device needs
+	   getentropy(), which the C library does not have. The PKDS value
+	   must only differ from the remote's: the clock and a count, mixed
+	   with the finalizer of MurmurHash3) */
+	static u32 count;
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	u32 x = static_cast<u32>(ts.tv_nsec) ^
+		static_cast<u32>(ts.tv_sec) * UINT32_C(2654435761) ^
+		++count * UINT32_C(0x9e3779b9);
+	x ^= x >> 16;
+	x *= UINT32_C(0x85ebca6b);
+	x ^= x >> 13;
+	x *= UINT32_C(0xc2b2ae35);
+	x ^= x >> 16;
+	return x;
 #else
 	std::random_device rd;
 	return static_cast<u32>(rd());

@@ -289,8 +289,10 @@ inline int socketpair_cloexec(int, int, int, int sv[2])
 #include <sys/socket.h>
 #include <unistd.h>
 
-#if defined(__APPLE__) || defined(DMODEM_PORTABLE_FALLBACKS) || \
-	!defined(SOCK_CLOEXEC) || !defined(MSG_NOSIGNAL)
+/* (the classic Mac OS: the C library has no clock_nanosleep) */
+#if defined(__APPLE__) || defined(macintosh) || \
+	defined(DMODEM_PORTABLE_FALLBACKS) || !defined(SOCK_CLOEXEC) || \
+	!defined(MSG_NOSIGNAL)
 #define DMODEM_PORTABLE_FALLBACK 1
 #endif
 

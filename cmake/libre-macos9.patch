@@ -1,0 +1,16 @@
+# libre v4.12.0 on the classic Mac OS (cmake/libre.cmake applies it):
+# the system has no routing table listing (net_rt_list(): libre's stub,
+# as on iOS).
+diff --git a/cmake/re-config.cmake b/cmake/re-config.cmake
+index 8dea2f6..e8b7bb6 100644
+--- a/cmake/re-config.cmake
++++ b/cmake/re-config.cmake
+@@ -167,7 +167,7 @@ if(UNIX)
+     HAVE_SIGNAL
+     HAVE_FORK
+     )
+-  if(NOT IOS)
++  if(NOT IOS AND NOT ${CMAKE_SYSTEM_NAME} MATCHES "MacOS9")
+     list(APPEND RE_DEFINITIONS HAVE_ROUTE_LIST)
+   endif()
+ endif()

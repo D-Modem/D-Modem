@@ -138,3 +138,16 @@ The Windows app of D-Modem/gui builds for Mac OS X 10.4 (Tiger) and later, on Po
 - **The PKDS value of LAPB** (`link/lapb.cpp`): the libc++ of Mac OS X 10.4 has no `std::random_device`. Thus, all macOS builds use `arc4random()`.
 
 CMake applies the patch when `CMAKE_OSX_DEPLOYMENT_TARGET` is before 10.7. Nobody has run this build on a Mac yet.
+
+## The classic Mac OS (Mac OS 9 on PowerPC)
+
+The Windows app of D-Modem/gui builds for the classic Mac OS on PowerPC, with the built-in modem. Its toolchain file is `cmake/macos9.cmake` in that repository. The C and C++ libraries are those of clang-retro/mac-sdk. The CMake system name is `MacOS9`. These items are for this system:
+
+- **No ptys** (`frontend/dmodemd/CMakeLists.txt`, `sip_modem.h`): the build leaves out `pty.cpp`. `DMODEMD_HAVE_PTY` is not set, so there is no `PtyDte`. The built-in modem gives its DTE on a socket (`FdDte`).
+- **No debug information** (`CMakeLists.txt`): `dmodem_flags()` does not add `-g`. Clang cannot write DWARF into XCOFF objects.
+- **The portable fallbacks** (`frontend/dmodemd/portable.h`): the C library has no `clock_nanosleep()`. Thus, `DMODEM_PORTABLE_FALLBACK` is set, as on macOS.
+- **Mbed TLS** (`cmake/mbedtls-macos9.h`): Mbed TLS has no entropy source and no `mbedtls_ms_time()` for the Mac OS. Thus, the file sets `MBEDTLS_NO_PLATFORM_ENTROPY` and removes the time, timing and net modules. libre uses only the digests and AES of Mbed TLS.
+- **libre** (`cmake/libre-macos9/`): `compat.h` gives the IPv6 address tests, the multicast structures, a `pthread_setname_np()` that does nothing and a `getrlimit()` for `RLIMIT_NOFILE`. `net/if.h` gives the interface structures. The C library does not have them. `cmake/libre-macos9.patch` removes the routing table listing.
+- **The PKDS value of LAPB** (`link/lapb.cpp`): `std::random_device` needs `getentropy()`. Thus, the value comes from the clock and a count.
+
+Nobody has run this build on a Mac yet. The simulator of mac-sdk (`tools/simppc.py`) does not have all the imports that the app uses.

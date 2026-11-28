@@ -32,7 +32,13 @@ namespace dmd {
 
 class Pty;
 
-#ifndef _WIN32
+/* DMODEMD_HAVE_PTY: the system has ptys (pty.h). Windows and the
+   classic Mac OS do not. */
+#if !defined(_WIN32) && !defined(macintosh)
+#define DMODEMD_HAVE_PTY 1
+#endif
+
+#ifdef DMODEMD_HAVE_PTY
 /* a pty (pty.h) as the DTE: its DTE closing it with HUPCL hangs up,
    and a new pty stands in for it */
 class PtyDte final : public Dte {
