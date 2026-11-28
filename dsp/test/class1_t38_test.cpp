@@ -1162,8 +1162,9 @@ TEST(Class1Audio, FrmV21)
 			ASSERT_EQ(FAX_class1_command(f, FAX_CMD_FRH, 3), 1);
 		}
 		EXPECT_EQ(line_run(f, &tx, 1000, &at), FAX_STATUS_CONNECT);
-		if (far)
+		if (far) {
 			EXPECT_EQ(tty.out, "\r\n+FRH:3\r\n");
+		}
 		tty.out.clear();
 		EXPECT_EQ(line_run(f, &tx, 2000), FAX_STATUS_OK);
 		std::string d;
