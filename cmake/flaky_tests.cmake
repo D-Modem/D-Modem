@@ -30,4 +30,7 @@ set(DMODEM_FLAKY_TESTS
 	dmodemd_usb
 	# #297
 	open.open_vcvm_amrwb2385
+	# a real-time V.92 call over SIP: on a loaded macOS runner, the
+	# digital modem renegotiates after CONNECT and no data comes through
+	dmodem_embed
 )
