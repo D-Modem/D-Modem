@@ -4852,6 +4852,7 @@ s16 Modem::fax_start()
 		s.sp = f2_sp_;
 		s.bo = f2_bo_;
 		s.lp = f2_lp_;
+		s.nr = fax2_nr();
 		f2_pi_.copy(s.pi, sizeof(s.pi) - 1);
 		if (fax_class_ == 6) {
 			/* ZyXEL's: V.17 at most, no ECM, the data's first
@@ -5068,6 +5069,27 @@ bool Modem::has_fax2() const
 	return DCORE_HAS(FAX2_create);
 }
 
+/* +FNR=<rpr>,<tpr>,<idr>,<nsr> (T.32 8.5.1.11) as fax2_settings' nr:
+   bit n set for the switch n that is 1 (all 0 if never set) */
+unsigned Modem::fax2_nr() const
+{
+	unsigned nr = 0;
+	for (const auto &o : f2_other_) {
+		if (o.first != "FNR")
+			continue;
+		const char *q = o.second.c_str();
+		for (unsigned bit = 1; *q && bit < 16; bit <<= 1) {
+			if (*q == '1')
+				nr |= bit;
+			while (*q && *q != ',')
+				q++;
+			if (*q == ',')
+				q++;
+		}
+	}
+	return nr;
+}
+
 /* a class 2 command for its engine (enum FAX2_CMD, +FET's value): once
    it has started the DTE's characters are the engine's until it
    reports (1); ERROR without one, or when it refuses */
@@ -5081,6 +5103,7 @@ s16 Modem::fax2_command(unsigned cmd, unsigned param)
 	s.br = f2_is_[1];
 	s.ec = f2_is_[5];
 	s.bo = f2_bo_;
+	s.nr = fax2_nr();
 	if (FAX2_command(fax_, cmd, param, &s) < 0)
 		return -1;
 	command_ = false;

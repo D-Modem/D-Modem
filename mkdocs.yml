@@ -81,6 +81,14 @@ nav:
       - "T.6: technical details": standards/t6-details.md
       - "T.31": standards/t31.md
       - "T.31: technical details": standards/t31-details.md
+      - "T.32": standards/t32.md
+      - "T.32: technical details": standards/t32-details.md
+      - "T.38": standards/t38.md
+      - "T.38: technical details": standards/t38-details.md
+      - "T.82": standards/t82.md
+      - "T.82: technical details": standards/t82-details.md
+      - "T.85": standards/t85.md
+      - "T.85: technical details": standards/t85-details.md
       - "V.42": standards/v42.md
       - "V.42: technical details": standards/v42-details.md
       - "V.42 bis": standards/v42bis.md

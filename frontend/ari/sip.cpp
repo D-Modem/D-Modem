@@ -31,6 +31,7 @@
 
 #include "dm_types.h"
 #include "sip.h"
+#include "t38.h"
 
 namespace ari {
 
@@ -250,15 +251,16 @@ std::string response(const Msg &req, s16 code, const char *reason,
 	return r + body;
 }
 
-/* our T.38 media line's attributes */
-std::string t38_attrs(s32 version)
+/* our T.38 media line's attributes: T38FaxUdpEC udp_ec */
+std::string t38_attrs(s32 version,
+		      const char *udp_ec = "t38UDPRedundancy")
 {
 	return "a=T38FaxVersion:" + std::to_string(version) + "\r\n"
 		"a=T38MaxBitRate:14400\r\n"
 		"a=T38FaxRateManagement:transferredTCF\r\n"
 		"a=T38FaxMaxBuffer:2000\r\n"
 		"a=T38FaxMaxDatagram:400\r\n"
-		"a=T38FaxUdpEC:t38UDPRedundancy\r\n";
+		"a=T38FaxUdpEC:" + std::string(udp_ec) + "\r\n";
 }
 
 /* an SDP of ours: its session lines, then the media lines */
@@ -298,8 +300,11 @@ T38Params t38_params(const SdpMedia &m)
 		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
 			p.max_datagram = static_cast<s32>(
 				strtol(a.second.c_str(), nullptr, 10));
-		else if (n == "t38faxudpec")
-			p.redundancy = lower(a.second) == "t38udpredundancy";
+		else if (n == "t38faxudpec") {
+			p.udp_ec = a.second;
+			p.redundancy =
+				dsp::t38_udp_ec_redundancy(a.second.c_str());
+		}
 	}
 	p.addr = m.addr;
 	p.port = m.port;
@@ -725,7 +730,9 @@ void SipAgent::received(const std::string &text, const struct sockaddr_in &from)
 						"m=image " +
 						std::to_string(l.udptl_port) +
 						" udptl t38\r\n" +
-						t38_attrs(version) :
+						t38_attrs(version,
+							  dsp::t38_udp_ec_answer(
+								  p.udp_ec.c_str())) :
 						audio_line(l, 0);
 				p.version = version;
 				l.t38 = T38_ON;
