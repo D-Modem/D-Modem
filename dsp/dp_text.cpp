@@ -40,8 +40,9 @@
 namespace dsp {
 
 /*
- *    The 5-bit code (ITA2, and the US TTY's figures, TIA-825-A): each
- *    code's character in letters and in figures, 0 for none
+ *    The 5-bit code (ITA2, and V.18's figures: Table A.1/V.18): each
+ *    code's character in letters and in figures, 0 for none.  In V.18's
+ *    code 00000 is a backspace in both (baudot_char).
  */
 #define BAUDOT_FIGS  0x1B
 #define BAUDOT_LTRS  0x1F
@@ -60,11 +61,32 @@ static const char ita2_figs[32] = {
 	'9', '?', '&', 0, '.', '/', '=', 0,
 };
 static const char ustty_figs[32] = {
-	0, '3', '\n', '-', ' ', 0x07, '8', '7',
+	0, '3', '\n', '-', ' ', 0, '8', '7',
 	'\r', '$', '4', '\'', ',', '!', ':', '(',
-	'5', '"', ')', '2', '#', '6', '0', '1',
-	'9', '?', '&', 0, '.', '/', ';', 0,
+	'5', '"', ')', '2', '=', '6', '0', '1',
+	'9', '?', '+', 0, '.', '/', ';', 0,
 };
+
+/* the character that V.18's 5-bit code sends for c, which it has not
+   (Table A.2/V.18); c itself for the others */
+static char baudot_standin(char c)
+{
+	switch (c) {
+	case '#': return '$';
+	case '%': case '\\': return '/';
+	case '&': return '+';
+	case '*': return '.';
+	case '@': return 'X';
+	case '[': case '<': case '{': return '(';
+	case ']': case '>': case '}': return ')';
+	case '^': return '\'';
+	case '|': return '!';
+	case '\t': case '_': case '~': case 0x1F: return ' ';
+	case 0x0B: case 0x0C: case 0x1C: case 0x1D: case 0x1E: return '\n';
+	case 0x1A: return '?';
+	default: return c;
+	}
+}
 
 /*
  *    The DTMF mode's code (Table B.1/V.18): a character is up to three
@@ -271,13 +293,20 @@ static const CallSeg call_cycle[] = {
 };
 #define CALL_SEGS (static_cast<s16>(sizeof(call_cycle) / sizeof(call_cycle[0])))
 
-/* automoding: listening before the first probe, after a message
-   probe, and a mark probe's length */
+/* automoding: listening before the first probe (Ta, 5.2.1/V.18),
+   after a message probe (Tm, 5.2.12.1), and a carrier probe's ANSam,
+   the silence after it and its carrier (Tc, 5.2.12.2: the defaults) */
 #define LISTEN_MS        3000
-#define PROBE_LISTEN_MS  2000
-#define PROBE_TONE_MS    3000
-/* a carrier's lead and hang (TIA-825-A: 150 and 300 ms of mark) */
+#define PROBE_LISTEN_MS  3000
+#define PROBE_ANSAM_MS   1000
+#define PROBE_GAP_MS     75
+#define PROBE_TONE_MS    6000
+/* the 5-bit probe's rate (A.3/V.18) */
+#define PROBE_BAUD       47.6f
+/* a carrier's lead and hang (A.1/V.18, TIA-825-A: 150 and 300 ms of
+   mark); EDT's lead (C.1/V.18: 300 ms) */
 #define LEAD_MS          150
+#define EDT_LEAD_MS      300
 #define HANG_MS          300
 /* the receiver deaf after our carrier stops; after a DTMF character
    (B.1/V.18) */
@@ -335,6 +364,64 @@ struct BitUart {
 	}
 };
 
+/* the 5-bit rate of the remote's characters (5.1.8, 5.2.5/V.18): the
+   edges of the last character after its start edge, measured against
+   the bit lengths of the two rates */
+struct RateFind {
+	float len[2];           /* samples a bit at each rate */
+	double err[2];          /* the edges' squared distances from the
+				   bits' edges, in bits */
+	s32 edges;
+	s32 t, t0;
+	bool in;                /* in a character */
+	s16 prev;
+
+	/* the rates r0 and r1 (bit/s) at srate */
+	void init(float r0, float r1, s32 srate)
+	{
+		*this = RateFind();
+		len[0] = srate / r0;
+		len[1] = srate / r1;
+		prev = 1;
+	}
+	/* a decision dec (1: mark) while on (the carrier there) */
+	void run(s16 dec, bool on)
+	{
+		t++;
+		if (!on) {
+			in = false;
+			prev = 1;
+			return;
+		}
+		if (!in) {
+			if (prev && !dec) {
+				in = true;
+				t0 = t;
+				err[0] = err[1] = 0;
+				edges = 0;
+			}
+		} else if (dec != prev) {
+			for (s16 k = 0; k < 2; k++) {
+				double q = (t - t0) / len[k];
+				double e = q - std::floor(q + 0.5);
+				err[k] += e * e;
+			}
+			edges++;
+		}
+		/* (a character: 7.5 bits, its stop bits the last 1.5) */
+		if (in && t - t0 > 7 * std::max(len[0], len[1]))
+			in = false;
+		prev = dec;
+	}
+	/* the rate that fits best: 1 if the second (its edges within
+	   about 0.15 bit of its bits' edges), else 0 */
+	s16 best() const
+	{
+		return edges && err[1] < err[0] && err[1] < 0.025 * edges ?
+			1 : 0;
+	}
+};
+
 struct TextPump : PumpBase<TextPump, text_state> {
 	static constexpr const char *name = "text telephone (V.18) pump";
 
@@ -362,6 +449,9 @@ struct TextPump : PumpBase<TextPump, text_state> {
 	s16 c_n, c_at;
 	s16 tx_shift;           /* 5-bit: 0 letters, 1 figures, -1 not
 				   sent yet in this burst */
+	s16 tx_count;           /* 5-bit: characters since the last
+				   shift code */
+	bool first_code;        /* 5-bit: no code sent yet in the mode */
 	s16 rx_shift;
 
 	/* the DTMF mode's */
@@ -389,6 +479,14 @@ struct TextPump : PumpBase<TextPump, text_state> {
 	/* automoding's detectors */
 	FskDemod d_baudot, d_ch1, d_ch2, d_v23f, d_v23b, d_b103l, d_b103h;
 	Uart u_baudot, u_edt;
+	/* the 5-bit receiver at V.18's other rate (45.45 or 50 bit/s;
+	   rate_alt 0 for none), its characters while detecting; the
+	   rate finder */
+	Uart u_baudot2;
+	s32 rate_alt;
+	char held2[64];
+	s16 held2_n, rx_shift_auto2;
+	RateFind rf;
 	BitUart b_ch1, b_ch2, b_v23f, b_v23b, b_b103l, b_b103h;
 	/* the characters each carrier's receiver has had (the latest,
 	   held for the link if the remote's mode is its) */
@@ -409,12 +507,22 @@ struct TextPump : PumpBase<TextPump, text_state> {
 	DtmfDetect d_dtmf;
 	Bell103Detect bell;
 	Goertzel g390, g300, g500, g1300, g1100, g1500, g2100, g2225, g2050,
-		g1270, g1070, g1650, g980;
+		g1270, g1070, g1650, g980, g1180;
+	/* answering: a V.25 calling tone (1300 or 980 Hz, 470 to 730 ms)
+	   and the silence after it (5.2.4.2, 5.2.10/V.18), in blocks */
+	s32 ct_blocks, ct_quiet;
+	bool probe_now;         /* the probes at once (after a calling
+				   tone) */
+	s32 ansam_left;         /* samples of the first probe's ANSam and
+				   the silence after it still to go */
 	s32 v23b_blocks, v23f_blocks, b2225_blocks, ans_blocks, b1270_blocks;
 	s32 ans_gone;           /* blocks without the answer tone */
 	float blk_energy;       /* of the tones' block so far */
 	enum text_probe probe;
+	float baud_probe;       /* the 5-bit probe's rate (0: the mode's) */
 	Osc tone;               /* a mark probe's, the answer tone */
+	Osc ansam_am;           /* a carrier probe's ANSam: 15 Hz */
+	float ansam_sign;       /* its phase, reversed each 450 ms */
 	/* the caller's CI and XCI, the TXPs */
 	FskBitTx sig;
 	s32 sig_bit;            /* the signal's next bit */
@@ -486,6 +594,7 @@ struct TextPump : PumpBase<TextPump, text_state> {
 		      bool on);
 	s16 found(enum text_mode m_, bool low_);
 	float probe_sample(s16 *done);
+	float ansam_sample(s32 n);
 	float call_sample();
 	float sig_sample(const float *f, s32 bits);
 	s16 connect_now();
@@ -495,7 +604,8 @@ struct TextPump : PumpBase<TextPump, text_state> {
 float TextPump::baud(bool rx) const
 {
 	switch (mode) {
-	case TM_BAUDOT: return set.baud100 / 100.0f;
+	case TM_BAUDOT: return baud_probe > 0 ? baud_probe :
+			set.baud100 / 100.0f;
 	case TM_EDT:    return 110.0f;
 	case TM_DTMF:   return 10.0f;  /* a character in about 0.1 s */
 	case TM_V23:    return (low != rx) ? 75.0f : 1200.0f;
@@ -516,6 +626,8 @@ void TextPump::set_mode(enum text_mode m_, bool low_)
 	cur = 1;
 	tx_on = false;
 	tx_shift = -1;
+	tx_count = 0;
+	first_code = true;
 	d_seq = nullptr;
 	d_left = 0;
 	d_tone = false;
@@ -600,6 +712,13 @@ s16 TextPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 		d_baudot.init(static_cast<float>(set.mark),
 			      static_cast<float>(set.space), b, srate);
 		u_baudot.init(b, 5, srate);
+		/* V.18's two rates: the one set, and the other */
+		rate_alt = std::abs(set.baud100 - 4545) <= 20 ? 5000 :
+			std::abs(set.baud100 - 5000) <= 20 ? 4545 : 0;
+		if (rate_alt) {
+			u_baudot2.init(rate_alt / 100.0f, 5, srate);
+			rf.init(b, rate_alt / 100.0f, srate);
+		}
 		d_ch1.init(980, 1180, 300, srate);
 		u_edt.init(110, 8, srate);
 		d_ch2.init(1650, 1850, 300, srate);
@@ -623,6 +742,8 @@ s16 TextPump::start(struct modem *m, enum DP_ID id, s16 caller_,
 		g1070.init(1070, blk, srate);
 		g1650.init(1650, blk, srate);
 		g980.init(980, blk, srate);
+		g1180.init(1180, blk, srate);
+		ct_quiet = -1;
 		ch1_min = 1 << 30;
 		ch1_last = -1;
 		seg = 0;
@@ -673,7 +794,8 @@ s32 TextPump::dte_char()
 }
 
 /* c's 5-bit code, and the shift it needs into *shift (-1 for either);
-   -1 for a character the code has not */
+   -1 for a character the code has not, after its stand-in (Table
+   A.2/V.18) */
 s16 TextPump::baudot_code(char c, s16 *shift) const
 {
 	const char *figs = set.ita2 ? ita2_figs : ustty_figs;
@@ -681,19 +803,26 @@ s16 TextPump::baudot_code(char c, s16 *shift) const
 	if (c >= 'a' && c <= 'z')
 		c = static_cast<char>(c - 'a' + 'A');
 	*shift = -1;
-	if (c == ' ' || c == '\r' || c == '\n')
-		return c == ' ' ? BAUDOT_SPACE : c == '\r' ? 0x08 : 0x02;
-	if (!c)
-		return -1;
-	for (s16 i = 0; i < 32; i++) {
-		if (baudot_ltrs[i] == c) {
-			*shift = 0;
-			return i;
+	for (s16 pass = 0; pass < 2; pass++) {
+		if (c == ' ' || c == '\r' || c == '\n')
+			return c == ' ' ? BAUDOT_SPACE : c == '\r' ? 0x08 :
+				0x02;
+		/* (V.18's backspace, in both shifts) */
+		if (c == '\b' && !set.ita2)
+			return 0x00;
+		if (!c)
+			return -1;
+		for (s16 i = 0; i < 32; i++) {
+			if (baudot_ltrs[i] == c) {
+				*shift = 0;
+				return i;
+			}
+			if (figs[i] == c) {
+				*shift = 1;
+				return i;
+			}
 		}
-		if (figs[i] == c) {
-			*shift = 1;
-			return i;
-		}
+		c = baudot_standin(c);
 	}
 	return -1;
 }
@@ -707,6 +836,8 @@ char TextPump::baudot_char(s16 code, s16 *shift) const
 		*shift = code == BAUDOT_FIGS;
 		return 0;
 	}
+	if (!code && !set.ita2)
+		return '\b';
 	char c = (*shift ? (set.ita2 ? ita2_figs : ustty_figs) :
 		  baudot_ltrs)[code];
 	/* the US TTY's unshift on space */
@@ -764,18 +895,42 @@ s32 TextPump::next_code()
 			c_at++;
 			return even_parity(static_cast<u16>(c));
 		}
+		/* DEL: the remote's converter to letters (A.4/V.18) */
+		if (c == 0x7F) {
+			c_at++;
+			tx_shift = 0;
+			tx_count = 0;
+			first_code = false;
+			return BAUDOT_LTRS;
+		}
 		s16 sh;
 		s16 code = baudot_code(static_cast<char>(c), &sh);
 		if (code < 0) {
 			c_at++;
 			continue;
 		}
+		/* LTRS before the first character (A.4/V.18) */
+		if (first_code) {
+			first_code = false;
+			tx_shift = 0;
+			tx_count = 0;
+			return BAUDOT_LTRS;
+		}
 		if (sh < 0 && tx_shift < 0)
 			sh = 0;
 		if (sh >= 0 && sh != tx_shift) {
 			tx_shift = sh;
+			tx_count = 0;
 			return sh ? BAUDOT_FIGS : BAUDOT_LTRS;
 		}
+		/* the shift again after each 72 characters (A.4/V.18) */
+		if (tx_count >= 72) {
+			if (tx_shift < 0)
+				tx_shift = 0;
+			tx_count = 0;
+			return tx_shift ? BAUDOT_FIGS : BAUDOT_LTRS;
+		}
+		tx_count++;
 		c_at++;
 		/* a US TTY goes back to letters after a space */
 		if (code == BAUDOT_SPACE && !set.ita2 && tx_shift == 1)
@@ -891,7 +1046,8 @@ float TextPump::tx_sample()
 				if (!tx_on) {
 					tx_on = true;
 					lead_left = static_cast<s32>(
-						2 * baud() * LEAD_MS / 1000);
+						2 * baud() * (mode == TM_EDT ?
+						EDT_LEAD_MS : LEAD_MS) / 1000);
 					cur = 1;
 				} else {
 					cur = halves[h_at++];
@@ -1021,12 +1177,14 @@ s16 TextPump::found(enum text_mode m_, bool low_)
 	DSP_DBG("text: the remote is %s%s\n", names[m_],
 		m_ >= TM_V21 && m_ != TM_V18 ?
 		(low_ ? ", sending low" : ", sending high") : "");
+	baud_probe = 0;
 	set_mode(m_, low_);
 	c_n = c_at = 0;
 	sig_on = xci_on = false;
 	if (m_ == TM_BAUDOT) {
 		dem = d_baudot;
-		uart = u_baudot;
+		uart = rate_alt && set.baud100 == rate_alt ? u_baudot2 :
+			u_baudot;
 		rx_shift = rx_shift_auto;
 	} else if (m_ == TM_EDT) {
 		dem = d_ch1;
@@ -1105,16 +1263,34 @@ s16 TextPump::detect(float x)
 	if (deaf > 0)
 		deaf--;
 
-	/* 5-bit: a good character */
+	/* 5-bit: a good character, at the rate its edges fit */
 	d_baudot.run(x);
-	s32 v = u_baudot.run(d_baudot.last_dec,
-			     d_baudot.carrier && !own_text && !sig_on);
+	const bool b_on = d_baudot.carrier && !own_text && !sig_on;
+	s32 v = u_baudot.run(d_baudot.last_dec, b_on);
+	s32 v2 = -1;
+	if (rate_alt) {
+		v2 = u_baudot2.run(d_baudot.last_dec, b_on);
+		rf.run(d_baudot.last_dec, b_on);
+	}
 	if (v >= 0 && !probing_tone && !v18_wait) {
 		char c = baudot_char(static_cast<s16>(v), &rx_shift_auto);
 		if (c && held_n < static_cast<s16>(sizeof(held)))
 			held[held_n++] = c;
-		if ((v & 0x1F) != 0)
+		if ((v & 0x1F) != 0 && (!rate_alt || rf.best() == 0))
 			return found(TM_BAUDOT, false);
+	}
+	if (v2 >= 0 && !probing_tone && !v18_wait) {
+		char c = baudot_char(static_cast<s16>(v2), &rx_shift_auto2);
+		if (c && held2_n < static_cast<s16>(sizeof(held2)))
+			held2[held2_n++] = c;
+		if ((v2 & 0x1F) != 0 && rf.best() == 1) {
+			/* the other rate's characters, at its rate */
+			set.baud100 = rate_alt;
+			memcpy(held, held2, static_cast<size_t>(held2_n));
+			held_n = held2_n;
+			rx_shift_auto = rx_shift_auto2;
+			return found(TM_BAUDOT, false);
+		}
 	}
 
 	/* DTMF: a digit (B.3/V.18) */
@@ -1279,12 +1455,14 @@ s16 TextPump::detect(float x)
 	g1070.run(x);
 	g1650.run(x);
 	g980.run(x);
+	g1180.run(x);
 	blk_energy += x * x;
 	if (g390.run(x)) {
 		/* a tone has the most of its block's power (another's
 		   leaks some into its filter) */
 		const float level = std::max(tone_power(100),
 					     0.5f * blk_energy / g390.len);
+		const bool silent = blk_energy / g390.len < tone_power(100);
 		blk_energy = 0;
 		/* (the blocks end together) */
 		bool b390 = g390.power > level &&
@@ -1311,6 +1489,28 @@ s16 TextPump::detect(float x)
 		ans_blocks = b2100 && !own_text ? ans_blocks + 1 : 0;
 		ans_gone = ans_blocks ? 0 : ans_gone + 1;
 		auto blocks = [](s32 ms) { return ms / 20; };
+		/* 5.2.4.2, 5.2.10: a calling tone (470 to 730 ms) and 1 s
+		   of silence after it: the probes at once */
+		bool b980 = g980.power > level &&
+			g980.power > 4 * (g1180.power + g1300.power +
+					  g2100.power);
+		if (!caller && state == TXT_LISTEN && !own_text) {
+			if ((b1300 && !xci_seen) || b980) {
+				ct_blocks++;
+				ct_quiet = -1;
+			} else {
+				if (ct_blocks)
+					ct_quiet = ct_blocks >= 24 &&
+						ct_blocks <= 36 ? 0 : -1;
+				ct_blocks = 0;
+				if (ct_quiet >= 0)
+					ct_quiet = silent ? ct_quiet + 1 : -1;
+				if (ct_quiet >= blocks(1000)) {
+					ct_quiet = -1;
+					probe_now = set.probe != 0;
+				}
+			}
+		}
 		if (!caller && !v18_wait && v23b_blocks >= blocks(300) &&
 		    (!probing_tone || probe == PR_V23))
 			return found(TM_V23, false);
@@ -1337,6 +1537,21 @@ s16 TextPump::detect(float x)
 		}
 	}
 	return DPSTAT_OK;
+}
+
+/* ANSam's sample n (V.8: 2100 Hz, 15 Hz amplitude modulation of 20
+   per cent, its phase reversed each 450 ms), for a probe (5.2.12) */
+float TextPump::ansam_sample(s32 n)
+{
+	if (!n) {
+		ansam_sign = 1;
+		ansam_am.set_freq(15, srate);
+	} else if (n % ms2samples(450, srate) == 0) {
+		ansam_sign = -ansam_sign;
+	}
+	tone.set_freq(2100, srate);
+	return ansam_sign * DSP_TX_AMPLITUDE * (1 + 0.2f * ansam_am.next()) /
+		1.2f * tone.next();
 }
 
 /* a message probe's sample: its text, then *done when it has gone
@@ -1424,30 +1639,52 @@ s16 TextPump::sample(float x, float *y)
 		if (state != TXT_LISTEN)
 			break;
 		if (!caller && set.probe &&
-		    count >= ms2samples(LISTEN_MS, srate)) {
+		    (count >= ms2samples(LISTEN_MS, srate) || probe_now)) {
+			probe_now = false;
 			probe = PR_BAUDOT;
+			baud_probe = PROBE_BAUD;
 			set_mode(TM_BAUDOT);
 			c_n = c_at = 0;
 			queue_text(set.msg);
 			queue_text("\r\n");
 			listened = 0;
+			ansam_left = ms2samples(PROBE_ANSAM_MS + PROBE_GAP_MS,
+						srate);
 			set_state(TXT_PROBE);
 		}
 		break;
 	case TXT_PROBE: {
 		s16 done;
-		if (probe <= PR_DTMF) {
+		if (ansam_left > 0) {
+			/* the probes' start: ANSam, a silence (5.2.12) */
+			const s32 all = ms2samples(PROBE_ANSAM_MS +
+						   PROBE_GAP_MS, srate);
+			const s32 n = all - ansam_left--;
+			*y = n < ms2samples(PROBE_ANSAM_MS, srate) ?
+				ansam_sample(n) : 0;
+			done = 0;
+		} else if (probe <= PR_DTMF) {
 			*y = probe_sample(&done);
 		} else {
+			/* ANSam, a silence, then the carrier (5.2.12.2) */
+			const s32 ans = ms2samples(PROBE_ANSAM_MS, srate);
+			const s32 gap = ans + ms2samples(PROBE_GAP_MS, srate);
 			float f;
 			switch (probe) {
 			case PR_V21:  f = 1650; break;
 			case PR_B103: f = 2225; break;
 			default:      f = 1300; break;
 			}
-			tone.set_freq(f, srate);
-			*y = DSP_TX_AMPLITUDE * tone.next();
-			done = count >= ms2samples(PROBE_TONE_MS, srate);
+			if (count < ans) {
+				*y = ansam_sample(count);
+			} else if (count < gap) {
+				*y = 0;
+			} else {
+				tone.set_freq(f, srate);
+				*y = DSP_TX_AMPLITUDE * tone.next();
+			}
+			done = count >= gap + ms2samples(PROBE_TONE_MS,
+							 srate);
 		}
 		r = detect(x);
 		if (r != DPSTAT_OK)
@@ -1457,6 +1694,7 @@ s16 TextPump::sample(float x, float *y)
 		if (done) {
 			probe = static_cast<enum text_probe>(
 				(probe + 1) % PR_COUNT);
+			baud_probe = probe == PR_BAUDOT ? PROBE_BAUD : 0;
 			if (probe <= PR_DTMF) {
 				set_mode(probe == PR_EDT ? TM_EDT :
 					 probe == PR_DTMF ? TM_DTMF :

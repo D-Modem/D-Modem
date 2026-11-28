@@ -46,7 +46,7 @@ A standard that has no link has no pages yet.
 | [V.90](v90.md) ([details](v90-details.md)) | 56000 bit/s downstream, with a digital modem and an analogue modem |
 | [V.91](v91.md) ([details](v91-details.md)) | PCM between two digital modems |
 | [V.92](v92.md) ([details](v92-details.md)) | Quick connect, modem-on-hold and PCM upstream |
-| V.18 | Text telephones |
+| [V.18](v18.md) ([details](v18-details.md)) | Text telephones |
 | V.61 | Analogue simultaneous voice and data |
 
 ## Error correction and data compression
