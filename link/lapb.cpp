@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <random>
 
@@ -784,6 +785,10 @@ static u32 zdes_random()
 {
 #ifdef DMODEM_RETRO_RANDOM
 	return dmodem_retro_random();
+#elif defined(__APPLE__)
+	/* (every Mac OS X: the libc++ for Mac OS X 10.4 and 10.5 has no
+	   std::random_device) */
+	return static_cast<u32>(arc4random());
 #else
 	std::random_device rd;
 	return static_cast<u32>(rd());

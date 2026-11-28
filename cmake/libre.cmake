@@ -243,6 +243,17 @@ if(WIN32)
 	set(_re_winnt -DRE_WIN32_WINNT=${DMODEM_WINNT})
 	set(_re_stamp ${_re_stamp}-${DMODEM_WINNT})
 endif()
+# (Mac OS X 10.4 to 10.6, cmake/macosx-legacy.cmake of D-Modem/gui:
+# cmake/libre-macosx-legacy.patch, Mbed TLS's digests, because
+# CommonCrypto starts in 10.5; no arc4random_buf() before 10.7 and no
+# pthread_setname_np() before 10.6)
+if(APPLE AND CMAKE_OSX_DEPLOYMENT_TARGET
+		AND CMAKE_OSX_DEPLOYMENT_TARGET VERSION_LESS 10.7)
+	if(NOT DMODEM_CRYPTO STREQUAL "mbedtls")
+		message(FATAL_ERROR "Mac OS X before 10.7: DMODEM_CRYPTO=mbedtls")
+	endif()
+	list(APPEND libre_PATCHES ${CMAKE_CURRENT_LIST_DIR}/libre-macosx-legacy.patch)
+endif()
 # (picolibc, the Windows 95 build: cmake/libre-picolibc.patch,
 # GetAdaptersInfo() found at run time, because Windows 95 has no
 # iphlpapi.dll)

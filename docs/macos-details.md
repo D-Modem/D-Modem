@@ -126,3 +126,15 @@ For macOS, we added these items:
   - No `clock_nanosleep()`: a `nanosleep()` for the remaining time.
   - No `MSG_NOSIGNAL`: the helpers ignore SIGPIPE.
   - `cmake/test_run.sh` and `cmake/test_logs.sh` without the `%N` of GNU `date`, `head -n -<n>`, `nproc` or `/proc`.
+
+## Mac OS X 10.4 to 10.6
+
+The Windows app of D-Modem/gui builds for Mac OS X 10.4 (Tiger) and later, on PowerPC and on Intel. Its toolchain file is `cmake/macosx-legacy.cmake` in that repository. The library of the built-in modem (`frontend/embed`) builds with it. These items are for the versions before 10.7:
+- **The digests of libre** (`cmake/libre-macosx-legacy.patch`): CommonCrypto starts in 10.5. Thus, libre uses the digests of Mbed TLS. `DMODEM_CRYPTO` must be `mbedtls`.
+- **The random bytes of libre** (the same patch): `arc4random_buf()` starts in 10.7. Thus, libre uses `arc4random()`.
+- **The thread names of libre** (the same patch): `pthread_setname_np()` starts in 10.6. Thus, the threads have no names before 10.6.
+- **`fd_dup()`** (`frontend/dmodemd/portable.h`): `F_DUPFD_CLOEXEC` starts in 10.7. Thus, `fd_dup()` uses `F_DUPFD`, then sets `FD_CLOEXEC`.
+- **`pts_name()`** (`frontend/dmodemd/pty.cpp`): `ptsname_r()` starts in 10.13.4. Before 10.13.4, `pts_name()` copies the result of `ptsname()`.
+- **The PKDS value of LAPB** (`link/lapb.cpp`): the libc++ of Mac OS X 10.4 has no `std::random_device`. Thus, all macOS builds use `arc4random()`.
+
+CMake applies the patch when `CMAKE_OSX_DEPLOYMENT_TARGET` is before 10.7. Nobody has run this build on a Mac yet.

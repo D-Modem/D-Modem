@@ -124,7 +124,9 @@ void remove_link(const char *link, const char *target)
    copy: only the keeper, single threaded, and open() call it */
 int pts_name(int fd, char *path, size_t size)
 {
-#ifdef __HAIKU__
+	/* (Haiku, and Mac OS X before 10.13.4: no ptsname_r()) */
+#if defined(__HAIKU__) || (defined(__APPLE__) && \
+	__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ < 101304)
 	const char *p = ptsname(fd);
 
 	if (!p)
