@@ -159,6 +159,9 @@ dmodem_gtest(t43_test LABELS quick)
 # t44.h: T.44's mixed raster content, mode 1: stripes, layers, coders
 dmodem_test_exe(t44_test t44_test.cpp ${S}/t44.cpp ${S}/t43.cpp ${S}/jbig.cpp ${S}/jpeg.cpp ${S}/t4.cpp)
 dmodem_gtest(t44_test LABELS quick)
+# t45.h: T.45's run-length colour encoding
+dmodem_test_exe(t45_test t45_test.cpp ${S}/t45.cpp)
+dmodem_gtest(t45_test LABELS quick)
 # t434.h: T.434's BINARY-DATA message in BER
 dmodem_test_exe(t434_test t434_test.cpp ${S}/t434.cpp)
 dmodem_gtest(t434_test LABELS quick)

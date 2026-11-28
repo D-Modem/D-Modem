@@ -8,7 +8,10 @@
  *                   page far smaller than in JPEG), stripes of each
  *                   kind, a page written by hand (layer offsets, lower
  *                   resolutions, T.43 and MMR layers, optional
- *                   segments), and damaged pages
+ *                   segments), and damaged pages; modes 2 and 3
+ *                   (Annex A): the SLC form of each layer, text of a
+ *                   few colours as a mask and a colour each, and an
+ *                   N-layer page written by hand
  *
  */
 
@@ -16,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <algorithm>
 #include <random>
 #include <vector>
 
@@ -142,6 +146,43 @@ void sost(Bytes *o, unsigned char type, const unsigned char *bg, const unsigned 
 }
 
 const unsigned char white[3] = {0xff, 0x80, 0x60}, black[3] = {0x00, 0x80, 0x60};
+
+/* a SOSt of modes 2 and up: the layers there (one octet) */
+void sost_a(Bytes *o, unsigned char type)
+{
+	o->insert(o->end(), {0xff, 0xed, 0x00, 0x07, 'M', 'R', 'C', 1, type});
+}
+
+/* an SLC (coder: Table 1 or 2's bit, image: Table 2, coded), extra
+   segments, the EOH and the coded data */
+void slc(Bytes *o, unsigned char number, bool coded, bool image, unsigned char bit, u32 res,
+	 u32 w, u32 h, const unsigned char *base, u32 x, u32 y, const Bytes &data,
+	 const Bytes &extra = Bytes())
+{
+	o->insert(o->end(), {0xff, 0xed, 0x00, 30, 'M', 'R', 'C', 2, number,
+			     (unsigned char)((coded ? 1 : 0) | (image ? 2 : 0)), bit});
+	put16(o, res);
+	put32(o, w);
+	put32(o, h);
+	o->insert(o->end(), base, base + 3);
+	put32(o, x);
+	put32(o, y);
+	o->insert(o->end(), extra.begin(), extra.end());
+	o->insert(o->end(), {0xff, 0xed, 0x00, 10, 'M', 'R', 'C', 0xff});
+	put32(o, (u32)data.size());
+	o->insert(o->end(), data.begin(), data.end());
+}
+
+/* each SLC of a page: its layer number, in their order */
+std::vector<int> slc_numbers(const Bytes &b)
+{
+	std::vector<int> n;
+	for (size_t i = 0; i + 8 < b.size(); i++)
+		if (b[i] == 0xff && b[i + 1] == 0xed && b[i + 2] == 0 && b[i + 3] == 30 &&
+		    !memcmp(&b[i + 4], "MRC\x02", 4))
+			n.push_back(b[i + 8]);
+	return n;
+}
 
 } // namespace
 
@@ -448,10 +489,10 @@ TEST(T44, HandWritten)
 				ASSERT_NEAR(at(x, 24 + y)[c], x >= 16 ? rgb_grey[c] : rgb_blue[c], x >= 16 ? 3 : 0)
 					<< x << "," << y;
 
-	/* mode 2's SOSt is another: not taken */
-	Bytes m2 = o;
-	m2[11] = 2;
-	EXPECT_EQ(t44_decode(m2.data(), m2.size(), 10000, &d), -1);
+	/* mode 4 (shared data, JBIG2) is not taken */
+	Bytes m4 = o;
+	m4[11] = 4;
+	EXPECT_EQ(t44_decode(m4.data(), m4.size(), 10000, &d), -1);
 	m.release();
 }
 
@@ -474,6 +515,288 @@ TEST(T44, Damaged)
 	EXPECT_EQ(d.height % 100, 0u);
 	EXPECT_EQ(t44_decode(out.data(), 10, 10000, &d), -1);
 	std::mt19937 rng(5);
+	for (int k = 0; k < 300; k++) {
+		Bytes b = out;
+		for (int e = 0; e < 1 + k % 5; e++)
+			b[rng() % b.size()] = (unsigned char)rng();
+		s16 r = t44_decode(b.data(), b.size(), 1000, &d);
+		if (r >= 0) {
+			EXPECT_LE(d.height, 1000u);
+			EXPECT_EQ(d.pix.size(), (size_t)d.width * d.height * d.comps);
+		}
+	}
+}
+
+/* mode 2: the SOP tells version 0 and mode 2 (A.9.2.1); each stripe
+   is a SOSt and an SLC and EOH for each layer, the main mask first,
+   then the background and the foreground; the page decodes to the
+   same pels as in mode 1 */
+TEST(T44, Mode2)
+{
+	for (s16 comps : {3, 1}) {
+		std::vector<unsigned char> text;
+		T44Image img = page(comps, 1728, 600, true, &text);
+		T44Options o1, o2;
+		o2.mode = 2;
+		Bytes b1, b2;
+		t44_encode(img, o1, &b1);
+		t44_encode(img, o2, &b2);
+		EXPECT_EQ(b2[10], 0x00);
+		EXPECT_EQ(b2[11], 0x02);
+		EXPECT_EQ(b2[12], T44_MASK_JBIG);
+		EXPECT_EQ(b2[13], T44_IMAGE_JPEG);
+		std::vector<int> n = slc_numbers(b2);
+		ASSERT_EQ(n.size() % 3, 0u);
+		for (size_t i = 0; i < n.size(); i += 3)
+			EXPECT_EQ(std::vector<int>(n.begin() + i, n.begin() + i + 3), std::vector<int>({2, 1, 3}));
+		T44Image d1, d2;
+		ASSERT_EQ(t44_decode(b1.data(), b1.size(), 10000, &d1), 0);
+		ASSERT_EQ(t44_decode(b2.data(), b2.size(), 10000, &d2), 0);
+		EXPECT_EQ(d2.width, d1.width);
+		EXPECT_EQ(d2.height, d1.height);
+		EXPECT_EQ(d2.comps, d1.comps);
+		EXPECT_TRUE(d2.pix == d1.pix);
+		printf("%s: mode 1 %zu octets, mode 2 %zu\n", comps == 3 ? "colour" : "grey", b1.size(),
+		       b2.size());
+		EXPECT_LT(b2.size(), b1.size() + 3 * 150);    /* (3 stripes) */
+	}
+	/* a picture without text: a virtual main mask (no coded data)
+	   gives the height, the background has the pels */
+	std::vector<unsigned char> text;
+	T44Image pic = page(3, 400, 100, true, &text);
+	for (size_t i = 0; i < text.size(); i++)
+		if (text[i])
+			memcpy(&pic.pix[i * 3], &pic.pix[(i - 1) * 3], 3);
+	T44Options o2;
+	o2.mode = 2;
+	Bytes b;
+	t44_encode(pic, o2, &b);
+	EXPECT_EQ(slc_numbers(b), std::vector<int>({2, 1}));
+	T44Image d;
+	ASSERT_EQ(t44_decode(b.data(), b.size(), 10000, &d), 0);
+	EXPECT_EQ(d.height, 100u);
+	EXPECT_GT(psnr(pic.pix, d.pix), 38);
+}
+
+/* mode 3: black and dark red text on white has a mask and a colour
+   for each colour (layers 2 and 3, 4 and 5), no foreground JPEG; the
+   text comes back exact, the page smaller than in mode 1.  Text on a
+   picture keeps its background JPEG */
+TEST(T44, Mode3TextColours)
+{
+	std::vector<unsigned char> text;
+	T44Image img = page(3, 1728, 512, false, &text);
+	T44Options o1, o3;
+	o3.mode = 3;
+	Bytes b1, b3;
+	t44_encode(img, o1, &b1);
+	t44_encode(img, o3, &b3);
+	EXPECT_EQ(b3[11], 0x03);
+	std::vector<int> n = slc_numbers(b3);
+	EXPECT_EQ(std::vector<int>(n.begin(), n.begin() + 5), std::vector<int>({2, 1, 3, 4, 5}));
+	T44Image d1, d3;
+	ASSERT_EQ(t44_decode(b1.data(), b1.size(), 10000, &d1), 0);
+	ASSERT_EQ(t44_decode(b3.data(), b3.size(), 10000, &d3), 0);
+	ASSERT_EQ(d3.comps, 3);
+	ASSERT_EQ(d3.height, 512u);
+	/* (the red through CIELAB octets and back) */
+	unsigned char red[3] = {150, 0, 0}, lab[3], red2[3];
+	t42_rgb_to_lab(red, lab, 1);
+	t42_lab_to_rgb(lab, red2, 1);
+	size_t bad = 0;
+	for (size_t i = 0; i < text.size(); i++)
+		for (int c = 0; c < 3; c++) {
+			int want = img.pix[i * 3 + c];
+			if (want == 150 || (img.pix[i * 3] == 150 && c))
+				want = red2[c];
+			bad += abs((int)d3.pix[i * 3 + c] - want) > 2;
+		}
+	EXPECT_EQ(bad, 0u);
+	Bytes t1, t3, ot;
+	for (size_t i = 0; i < text.size(); i++)
+		if (text[i])
+			for (int c = 0; c < 3; c++) {
+				t1.push_back(d1.pix[i * 3 + c]);
+				t3.push_back(d3.pix[i * 3 + c]);
+				ot.push_back(img.pix[i * 3 + c]);
+			}
+	printf("two text colours: mode 1 %zu octets (text %.1f dB), mode 3 %zu (text %.1f dB)\n",
+	       b1.size(), psnr(ot, t1), b3.size(), psnr(ot, t3));
+	EXPECT_GT(psnr(ot, t3), psnr(ot, t1) + 5);
+	EXPECT_LT(b3.size() * 2, b1.size());
+
+	/* on a picture: the background JPEG stays, the text colours
+	   have their masks */
+	T44Image pic = page(3, 1728, 300, true, &text);
+	Bytes bp;
+	t44_encode(pic, o3, &bp);
+	n = slc_numbers(bp);
+	EXPECT_EQ(std::vector<int>(n.begin(), n.begin() + 5), std::vector<int>({2, 1, 3, 4, 5}));
+	T44Image dp;
+	ASSERT_EQ(t44_decode(bp.data(), bp.size(), 10000, &dp), 0);
+	Bytes p, op;
+	for (size_t i = 0; i < text.size(); i++)
+		if (!text[i])
+			for (int c = 0; c < 3; c++)
+				p.push_back(dp.pix[i * 3 + c]), op.push_back(pic.pix[i * 3 + c]);
+	EXPECT_GT(psnr(op, p), 40);
+	/* one colour only (grey text): as mode 2 */
+	T44Image g = page(1, 1728, 300, false, &text);
+	t44_encode(g, o3, &bp);
+	n = slc_numbers(bp);
+	EXPECT_EQ(std::vector<int>(n.begin(), n.begin() + 3), std::vector<int>({2, 1, 3}));
+	EXPECT_EQ(std::count(n.begin(), n.end(), 4), 0);
+}
+
+/* an N-layer page as another coder may write it (A.6.4, A.7.4): a
+   stripe of 16 lines, 32 pels wide.  Layer 1: a grey JPEG of 8 by 4
+   at 100 pels an inch at (8, 4) over a beige base colour.  Layer 2: an
+   MMR main mask, the right half 1.  Layer 3: no coded data, red.
+   Layer 4: an MH mask at 100 pels an inch, 8 by 4 (16 by 8 here) at
+   (16, 8), all 1, with an encoder segment and foreign segments
+   (APP1, T.43's APP3) before its EOH.  Layer 5: no coded data, blue.
+   Layer 7: a JPEG at (0, 12), 8 by 4, no mask under it: drawn over its
+   area */
+TEST(T44, Mode3HandWritten)
+{
+	const u32 w = 32;
+	Bytes o = sop(3, T44_MASK_MMR | T44_MASK_MH, T44_IMAGE_JPEG, 200, w);
+	o[10] = 0;
+	sost_a(&o, 0x7f);
+
+	/* layer 2: MMR, white 16 black 16 on each of 16 rows (the first
+	   in H mode: 001, white 16 = 101010, black 16 = 0000010111; the
+	   others V0 V0) */
+	Bytes mmr;
+	{
+		std::vector<int> bits;
+		auto put = [&](const char *s) { for (; *s; s++) bits.push_back(*s - '0'); };
+		for (int y = 0; y < 16; y++) {
+			if (y == 0) {
+				put("001"); put("101010"); put("0000010111");
+			} else {
+				put("1"); put("1");     /* V0, V0 */
+			}
+		}
+		put("000000000001000000000001");
+		mmr.assign((bits.size() + 7) / 8, 0);
+		for (size_t i = 0; i < bits.size(); i++)
+			if (bits[i])
+				mmr[i / 8] |= (unsigned char)(0x80 >> (i % 8));
+	}
+	const unsigned char none[3] = {0, 0, 0};
+	slc(&o, 2, true, false, 2, 200, w, 16, none, 0, 0, mmr);
+
+	JpegImage j;
+	j.width = 8;
+	j.height = 4;
+	j.comps = 1;
+	j.pix.assign(32, 0x80);
+	JpegOptions jo;
+	jo.dpi = 100;
+	Bytes jb;
+	jpeg_encode(j, jo, &jb);
+	const unsigned char beige[3] = {0xe0, 0x88, 0x70}, red[3] = {0x80, 0xe0, 0xc0},
+			    blue[3] = {0x50, 0x90, 0x20};
+	slc(&o, 1, true, true, 0, 100, 16, 8, beige, 8, 4, jb);
+	slc(&o, 3, false, true, 0, 200, w, 16, red, 0, 0, Bytes());
+
+	/* layer 4: MH, 8 by 4 all black at 100 pels an inch */
+	T4Page m;
+	m.init(8, 1);
+	for (int y = 0; y < 4; y++) {
+		unsigned char row[1] = {0xff};
+		m.add_row(row);
+	}
+	T4Bits mb;
+	m.encode_mh(&mb, 0, 0, 1);
+	Bytes mh(mb.buf.begin(), mb.buf.begin() + (long)((mb.n + 7) / 8));
+	mb.release();
+	m.release();
+	Bytes extra = {0xff, 0xed, 0x00, 0x08, 'M', 'R', 'C', 0x30, 0x12, 0x34,   /* EMSe */
+		       0xff, 0xe1, 0x00, 0x04, 0xaa, 0xbb,                         /* APP1 */
+		       0xff, 0xe3, 0x00, 0x00, 0x00, 0x0c, 'G', '3', 'F', 'A', 'X', 3,
+		       0xff, 0xed};                                                /* APP3 */
+	slc(&o, 4, true, false, 0, 100, 16, 8, none, 16, 8, mh, extra);
+	slc(&o, 5, false, true, 0, 200, w, 16, blue, 0, 0, Bytes());
+	/* layer 7 (no layer 6): the JPEG at 200, 8 by 4, at (0, 12) */
+	jo.dpi = 200;
+	Bytes jb2;
+	j.pix.assign(32, 0x20);
+	jpeg_encode(j, jo, &jb2);
+	slc(&o, 7, true, true, 0, 200, 8, 4, white, 0, 12, jb2);
+	o.insert(o.end(), {0xff, 0xd9, 0xff, 0xd9});
+
+	T44Image d;
+	ASSERT_EQ(t44_decode(o.data(), o.size(), 10000, &d), 0);
+	ASSERT_EQ(d.width, w);
+	ASSERT_EQ(d.height, 16u);
+	ASSERT_EQ(d.comps, 3);
+	unsigned char rgb_beige[3], rgb_red[3], rgb_blue[3], rgb_grey[3], rgb_dark[3];
+	const unsigned char lab_grey[3] = {0x80, 0x80, 0x60}, lab_dark[3] = {0x20, 0x80, 0x60};
+	t42_lab_to_rgb(beige, rgb_beige, 1);
+	t42_lab_to_rgb(red, rgb_red, 1);
+	t42_lab_to_rgb(blue, rgb_blue, 1);
+	t42_lab_to_rgb(lab_grey, rgb_grey, 1);
+	t42_lab_to_rgb(lab_dark, rgb_dark, 1);
+	for (u32 y = 0; y < 16; y++)
+		for (u32 x = 0; x < w; x++) {
+			const unsigned char *e;
+			int tol = 0;
+			if (x < 8 && y >= 12)
+				e = rgb_dark, tol = 3;          /* layer 7 */
+			else if (x >= 16 && x < 32 && y >= 8)
+				e = rgb_blue;                   /* layer 4's mask: 5 */
+			else if (x >= 16)
+				e = rgb_red;                    /* the main mask: 3 */
+			else if (x >= 8 && y >= 4 && y < 12)
+				e = rgb_grey, tol = 3;          /* layer 1's JPEG */
+			else
+				e = rgb_beige;                  /* layer 1's base */
+			for (int c = 0; c < 3; c++)
+				ASSERT_NEAR(d.pix[((size_t)y * w + x) * 3 + c], e[c], tol) << x << "," << y;
+		}
+
+	/* the same with the optional (4-octet) length in each SLC */
+	Bytes b;
+	for (size_t i = 0; i < o.size();) {
+		if (i + 8 <= o.size() && o[i] == 0xff && o[i + 1] == 0xed && o[i + 2] == 0 &&
+		    o[i + 3] == 30 && !memcmp(&o[i + 4], "MRC\x02", 4)) {
+			b.insert(b.end(), {0xff, 0xed, 0x00, 0x00, 'M', 'R', 'C', 2});
+			put32(&b, 30 + 4);
+			b.insert(b.end(), o.begin() + (long)i + 8, o.begin() + (long)i + 32);
+			i += 32;
+		} else {
+			b.push_back(o[i++]);
+		}
+	}
+	T44Image d2;
+	ASSERT_EQ(t44_decode(b.data(), b.size(), 10000, &d2), 0);
+	EXPECT_TRUE(d2.pix == d.pix);
+	/* no EOP: the stripe, early */
+	EXPECT_EQ(t44_decode(o.data(), o.size() - 4, 10000, &d2), 1);
+	EXPECT_EQ(d2.height, 16u);
+}
+
+/* modes 2 and 3, damaged: cut short, changed at random; never more
+   than max_rows */
+TEST(T44, Mode3Damaged)
+{
+	std::vector<unsigned char> text;
+	T44Image img = page(3, 400, 400, true, &text);
+	T44Options o;
+	o.stripe = 100;
+	o.mode = 3;
+	Bytes out;
+	t44_encode(img, o, &out);
+	T44Image d;
+	ASSERT_EQ(t44_decode(out.data(), out.size(), 10000, &d), 0);
+	EXPECT_EQ(t44_decode(out.data(), out.size(), 150, &d), 1);
+	EXPECT_EQ(d.height, 150u);
+	ASSERT_EQ(t44_decode(out.data(), out.size() / 2, 10000, &d), 1);
+	EXPECT_GT(d.height, 0u);
+	EXPECT_LT(d.height, 400u);
+	std::mt19937 rng(9);
 	for (int k = 0; k < 300; k++) {
 		Bytes b = out;
 		for (int e = 0; e < 1 + k % 5; e++)

@@ -539,8 +539,9 @@ resolution.
   - The optional segments (skipped: the gamut and illuminant are the
     defaults).
 
-  It does not accept modes 2 and higher (whose start of stripe is
-  different) and JBIG2.
+  It also accepts modes 2 and 3 (Annex A: a start of layer for each
+  layer, and more pairs of a mask and an image), although the DIS
+  offers only mode 1. It does not accept mode 4 and JBIG2.
 
 `t44.cpp` is the format (T.44 clause 9):
 
