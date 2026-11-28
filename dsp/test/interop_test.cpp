@@ -744,7 +744,8 @@ std::vector<Call> calls()
 	add("open", "open_v92a_moh_theirs", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "STREAM=50",
 	      "MIDCALL_B=8:AT+PMHR=5;WAIT 12",
-	      "EXPECT_A=(?s)MHreq: MHack \\(on hold\\).*on hold, ANSam.*"
+	      "EXPECT_A=(?s)MHreq: MHack \\(on hold\\).*on hold, ANSam for "
+	      "60 s, from [1-9][0-9]* ms ago.*"
 	      "V.9[02] back from hold, [34][0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=(?s)MHack, T1 60 s: the remote on hold for 5 s.*"
 	      "back from hold: ANSam, V.8 as the call modem.*V.9[02] back "

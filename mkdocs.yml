@@ -63,6 +63,12 @@ nav:
       - "V.17: technical details": standards/v17-details.md
       - "V.34": standards/v34.md
       - "V.34: technical details": standards/v34-details.md
+      - "V.90": standards/v90.md
+      - "V.90: technical details": standards/v90-details.md
+      - "V.91": standards/v91.md
+      - "V.91: technical details": standards/v91-details.md
+      - "V.92": standards/v92.md
+      - "V.92: technical details": standards/v92-details.md
       - "V.25": standards/v25.md
       - "V.25: technical details": standards/v25-details.md
   - The modem:

@@ -36,9 +36,9 @@ The analogue modem starts with **QC1a** before its CM. QC1a is its frame on V.21
 2. 75 ms of silence;
 3. **QTS**, **QTS-bar** and **ANSpcm**, as PCM codes. Tables 7 to 10/V.92 come from the G.711 quantization of Table 6/V.92.
 
-The **TONEq** (980 Hz) of the analogue modem stops this. We also wait for TONEq to stop. Then we send 75 ms of silence and continue to phase 2, as after V.8. Sd of phase 3 starts in data frame interval 0 of QTS (8.3.6/V.92).
+The **TONEq** (980 Hz) of the analogue modem stops this. We also wait for TONEq to stop. Then we send 75 ms of silence and continue to phase 2, as after V.8. V.92 asks for only 75 ms of silence from the detection of TONEq. But the Broadcom, SM56 and HSF modems then do not receive our INFO0d, and the call fails (9.2.4.3/V.92, refer to [V.92: technical details](../standards/v92-details.md#v92-in-d-modem)). Sd of phase 3 starts in data frame interval 0 of QTS (8.3.6/V.92).
 
-If TONEq does not come in 2 s, the call continues with V.8.
+If TONEq does not come in 2 s from the end of QCA1d, the call continues with V.8.
 
 The analogue modem can come to phase 2 after our INFO0d is complete (the original library does this). After its INFO0a arrives, INFO0d goes out again with the acknowledgement, as in the INFO0 recovery of phase 2 (refer to [V.8 and V.34](v34-details.md)).
 
@@ -82,7 +82,7 @@ When call waiting interrupts the analogue modem, it can ask us to hold the call.
   - `AT+PMHT=<code>` sets T1 as a code of Table 33/V.92 (1 = 10 s, ..., 5 = 1 min, the default, ..., 12 = 16 min, 13 = no limit).
   - `AT+PMHT=0` or `AT+PMH=1` makes us answer MHnack.
   - `DSP_V92_MOH=<code>` overrides the two settings (0 denies).
-- After MHack, when the tone of the analogue modem has been present for 100 ms or silence for 2 s, the call is on hold. We send ANSam until T1 is complete, and then disconnect. If neither comes in 35 s, we disconnect.
+- After MHack, when the tone of the analogue modem has been present for 100 ms or silence for 2 s, the call is on hold. We send ANSam until T1 is complete, and then disconnect. T1 counts from the end of our first MHack (9.10.2.1/V.92). If neither comes in 35 s, we disconnect.
 - On hold, we listen for QC1a or CM. Each of them starts phase 1 again, with us as the answering modem, then phases 2 to 4. The data continues without a new CONNECT. The timers of V.42 count bits, thus they also wait.
 - A CM without modulations, or a QC1a with UQTS 1111, clears the call.
 - **MHclrd** gets **MHcda**, then we disconnect.
@@ -100,7 +100,7 @@ We stop data mode as for a retrain, send tone B for 600 ms, then send MHreq agai
 - **MHack:** we stay silent (the remote is on hold) for those seconds, or until 2 s before its T1. Then we take it back. The remote sends ANSam through its T1 (9.10.2.1/V.92). When its ANSam has been present for 200 ms (`MOH_BACK`), we run V.8 as the call modem (CM), phases 2 to 4, and the data continues. If no ANSam comes in 5 s, the remote is gone and we disconnect.
 - **MHnack:** we send MHfrr (for 300 ms), then ANSam and phase 1. With `=0` seconds in `DSP_V92_MOH_REQ`, we send MHcda and disconnect instead.
 - **The tone A of the remote reversed (or its INFO0a):** the remote identified our tone as the tone of a retrain, which it can do (9.10.1.1/V.92). We follow it into phase 2 immediately. Tone B is long (600 ms, where 50 ms would be sufficient). Thus, this occurs before MHreq, because the remote would identify the phase steps of MHreq as our reversal.
-- **Nothing in 2.5 s** after the tone: a retrain.
+- **Nothing in 2 s plus the round-trip delay** after the start of MHreq: a retrain.
 
 Neither the original library nor the Agere modem answers MHreq. The two modems retrain. The library frames our MH sequences, but as INFO0 in its retrain, with a bad CRC. It looks for MH only in its own requests. `smartlink_v92_moh_request` (with PCM upstream) and `agere_v92_moh_request` (V.90) ask for it during the data (`MIDCALL_B`), and make sure that the call continues.
 
