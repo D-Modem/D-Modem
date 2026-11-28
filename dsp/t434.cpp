@@ -179,6 +179,32 @@ bool external_data(const unsigned char *c, size_t len, s16 depth, std::vector<un
 	});
 }
 
+/* the media type of a mime-media-type [32]'s contents: a SEQUENCE of
+   the type and its parameters (T.434 5.19), the type alone, or the
+   SEQUENCE in one more [32] (Annex A tags the type itself [32]
+   EXPLICIT) */
+bool mime_of(const unsigned char *c, size_t len, s16 depth, std::string *mime)
+{
+	return each(c, len, depth, [&](const Tlv &s, const unsigned char *sc) {
+		if (s.cls == CLS_CONTEXT && s.tag == A_MIME && s.cons)
+			return mime_of(sc, s.len, depth + 1, mime);
+		if (s.cls == CLS_UNIVERSAL && s.tag == TAG_SEQUENCE && s.cons) {
+			bool first = true;
+			return each(sc, s.len, depth + 1, [&](const Tlv &m, const unsigned char *mc) {
+				if (first && m.cls == CLS_UNIVERSAL && m.tag == TAG_IA5) {
+					first = false;
+					return text_of(m, mc, depth + 1, mime);
+				}
+				first = false;
+				return true;
+			});
+		}
+		if (s.cls == CLS_UNIVERSAL && s.tag == TAG_IA5 && mime->empty())
+			return text_of(s, sc, depth, mime);
+		return true;
+	});
+}
+
 /* one file's attributes */
 bool file_of(const unsigned char *c, size_t len, BftFile *f)
 {
@@ -221,24 +247,7 @@ bool file_of(const unsigned char *c, size_t len, BftFile *f)
 				return string_of(s, sc, d + 1, &f->data);
 			});
 		case A_MIME:
-			/* a SEQUENCE of the type and its parameters (or the
-			   type alone) */
-			return each(tc, t.len, d + 1, [&](const Tlv &s, const unsigned char *sc) {
-				if (s.cls == CLS_UNIVERSAL && s.tag == TAG_SEQUENCE && s.cons) {
-					bool first = true;
-					return each(sc, s.len, d + 2, [&](const Tlv &m, const unsigned char *mc) {
-						if (first && m.cls == CLS_UNIVERSAL && m.tag == TAG_IA5) {
-							first = false;
-							return text_of(m, mc, d + 2, &f->mime);
-						}
-						first = false;
-						return true;
-					});
-				}
-				if (s.cls == CLS_UNIVERSAL && s.tag == TAG_IA5 && f->mime.empty())
-					return text_of(s, sc, d + 1, &f->mime);
-				return true;
-			});
+			return t.cons && mime_of(tc, t.len, d + 1, &f->mime);
 		default:
 			return true;    /* (the attributes we don't use) */
 		}
