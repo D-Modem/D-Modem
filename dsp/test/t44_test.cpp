@@ -255,6 +255,79 @@ TEST(T44, Stripes)
 	EXPECT_EQ(d.pix, blank.pix);
 }
 
+/* the SOP gives 0 for the coder of a layer that no stripe codes (T.44
+   9.2.1): black text on white has no image layers, a picture without
+   text no mask */
+TEST(T44, SopCodersOfLayersNotCoded)
+{
+	std::vector<unsigned char> text;
+	T44Image img = page(3, 1728, 512, false, &text);
+	for (size_t i = 0; i < text.size(); i++)
+		if (text[i])
+			memset(&img.pix[i * 3], 0, 3);
+	Bytes out;
+	t44_encode(img, T44Options(), &out);
+	EXPECT_EQ(out[12], T44_MASK_JBIG);
+	EXPECT_EQ(out[13], 0x00);
+
+	T44Image pic = page(3, 1728, 300, true, &text);
+	for (size_t i = 0; i < text.size(); i++)
+		if (text[i])
+			memcpy(&pic.pix[i * 3], &pic.pix[(i - 1) * 3], 3);
+	t44_encode(pic, T44Options(), &out);
+	EXPECT_EQ(out[12], 0x00);
+	EXPECT_EQ(out[13], T44_IMAGE_JPEG);
+	T44Image d;
+	ASSERT_EQ(t44_decode(out.data(), out.size(), 10000, &d), 0);
+	EXPECT_EQ(d.height, 300u);
+}
+
+/* a segment with a 2-octet length of 0: the 4-octet optional length
+   comes after the identifier (T.44 9.2) */
+TEST(T44, OptionalLength)
+{
+	std::vector<unsigned char> text;
+	T44Image img = page(3, 400, 200, true, &text);
+	Bytes out;
+	t44_encode(img, T44Options(), &out);
+	T44Image want;
+	ASSERT_EQ(t44_decode(out.data(), out.size(), 10000, &want), 0);
+
+	/* each APP13 segment (the SOP, the SOSts) with the long form */
+	Bytes b(out.begin(), out.begin() + 2);
+	size_t pos = 2;
+	while (pos + 4 <= out.size() && out[pos] == 0xff && out[pos + 1] == 0xed) {
+		size_t sl = (size_t)out[pos + 2] << 8 | out[pos + 3];
+		size_t rest = sl - 2 - 4;   /* the parameters */
+		Bytes seg = {0xff, 0xed, 0x00, 0x00};
+		seg.insert(seg.end(), out.begin() + pos + 4, out.begin() + pos + 8);
+		put32(&seg, (u32)(2 + 4 + 4 + rest));
+		seg.insert(seg.end(), out.begin() + pos + 8, out.begin() + pos + 8 + rest);
+		b.insert(b.end(), seg.begin(), seg.end());
+		pos += 2 + sl;
+		/* the TN, or the stripe's layers, up to the next segment */
+		size_t next = pos;
+		while (next + 1 < out.size() && !(out[next] == 0xff && out[next + 1] == 0xed &&
+						   next + 8 <= out.size() &&
+						   !memcmp(&out[next + 4], "MRC", 3)))
+			next++;
+		if (next + 1 >= out.size())
+			next = out.size();
+		b.insert(b.end(), out.begin() + pos, out.begin() + next);
+		pos = next;
+	}
+	ASSERT_EQ(pos, out.size());
+	ASSERT_GT(b.size(), out.size());
+	T44Image d;
+	ASSERT_EQ(t44_decode(b.data(), b.size(), 10000, &d), 0);
+	EXPECT_EQ(d.height, want.height);
+	EXPECT_TRUE(d.pix == want.pix);
+	/* a length of 1 to 5 is reserved */
+	Bytes r = out;
+	r[5] = 5;
+	EXPECT_EQ(t44_decode(r.data(), r.size(), 10000, &d), -1);
+}
+
 /* a page as another coder may write it: an optional segment (MRC10),
    a stripe of a background JPEG of 8 by 4 at 100 pels an inch, offset
    (6, 2), over its colour; a stripe of a T.43 foreground (red) through
