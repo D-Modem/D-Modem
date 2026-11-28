@@ -2,18 +2,28 @@
  * SPDX-License-Identifier: AGPL-3.0-only
  * Copyright (C) 2026 D-Modem Authors
  *
- *    jpeg.cpp - ITU-T T.81 baseline JPEG for colour and grey-scale fax
+ *    jpeg.cpp - ITU-T T.81 sequential JPEG for colour and grey-scale fax
  *               (T.4 Annex E, T.42)
  *
  * The encoder writes what T.4 E.6.2 lists: SOI, the G3FAX APP1 (version
- * 1994, the resolution), DQT (T.81's K.1 and K.2 tables scaled for the
- * quality), DHT (K.3 to K.6, the "preferred" tables of DCS bit 70), SOF0,
- * one interleaved scan of 8x8 DCT blocks (L* in four blocks and a*, b*
- * in one each for T.4's 4:1:1), and EOI; optionally DRI with RSTn, and
- * DNL in place of the frame header's line count.  The decoder takes any
- * baseline (or extended 8-bit Huffman) sequential frame: sampling
- * factors up to 4, scans of some components each, 8 or 16-bit
- * quantisation tables, restarts, DNL, APPn and COM skipped.
+ * 1994, the resolution), G3FAX1 and G3FAX2 (E.6.6, E.6.7) for a gamut or
+ * an illuminant that is not the default, DQT (T.81's K.1 and K.2 tables
+ * scaled for the quality), DHT, SOF0 or SOF1, one interleaved scan of
+ * 8x8 DCT blocks (L* in four blocks and a*, b* in one each for T.4's
+ * 4:1:1), and EOI; optionally DRI with RSTn, and DNL in place of the
+ * frame header's line count.  8-bit samples are baseline (SOF0) with
+ * K.3 to K.6, the "preferred" tables of DCS bit 70; 12-bit samples
+ * (DCS bit 71) are extended (SOF1) with tables made for the image (T.81
+ * K.2), as K.3 to K.6 do not have the larger categories.  The decoder
+ * takes any baseline or extended Huffman sequential frame of 8 or 12
+ * bits: sampling factors up to 4, scans of some components each, 8 or
+ * 16-bit quantisation tables, restarts, DNL, the G3FAX segments, other
+ * APPn and COM skipped.
+ *
+ * The colour conversions go from sRGB to T.42 6.2.1's CIELAB (with the
+ * Bradford adaptation from D65 to the illuminant's white) or 6.2.2's
+ * ITU-YCC (sYCC), and back, as n-bit samples of a gamut's ranges and
+ * offsets.
  *
  */
 
@@ -173,8 +183,9 @@ void fdct(const float *s, float *f)
 		}
 }
 
-/* the inverse DCT into 8x8 samples (level shifted back, clamped) */
-void idct(const float *f, unsigned char *out, size_t stride)
+/* the inverse DCT into 8x8 samples (level shifted back by mid,
+   clamped to 0 to top) */
+void idct(const float *f, u16 *out, size_t stride, int mid, int top)
 {
 	float t[64];
 	for (int v = 0; v < 8; v++)
@@ -186,11 +197,11 @@ void idct(const float *f, unsigned char *out, size_t stride)
 		}
 	for (int y = 0; y < 8; y++)
 		for (int x = 0; x < 8; x++) {
-			float a = 128;
+			float a = (float)mid;
 			for (int v = 0; v < 8; v++)
 				a += basis.c[v][y] * t[v * 8 + x];
 			int s = (int)lrintf(a);
-			out[y * stride + x] = (unsigned char)(s < 0 ? 0 : s > 255 ? 255 : s);
+			out[y * stride + x] = (u16)(s < 0 ? 0 : s > top ? top : s);
 		}
 }
 
@@ -252,20 +263,44 @@ int category(int v)
 	return s;
 }
 
+/* where an encoder pass puts a block's symbols: the bits out (with
+   the tables), or (cdc, cac given) only the count of each symbol */
+struct Sink {
+	BitOut *bo = nullptr;
+	const Huff *dc = nullptr, *ac = nullptr;
+	u32 *cdc = nullptr, *cac = nullptr;
+
+	/* a DC (ac false) or AC symbol, then len bits of v */
+	void sym(bool is_ac, int s, u32 v, int len)
+	{
+		if (cdc) {
+			(is_ac ? cac : cdc)[s]++;
+			return;
+		}
+		const Huff &h = is_ac ? *ac : *dc;
+		bo->put(h.code[s], h.size[s]);
+		if (len)
+			bo->put(v, len);
+	}
+};
+
 /* one block: its DC as a difference from pred, then the run-lengths of
-   its AC coefficients */
-void encode_block(BitOut *bo, const float *s, const u16 *q, const Huff &dc, const Huff &ac, int *pred)
+   its AC coefficients; the AC ones at most of category acmax (10 for 8
+   bits, 14 for 12) */
+void encode_block(Sink *out, const float *s, const u16 *q, int *pred, int acmax)
 {
 	float f[64];
 	int c[64];
+	const int lim = (1 << acmax) - 1;
 	fdct(s, f);
-	for (int k = 0; k < 64; k++)
+	for (int k = 0; k < 64; k++) {
 		c[k] = (int)lrintf(f[zz[k]] / q[zz[k]]);
+		if (k)
+			c[k] = std::max(-lim, std::min(lim, c[k]));
+	}
 	int d = c[0] - *pred, t = category(d);
 	*pred = c[0];
-	bo->put(dc.code[t], dc.size[t]);
-	if (t)
-		bo->put((u32)(d < 0 ? d - 1 : d), t);
+	out->sym(false, t, (u32)(d < 0 ? d - 1 : d), t);
 	int run = 0;
 	for (int k = 1; k < 64; k++) {
 		if (!c[k]) {
@@ -273,16 +308,87 @@ void encode_block(BitOut *bo, const float *s, const u16 *q, const Huff &dc, cons
 			continue;
 		}
 		while (run > 15) {
-			bo->put(ac.code[0xf0], ac.size[0xf0]);
+			out->sym(true, 0xf0, 0, 0);
 			run -= 16;
 		}
 		int sz = category(c[k]), rs = run << 4 | sz;
-		bo->put(ac.code[rs], ac.size[rs]);
-		bo->put((u32)(c[k] < 0 ? c[k] - 1 : c[k]), sz);
+		out->sym(true, rs, (u32)(c[k] < 0 ? c[k] - 1 : c[k]), sz);
 		run = 0;
 	}
 	if (run)
-		bo->put(ac.code[0], ac.size[0]);
+		out->sym(true, 0, 0, 0);
+}
+
+/* T.81 K.2: a table's BITS and HUFFVAL for the symbols' counts, the
+   codes at most 16 bits and none of all ones (a reserved symbol of
+   count 1 takes it, as in K.2's Figure K.1) */
+void optimal_table(const u32 *count, unsigned char *bits, unsigned char *vals)
+{
+	long long freq[257];
+	int size[257], next[257];
+	bool any = false;
+	for (int i = 0; i < 256; i++) {
+		freq[i] = count[i];
+		any = any || count[i];
+	}
+	if (!any)
+		freq[0] = 1;
+	freq[256] = 1;
+	for (int i = 0; i < 257; i++) {
+		size[i] = 0;
+		next[i] = -1;
+	}
+	for (;;) {
+		/* the two least counts (the higher symbol first on a tie) */
+		int c1 = -1, c2 = -1;
+		for (int i = 0; i < 257; i++)
+			if (freq[i] && (c1 < 0 || freq[i] <= freq[c1]))
+				c1 = i;
+		for (int i = 0; i < 257; i++)
+			if (freq[i] && i != c1 && (c2 < 0 || freq[i] <= freq[c2]))
+				c2 = i;
+		if (c2 < 0)
+			break;
+		freq[c1] += freq[c2];
+		freq[c2] = 0;
+		size[c1]++;
+		while (next[c1] >= 0) {
+			c1 = next[c1];
+			size[c1]++;
+		}
+		next[c1] = c2;
+		size[c2]++;
+		while (next[c2] >= 0) {
+			c2 = next[c2];
+			size[c2]++;
+		}
+	}
+	int n[258] = {0};
+	for (int i = 0; i < 257; i++)
+		if (size[i])
+			n[size[i]]++;
+	/* K.2's Figure K.3: the codes longer than 16 bits moved up */
+	for (int i = 257; i > 16; i--)
+		while (n[i] > 0) {
+			int j = i - 2;
+			while (n[j] == 0)
+				j--;
+			n[i] -= 2;
+			n[i - 1]++;
+			n[j + 1] += 2;
+			n[j]--;
+		}
+	int i = 16;
+	while (n[i] == 0)
+		i--;
+	n[i]--;                         /* (the reserved symbol's code) */
+	for (int l = 1; l <= 16; l++)
+		bits[l - 1] = (unsigned char)n[l];
+	int k = 0;
+	for (int l = 1; l <= 256; l++)
+		for (int v = 0; v < 256; v++)
+			if (size[v] == l)
+				vals[k++] = (unsigned char)v;
 }
 
 /* the quantisation table for a quality, as libjpeg scales T.81's */
@@ -377,15 +483,17 @@ struct Comp {
 	int td = 0, ta = 0;
 	int pred = 0;
 	u32 pw = 0;                     /* the plane's width (padded) */
-	std::vector<unsigned char> plane;
+	std::vector<u16> plane;
 };
 
-/* one block decoded into its place; false when its codes are broken */
-bool decode_block(BitIn *bi, Comp *c, const Huff &dc, const Huff &ac, const u16 *q, u32 bx, u32 by)
+/* one block of P-bit samples decoded into its place; false when its
+   codes are broken */
+bool decode_block(BitIn *bi, Comp *c, const Huff &dc, const Huff &ac, const u16 *q, u32 bx, u32 by,
+		  int P)
 {
 	float f[64] = {0};
 	int t = huff_decode(bi, dc);
-	if (t < 0 || t > 11)
+	if (t < 0 || t > P + 3)
 		return false;
 	c->pred += t ? extend(bi->bits(t), t) : 0;
 	f[0] = (float)(c->pred * q[0]);
@@ -394,6 +502,8 @@ bool decode_block(BitIn *bi, Comp *c, const Huff &dc, const Huff &ac, const u16 
 		if (rs < 0)
 			return false;
 		int r = rs >> 4, s = rs & 15;
+		if (s > P + 2)
+			return false;
 		if (!s) {
 			if (r != 15)
 				break;
@@ -407,9 +517,10 @@ bool decode_block(BitIn *bi, Comp *c, const Huff &dc, const Huff &ac, const u16 
 		k++;
 	}
 	size_t need = ((size_t)by * 8 + 8) * c->pw;
+	const int mid = 1 << (P - 1);
 	if (c->plane.size() < need)
-		c->plane.resize(need, 128);
-	idct(f, c->plane.data() + (size_t)by * 8 * c->pw + (size_t)bx * 8, c->pw);
+		c->plane.resize(need, (u16)mid);
+	idct(f, c->plane.data() + (size_t)by * 8 * c->pw + (size_t)bx * 8, c->pw, mid, (1 << P) - 1);
 	return true;
 }
 
@@ -478,24 +589,240 @@ unsigned char octet(double v)
 	return (unsigned char)(s < 0 ? 0 : s > 255 ? 255 : s);
 }
 
+
+/* a 3x3 matrix inverted (by its cofactors) */
+void invert3(const double a[3][3], double r[3][3])
+{
+	double det = a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1]) -
+		a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0]) +
+		a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++) {
+			int i1 = (j + 1) % 3, i2 = (j + 2) % 3;
+			int j1 = (i + 1) % 3, j2 = (i + 2) % 3;
+			r[i][j] = (a[i1][j1] * a[i2][j2] - a[i1][j2] * a[i2][j1]) / det;
+		}
+}
+
+/* the product a b of two 3x3 matrices */
+void mul3(const double a[3][3], const double b[3][3], double r[3][3])
+{
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+			r[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j];
+}
+
+/* m v into r */
+void apply3(const double m[3][3], const double v[3], double r[3])
+{
+	for (int i = 0; i < 3; i++)
+		r[i] = m[i][0] * v[0] + m[i][1] * v[1] + m[i][2] * v[2];
+}
+
+/* the x, y chromaticity of a colour temperature: the CIE daylight locus
+   (CIE 15) from 4000 K to 25000 K, Kim's cubic fit of the Planckian
+   locus from 1667 K; false outside these */
+bool temperature_xy(double t, double *x, double *y)
+{
+	if (t >= 4000 && t <= 25000) {
+		double t2 = t * t, t3 = t2 * t;
+		*x = t <= 7000 ? -4.6070e9 / t3 + 2.9678e6 / t2 + 0.09911e3 / t + 0.244063 :
+			-2.0064e9 / t3 + 1.9018e6 / t2 + 0.24748e3 / t + 0.237040;
+		*y = -3.000 * *x * *x + 2.870 * *x - 0.275;
+		return true;
+	}
+	if (t >= 1667 && t < 4000) {
+		double t2 = t * t, t3 = t2 * t;
+		double xx = -0.2661239e9 / t3 - 0.2343589e6 / t2 + 0.8776956e3 / t + 0.179910;
+		double x2 = xx * xx, x3 = x2 * xx;
+		*x = xx;
+		*y = t <= 2222 ? -1.1063814 * x3 - 1.34811020 * x2 + 2.18555832 * xx - 0.20219683 :
+			-0.9549476 * x3 - 1.37418593 * x2 + 2.09137015 * xx - 0.16748867;
+		return true;
+	}
+	return false;
+}
+
+/* a conversion between sRGB and the samples of a T42Colour, made
+   ready: the matrices, each component's scale and offset */
+struct Conv {
+	bool ycc = false;
+	double top = 255;               /* 2^bits - 1 */
+	double scale[3], off[3];
+	double w[3];                    /* CIELAB: the white point */
+	double m[3][3], mi[3][3];       /* linear sRGB to XYZ (or sR'G'B' to
+					   YCC), and back */
+
+	/* the tables for c; false when c is not one that we convert */
+	bool init(const T42Colour &c)
+	{
+		if (c.bits < 1 || c.bits > 16)
+			return false;
+		top = (double)((1 << c.bits) - 1);
+		if (c.space == T42_YCC) {
+			/* 6.2.2.3: Y 0 to 1, Cb and Cr -0.5 to 0.5; the
+			   matrix of T.42 Appendix III (III-7) */
+			static const double a[3][3] = {
+				{0.2990, 0.5870, 0.1140},
+				{-0.1687, -0.3313, 0.5000},
+				{0.5000, -0.4187, -0.0813},
+			};
+			ycc = true;
+			memcpy(m, a, sizeof(m));
+			invert3(m, mi);
+			for (int i = 0; i < 3; i++) {
+				scale[i] = top;
+				off[i] = i ? (double)(1 << (c.bits - 1)) : 0;
+			}
+			return true;
+		}
+		if (c.space != T42_CIELAB || !t42_white(c.illuminant, w))
+			return false;
+		for (int i = 0; i < 3; i++) {
+			if (c.gamut.range[i] <= 0)
+				return false;
+			/* E.6.6: the offset in the 8 most significant bits */
+			scale[i] = top / c.gamut.range[i];
+			off[i] = c.gamut.offset[i] * pow(2.0, c.bits - 8);
+		}
+		if (c.illuminant == T42_D50) {
+			memcpy(m, colour.m, sizeof(m));
+			memcpy(mi, colour.mi, sizeof(mi));
+			return true;
+		}
+		/* sRGB's D65 white adapted to w with the Bradford matrix */
+		static const double srgb_m[3][3] = {
+			{0.4124564, 0.3575761, 0.1804375},
+			{0.2126729, 0.7151522, 0.0721750},
+			{0.0193339, 0.1191920, 0.9503041},
+		};
+		static const double brad[3][3] = {
+			{0.8951, 0.2664, -0.1614},
+			{-0.7502, 1.7135, 0.0367},
+			{0.0389, -0.0685, 1.0296},
+		};
+		double bi[3][3], d65[3] = {0.9504700, 1.0, 1.0888300}, s[3], d[3];
+		invert3(brad, bi);
+		apply3(brad, d65, s);
+		apply3(brad, w, d);
+		double k[3][3] = {{d[0] / s[0], 0, 0}, {0, d[1] / s[1], 0}, {0, 0, d[2] / s[2]}};
+		double t1[3][3], t2[3][3];
+		mul3(k, brad, t1);
+		mul3(bi, t1, t2);
+		mul3(t2, srgb_m, m);
+		invert3(m, mi);
+		return true;
+	}
+
+	/* a component's real value to its sample */
+	u16 sample(int i, double v) const
+	{
+		long n = lrint(scale[i] * v + off[i]);
+		return (u16)(n < 0 ? 0 : n > (long)top ? (long)top : n);
+	}
+
+	/* a component's sample to its real value */
+	double value(int i, u16 n) const
+	{
+		return (n - off[i]) / scale[i];
+	}
+};
 } // namespace
 
-/* the markers, the tables, then the scan's MCUs */
-void jpeg_encode(const JpegImage &img, const JpegOptions &opt, std::vector<unsigned char> *out)
+/* the markers, the tables, then the scan's MCUs (for 12 bits, a pass
+   that counts the symbols first, for the tables) */
+bool jpeg_encode(const JpegImage &img, const JpegOptions &opt, std::vector<unsigned char> *out)
 {
 	const u32 w = img.width, h = img.height;
 	const int nc = img.comps == 3 ? 3 : 1;
 	const int sub = nc == 3 && opt.subsample, hmax = sub ? 2 : 1;
+	const int P = img.colour.bits, mid = 1 << (P - 1);
+	out->clear();
+	if (P != 8 && P != 12)
+		return false;
+	const size_t need = (size_t)w * h * nc;
+	if ((P == 8 ? img.pix.size() : img.pix16.size()) < need)
+		return false;
 	u16 q[2][64];
 	scale_q(q_lum, opt.quality, q[0]);
 	scale_q(q_chr, opt.quality, q[1]);
-	Huff dc[2], ac[2];
-	dc[0].init(dc_lum_bits, dc_vals);
-	ac[0].init(ac_lum_bits, ac_lum_vals);
-	dc[1].init(dc_chr_bits, dc_vals);
-	ac[1].init(ac_chr_bits, ac_chr_vals);
+	int nt = nc == 3 ? 2 : 1;
 
-	out->clear();
+	/* the samples of a component, at its own size (a* and b* averaged
+	   over 2x2 when subsampled), the edges repeated */
+	const u32 mw = 8 * hmax, mcux = (w + mw - 1) / mw, mcuy = (h + mw - 1) / mw;
+	auto at = [&](size_t i) -> int {
+		return P == 8 ? img.pix[i] : img.pix16[i];
+	};
+	auto sample = [&](int c, u32 x, u32 y) -> float {
+		if (c == 0 || !sub) {
+			x = std::min(x, w - 1);
+			y = std::min(y, h - 1);
+			return (float)at(((size_t)y * w + x) * nc + c);
+		}
+		int s = 0;
+		for (u32 dy = 0; dy < 2; dy++)
+			for (u32 dx = 0; dx < 2; dx++) {
+				u32 xx = std::min(2 * x + dx, w - 1), yy = std::min(2 * y + dy, h - 1);
+				s += at(((size_t)yy * w + xx) * nc + c);
+			}
+		return s / 4.0f;
+	};
+	Huff dc[2], ac[2];
+	BitOut bo;
+	bo.out = out;
+	/* the scan's MCUs into sinks (one a table), RSTn between (counted
+	   or not) */
+	auto scan = [&](Sink *sinks, bool emit) {
+		int pred[3] = {0, 0, 0};
+		u32 mcus = 0, rst = 0;
+		float s[64];
+		for (u32 my = 0; my < mcuy && w && h; my++)
+			for (u32 mx = 0; mx < mcux; mx++) {
+				if (opt.restart && mcus && mcus % opt.restart == 0) {
+					if (emit) {
+						bo.flush();
+						marker(out, M_RST0 + (rst & 7), 0);
+					}
+					rst++;
+					pred[0] = pred[1] = pred[2] = 0;
+				}
+				mcus++;
+				for (int c = 0; c < nc; c++) {
+					int f = c == 0 ? hmax : 1, t = c ? 1 : 0;
+					for (int by = 0; by < f; by++)
+						for (int bx = 0; bx < f; bx++) {
+							u32 x0 = (mx * f + bx) * 8, y0 = (my * f + by) * 8;
+							for (int y = 0; y < 8; y++)
+								for (int x = 0; x < 8; x++)
+									s[y * 8 + x] = sample(c, x0 + x, y0 + y) - mid;
+							encode_block(&sinks[t], s, q[t], &pred[c], P + 2);
+						}
+				}
+			}
+	};
+	if (P == 8) {
+		dc[0].init(dc_lum_bits, dc_vals);
+		ac[0].init(ac_lum_bits, ac_lum_vals);
+		dc[1].init(dc_chr_bits, dc_vals);
+		ac[1].init(ac_chr_bits, ac_chr_vals);
+	} else {
+		std::vector<u32> counts(4 * 256, 0);
+		Sink cs[2];
+		for (int t = 0; t < 2; t++) {
+			cs[t].cdc = &counts[(size_t)t * 512];
+			cs[t].cac = &counts[(size_t)t * 512 + 256];
+		}
+		scan(cs, false);
+		for (int t = 0; t < nt; t++) {
+			unsigned char bits[16], vals[256];
+			optimal_table(cs[t].cdc, bits, vals);
+			dc[t].init(bits, vals);
+			optimal_table(cs[t].cac, bits, vals);
+			ac[t].init(bits, vals);
+		}
+	}
+
 	marker(out, M_SOI, 0);
 	if (opt.dpi) {
 		static const unsigned char g3[6] = {'G', '3', 'F', 'A', 'X', 0};
@@ -504,7 +831,25 @@ void jpeg_encode(const JpegImage &img, const JpegOptions &opt, std::vector<unsig
 		put16(out, 0x07ca);
 		put16(out, (u32)opt.dpi);
 	}
-	int nt = nc == 3 ? 2 : 1;
+	const T42Colour &col = img.colour;
+	if (col.space == T42_CIELAB && (opt.colour_info || col.gamut != T42Gamut())) {
+		/* E.6.6: G3FAX1, offset and range of L*, a*, b* */
+		static const unsigned char g3[6] = {'G', '3', 'F', 'A', 'X', 1};
+		marker(out, M_APP1, 20);
+		out->insert(out->end(), g3, g3 + 6);
+		for (int i = 0; i < 3; i++) {
+			put16(out, (u16)col.gamut.offset[i]);
+			put16(out, (u16)col.gamut.range[i]);
+		}
+	}
+	if (col.space == T42_CIELAB && (opt.colour_info || col.illuminant != T42_D50)) {
+		/* E.6.7: G3FAX2, the illuminant's code */
+		static const unsigned char g3[6] = {'G', '3', 'F', 'A', 'X', 2};
+		marker(out, M_APP1, 12);
+		out->insert(out->end(), g3, g3 + 6);
+		put16(out, col.illuminant >> 16);
+		put16(out, col.illuminant & 0xffff);
+	}
 	marker(out, M_DQT, 2 + 65 * nt);
 	for (int t = 0; t < nt; t++) {
 		out->push_back((unsigned char)t);
@@ -527,8 +872,8 @@ void jpeg_encode(const JpegImage &img, const JpegOptions &opt, std::vector<unsig
 		marker(out, M_DRI, 4);
 		put16(out, opt.restart);
 	}
-	marker(out, M_SOF0, 8 + 3 * nc);
-	out->push_back(8);
+	marker(out, P == 8 ? M_SOF0 : M_SOF1, 8 + 3 * nc);
+	out->push_back((unsigned char)P);
 	put16(out, opt.dnl ? 0 : h);
 	put16(out, w);
 	out->push_back((unsigned char)nc);
@@ -548,54 +893,20 @@ void jpeg_encode(const JpegImage &img, const JpegOptions &opt, std::vector<unsig
 	out->push_back(63);
 	out->push_back(0);
 
-	/* the samples of a component, at its own size (a* and b* averaged
-	   over 2x2 when subsampled), the edges repeated */
-	const u32 mw = 8 * hmax, mcux = (w + mw - 1) / mw, mcuy = (h + mw - 1) / mw;
-	auto sample = [&](int c, u32 x, u32 y) -> float {
-		if (c == 0 || !sub) {
-			x = std::min(x, w - 1);
-			y = std::min(y, h - 1);
-			return img.pix[((size_t)y * w + x) * nc + c];
-		}
-		int s = 0;
-		for (u32 dy = 0; dy < 2; dy++)
-			for (u32 dx = 0; dx < 2; dx++) {
-				u32 xx = std::min(2 * x + dx, w - 1), yy = std::min(2 * y + dy, h - 1);
-				s += img.pix[((size_t)yy * w + xx) * nc + c];
-			}
-		return s / 4.0f;
-	};
-	BitOut bo;
-	bo.out = out;
-	int pred[3] = {0, 0, 0};
-	u32 mcus = 0, rst = 0;
-	float s[64];
-	for (u32 my = 0; my < mcuy && w && h; my++)
-		for (u32 mx = 0; mx < mcux; mx++) {
-			if (opt.restart && mcus && mcus % opt.restart == 0) {
-				bo.flush();
-				marker(out, M_RST0 + (rst++ & 7), 0);
-				pred[0] = pred[1] = pred[2] = 0;
-			}
-			mcus++;
-			for (int c = 0; c < nc; c++) {
-				int f = c == 0 ? hmax : 1, t = c ? 1 : 0;
-				for (int by = 0; by < f; by++)
-					for (int bx = 0; bx < f; bx++) {
-						u32 x0 = (mx * f + bx) * 8, y0 = (my * f + by) * 8;
-						for (int y = 0; y < 8; y++)
-							for (int x = 0; x < 8; x++)
-								s[y * 8 + x] = sample(c, x0 + x, y0 + y) - 128;
-						encode_block(&bo, s, q[t], dc[t], ac[t], &pred[c]);
-					}
-			}
-		}
+	Sink es[2];
+	for (int t = 0; t < 2; t++) {
+		es[t].bo = &bo;
+		es[t].dc = &dc[t];
+		es[t].ac = &ac[t];
+	}
+	scan(es, true);
 	bo.flush();
 	if (opt.dnl) {
 		marker(out, M_DNL, 4);
 		put16(out, h);
 	}
 	marker(out, M_EOI, 0);
+	return true;
 }
 
 /* the markers in turn, each scan's MCUs into the components' planes,
@@ -606,13 +917,15 @@ s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *
 	Huff dc[4], ac[4];
 	bool have_q[4] = {false}, have_dc[4] = {false}, have_ac[4] = {false};
 	Comp comps[4];
-	int nf = 0, hmax = 1, vmax = 1;
+	int nf = 0, hmax = 1, vmax = 1, P = 8;
 	u32 x = 0, y = 0, ri = 0, rows = 0;
 	bool frame = false, scanned = false, early = false, y_open = false;
 	img->width = img->height = 0;
 	img->comps = 0;
 	img->pix.clear();
+	img->pix16.clear();
 	img->dpi = 0;
+	img->colour = T42Colour();
 
 	if (len < 4 || data[0] != 0xff || data[1] != M_SOI)
 		return -1;
@@ -647,8 +960,21 @@ s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *
 		pos += sl;
 		switch (m) {
 		case M_APP1:
-			if (end - p >= 10 && !memcmp(p, "G3FAX", 6))
+			/* T.4 E.6.5 to E.6.7: G3FAX (the resolution),
+			   G3FAX1 (the gamut), G3FAX2 (the illuminant) */
+			if (end - p < 6 || memcmp(p, "G3FAX", 5))
+				break;
+			if (p[5] == 0 && end - p >= 10) {
 				img->dpi = (s16)(p[8] << 8 | p[9]);
+			} else if (p[5] == 1 && end - p >= 18) {
+				for (int i = 0; i < 3; i++) {
+					img->colour.gamut.offset[i] = (s16)(p[6 + 4 * i] << 8 | p[7 + 4 * i]);
+					img->colour.gamut.range[i] = (s16)(p[8 + 4 * i] << 8 | p[9 + 4 * i]);
+				}
+			} else if (p[5] == 2 && end - p >= 10) {
+				img->colour.illuminant = (u32)p[6] << 24 | (u32)p[7] << 16 |
+							 (u32)p[8] << 8 | p[9];
+			}
 			break;
 		case M_DQT:
 			while (p < end) {
@@ -687,8 +1013,10 @@ s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *
 			break;
 		case M_SOF0:
 		case M_SOF1:
-			if (frame || end - p < 6 || p[0] != 8)
+			/* baseline: 8 bits; extended: 8 or 12 */
+			if (frame || end - p < 6 || (p[0] != 8 && (m == M_SOF0 || p[0] != 12)))
 				return -1;
+			P = p[0];
 			y = (u32)(p[1] << 8 | p[2]);
 			x = (u32)(p[3] << 8 | p[4]);
 			nf = p[5];
@@ -784,7 +1112,8 @@ s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *
 						for (int by = 0; by < bv && !broken; by++)
 							for (int bx = 0; bx < bh && !broken; bx++)
 								broken = !decode_block(&bi, c, dc[c->td], ac[c->ta],
-										       q[c->tq], mx * bh + bx, my * bv + by);
+										       q[c->tq], mx * bh + bx, my * bv + by,
+										       P);
 					}
 				}
 				if (bi.ended) {
@@ -824,7 +1153,12 @@ s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *
 	img->width = x;
 	img->height = std::min(rows, y);
 	img->comps = (s16)(nf == 3 ? 3 : 1);
-	img->pix.assign((size_t)img->width * img->height * img->comps, 128);
+	img->colour.bits = (s16)P;
+	const size_t total = (size_t)img->width * img->height * img->comps;
+	if (P == 8)
+		img->pix.assign(total, 128);
+	else
+		img->pix16.assign(total, (u16)(1 << (P - 1)));
 	for (int c = 0; c < nf; c++) {
 		Comp &cp = comps[c];
 		size_t prows = cp.pw ? cp.plane.size() / cp.pw : 0;
@@ -832,10 +1166,15 @@ s16 jpeg_decode(const unsigned char *data, size_t len, u32 max_rows, JpegImage *
 			size_t sy = (size_t)yy * cp.v / vmax;
 			if (sy >= prows)
 				continue;
-			const unsigned char *row = cp.plane.data() + sy * cp.pw;
-			unsigned char *o = img->pix.data() + (size_t)yy * x * img->comps + c;
-			for (u32 xx = 0; xx < x; xx++)
-				o[(size_t)xx * img->comps] = row[(size_t)xx * cp.h / hmax];
+			const u16 *row = cp.plane.data() + sy * cp.pw;
+			size_t o = (size_t)yy * x * img->comps + c;
+			for (u32 xx = 0; xx < x; xx++, o += img->comps) {
+				u16 v = row[(size_t)xx * cp.h / hmax];
+				if (P == 8)
+					img->pix[o] = (unsigned char)v;
+				else
+					img->pix16[o] = v;
+			}
 		}
 	}
 	return early ? 1 : 0;
@@ -881,6 +1220,154 @@ void t42_l_to_grey(const unsigned char *l, unsigned char *grey, size_t n)
 {
 	for (size_t i = 0; i < n; i++)
 		grey[i] = srgb(lab_finv((l[i] * 100.0 / 255 + 16) / 116));
+}
+
+/* the named illuminants' white points, else a colour temperature's */
+bool t42_white(u32 illuminant, double xyz[3])
+{
+	static const struct {
+		u32 code;
+		double x, z;
+	} named[] = {
+		{T42_D50, 0.96422, 0.82521},    /* T.42 6.2.1.2 */
+		{T42_D65, 0.95045, 1.08892},    /* T.42 6.2.2.2 */
+		{T42_D75, 0.94972, 1.22638},
+		{T42_SA, 1.09850, 0.35585},
+		{T42_SC, 0.98074, 1.18232},
+		{T42_F2, 0.99187, 0.67395},
+		{T42_F7, 0.95044, 1.08755},
+		{T42_F11, 1.00966, 0.64370},
+	};
+	for (const auto &n : named)
+		if (n.code == illuminant) {
+			xyz[0] = n.x;
+			xyz[1] = 1;
+			xyz[2] = n.z;
+			return true;
+		}
+	double x, y;
+	if ((illuminant >> 16) != 0x4354 || !temperature_xy(illuminant & 0xffff, &x, &y))
+		return false;
+	xyz[0] = x / y;
+	xyz[1] = 1;
+	xyz[2] = (1 - x - y) / y;
+	return true;
+}
+
+/* sRGB to XYZ (adapted to the white), to CIELAB; or to sR'G'B', to
+   YCC; then each to its sample */
+bool t42_from_rgb(const T42Colour &c, const unsigned char *rgb, u16 *out, size_t n)
+{
+	Conv cv;
+	if (!cv.init(c))
+		return false;
+	for (size_t i = 0; i < n; i++, rgb += 3, out += 3) {
+		double v[3], r[3];
+		if (cv.ycc) {
+			for (int k = 0; k < 3; k++)
+				v[k] = rgb[k] / 255.0;
+			apply3(cv.m, v, r);
+		} else {
+			for (int k = 0; k < 3; k++)
+				v[k] = colour.lin[rgb[k]];
+			apply3(cv.m, v, r);
+			double fx = lab_f(r[0] / cv.w[0]), fy = lab_f(r[1] / cv.w[1]), fz = lab_f(r[2] / cv.w[2]);
+			r[0] = 116 * fy - 16;
+			r[1] = 500 * (fx - fy);
+			r[2] = 200 * (fy - fz);
+		}
+		for (int k = 0; k < 3; k++)
+			out[k] = cv.sample(k, r[k]);
+	}
+	return true;
+}
+
+/* each sample to its value, CIELAB to XYZ to sRGB; or YCC to sR'G'B' */
+bool t42_to_rgb(const T42Colour &c, const u16 *in, unsigned char *rgb, size_t n)
+{
+	Conv cv;
+	if (!cv.init(c))
+		return false;
+	for (size_t i = 0; i < n; i++, in += 3, rgb += 3) {
+		double v[3], r[3];
+		for (int k = 0; k < 3; k++)
+			v[k] = cv.value(k, in[k]);
+		if (cv.ycc) {
+			apply3(cv.mi, v, r);
+			for (int k = 0; k < 3; k++)
+				rgb[k] = octet(r[k] * 255);
+		} else {
+			double fy = (v[0] + 16) / 116, fx = fy + v[1] / 500, fz = fy - v[2] / 200;
+			double xyz[3] = {cv.w[0] * lab_finv(fx), cv.w[1] * lab_finv(fy), cv.w[2] * lab_finv(fz)};
+			apply3(cv.mi, xyz, r);
+			for (int k = 0; k < 3; k++)
+				rgb[k] = srgb(r[k]);
+		}
+	}
+	return true;
+}
+
+/* a grey level to L* (its luminance; the same for any white) or Y */
+bool t42_from_grey(const T42Colour &c, const unsigned char *grey, u16 *out, size_t n)
+{
+	Conv cv;
+	if (!cv.init(c))
+		return false;
+	for (size_t i = 0; i < n; i++)
+		out[i] = cv.sample(0, cv.ycc ? grey[i] / 255.0 : 116 * lab_f(colour.lin[grey[i]]) - 16);
+	return true;
+}
+
+/* L* or Y to a grey level */
+bool t42_to_grey(const T42Colour &c, const u16 *in, unsigned char *grey, size_t n)
+{
+	Conv cv;
+	if (!cv.init(c))
+		return false;
+	for (size_t i = 0; i < n; i++) {
+		double v = cv.value(0, in[i]);
+		grey[i] = cv.ycc ? octet(v * 255) : srgb(lab_finv((v + 16) / 116));
+	}
+	return true;
+}
+
+/* the samples converted through 16 bits, kept in pix (up to 8 bits) or
+   pix16 */
+bool t42_image_from_rgb(JpegImage *img, const unsigned char *pix)
+{
+	const size_t n = (size_t)img->width * img->height, nc = img->comps == 3 ? 3 : 1;
+	std::vector<u16> s(n * nc);
+	bool ok = nc == 3 ? t42_from_rgb(img->colour, pix, s.data(), n) :
+		t42_from_grey(img->colour, pix, s.data(), n);
+	if (!ok)
+		return false;
+	if (img->colour.bits <= 8) {
+		img->pix.assign(s.begin(), s.end());
+		img->pix16.clear();
+	} else {
+		img->pix16 = std::move(s);
+		img->pix.clear();
+	}
+	return true;
+}
+
+/* pix or pix16 through 16 bits to sRGB or grey levels */
+bool t42_image_to_rgb(const JpegImage &img, std::vector<unsigned char> *pix)
+{
+	const size_t n = (size_t)img.width * img.height, nc = img.comps == 3 ? 3 : 1;
+	std::vector<u16> s;
+	if (img.colour.bits <= 8) {
+		if (img.pix.size() < n * nc)
+			return false;
+		s.assign(img.pix.begin(), img.pix.begin() + (long)(n * nc));
+	} else {
+		if (img.pix16.size() < n * nc)
+			return false;
+		s.assign(img.pix16.begin(), img.pix16.begin() + (long)(n * nc));
+	}
+	pix->resize(n * nc);
+	return nc == 3 ? t42_to_rgb(img.colour, s.data(), pix->data(), n) :
+		t42_to_grey(img.colour, s.data(), pix->data(), n);
 }
 
 } // namespace dsp
