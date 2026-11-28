@@ -54,9 +54,9 @@
       0 A: ERROR\r\n
       0 A< ATS0?S1?S2?\r
       0 A: ATS0?S1?S2?\r\r\n
-      0 A: 0\r\n
-      0 A: 0\r\n
-      0 A: 43\r\n
+      0 A: 000\r\n
+      0 A: 000\r\n
+      0 A: 043\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATS0=2\r
@@ -64,7 +64,7 @@
       0 A: OK\r\n
       0 A< ATS0?\r
       0 A: ATS0?\r\r\n
-      0 A: 2\r\n
+      0 A: 002\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATS300=1\r
@@ -72,13 +72,13 @@
       0 A: ERROR\r\n
       0 A< ATS7=45S7?\r
       0 A: ATS7=45S7?\r\r\n
-      0 A: 45\r\n
+      0 A: 045\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATS09=6S9?S010=7S10?\r
       0 A: ATS09=6S9?S010=7S10?\r\r\n
-      0 A: 6\r\n
-      0 A: 7\r\n
+      0 A: 006\r\n
+      0 A: 007\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATS\r
@@ -183,8 +183,8 @@
       0 A: ERROR\r\n
       0 A< ATS44?S45?\r
       0 A: ATS44?S45?\r\r\n
-      0 A: 0\r\n
-      0 A: 0\r\n
+      0 A: 000\r\n
+      0 A: 000\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATS44=3\r
@@ -246,7 +246,7 @@
       0 A: OK\r\n
       0 A< AT+GCAP\r
       0 A: AT+GCAP\r\r\n
-      0 A: +GCAP: +FCLASS,+MS\r\n
+      0 A: +GCAP: +FCLASS,+MS,+MV18S,+ES,+DS\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+GCAP=?\r
@@ -481,12 +481,12 @@
       0 A: OK\r\n
       0 A< ATS70?S60?S71?S62?S104?S28?\r
       0 A: ATS70?S60?S71?S62?S104?S28?\r\r\n
-      0 A: 7\r\n
-      0 A: 1\r\n
-      0 A: 1\r\n
-      0 A: 1\r\n
-      0 A: 2\r\n
-      0 A: 1\r\n
+      0 A: 007\r\n
+      0 A: 001\r\n
+      0 A: 001\r\n
+      0 A: 001\r\n
+      0 A: 002\r\n
+      0 A: 001\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT\\V1\r
@@ -550,8 +550,8 @@
       0 A: OK\r\n
       0 A< ATS104?S39?\r
       0 A: ATS104?S39?\r\r\n
-      0 A: 2\r\n
-      0 A: 1\r\n
+      0 A: 002\r\n
+      0 A: 001\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT%X\r
@@ -562,8 +562,8 @@
       0 A: OK\r\n
       0 A< ATS103?S105?\r
       0 A: ATS103?S105?\r\r\n
-      0 A: 3\r\n
-      0 A: 2\r\n
+      0 A: 003\r\n
+      0 A: 002\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT\\N5\r
@@ -587,7 +587,7 @@
       0 A: OK\r\n
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
-      0 A: 3\r\n
+      0 A: 003\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+ES=4,0,2\r
@@ -595,7 +595,7 @@
       0 A: OK\r\n
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
-      0 A: 3\r\n
+      0 A: 003\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+ES=,4,6\r
@@ -603,7 +603,7 @@
       0 A: OK\r\n
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
-      0 A: 5\r\n
+      0 A: 005\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATS103=0\r
@@ -625,7 +625,7 @@
       0 A: OK\r\n
       0 A< ATS104?\r
       0 A: ATS104?\r\r\n
-      0 A: 1\r\n
+      0 A: 001\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT&K2\r
@@ -633,7 +633,7 @@
       0 A: OK\r\n
       0 A< ATS104?\r
       0 A: ATS104?\r\r\n
-      0 A: 3\r\n
+      0 A: 003\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATZ\r
@@ -641,9 +641,9 @@
       0 A: OK\r\n
       0 A< ATS103?S104?S105?\r
       0 A: ATS103?S104?S105?\r\r\n
-      0 A: 3\r\n
-      0 A: 3\r\n
-      0 A: 3\r\n
+      0 A: 003\r\n
+      0 A: 003\r\n
+      0 A: 003\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+ES?\r
@@ -749,9 +749,9 @@
       0 A: OK\r\n
       0 A< ATS30?S29?S31?\r
       0 A: ATS30?S29?S31?\r\r\n
-      0 A: 2\r\n
-      0 A: 2\r\n
-      0 A: 0\r\n
+      0 A: 002\r\n
+      0 A: 002\r\n
+      0 A: 000\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATL9\r
@@ -762,7 +762,7 @@
       0 A: OK\r\n
       0 A< ATS16?\r
       0 A: ATS16?\r\r\n
-      0 A: 0\r\n
+      0 A: 000\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATT\r
@@ -770,7 +770,7 @@
       0 A: OK\r\n
       0 A< ATS16?\r
       0 A: ATS16?\r\r\n
-      0 A: 1\r\n
+      0 A: 001\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATX3Y1\r
@@ -778,8 +778,8 @@
       0 A: OK\r\n
       0 A< ATS56?S161?\r
       0 A: ATS56?S161?\r\r\n
-      0 A: 3\r\n
-      0 A: 1\r\n
+      0 A: 003\r\n
+      0 A: 001\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATX5\r
@@ -804,7 +804,7 @@
       0 A: OK\r\n
       0 A< ATS0?\r
       0 A: ATS0?\r\r\n
-      0 A: 2\r\n
+      0 A: 002\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATS0\x08\x08\x08\x08ATI0\r

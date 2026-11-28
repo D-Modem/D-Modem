@@ -1,0 +1,58 @@
+      0 A< ATE0X3+MS=122+MR=1+ER=1+DR=1+IPR=19200+ILRR=1\r
+      0 A: ATE0X3+MS=122+MR=1+ER=1+DR=1+IPR=19200+ILRR=1\r\r\n
+      0 A: OK\r\n
+      0 B< ATE0+MS=122\r
+      0 B: ATE0+MS=122\r\r\n
+      0 B: OK\r\n
+      0 B< ATA\r
+      0 A< ATD\r
+   8440 B: \r\n
+   8440 B: CONNECT 2400\r\n
+   8520 A: \r\n
+   8520 A: +MCR: V22B\r\n
+   8520 A: \r\n
+   8520 A: +MRR: 2400\r\n
+   8520 A: \r\n
+   8520 A: +ER: LAPM\r\n
+   8520 A: \r\n
+   8520 A: +DR: NONE\r\n
+   8520 A: \r\n
+   8520 A: +ILRR: 19200\r\n
+   8520 A: \r\n
+   8520 A: CONNECT 2400\r\n
+   8520 until A 'CONNECT': yes
+   8520 until B 'CONNECT': yes
+   8520 A: state 2, tx 2400 rx 2400, started
+   8520 B: state 2, tx 2400 rx 2400, started
+   8540 A: \r\n
+   8540 A: NO CARRIER\r\n
+   9320 B: \r\n
+   9320 B: NO CARRIER\r\n
+   9320 until B 'NO CARRIER': yes
+   9820 A: state 0, tx 2400 rx 2400, idle
+   9820 B: state 0, tx 2400 rx 2400, idle
+   9820 A< AT+ES=0,0,1+MR=0+IPR=0\r
+   9820 A: \r\n
+   9820 A: OK\r\n
+   9820 until A 'OK': yes
+   9820 B< ATA\r
+   9820 A< ATD\r
+  17100 A: \r\n
+  17100 A: +ER: NONE\r\n
+  17100 A: \r\n
+  17100 A: +DR: NONE\r\n
+  17100 A: \r\n
+  17100 A: CONNECT 2400\r\n
+  17100 until A 'CONNECT': yes
+  19240 B: \r\n
+  19240 B: CONNECT 2400\r\n
+  19240 until B 'CONNECT': yes
+  19240 A: state 2, tx 2400 rx 2400, started
+  19240 B: state 2, tx 2400 rx 2400, started
+  19260 A: \r\n
+  19260 A: NO CARRIER\r\n
+  20040 B: \xff\x19\xf9\xa8\xf2l{\xdeY\r\n
+  20040 B: NO CARRIER\r\n
+  20040 until B 'NO CARRIER': yes
+  20540 A: state 0, tx 2400 rx 2400, idle
+  20540 B: state 0, tx 2400 rx 2400, idle

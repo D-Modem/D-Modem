@@ -24,7 +24,7 @@
       0 A: OK\r\n
       0 A< AT+GCAP\r
       0 A: \r\n
-      0 A: +GCAP: +FCLASS,+MS\r\n
+      0 A: +GCAP: +FCLASS,+MS,+MV18S,+ES,+DS\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+GMI?;+GMM?;+GMR?\r
@@ -83,8 +83,8 @@
       0 A: OK\r\n
       0 A< ATS62?S104?\r
       0 A: \r\n
-      0 A: 3\r\n
-      0 A: 3\r\n
+      0 A: 003\r\n
+      0 A: 003\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT&M1\r
@@ -277,7 +277,7 @@
       0 A: OK\r\n
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
-      0 A: 0\r\n
+      0 A: 000\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT&Q5\r
@@ -285,7 +285,7 @@
       0 A: OK\r\n
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
-      0 A: 3\r\n
+      0 A: 003\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT&Q0\r
@@ -293,7 +293,7 @@
       0 A: OK\r\n
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
-      0 A: 0\r\n
+      0 A: 000\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT&Q9\r
@@ -301,7 +301,7 @@
       0 A: OK\r\n
       0 A< ATS103?\r
       0 A: ATS103?\r\r\n
-      0 A: 3\r\n
+      0 A: 003\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT&Q1\r
@@ -341,7 +341,7 @@
       0 A: OK\r\n
       0 A< ATS29?\r
       0 A: ATS29?\r\r\n
-      0 A: 3\r\n
+      0 A: 003\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< ATB\r
@@ -357,7 +357,7 @@
       0 A: OK\r\n
       0 A< ATS104?\r
       0 A: ATS104?\r\r\n
-      0 A: 3\r\n
+      0 A: 003\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT&K0\r
@@ -365,7 +365,7 @@
       0 A: OK\r\n
       0 A< ATS104?\r
       0 A: ATS104?\r\r\n
-      0 A: 0\r\n
+      0 A: 000\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT&K7\r

@@ -336,6 +336,17 @@ sufficient:
   decimal, also with a leading 0 (`ATS09?` is S9), as in V.250. The old
   core read them as the `strtoul()` of C does with base 0, octal after a
   leading 0. Thus, `ATS08=1` and `ATS09?` gave ERROR and `ATS0=010` set 8.
+  `ATS<n>?` gives three digits with leading zeros (`013`), as V.250
+  5.3.2 tells. The old core gave `13`. A value that the register cannot
+  hold (more than 255, or more than 127 for S3, S4 and S5) and
+  `ATS<n>=?` give ERROR, and the register does not change. The old core
+  kept the low 8 bits, and `ATS3=?` set S3 to 0.
+- **Connection reports.** With `AT+MR=1`, `AT+ER=1`, `AT+DR=1` and
+  `AT+ILRR=1`, the core sends `+MCR:`, `+MRR:`, `+ER:`, `+DR:` and
+  `+ILRR:` before CONNECT, as V.250 tells. The old core accepted the
+  commands and sent no reports.
+- **`+GCAP`** gives `+FCLASS,+MS,+MV18S,+ES,+DS`, each group of commands
+  that the core has (V.250 Table 2). The old core gave only `+FCLASS,+MS`.
 - **Statistics.** `ATI11` gives the statistics of the last call (the old
   core: ERROR). `ATI6` (of USRobotics; in the old core, its second stored
   profile, empty) and `AT&V1` (in the form of Rockwell; the old core:

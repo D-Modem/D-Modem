@@ -962,14 +962,16 @@ commands:
 | From the DTE | Effect |
 |---|---|
 | `<EM><ecs>` | the escape (`+++` is data here): answers `<EM><ecs>` and OK in online command state; `ATO` goes back |
-| `<EM><eot>` | answers `<EM><eot>` and hangs up (NO CARRIER) |
+| `<EM><eot>` | answers `<EM><eot>` and ends the carrier (NO CARRIER). The line stays off hook in command state until `ATH` (8.8.4.3/V.80) |
 | `<EM><rate>` | sets the highest rate of `+MS` from its `<tx>` code, and the highest receive rate (`MDMPRM_MAX_RX_RATE`) from its `<rx>`, for the next retrain or renegotiation |
 | `<EM><rtn>`, `<EM><rrn>` | ask the pump for a retrain or a renegotiation (`Modem::link_req()`, as `ATO1` and `ATO3`; V.34, V.90, V.92 and the V.32 family only) |
 
 To the DTE:
 
 - When the carrier of the remote stops, the DTE gets `<EM><eot>` before
-  NO CARRIER.
+  NO CARRIER. The line stays off hook until `ATH`, as after
+  `<EM><eot>` from the DTE. If the line ends the call, or DTR goes off,
+  the modem goes on hook.
 - The pump counts retrains and renegotiations in `dp_stats_`. For each
   one that the DTE did not ask for (that is, those of the remote and of
   the pump), the DTE gets `<EM><rtn>` or `<EM><rrn>`, each followed by

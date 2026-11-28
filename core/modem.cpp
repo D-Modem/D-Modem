@@ -34,6 +34,7 @@
 
 #include "dm_types.h"
 #include "dcore.h"
+#include "config.h"
 #include "dsp.h"
 #include "tones.h"
 #include "log.h"
@@ -802,9 +803,17 @@ s16 Modem::start_call(bool keep_line)
 
 /* the call (or caller ID, or voice) ends: whatever runs goes, on hook,
    the statistics closed, command state, idle, and the result due
-   reported; whether the line still runs (the Host could not stop it) */
+   reported; whether the line still runs (the Host could not stop it).
+   After the carrier of V.80's Synchronous Access Mode (sync_hold_),
+   the line stays off hook, held as voice_held_ holds it, unless the
+   DTE or the line ended the call */
 s16 Modem::stop_call()
 {
+	bool hold = sync_hold_ && started_ &&
+		stats_.cause != Cause::LineDropped &&
+		stats_.cause != Cause::DtrOff &&
+		stats_.cause != Cause::DteReset;
+	sync_hold_ = false;
 	run_ = Run::None;
 	later_ = Later::None;
 	test_.reset();
@@ -817,14 +826,17 @@ s16 Modem::stop_call()
 	zsec_.stop();
 	if (!callback_.empty())
 		callback_at_ms_ = host_.now_ms() + CALLBACK_MS;
-	if (started_) {
+	if (started_ && !hold) {
 		if (host_.stop(*this))
 			log_printf(1, "err: %s: the line does not stop\n",
 				   name_);
 		else
 			started_ = false;
 	}
-	set_hook(MODEM_HOOK_ON);
+	if (hold)
+		logf("v80: the carrier is gone, the line held off hook\n");
+	else
+		set_hook(MODEM_HOOK_ON);
 	if (sregs_[SREG_SPEAKER_CONTROL] & 1)
 		set_speaker(0);
 	caller_ = false;
@@ -891,6 +903,7 @@ s16 Modem::stop_call()
 	fax_engine_delete();
 	t38_ = false;
 	set_state(IDLE);
+	voice_held_ = hold;
 	if (have_result_) {
 		have_result_ = false;
 		report(result_);
@@ -1437,6 +1450,56 @@ const char *Modem::protocol_name() const
 	return cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" : "NONE";
 }
 
+/* V.250's intermediate result codes before a data call's CONNECT, in
+   its order (Table II.1): +MCR and +MRR (+MR=1, 6.4.3), +ER (+ER=1,
+   6.5.5), +DR (+DR=1, 6.6.3) and +ILRR (+ILRR=1, 6.2.13: +IPR's rate,
+   when it has one; a pty has no rate of its own) */
+void Modem::connect_reports(s16 m)
+{
+	/* each a result code of its own (5.7.2): with ATV1 its trailer
+	   S3 S4 and the next one's header S3 S4 (the first header is
+	   report()'s); with ATV0 S3 only */
+	auto line = [this](const std::string &s) {
+		puts(s);
+		if (sregs_[SREG_VERBOSE]) {
+			crlf();
+			crlf();
+		} else
+			put_text(reinterpret_cast<const char *>(
+					 &sregs_[SREG_CR_CHAR]), 1);
+	};
+	if (kept("+MR")[0]) {
+		const char *c = ms_carrier(static_cast<u16>(m));
+		if (c)
+			line(std::string("+MCR: ") + c);
+		std::string rr = "+MRR: " + dec(tx_rate_);
+		if (rx_rate_ && rx_rate_ != tx_rate_)
+			rr += "," + dec(rx_rate_);
+		line(rr);
+	}
+	if (kept("+ER")[0]) {
+		const std::string_view p = protocol_name();
+		line(std::string("+ER: ") +
+		     (p == "LAPM" || p == "V.76" ? "LAPM" :
+		      p == "MNP" ? "ALT" : "NONE"));
+	}
+	if (kept("+DR")[0]) {
+		const std::string_view c = compression_name();
+		std::string d = "NONE";
+		if (c == "V42bis" || c == "V44") {
+			d = c == "V44" ? "V44" : "V42B";
+			/* comp: bit 0 our decoder, bit 1 our encoder */
+			if (cfg_.comp == 1)
+				d += " RD";
+			else if (cfg_.comp == 2)
+				d += " TD";
+		}
+		line("+DR: " + d);
+	}
+	if (kept("+ILRR")[0] && kept("+IPR")[0])
+		line("+ILRR: " + dec(kept("+IPR")[0]));
+}
+
 /* the call's compression, as CONNECT and ATI11 name it */
 const char *Modem::compression_name() const
 {
@@ -1629,9 +1692,13 @@ void Modem::update_status(Status s)
 			result_ = Result::NoCarrier;
 			break;
 		}
-		/* V.80: the carrier's loss in band, before NO CARRIER */
+		/* V.80: the carrier's loss in band, before NO CARRIER; the
+		   line stays off hook (8.8.4.3/V.80) */
 		if (state_ == ONLINE)
 			link_->sync_indicate(dlink::v80::EOT);
+		if (cfg_.sync && (state_ == ONLINE ||
+				  state_ == COMMAND_ONLINE))
+			sync_hold_ = true;
 		have_result_ = true;
 		hup(state_ == EC_DISC || state_ == DP_DISC);
 		break;
@@ -1898,9 +1965,10 @@ s16 Modem::dte_space() const
 /* the DTE's in-band command in V.80's Synchronous Access Mode
    (8.8.3, 8.8.4/V.80): <EM><ecs> online command state (confirmed with
    <EM><ecs>, then OK; what the DTE sent after it waits for the command
-   interpreter), <EM><eot> the carrier's end (confirmed with <EM><eot>:
-   we hang up, NO CARRIER), <EM><rate> +MS's highest rate from <tx>;
-   retrains and renegotiations on request are not there (logged) */
+   interpreter), <EM><eot> the carrier's end (confirmed with <EM><eot>,
+   then NO CARRIER; the line stays off hook until ATH), <EM><rate>
+   +MS's highest rates from <tx> and <rx>, <EM><rtn> and <EM><rrn> a
+   retrain and a renegotiation */
 void Modem::sync_command(dlink::SyncCommand c, u8 tx, u8 rx)
 {
 	switch (c) {
@@ -1918,6 +1986,7 @@ void Modem::sync_command(dlink::SyncCommand c, u8 tx, u8 rx)
 			break;
 		link_->sync_indicate(dlink::v80::EOT);
 		set_cause(Cause::LocalHangup);
+		sync_hold_ = true;
 		hup(true);
 		break;
 	case dlink::SyncCommand::Rate: {
@@ -3095,6 +3164,8 @@ void Modem::report(Result r)
 	if (r == Result::Connect) {
 		u16 a = sregs_[SREG_CONNNECT_MSG_FORMAT];
 		s16 m = modulation(dp_stats_, dp_);
+		if (mode_ == MODEM_MODE_DATA)
+			connect_reports(m);
 		/* V.18's automoding: the mode found, as +MV18S numbers it
 		   (1 V.18's own, with another V.18 modem) */
 		if (mv18r_ && sregs_[SREG_DP] == DP_V18) {

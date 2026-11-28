@@ -1570,12 +1570,13 @@ static std::string v80_received(const std::string &got)
 }
 
 /* V.80 Synchronous Access Mode end to end (+ES=6 calling, 8
-   answering; +ESA's FCS-16): frames each way between the DTEs, then
+   answering; +ESA's FCS-16; +ER: NONE before CONNECT): frames each way between the DTEs, then
    <EM><ecs> (online command state, OK, ATO back), and <EM><eot>: the
-   carrier ends, NO CARRIER at both, <EM><eot> before it at the other */
+   carrier ends, NO CARRIER at both, <EM><eot> before it at the other,
+   and the two lines off hook until ATH */
 TEST(Core, V80)
 {
-	Pair p("+MS=132;+ES=6,,8;+ESA=,,,,1;+ITF=383,128,0");
+	Pair p("+MS=132;+ES=6,,8;+ESA=,,,,1;+ITF=383,128,0;+ER=1");
 	EXPECT_EQ(cmd(p.a, p.la, "AT+ES?\r"), "\r\n+ES: 6,0,8\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(p.a, p.la, "AT+ESA?\r"),
 		  "\r\n+ESA: 0,0,0,0,1,0,255,255\r\n\r\nOK\r\n");
@@ -1591,6 +1592,9 @@ TEST(Core, V80)
 			q.b->link_state() == LinkState::Online; }, 40000));
 	EXPECT_TRUE(p.got_a.find("CONNECT") != std::string::npos);
 	EXPECT_TRUE(p.got_b.find("CONNECT") != std::string::npos);
+	/* 8.3/V.80: +ER: NONE before CONNECT */
+	EXPECT_TRUE(p.got_a.find("+ER: NONE\r\n\r\nCONNECT") !=
+		    std::string::npos) << p.got_a.substr(0, 80);
 	/* transparent at first: the DTE's first underrun reported */
 	size_t c = p.got_a.find("CONNECT");
 	EXPECT_TRUE(p.got_a.find("\x19\xb4", c) != std::string::npos);
@@ -1639,7 +1643,9 @@ TEST(Core, V80)
 	std::string eot = { 0x19, (char)0xba };
 	p.a->dte_input(eot.data(), eot.size());
 	EXPECT_TRUE(p.run_until([](Pair &q) {
-		return !q.a->started() && !q.b->started(); }, 20000));
+		return q.got_a.find("NO CARRIER") != std::string::npos &&
+			q.got_b.find("NO CARRIER") != std::string::npos; },
+		20000));
 	EXPECT_EQ(p.got_a.substr(0, 2), std::string("\x19\xba"));
 	EXPECT_TRUE(p.got_a.find("NO CARRIER") != std::string::npos);
 	size_t e = p.got_b.find("\x19\xba");
@@ -1647,6 +1653,15 @@ TEST(Core, V80)
 		    p.got_b.find("NO CARRIER", e) != std::string::npos)
 		<< "B: [" << p.got_b.substr(p.got_b.size() > 40 ?
 					   p.got_b.size() - 40 : 0) << "]";
+	/* 8.8.4.3/V.80: the two lines stay off hook in command state,
+	   until ATH */
+	p.run_until([](Pair &) { return false; }, 500);
+	EXPECT_TRUE(p.a->started());
+	EXPECT_TRUE(p.b->started());
+	EXPECT_EQ(cmd(p.a, p.la, "ATH\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(p.b, p.lb, "ATH\r"), "\r\nOK\r\n");
+	EXPECT_FALSE(p.a->started());
+	EXPECT_FALSE(p.b->started());
 }
 
 /* the last <EM><rate><tx><rx> in got (V.80), its two codes; false if
@@ -3438,11 +3453,11 @@ TEST(Core, ConfigCli)
 	s = cmd(m, l, "exit\r");
 	EXPECT_NE(s.find("OK\r\n"), std::string::npos) << s;
 	/* back to AT commands */
-	EXPECT_EQ(cmd(m, l, "ATS0?\r"), "\r\n3\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "ATS0?\r"), "\r\n003\r\n\r\nOK\r\n");
 	/* the rest of the line after AT!CT is not read; what comes after
 	   exit is a command */
 	s = cmd(m, l, "AT!CT\rexit\rATS0?\r");
-	EXPECT_NE(s.find("OK\r\n\r\n3\r\n\r\nOK"), std::string::npos) << s;
+	EXPECT_NE(s.find("OK\r\n\r\n003\r\n\r\nOK"), std::string::npos) << s;
 	/* off hook: ERROR (AT!R still works) */
 	cmd(m, l, "ATV1H1\r");
 	EXPECT_EQ(cmd(m, l, "AT!CT\r"), "\r\nERROR\r\n");
@@ -3927,7 +3942,7 @@ TEST(Core, ZyxelAtck)
 	};
 	EXPECT_EQ(cmd("ATCKsecret\r"), "\r\nERROR\r\n");
 	EXPECT_EQ(cmd("ATCK<secret>S102=7\r"), "\r\nOK\r\n");
-	EXPECT_EQ(cmd("ATS102?\r"), "\r\n7\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd("ATS102?\r"), "\r\n007\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd("ATCK<to the end\r"), "\r\nOK\r\n");
 	EXPECT_EQ(cmd("ATC1\r"), "\r\nOK\r\n");
 }

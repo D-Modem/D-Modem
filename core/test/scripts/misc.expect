@@ -19,7 +19,7 @@
    7060 until A 'NO': yes
    7560 A< ATS7?\r
    7560 A: \r\n
-   7560 A: 3\r\n
+   7560 A: 003\r\n
    7560 A: \r\n
    7560 A: OK\r\n
    7560 A< ATZ\r

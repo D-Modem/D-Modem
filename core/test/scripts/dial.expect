@@ -5,7 +5,7 @@
     100 A< ATDT9S=0\r
     100 A< ATDT5551234;\r
     200 A< ATS7?\r
-    200 A: ATE0X3V0&A3+MS=122S7=8\r0\r4\r0\r8\r\n
+    200 A: ATE0X3V0&A3+MS=122S7=8\r0\r4\r0\r008\r\n
     200 A: state 1, tx 0 rx 0, started
     200 B: state 0, tx 0 rx 0, idle
     200 B< ATA\r

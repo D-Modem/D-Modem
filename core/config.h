@@ -174,6 +174,10 @@ const char *kept_param_ranges(s16 i);
 /* +MS may choose pump id */
 bool ms_may_choose(u32 id);
 
+/* the +MS carrier name of the modulation id (V.250 Table 13 and our
+   own), as +MCR reports it; nullptr if it has none */
+const char *ms_carrier(u16 id);
+
 } // namespace dcore
 
 #endif

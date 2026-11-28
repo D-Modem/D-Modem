@@ -668,6 +668,7 @@ private:
 	const char *dp_name(s16 id) const;
 	const char *protocol_name() const;
 	const char *compression_name() const;
+	void connect_reports(s16 m);
 	void set_cause(Cause c);
 	void call_stats();
 	void pep_stats();
@@ -1065,6 +1066,10 @@ private:
 	   mode (V.253 5.3.2), for ATA or ATD on it; the calling tones the
 	   voice engine heard so far (CNG, V.25's CT) that +FAA=1 acted on */
 	bool voice_held_ = false;
+	/* V.80 (8.8.4.3): the carrier of a Synchronous Access Mode call
+	   ends (<EM><eot>, or the remote's), and the line stays off hook
+	   (voice_held_) for ATH */
+	bool sync_hold_ = false;
 	bool v110_ = false;             /* the call runs V.110 (clear
 					   channel) */
 	bool svd_ = false;              /* V.8 bis chose DSVD (V.70): the

@@ -636,7 +636,7 @@ TEST(DmodemCxx, CommandLines)
 	dm::Modem m = make("modem", d, "ATE0\r");
 	d.read_all();
 	EXPECT_TRUE(m.command("ATS7?"));
-	EXPECT_EQ(d.read_all(), "\r\n60\r\n\r\nOK\r\n");
+	EXPECT_EQ(d.read_all(), "\r\n060\r\n\r\nOK\r\n");
 	EXPECT_TRUE(m.command("ATS7=45"));
 	EXPECT_EQ(d.read_all(), "\r\nOK\r\n");
 	EXPECT_EQ(m.status().link, DMODEM_IDLE);
