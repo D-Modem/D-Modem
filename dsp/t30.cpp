@@ -38,6 +38,7 @@
 #include <algorithm>
 #include <cinttypes>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -108,7 +109,8 @@ enum {
 #define ECM_SIZE        256     /* octets in our frames */
 #define ECM_RX_MAX      (ECM_SIZE + 8)  /* a received frame and its FCS */
 #define ECM_PPRS        4       /* PPRs for a block before CTC */
-#define ECM_RNRS        60      /* RNRs answered (T5: 60 s) */
+#define T5_MS           60000   /* RNR: the receiver busy for so long at
+				   most (5.4.3.1) */
 /* the fast modulations, best first, with their DCS rate bits (11-14 as
    bit 0-3); for T.38 their data and training indicator (V.17: the short
    training, the long one is the next) and the training's time */
@@ -297,6 +299,10 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	s16 ecm_last;                   /* the block ends the page */
 	unsigned char ecm_send[32];     /* frames to (re)send */
 	s16 ppr_count, rnr_count;
+	s64 clock;              /* samples since the start */
+	s64 t5_start;           /* the first RNR (T5) */
+	bool rnr_test;          /* test: our ECM receiver answers RNR
+				   always ($DSP_T30_RNR) */
 	s16 etx_frame, etx_rcp;         /* the next frame to look at, RCPs */
 	/* receiving */
 	std::vector<unsigned char> ecm_rx;      /* the block's frames */
@@ -369,6 +375,7 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void got_dis();
 	void start_page_rx();
 	void page_done();
+	void line_time_check();
 	void tcf_done();
 	void got_dcs(const unsigned char *fif, s16 len);
 	void dcs_coding(const unsigned char *fif, s16 len);
@@ -481,6 +488,18 @@ static void t85_octets(unsigned char *fif)
 static s16 dcs_t85(const unsigned char *fif, s16 len)
 {
 	return get_bit(fif, len, 78) || get_bit(fif, len, 79);
+}
+
+/* a FIF of len octets in the debug output, as hex (what: its name) */
+static void fif_log(const char *what, const unsigned char *fif, s16 len)
+{
+	char hex[3 * 16 + 1];
+	s16 n = 0;
+	for (s16 k = 0; k < len && k < 16; k++)
+		n = static_cast<s16>(n + snprintf(hex + n, sizeof(hex) - n,
+						  " %02x", fif[k]));
+	hex[n] = 0;
+	DSP_DBG("t30: %s fif%s\n", what, hex);
 }
 
 /* the minimum scan line time a DIS asks for (bits 21-23), ms */
@@ -761,7 +780,8 @@ void T30::send_dis_dtc(s16 dtc)
 	}
 	set_bit(fif, 15);                       /* fine */
 	set_bit(fif, 16);                       /* MR */
-	set_bit(fif, 19);                       /* any length */
+	set_bit(fif, 20);                       /* unlimited length (bits
+						   19 and 20: 0 1) */
 	set_bit(fif, 21), set_bit(fif, 22), set_bit(fif, 23);   /* 0 ms */
 	if (cfg.ecm) {
 		set_bit(fif, 24);               /* a fourth octet */
@@ -796,6 +816,7 @@ void T30::send_dis_dtc(s16 dtc)
 			set_bit(fif, 79);       /* any L0 */
 		}
 	}
+	fif_log(dtc ? "DTC" : "DIS", fif, len);
 	new_frames();
 	if (dtc)
 		add_frame(FCF_CIG, id, put_ident(id, cfg.poll_ident ?
@@ -851,6 +872,20 @@ static void page_bit(void *ctx, s16 bit)
 	} else if (t->state == S_RX_ECM) {
 		t->EcmRx::hdlc_rx_bit(bit);
 	}
+}
+
+/* a total coded scan line longer than T.4 3.2 permits (13 s: data, fill
+   and EOL, or fill alone): the receiver disconnects */
+void T30::line_time_check()
+{
+	if (!t4rx.line_too_long(rates[rate].bps))
+		return;
+	DSP_DBG("t30: a scan line of more than 13 s: disconnect\n");
+	t4rx.release();
+	rx_page.release();
+	rx_page_on = 0;
+	stop_fast();
+	send_dcn(T30_ERR_PAGE);
 }
 
 /* the response to the page: MCF if it came, RTN if not */
@@ -1205,8 +1240,13 @@ void T30::send_dcs()
 	if (v & 8) set_bit(fif, 14);
 	if (fine)
 		set_bit(fif, 15);
-	if (get_bit(dis, dis_len, 19))
-		set_bit(fif, 19);               /* any length */
+	/* the recording length (bits 19 and 20): unlimited (0 1) when the
+	   DIS offers it, else B4 (1 0) when it offers A4 and B4, else A4
+	   (0 0) */
+	if (get_bit(dis, dis_len, 20))
+		set_bit(fif, 20);
+	else if (get_bit(dis, dis_len, 19))
+		set_bit(fif, 19);
 	/* with ECM the rows need no fill */
 	dcs_min_ms(fif, ecm_on ? 0 : min_ms);
 	if (ecm_on) {
@@ -1255,6 +1295,7 @@ void T30::send_dcs()
 		rates[rate].bps, fine ? "fine" : "standard",
 		ecm_on ? 0 : min_ms, ecm_on ? ", ECM, " : "",
 		ecm_on ? coding_name() : "");
+	fif_log("DCS", fif, len);
 	new_frames();
 	add_frame(FCF_TSI, id, put_ident(id, cfg.ident));
 	add_frame(FCF_DCS, fif, len);
@@ -1532,10 +1573,14 @@ void T30::sender_message()
 					 &T30::send_ecm_burst);
 			}
 		} else if (fcf == FCF_RNR) {
-			/* not ready: ask again, for T5 */
-			if (++rnr_count >= ECM_RNRS)
+			/* not ready: ask again, until T5 (60 s from the
+			   first RNR) */
+			if (rnr_count++ == 0)
+				t5_start = clock;
+			if (clock - t5_start >= ms2samples(T5_MS, srate)) {
+				DSP_DBG("t30: T5: the receiver busy for 60 s\n");
 				send_dcn(T30_ERR_NO_RESPONSE);
-			else
+			} else
 				gap_then(1000, &T30::send_rr);
 		} else if (fcf == FCF_CRP) {
 			gap_then(RESPONSE_GAP_MS, &T30::send_pps);
@@ -2008,6 +2053,13 @@ void T30::hdlc_rx_frame(HdlcEcm, const unsigned char *d, s16 len,
 void T30::ecm_respond(s16 fcf, const unsigned char *fif, s16 len,
 		      enum state next_)
 {
+	/* (test: busy, always) */
+	if (rnr_test && (fcf == FCF_MCF || fcf == FCF_PPR ||
+			 fcf == FCF_RNR)) {
+		fcf = FCF_RNR;
+		len = 0;
+		next_ = S_WAIT_PPS;
+	}
 	last_resp = fcf;
 	last_resp_len = len;
 	if (len)
@@ -2706,6 +2758,9 @@ void T30::t38_t4_in(const unsigned char *d, s32 n)
 		} else if (state == S_RX_PAGE && rx_page_on) {
 			page_heard = 1;
 			t4rx.bit(bit);
+			line_time_check();
+			if (state != S_RX_PAGE)
+				return;
 			if (t4rx.done) {
 				/* RTC: the rest is no page */
 				page_done();
@@ -3131,6 +3186,9 @@ void T30::rx_sample(float x)
 			   rx_page_on && t4rx.done) {
 			/* RTC: the rest is no page */
 			page_done();
+		} else if (state == S_RX_PAGE && rx_page_on &&
+			   t4rx.line_too_long(rates[rate].bps)) {
+			line_time_check();
 		} else if (state == S_RX_PAGE && fast.trained) {
 			/* the page may take minutes: the timer only for
 			   the start of it */
@@ -3211,6 +3269,7 @@ void t30_process(T30 *t, const s16 *in, s16 *out, s32 n)
 				t->tx_sample();
 				t->rx_sample(x);
 				t->count++;
+				t->clock++;
 				if (t->timer && --t->timer == 0)
 					t->on_timeout();
 				if (t->t1 && --t->t1 == 0 &&
@@ -3225,6 +3284,7 @@ void t30_process(T30 *t, const s16 *in, s16 *out, s32 n)
 			y = t->tx_sample();
 			t->rx_sample(x);
 			t->count++;
+			t->clock++;
 			if (t->timer && --t->timer == 0)
 				t->on_timeout();
 			if (t->t1 && --t->t1 == 0 && t->state == S_CNG)
@@ -3242,6 +3302,7 @@ void t30_t38_time(T30 *t, s32 n)
 	for (i = 0; i < n && t->state != S_DONE; i++) {
 		t->t38_sample();
 		t->count++;
+		t->clock++;
 		if (t->timer && --t->timer == 0)
 			t->on_timeout();
 		if (t->t1 && --t->t1 == 0 && t->state == S_CNG)
@@ -3292,6 +3353,7 @@ T30 *t30_create(const struct t30_config *cfg)
 		if (t->lose_n < 1)
 			t->lose_fcf = 0;
 	}
+	t->rnr_test = !cfg->sending && env("DSP_T30_RNR") != nullptr;
 	if (!cfg->sending && cfg->ecm)
 		t->ecm_rx.assign(static_cast<size_t>(ECM_FRAMES) * ECM_SIZE, 0);
 	t->restart_v21();

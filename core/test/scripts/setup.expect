@@ -434,8 +434,8 @@
       0 A: +ICF=3,3 +IPR=0 +ILRR=0 +IDSR=0 +ILSD=0 +MR=0 +ER=0 +DR=0 +ES=3,0,2\r\n
       0 A: +ESA=0,0,0,0,0,0,255,255 +ITF=383,128,0 +A8E=1,1,0,0 +DSVD=0 +ASVD=0\r\n
       0 A: +DS=3,0,2048,34 +DS44=3,0,0,4096,4096,255,255,12288,12288 +DSZ=1,1 +B2=0\r\n
-      0 A: +X2UP=0,16,0 +CBST=0,0,0 +CRC=0 +PCW=2 +PIG=1 +FAA=0 +FPR=8 -SEC=0 +EF=5\r\n
-      0 A: +CVM=63,8000,0 +DEBC=1,0,37\r\n
+      0 A: +X2UP=0,16,0 +CBST=0,0,0 +CRC=0 +PCW=2 +PIG=1 +FAA=0 +FPR=8 +FAR=0\r\n
+      0 A: +FCL=0 +FDD=0 +FIT=0,0 -SEC=0 +EF=5 +CVM=63,8000,0 +DEBC=1,0,37\r\n
       0 A: STORED PROFILES: none\r\n
       0 A: \r\n
       0 A: OK\r\n

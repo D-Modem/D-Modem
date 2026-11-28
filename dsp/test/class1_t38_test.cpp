@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <deque>
 #include <string>
 #include <vector>
@@ -979,4 +980,77 @@ TEST(Class1T38Packets, FramesDuringFrs)
 	std::vector<std::string> m = dte.message(1);
 	ASSERT_FALSE(m.empty()) << "the frames that came during +FRS=1";
 	EXPECT_EQ(fcf_of(m.back()), FCF_DCS);
+}
+
+
+/*
+ *    the audio: +FTM's fill and the DTE's time (T.31 8.3.3)
+ */
+
+/* the bits of a V.29 receiver, once it is trained */
+struct Bits {
+	std::string got;
+};
+
+/* FaxRx callback: a bit into the Bits at ctx */
+static void bits_put(void *ctx, s16 bit)
+{
+	static_cast<Bits *>(ctx)->got += bit ? '1' : '0';
+}
+
+/* the engine's audio for ms into rx (its results from FAX_process: the
+   first one not 0, at *at_ms its time; -1 when none) */
+static int ftm_run(void *f, FaxRx *rx, int ms, int *at_ms)
+{
+	s16 in[TICK] = {}, out[TICK];
+	int status = 0;
+	for (int t = 0; t < ms; t += TICK / 8) {
+		int st = FAX_process(f, in, out, TICK);
+		for (int i = 0; i < TICK; i++)
+			rx->sample(out[i]);
+		if (st && !status) {
+			status = st;
+			*at_ms = t;
+		}
+	}
+	return status ? status : -1;
+}
+
+/* +FTM=96: CONNECT, then ones until the DTE's first data (not zeros);
+   after the data, with the buffer empty for 5 s, the carrier stops and
+   the result is ERROR (FAX_STATUS_FRAME_ERROR) */
+TEST(Class1Audio, FtmOnesThenTimeout)
+{
+	Tty tty;
+	void *f = FAX_create(reinterpret_cast<struct modem *>(&tty), 1, 8000);
+	ASSERT_NE(f, nullptr);
+	Bits b;
+	FaxRx rx;
+	ASSERT_EQ(rx.init(FM_V29_9600, 0, 8000, bits_put, &b, nullptr), 0);
+	int at = 0;
+
+	/* the caller's +FRH=3 at the start, stopped by the DTE */
+	tty.in = "x";
+	ASSERT_EQ(ftm_run(f, &rx, 100, &at), FAX_STATUS_OK);
+	ASSERT_EQ(FAX_class1_command(f, FAX_CMD_FTM, 96), 1);
+	ASSERT_EQ(ftm_run(f, &rx, 20, &at), FAX_STATUS_CONNECT);
+	/* the training (253 ms), then 1 s with no data */
+	EXPECT_EQ(ftm_run(f, &rx, 1300, &at), -1);
+	ASSERT_GT(b.got.size(), 9600u / 2) << "not trained";
+	size_t ones = std::count(b.got.begin() + 100, b.got.end(), '1');
+	EXPECT_GT(ones, (b.got.size() - 100) * 95 / 100)
+		<< "the fill before the data is not ones";
+
+	/* data that ends with NUL, no <DLE><ETX>: ERROR 5 s after it */
+	tty.in += std::string(100, '\x5a') + '\0';
+	int status = ftm_run(f, &rx, 8000, &at);
+	EXPECT_EQ(status, FAX_STATUS_FRAME_ERROR);
+	EXPECT_GE(at, 4900);
+	EXPECT_LE(at, 5300);
+	/* the carrier is off */
+	s16 in[TICK] = {}, out[TICK];
+	FAX_process(f, in, out, TICK);
+	EXPECT_EQ(*std::max_element(out, out + TICK), 0);
+	rx.release();
+	FAX_delete(f);
 }

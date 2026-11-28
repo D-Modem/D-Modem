@@ -97,6 +97,8 @@ struct T4Rx {
 	s16 next_2d;                    /* MR: the tag bit after the EOL */
 	s16 tag_pending;
 	s16 done;
+	s32 since_eol;                  /* bits since the last EOL (or the
+					   start) */
 	std::vector<unsigned char> ref; /* the last good row */
 
 	void init(T4Page *page_, s16 mr_);
@@ -107,6 +109,12 @@ struct T4Rx {
 	/* the end of the data without RTC (the carrier went): the last
 	   row */
 	void end();
+	/* the total coded scan line takes longer than T.4 3.2 permits at
+	   bps bit/s (13 s): the receiver must disconnect */
+	bool line_too_long(s32 bps) const
+	{
+		return !done && since_eol > 13 * bps;
+	}
 };
 
 /* TIFF-F: pages appended to a file, written at the end */
