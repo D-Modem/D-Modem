@@ -727,6 +727,21 @@ bool Link::update_config(const Config &remote)
 	return true;
 }
 
+/* (see link.h) */
+void Link::comp_restart()
+{
+	if (!cfg_.comp || cfg_.zstd || cfg_.adc)
+		return;
+	if (cfg_.v44) {
+		enc44_.c_init();
+		dec44_.c_init();
+	} else {
+		enc_.c_init();
+		dec_.c_init();
+	}
+	logf("ec: the compression starts again (C-INIT).");
+}
+
 /* (see link.h): the coders at the LRs' N2 and N7 (each is made at
    least as large: Mnp offers no more than Config's); no compression if
    they cannot be set up */

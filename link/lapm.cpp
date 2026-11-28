@@ -40,6 +40,9 @@ static const u8 ADDR_ORIG = 0x03, ADDR_ANS = 0x01;
    as a whole (N(R) and P/F are in the second octet), U frames with
    their P/F bit (PF) masked off */
 static const u8 S_RR = 0x01, S_RNR = 0x05, S_REJ = 0x09, S_SREJ = 0x0d;
+/* the first octet of a UI frame's information field, bit 8 apart
+   (Table 12/V.42) */
+static const u8 UI_BRK = 0x40, UI_BRKACK = 0x60;
 static const u8 U_SABME = 0x6f, U_DM = 0x0f, U_UI = 0x03, U_DISC = 0x43,
 	U_UA = 0x63, U_FRMR = 0x87, U_XID = 0xaf, U_TEST = 0xe3;
 static const u8 PF = 0x10;
@@ -258,6 +261,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	cmd_ud_.clear();
 	rsp_ud_.clear();
 	rtx_count_ = 0;
+	vrb_ = 0;
 	backlog_.clear();
 	cmd_addr_ = link->caller() ? ADDR_ORIG : ADDR_ANS;
 	rsp_addr_ = link->caller() ? ADDR_ANS : ADDR_ORIG;
@@ -391,11 +395,15 @@ void Lapm::reset()
 }
 
 /* the data phase begins, after a sequence reset: the link is up (once
-   in this call or again) */
+   in this call or again).  Up again: the compression starts again too
+   (C-INIT on L-ESTABLISH, 5.2/V.42bis, 7.5/V.44), as at the other
+   end */
 void Lapm::connect()
 {
 	reset();
 	state_ = DATA;
+	if (was_up_ && !v76_)
+		link_->comp_restart();
 	was_up_ = true;
 	link_->logf("ec: connected.");
 	link_->status(Status::Up);
@@ -1056,9 +1064,9 @@ void Lapm::rx_super_rsp(Frame *f)
 /* a U command, in any state: SABME (re-)establishes and is always
    accepted (8.3.2.1, 8.4.9.1); DISC releases (8.7.2), or gets a DM
    while disconnected (8.8); an XID is answered with what was agreed
-   (8.10); a UI in the data phase goes to the USRobotics remote feature
-   upgrade (usr_feature.h), as a Courier sends its answers in UI
-   commands; break (UI) and TEST (loop-back) are not implemented */
+   (8.10); a UI in the data phase is a break (BRK, 8.13) or goes to the
+   USRobotics remote feature upgrade (usr_feature.h), as a Courier sends
+   its answers in UI commands; TEST (loop-back) is not implemented */
 void Lapm::rx_unnum_cmd(Frame *f)
 {
 	const u8 pf = f->buf[1] & PF;
@@ -1111,7 +1119,11 @@ void Lapm::rx_unnum_cmd(Frame *f)
 		}
 		break;
 	case U_UI:
-		if (state_ == DATA)
+		if (state_ != DATA)
+			break;
+		if (f->count >= 3 && (f->buf[2] & 0x7f) == UI_BRK)
+			rx_break(f->buf + 2, static_cast<s16>(f->count - 2), pf);
+		else
 			link_->usr_rx(f->buf + 2, static_cast<s16>(f->count - 2));
 		break;
 	case U_TEST:
@@ -1479,6 +1491,39 @@ void Lapm::xid_defaults()
 	r.ec = r.detect = true;
 	link_->logf("ec: no XID agreed: V.42's defaults.");
 	link_->update_config(r);
+}
+
+/* a BRK message (8.13.3.2, 12.3.1) in the UI command x (n octets, P
+   pf): a new one (N(SB) = V(RB)) is logged (the DTE interface has no
+   break signal) and V(RB) is complemented; a destructive one (D 1)
+   resets the link's state (Table 5, note a): the data not yet
+   delivered and not yet sent is discarded, the sequence variables are
+   0 and the compression starts again, as at the sender.  The BRKACK
+   with N(RB) = V(RB) and F = P answers new and repeated BRKs alike */
+void Lapm::rx_break(const u8 *x, s16 n, u8 pf)
+{
+	if ((x[0] >> 7) == vrb_) {
+		const bool discard = n >= 2 && (x[1] & 0x80);
+		const bool expedited = n >= 2 && (x[1] & 0x40);
+		const unsigned ms = n >= 3 ? x[2] * 10u : 0;
+		link_->logf("ec: break (%s, %s, %u ms): not passed to the "
+			    "DTE.", discard ? "destructive" : "non-destructive",
+			    expedited ? "expedited" : "in sequence", ms);
+		vrb_ ^= 1;
+		if (discard) {
+			reset();
+			backlog_.clear();
+			timer_stop();
+			link_->comp_restart();
+		}
+	}
+	Frame *f = ctrl_frame();
+	if (!f)
+		return;
+	f->buf[0] = rsp_addr_;
+	f->buf[1] = static_cast<u8>(U_UI | pf);
+	f->buf[2] = static_cast<u8>(vrb_ << 7 | UI_BRKACK);
+	f->size = 3;
 }
 
 /* a procedural error in the remote's XID (a compression parameter less

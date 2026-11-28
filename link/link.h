@@ -452,6 +452,10 @@ public:
 	   on a procedural error (a parameter of the selected compression
 	   less than its minimum): the connection stops */
 	bool update_config(const Config &remote);
+	/* C-INIT in the call (LAPM up again, a destructive break): the
+	   compression agreed starts again, its output not yet taken
+	   dropped (V.42bis and V.44; zstd and ADC as they are) */
+	void comp_restart();
 	/* the rate (bit/s) HST is to start at, both having offered it in
 	   XID; 0 if not */
 	s32 hst_rate() const { return hst_bps_; }

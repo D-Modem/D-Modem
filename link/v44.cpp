@@ -113,6 +113,28 @@ s16 V44::config(s32 codewords, s32 max_string, s32 history)
 	return 0;
 }
 
+/* (see v44.h): both coders' state from the start, as config() leaves
+   it, with the preset kept */
+void V44::c_init()
+{
+	if (!ready())
+		return;
+	restart();
+	end_ = hp_;
+	bits_ = 0;
+	nbits_ = 0;
+	transparent_ = escape_ = false;
+	escape_char_ = 0;
+	est_ = EST_START;
+	hold_ = 0;
+	prev_type_ = NONE;
+	in_.clear();
+	in_pos_ = 0;
+	in_bit_ = 0;
+	obuf_.clear();
+	ohead_ = 0;
+}
+
 /* frees the dictionary, the history and the buffers */
 void V44::exit()
 {

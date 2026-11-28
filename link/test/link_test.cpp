@@ -2636,6 +2636,129 @@ TEST(Link, LapmV44Defaults)
 	      (int)c.v44_history_r);
 }
 
+/* an answerer in the data phase with V.42's defaults (a SABME with no
+   XID), its DTE online */
+static void up_plain(Script &s, Link &l)
+{
+	s.send({ 0x03, 0x7f });
+	s.rounds(4);
+	l.set_online(true);
+}
+
+/* the frames of l since before, as UI responses' information fields */
+static std::vector<std::vector<uint8_t>> ui_responses(
+	const Script &s, size_t before)
+{
+	std::vector<std::vector<uint8_t>> v;
+	for (size_t i = before; i < s.out().size(); i++) {
+		const auto &f = s.out()[i];
+		if (f.size() >= 3 && f[0] == 0x03 && (f[1] & 0xef) == 0x03)
+			v.emplace_back(f.begin() + 2, f.end());
+	}
+	return v;
+}
+
+/* the break (8.13/V.42): each BRK gets a BRKACK with N(RB) = V(RB) and
+   F = P; a repeated BRK (N(SB) not V(RB)) gets the BRKACK again; a
+   destructive BRK (D 1) resets the sequence variables, so the remote's
+   next I frame is N(S) 0 again */
+TEST(Link, LapmBreak)
+{
+	Dte d("answerer");
+	Link l;
+	l.init(&d, false, lapm_config(3));
+	l.start(true, false);
+	Script s(l);
+	up_plain(s, l);
+	CHECK(d.up, "up");
+
+	size_t before = s.out().size();
+	s.send({ 0x03, 0x03, 0x40, 0x40 });     /* BRK, N(SB) 0, expedited */
+	s.rounds(4);
+	s.send({ 0x03, 0x13, 0x40, 0x00, 10 }); /* again, P 1: repeated */
+	s.rounds(4);
+	s.send({ 0x03, 0x03, 0xc0, 0x00 });     /* N(SB) 1: new */
+	s.rounds(4);
+	auto acks = ui_responses(s, before);
+	CHECK(acks.size() == 3, "%zu BRKACKs", acks.size());
+	if (acks.size() == 3) {
+		CHECK(acks[0] == std::vector<uint8_t>({ 0xe0 }) &&
+		      acks[1] == std::vector<uint8_t>({ 0xe0 }) &&
+		      acks[2] == std::vector<uint8_t>({ 0x60 }),
+		      "BRKACKs %02x %02x %02x", acks[0][0], acks[1][0],
+		      acks[2][0]);
+	}
+	/* F = P */
+	CHECK(s.out().size() >= 2 &&
+	      s.out()[s.out().size() - 2][1] == 0x13,
+	      "the BRKACK to a BRK with P 1 has F 1");
+
+	/* I frame N(S) 0, then a destructive BRK (N(SB) 0), then N(S) 0
+	   again: both I frames to the DTE */
+	const std::string a = "before the break", b = "after the break";
+	std::vector<uint8_t> i = { 0x03, 0x00, 0x00 };
+	i.insert(i.end(), a.begin(), a.end());
+	s.send(i);
+	s.rounds(6);
+	before = s.out().size();
+	s.send({ 0x03, 0x03, 0x40, 0xc0, 0 });
+	s.rounds(4);
+	acks = ui_responses(s, before);
+	CHECK(acks.size() == 1 && acks[0] == std::vector<uint8_t>({ 0xe0 }),
+	      "destructive: %zu BRKACKs", acks.size());
+	i = { 0x03, 0x00, 0x00 };
+	i.insert(i.end(), b.begin(), b.end());
+	s.send(i);
+	s.rounds(6);
+	const std::string ab = a + b;
+	CHECK(d.got == std::vector<uint8_t>(ab.begin(), ab.end()),
+	      "destructive: %zu octets to the DTE", d.got.size());
+	CHECK(d.up && !d.released, "destructive: still up");
+}
+
+/* LAPM up again in the data phase (a SABME, 8.3.2.1): V.44 starts
+   again too (C-INIT on L-ESTABLISH, 7.5/V.44).  The remote's encoder
+   is new after the SABME; the answerer's decoder must be new too */
+TEST(Link, LapmReestablishCInit)
+{
+	Dte d("answerer");
+	Link l;
+	l.init(&d, false, lapm_config(3));
+	l.start(true, false);
+	Script s(l);
+	s.send(v44_xid());              /* the defaults: 1024, 255, 3072 */
+	s.rounds(4);
+	s.send({ 0x03, 0x7f });
+	s.rounds(4);
+	l.set_online(true);
+	CHECK(d.up && l.config().v44, "up with V.44");
+	auto frame = [](const std::string &t, int ns) {
+		V44 e;
+		e.init(1024, 255, 3072);
+		std::vector<uint8_t> f = { 0x03, (uint8_t)(ns << 1), 0x00 };
+		for (char c : t)
+			e.encode((uint8_t)c);
+		e.flush_encoder();
+		uint8_t buf[512];
+		int n;
+		while ((n = e.out(buf, sizeof(buf))) > 0)
+			f.insert(f.end(), buf, buf + n);
+		return f;
+	};
+	const std::string a = "the line the line the line of the modem";
+	const std::string b = "abcabcabcabc xyzxyzxyz 0101010101";
+	s.send(frame(a, 0));
+	s.rounds(6);
+	s.send({ 0x03, 0x7f });         /* up again */
+	s.rounds(4);
+	s.send(frame(b, 0));            /* a new encoder, N(S) 0 */
+	s.rounds(6);
+	const std::string ab = a + b;
+	CHECK(d.got == std::vector<uint8_t>(ab.begin(), ab.end()),
+	      "%zu octets to the DTE: %.*s", d.got.size(), (int)d.got.size(),
+	      (const char *)d.got.data());
+}
+
 /* a compression parameter less than its minimum is a procedural error
    (5.1/V.42bis, 7.4/V.44): the connection stops.  An answerer with
    such an XID command sends no response; a caller with such an XID
