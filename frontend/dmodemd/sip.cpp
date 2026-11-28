@@ -116,6 +116,7 @@ namespace libre {
 #include "rtp_events.h"
 #include "rtp_red.h"
 #include "sip.h"
+#include "t38.h"
 #include "v150.h"
 #include "reinit.h"
 
@@ -915,6 +916,7 @@ struct Peer {
 	s32 version = 0;
 	s32 max_datagram = 0;
 	bool redundancy = false;
+	std::string udp_ec;             /* its T38FaxUdpEC, as it is */
 };
 
 /* the T.38 settings of image line m */
@@ -932,8 +934,11 @@ Peer t38_params(const SdpMedia &m)
 		else if (n == "t38faxmaxdatagram" || n == "t38maxdatagram")
 			p.max_datagram = static_cast<s32>(
 				dcore::leading_long(a.second));
-		else if (n == "t38faxudpec")
-			p.redundancy = lower(a.second) == "t38udpredundancy";
+		else if (n == "t38faxudpec") {
+			p.udp_ec = a.second;
+			p.redundancy =
+				dsp::t38_udp_ec_redundancy(a.second.c_str());
+		}
 	}
 	return p;
 }
@@ -958,6 +963,7 @@ struct Line {
 	const Suite *suite = nullptr;   /* and its suite */
 	std::string dir = "sendrecv";
 	s32 version = 0;                /* image: T38FaxVersion */
+	std::string udp_ec = "t38UDPRedundancy";  /* image: T38FaxUdpEC */
 	std::string type, proto, fmts;  /* off: the far end's line */
 };
 
@@ -982,12 +988,13 @@ Line audio_answer(const Sdp &s, const SdpMedia &m)
 	return l;
 }
 
-/* our image (T.38) line, T38FaxVersion version */
-Line image_line(s32 version)
+/* our image (T.38) line, T38FaxVersion version, T38FaxUdpEC udp_ec */
+Line image_line(s32 version, const char *udp_ec = "t38UDPRedundancy")
 {
 	Line l;
 	l.kind = Line::IMAGE;
 	l.version = version;
+	l.udp_ec = udp_ec;
 	return l;
 }
 
@@ -1032,16 +1039,16 @@ s16 find(const std::vector<Line> &lines, Line::Kind kind)
 	return -1;
 }
 
-/* our T.38 line's attributes: version, with redundancy, datagrams of
-   400 octets */
-std::string t38_attrs(s32 version)
+/* our T.38 line's attributes: version, T38FaxUdpEC udp_ec, datagrams
+   of 400 octets */
+std::string t38_attrs(s32 version, const std::string &udp_ec)
 {
 	return "a=T38FaxVersion:" + std::to_string(version) + "\r\n"
 		"a=T38MaxBitRate:14400\r\n"
 		"a=T38FaxRateManagement:transferredTCF\r\n"
 		"a=T38FaxMaxBuffer:2000\r\n"
 		"a=T38FaxMaxDatagram:400\r\n"
-		"a=T38FaxUdpEC:t38UDPRedundancy\r\n";
+		"a=T38FaxUdpEC:" + udp_ec + "\r\n";
 }
 
 /* V.152's a=maxmptime for an audio line of audio formats of ours (20
@@ -2308,7 +2315,8 @@ struct Call {
 			}
 			case Line::IMAGE:
 				m += "m=image " + std::to_string(udptl_port) +
-					" udptl t38\r\n" + t38_attrs(l.version);
+					" udptl t38\r\n" +
+					t38_attrs(l.version, l.udp_ec);
 				break;
 			case Line::SPRT: {
 				std::string pt = std::to_string(l.pt);
@@ -2690,7 +2698,8 @@ int on_offer(struct mbuf **descp, const struct sip_msg *msg, void *arg)
 			Peer p = t38_params(s.media[i]);
 			p.version = std::min(p.version, 3);
 			c->t38_asked = true;
-			c->lines = mirror(s, i, image_line(p.version));
+			c->lines = mirror(s, i, image_line(p.version,
+				dsp::t38_udp_ec_answer(p.udp_ec.c_str())));
 			*descp = mbuf_of(c->sdp(c->lines));
 			if (!*descp)
 				return ENOMEM;

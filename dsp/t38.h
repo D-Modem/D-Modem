@@ -126,6 +126,38 @@ struct UdptlRx {
 		   void *ctx);
 };
 
+/* a and b the same, A to Z as a to z (SDP's values) */
+inline bool t38_same_nocase(const char *a, const char *b)
+{
+	for (; *a && *b; a++, b++) {
+		char x = *a >= 'A' && *a <= 'Z' ? *a - 'A' + 'a' : *a;
+		char y = *b >= 'A' && *b <= 'Z' ? *b - 'A' + 'a' : *b;
+		if (x != y)
+			return false;
+	}
+	return *a == *b;
+}
+
+/* T38FaxUdpEC in SDP (Annex D.2.3, Table D.2): the value an answer
+   gives for the value offered (any case, NULL or "" for none): the same
+   for t38UDPNoEC and t38UDPRedundancy, which we have, else (t38UDPFEC:
+   no FEC here) t38UDPRedundancy */
+inline const char *t38_udp_ec_answer(const char *offered)
+{
+	if (offered && t38_same_nocase(offered, "t38UDPNoEC"))
+		return "t38UDPNoEC";
+	return "t38UDPRedundancy";
+}
+
+/* the far end's T38FaxUdpEC (any case) lets us send the packets before
+   again: t38UDPRedundancy, or t38UDPFEC (either scheme); not
+   t38UDPNoEC or none */
+inline bool t38_udp_ec_redundancy(const char *value)
+{
+	return value && (t38_same_nocase(value, "t38UDPRedundancy") ||
+			 t38_same_nocase(value, "t38UDPFEC"));
+}
+
 } // namespace dsp
 
 #endif /* __T38_H__ */

@@ -491,3 +491,23 @@ TEST(T38Pair, SendsFiles)
 	EXPECT_TRUE(got[1].file.empty());
 	EXPECT_GT(got[1].rows, 0);
 }
+
+/* T38FaxUdpEC (Annex D.2.3, Table D.2): an answer gives the offered
+   value when we have it (t38UDPNoEC, t38UDPRedundancy), else
+   t38UDPRedundancy; we send the packets before again only for
+   t38UDPRedundancy and t38UDPFEC */
+TEST(T38Sdp, UdpEc)
+{
+	EXPECT_STREQ(t38_udp_ec_answer("t38UDPNoEC"), "t38UDPNoEC");
+	EXPECT_STREQ(t38_udp_ec_answer("T38UDPNOEC"), "t38UDPNoEC");
+	EXPECT_STREQ(t38_udp_ec_answer("t38UDPRedundancy"),
+		     "t38UDPRedundancy");
+	EXPECT_STREQ(t38_udp_ec_answer("t38UDPFEC"), "t38UDPRedundancy");
+	EXPECT_STREQ(t38_udp_ec_answer(""), "t38UDPRedundancy");
+	EXPECT_STREQ(t38_udp_ec_answer(nullptr), "t38UDPRedundancy");
+	EXPECT_TRUE(t38_udp_ec_redundancy("t38UDPRedundancy"));
+	EXPECT_TRUE(t38_udp_ec_redundancy("t38udpfec"));
+	EXPECT_FALSE(t38_udp_ec_redundancy("t38UDPNoEC"));
+	EXPECT_FALSE(t38_udp_ec_redundancy(""));
+	EXPECT_FALSE(t38_udp_ec_redundancy(nullptr));
+}

@@ -105,7 +105,7 @@ A standard that has no link has no pages yet.
 | [T.6](t6.md) ([details](t6-details.md)) | MMR coding |
 | [T.31](t31.md) ([details](t31-details.md)) | Class 1 fax AT commands |
 | [T.32](t32.md) ([details](t32-details.md)) | Class 2 and Class 2.0 fax AT commands |
-| T.38 | Fax over IP |
+| [T.38](t38.md) ([details](t38-details.md)) | Fax over IP |
 | T.82 | JBIG coding of bi-level images |
 | T.85 | JBIG for fax pages |
 | T.42 | Colour fax with JPEG |
