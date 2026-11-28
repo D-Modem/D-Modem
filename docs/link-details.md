@@ -22,7 +22,8 @@ It is C++, in `namespace dlink`.
     T400 is three times longer (2.25 s) there. The two directions of
     V.34 can start some hundreds of ms apart, and the ADPs must also
     come back through the round trip. After V.8, the originator keeps
-    zstd in its XID when the first XID gets no answer.
+    zstd in its second XID, because noise at the start of the line can
+    stop the first XID. From the third XID, it removes zstd.
   - Two HDLC flags in sequence show that the remote has V.42. The link
     ignores one flag alone, because it can be noise from a receiver
     that is not yet stable.
@@ -46,6 +47,24 @@ It is C++, in `namespace dlink`.
     data phase) before LAPM stops.
   - Parameter negotiation in XID, with the private parameters of V.42bis
     (and the zstd set after them) and the user data subfield of V.44.
+  - If no XID is agreed before the link is first up, the two ends use
+    the defaults of V.42: no compression, no Hayes sets, no MNP 10,
+    FCS-16, k = 15 and N401 = 128 (`Lapm::xid_defaults()`). This
+    occurs when:
+    - the answerer gets an SABME and no XID before it;
+    - the answerer gets an XID command that it cannot read (no general
+      format). Its XID response then names no compression;
+    - the originator gets a DM (F = 0) to its first XID.
+  - The originator releases the link (NO CARRIER) before it is up when:
+    - it gets a DM (F = 0) after it sent its XID again. The remote can
+      have agreed to an earlier XID in a response that was lost
+      (Appendix III.3/V.42);
+    - it gets an XID response that it cannot read (empty, or no general
+      format).
+  - XID frames have no sequence number. After the originator removes
+    zstd from its XID, it ignores an XID response that names zstd. That
+    response is late, and answers an earlier XID. T401 continues for the
+    response to the current XID.
   - USRobotics HST in the user data subfield of XID, as a Courier sends
     it (`Config::hst`, for `AT+MS=HST`): the set `HST` (PI 0xFF), the
     capability (PI 0xC0: options, then the forward rates as bits 2 to
@@ -220,6 +239,8 @@ are in [x2-upgrade-details.md](x2-upgrade-details.md).
 | LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmFcs32`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; the 32-bit FCS (the caller's XID with and without it, the answerer's response, a SABME with each FCS, FCS-16 when either side has it off, and the data with bit errors); no compression; one direction only; each V.42bis parameter the smaller of the two |
 | HST | `LapmHst`, `Hst` | a recorded Courier's XID command and response: the answerer's response with HST and its turn on the DM; the caller's DM (FCS-16) and its SABME first after HST is up; the start rate between two Links; without HST, LAPM as before; the HST link against a Courier's first frames, and between two Links, with the turns of the channels |
 | LAPM faults | `LapmBadFrames`, `LapmNrPastVs`, `LapmUnsolicitedDm`, `LapmBitErrors`, `LapmSlowDte`, `LapmCompressedSlowDte`, `LapmN400` | frames LAPM must drop; an N(R) past V(S) ignored; an unsolicited DM (F = 0) while idle, which asks for the link (8.8/V.42: an SABME, not the link up; ignored after a release); REJ and T401 recovery; a slow DTE (RNR); five retransmissions of an unanswered XID and five polls with the line cut, no more |
+| XID not agreed | `LapmSabmeWithoutXid`, `LapmBadXidThenSabme`, `LapmCallerXidNotAgreed` | an SABME with no XID, and an XID command with no general format, at the answerer; a DM (F = 0) to the first XID, a DM after the XID was sent again, and an XID response that LAPM cannot read, at the originator: the defaults of V.42 (no compression, FCS-16) with the data unchanged each way, or the release |
+| XID offers that change | `LapmZstdIgnored`, `LapmXidResponseLate` | an answerer that ignores an XID with zstd (with and without V.8): the originator removes zstd and LAPM comes up; XID responses later than T401: the two ends agree on the same compression, and text and noise go through each way |
 | Detection and async | `DetectHangup`, `AdpCellular`, `Async`, `V14`, `OdpUnanswered`, `LapmCallerAsyncRemote` | a hangup during T400; an originator against a cellular answerer's ADPs, "EM" then "EC" (LAPM) or "EM" alone (async after T400); async; an answerer or caller that uses async after T400; a LAPM answerer with an async caller |
 | MNP | `MnpLr`, `MnpResponder`, `MnpResponderNoLr`, `Mnp`, `MnpIdleStart`, `MnpAfterOdp`, `MnpOctets`, `MnpBitErrors`, `MnpSlowDte`, `MnpRequired`, `MnpN400` | our LR octet for octet as the Agere modem's, FCS and all, three of them unanswered, then async; our responder against the Agere modem's LR, then an LA, an LT, an LN (LNA) and an LD as HDLC frames; against SYN DLE STX with no LR after it (async after its wait, nothing sent); no data for 20 s, then the LR of the caller again on T404 and the data phase continues; MNP first, and after ODPs a V.42 answerer did not answer; framing mode 2 and no optimizations; bit errors in both modes; a slow DTE (no credit); MNP required against a modem without it; N400 with the line cut |
 | MNP 5 | `Mnp5`, `MnpMnp5` | round trips (text, noise, runs, every value, flushes); the Agere modem's MNP 5 octets decoded and coded again; MNP with MNP 5 both ways |
