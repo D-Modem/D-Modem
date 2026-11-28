@@ -179,3 +179,4 @@ An end that receives FRMR resets the link with SABM (2.4.7.2).
 | The end of the busy condition (2.4.5.8) | RR, also when I frames were discarded. The remote end waited for T1. | REJ when I frames were discarded |
 | Other commands in the disconnected phase (2.4.4.4.1) | Ignored | DM F 1 for a command with P 1 |
 | The UA to the DISC of the remote end | The line stopped before the UA went out. The remote end sent DISC again N2 times. | The UA goes out first |
+| A valid N(R) after a go back (2.3.4.10) | After a REJ or the end of timer recovery, an N(R) for an I frame that waited to go again gave FRMR. The link reset, and the data in the I frames was lost. | An N(R) up to the last N(S) that went out is valid |

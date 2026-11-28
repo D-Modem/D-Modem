@@ -412,8 +412,10 @@ void Lapb::tx_complete(Frame *f)
    logged and counted as an error (the caller's FRMR in X.75) */
 bool Lapb::nr_ok(u8 nr)
 {
-	/* (the I frames sent and not acknowledged, our ring's count) */
-	s16 sent = static_cast<s16>((next_ - sent_ + INFO_FRAMES) % INFO_FRAMES);
+	/* (the I frames sent and not acknowledged, our ring's count: each
+	   one filled went out at least once, also those that wait to go
+	   again after a go back, 2.3.4.10) */
+	s16 sent = static_cast<s16>((free_ - sent_ + INFO_FRAMES) % INFO_FRAMES);
 	if (seq_diff(nr, va_) <= std::max(seq_diff(vs_, va_), sent))
 		return true;
 	link_->logf("err: %s: N(R) %d past V(S) %d (V(A) %d): ignored.", tag_, nr,

@@ -91,10 +91,10 @@ A standard that has no link has no pages yet.
 
 | Recommendation | Subject |
 |---|---|
-| V.54 | Loop test devices |
-| V.52 and O.153 | The 511-bit test pattern |
-| V.58 | The management information model of a DCE |
-| V.59 | Managed objects for diagnostic information |
+| [V.54](v54.md) ([details](v54-details.md)) | Loop test devices |
+| [V.52 and O.153](v52.md) ([details](v52-details.md)) | The 511-bit test pattern |
+| [V.58](v58.md) ([details](v58-details.md)) | The management information model of a DCE |
+| [V.59](v59.md) ([details](v59-details.md)) | Managed objects for diagnostic information |
 
 ## Fax
 
@@ -112,3 +112,35 @@ A standard that has no link has no pages yet.
 | T.43 | Lossless colour and grey-scale fax |
 | T.44 | Mixed raster content |
 | T.434 | Binary file transfer |
+
+## Related standards
+
+The pages above refer to these standards. D-Modem does not implement
+them as a whole, or they are only a part of a different standard. They
+have no pages yet.
+
+| Recommendation | Subject | Referred to by |
+|---|---|---|
+| V.2 | The power levels for data transmission on telephone lines | V.21, V.25, V.26 bis, V.26 ter, V.27 ter, V.29, V.32, V.33 |
+| V.14 | Asynchronous characters on a synchronous channel | V.22, V.22 bis, V.26 ter, V.32, V.42, V.59, V.150.1, H.245 |
+| V.24 | The circuits between the DTE and the DCE | V.13, V.21, V.23, V.26 bis, V.58, V.110, V.120 |
+| V.25 bis | Dialling with a synchronous or asynchronous DTE | V.25 |
+| V.26 | 2400 bit/s on 4-wire leased circuits | V.26 bis, V.27 ter, V.29 |
+| V.27 | 4800 bit/s on leased circuits | V.27 ter, V.29 |
+| V.28 | The electrical characteristics of the V.24 circuits | V.21, V.23, V.26 bis, V.27 ter, V.29 |
+| G.164, G.165, G.168 | Echo suppressors and echo cancellers | V.25, V.26 ter, V.32, V.152 |
+| G.191 | Software tools for speech and audio coding | G.711 |
+| G.721, G.726 | ADPCM speech coding | G.711, V.253 |
+| H.223, H.324 | Multimedia terminals on the telephone line | V.8, V.8 bis, V.80, V.251, H.245 |
+| H.248, H.323 | Media gateway control and multimedia over IP | V.152, H.245 |
+| I.460 | Rate adaption to 64 kbit/s | V.110 |
+| M.1020, M.1025 | The quality of leased circuits | V.26 ter, V.29 |
+| M.3100, X.722 | The generic network information model, and GDMO | V.58 |
+| Q.921, Q.922 | LAPD and the frame relay data link | V.120 |
+| Q.931 | ISDN call control | V.120 |
+| T.35 | Country codes and manufacturer codes | V.8 |
+| T.66, T.101 | Codes for the V.8 call functions: Videotex and others | V.8, V.8 bis |
+| T.90 | ISDN terminals for telematic services | X.75 |
+| X.30 | ISDN support of X.21 terminals | V.110 |
+| X.25 | Packet mode DTEs | X.75 |
+| X.691 | The packed encoding rules (PER) of ASN.1 | H.245, V.75 |

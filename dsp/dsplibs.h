@@ -68,6 +68,11 @@ void dp_runtime_set_restart(void *runtime, int ans_sent);
 void dp_runtime_set_v110(void *runtime, long rate);
 /* the V.110 user rate the clear pump runs at, 0 for none */
 long dp_runtime_v110(void *runtime);
+/* remote loop 2 signalled by the pump (V.22 and V.22 bis, 7.1): cmd
+   (0 none, 1 start, 2 end) to the pump, grant: the far end may have the
+   loop here; the pump's last event (dsp.h's LOOP2_EV_*, then cleared),
+   0 for none, -1 if the pump does not signal loop 2 itself */
+long dp_runtime_loop2(void *runtime, int cmd, int grant);
 /* 1 while a pump takes the line's exact PCM codes (V.91), when the core
    must not remove DC from them; else 0 */
 int dp_runtime_pcm(void *runtime);

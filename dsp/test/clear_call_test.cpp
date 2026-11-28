@@ -819,6 +819,41 @@ TEST(Clear, X75SabmsCross)
 	EXPECT_NE(a.data.find("ok"), std::string::npos) << a.data;
 }
 
+/* X.75 2.3.4.10: after a go back (the caller's REJ 0), an N(R) up to
+   the last N(S) that went out is valid. The caller's RR 2 comes while
+   the answerer sends I frames 0 and 1 again: no FRMR, and the link
+   stays up */
+TEST(Clear, X75AckAfterGoBack)
+{
+	debug();
+	Channel l;
+	Peer peer;
+	End a("answerer", "ATE0+MS=CLEAR\r");
+	ASSERT_TRUE(peer_up(l, peer, a)) << a.text;
+	for (const char *d : { "ab", "cd" }) {
+		size_t from = peer.rx.frames.size();
+		a.dte.write_some(d, 0);
+		run_peer(l, peer, a, 1, [&](const auto &fs) {
+			for (size_t i = from; i < fs.size(); i++)
+				if (fs[i].size() == 4 && fs[i][0] == 0x03)
+					return true;
+			return false;
+		});
+	}
+	size_t from = peer.rx.frames.size();
+	peer.tx.frame({ 0x03, 0x09 });
+	peer.tx.frame({ 0x03, 0x41 });
+	auto &fa = run_peer(l, peer, a, 0.5,
+			    [](const auto &) { return false; });
+	bool frmr = false;
+	for (size_t i = from; i < fa.size(); i++)
+		frmr = frmr || (fa[i].size() == 5 &&
+				(fa[i][1] & ~0x10) == 0x87);
+	EXPECT_FALSE(frmr);
+	EXPECT_TRUE(a.online);
+	EXPECT_EQ(a.text.find("NO CARRIER"), std::string::npos) << a.text;
+}
+
 /* X.75 2.4.7.2 and 2.4.4.5.2: the caller's FRMR (at 03h) makes the
    answerer reset the link with a SABM (03h 3Fh); the caller's DISC
    crosses it: a DM (01h 1Fh), no UA, and NO CARRIER */

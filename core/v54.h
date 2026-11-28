@@ -20,6 +20,11 @@
  *             loop during the 1s (or when the carrier goes for 1 s: the
  *             call ends here)
  *
+ *    V.22 and V.22 bis have signals of their own for loop 2 (7.1 of
+ *    each), not V.54's: there the pump signals it (pump mode,
+ *    set_pump()), and the test here only asks the pump (pump_cmd()) and
+ *    follows what the pump tells (pump_event()).
+ *
  *    The recognition criteria are left to the DCE (V.54 5.1): here a
  *    pattern is there in a 256-bit block when at least 240 of its bits
  *    descramble to the pattern's bit and the raw bits have a run of seven
@@ -90,26 +95,39 @@ private:
 	bool run_seen_ = false, seen_ = false;
 };
 
-/* V.52's 511-bit pattern, x^9 + x^5 + 1 */
+/* V.52's 511-bit pattern, x^9 + x^5 + 1 (O.153 2.1): a nine-stage
+   shift register, the 5th and 9th stages added into the first; the
+   9th stage's bits out, so that the pattern begins with the first ONE
+   of its 9 ONEs */
 struct Prbs9 {
 	u16 s = 0x1ff;
 	/* the pattern's next bit */
 	u8 bit()
 	{
-		u8 o = ((s >> 8) ^ (s >> 4)) & 1;
-		s = static_cast<u16>(((s << 1) | o) & 0x1ff);
+		u8 o = (s >> 8) & 1;
+		u8 f = ((s >> 8) ^ (s >> 4)) & 1;
+		s = static_cast<u16>(((s << 1) | f) & 0x1ff);
 		return o;
 	}
 };
 
 /* what comes back of it: synchronised once 32 bits in a row follow
    from the 9 before them, then the bits that differ from the pattern
-   counted (synchronised again after 64 errors in 256 bits) */
+   counted; synchronised again when the error ratio is 0.20 or more in
+   an interval (O.153 2.6 a: 1 s, set_window() with the bit rate; 256
+   bits until then) */
 class Checker {
 public:
 	void bit(u8 b);
-	/* to synchronise anew */
-	void reset() { *this = Checker(); }
+	/* to synchronise anew (the interval kept) */
+	void reset()
+	{
+		u32 w = window_;
+		*this = Checker();
+		window_ = w;
+	}
+	/* the interval for the error ratio, bits (one second's) */
+	void set_window(u32 bits) { window_ = bits ? bits : 256; }
 	/* synchronised on the pattern */
 	bool locked() const { return locked_; }
 	/* the bits in error since */
@@ -118,9 +136,10 @@ public:
 	u32 bits() const { return bits_; }
 
 private:
-	Prbs9 gen_;
+	u16 ref_ = 0;           /* the 9 bits before, as they should be */
 	u16 hist_ = 0;
-	s16 good_ = 0, win_ = 0, win_err_ = 0;
+	s16 good_ = 0;
+	u32 win_ = 0, win_err_ = 0, window_ = 256;
 	bool locked_ = false;
 	u32 errors_ = 0, bits_ = 0;
 };
@@ -157,6 +176,30 @@ public:
 	/* the link has no error correction: tests run only then (loop 2's
 	   signalling is in the data) */
 	void set_plain(bool p) { plain_ = p; }
+	/* the data rate (bit/s): the checker's interval (O.153 2.6) */
+	void set_rate(u32 bps) { check_.set_window(bps); }
+
+	/* the pump signals loop 2 itself (V.22, V.22 bis): no V.54
+	   patterns */
+	void set_pump(bool p) { pump_ = p; }
+	/* (see set_pump()) */
+	bool pump() const { return pump_; }
+	/* the pump's commands (dp_runtime_loop2()) and events (dsp.h's
+	   LOOP2_EV_*) */
+	enum { PUMP_START = 1, PUMP_END = 2 };
+	enum {
+		PUMP_UP = 1, PUMP_FAILED = 2, PUMP_ENDED = 3,
+		PUMP_LOOP = 4, PUMP_UNLOOP = 5, PUMP_ASKED = 6,
+	};
+	/* the command for the pump since the last call (0 for none) */
+	int pump_cmd()
+	{
+		int c = pump_cmd_;
+		pump_cmd_ = 0;
+		return c;
+	}
+	/* an event from the pump (pump mode) */
+	void pump_event(int ev);
 
 	/* AT&T6 (self_test false) and AT&T7: loop 2 asked for */
 	void remote(bool self_test);
@@ -251,6 +294,8 @@ private:
 	Phase phase_ = Phase::Idle;
 	s32 left_ = 0;
 	bool self_ = false, grant_ = false, plain_ = false;
+	bool pump_ = false;     /* (see set_pump()) */
+	int pump_cmd_ = 0;
 	bool asked_ = false;    /* B: A asked (TERM ends it) */
 	s16 ones_ = 0;
 	Event event_ = Event::None;

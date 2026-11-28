@@ -381,6 +381,14 @@ struct dp_stats {
 	float pep_noise[DP_STATS_PEP_BINS];
 	unsigned long pep_bad, pep_good;
 	unsigned long pep_micro_tx, pep_micro_rx;   /* micro turns sent, taken */
+	/* DP_STATS_V92: V.92's quick connect (bit 0 on, bit 1 this call
+	   came up with it); the last modem-on-hold, Table 12/V.59's code
+	   + 1 (0: none), its T1 code (Table 33/V.92, -1: none) and how
+	   long it held, ms (-1: not known) */
+	int v92_qc;
+	int moh_last;
+	int moh_t1;
+	long moh_ms;
 };
 
 /*
@@ -478,6 +486,7 @@ struct dp_vcvm {
 #define DP_STATS_NMSE           0x1000
 #define DP_STATS_INFO           0x2000
 #define DP_STATS_PEP            0x4000
+#define DP_STATS_V92            0x8000
 
 /* the mean square of 16 bit linear samples at 0 dBm0: a sine of peak
    22300, G.711's digital milliwatt */

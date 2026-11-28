@@ -23,6 +23,7 @@
 #include <regex>
 
 #include <dcore.h>
+#include <v54.h>
 #include <log.h>
 #include <modem_param.h>
 #include <dsp.h>
@@ -231,6 +232,64 @@ static std::string ebc(const std::string &s, u16 cp = 37)
 	std::string e = s;
 	page.out(&e[0], static_cast<s32>(e.size()));
 	return e;
+}
+
+/* V.52's 511-bit pattern (O.153 2.1): it begins with the first ONE
+   of its 9 ONEs, the 10th bit is a ZERO, it repeats after 511 bits,
+   and its longest run of ZEROs is 8 */
+TEST(V52, PatternStart)
+{
+	dcore::v54::Prbs9 g;
+	std::vector<int> b;
+	for (int i = 0; i < 1022; i++)
+		b.push_back(g.bit());
+	for (int i = 0; i < 9; i++)
+		EXPECT_EQ(b[i], 1) << i;
+	EXPECT_EQ(b[9], 0);
+	int zeros = 0, run = 0;
+	for (int i = 0; i < 511; i++) {
+		EXPECT_EQ(b[i], b[i + 511]) << i;
+		run = b[i] ? 0 : run + 1;
+		zeros = std::max(zeros, run);
+	}
+	EXPECT_EQ(zeros, 8);
+}
+
+/* the checker synchronises again when the error ratio is 0.20 or more
+   in its interval (O.153 2.6 a), and not below that: one bit in 6
+   wrong (0.17) keeps it in step, one in 4 (0.25) does not */
+TEST(V52, CheckerLossOfSync)
+{
+	for (int every : { 6, 4 }) {
+		dcore::v54::Checker c;
+		c.set_window(2400);
+		dcore::v54::Prbs9 g;
+		bool lost = false;
+		for (int i = 0; i < 20000; i++) {
+			int b = g.bit();
+			bool was = c.locked();
+			if (was && i % every == 0)
+				b ^= 1;
+			c.bit(static_cast<u8>(b));
+			if (was && !c.locked())
+				lost = true;
+		}
+		EXPECT_EQ(lost, every == 4) << every;
+	}
+	/* a 10 % burst for less than the interval: no loss either */
+	dcore::v54::Checker c;
+	c.set_window(9600);
+	dcore::v54::Prbs9 g;
+	bool lost = false;
+	for (int i = 0; i < 40000; i++) {
+		int b = g.bit();
+		bool was = c.locked();
+		if (was && i > 10000 && i < 12000 && i % 3 == 0)
+			b ^= 1;
+		c.bit(static_cast<u8>(b));
+		lost |= was && !c.locked();
+	}
+	EXPECT_FALSE(lost);
 }
 
 /* each code page one octet for one octet both ways, "AT", "at" and

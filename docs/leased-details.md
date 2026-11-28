@@ -186,13 +186,27 @@ for point-to-point circuits. The patterns are scrambled with
 If no ACK comes in 6144 bits after the PREP, the command gives ERROR. The
 far end also stops its loop when the carrier is lost for 1 s.
 
+V.22 and V.22 bis (`+MS=22`, `+MS=122`) have their own signals for loop 2
+(clause 7.1 of each). The data pump sends them in place of the patterns
+of V.54:
+
+1. This end sends unscrambled 1s.
+2. After 190 ms of them, the far end (`&T4`) sends scrambled reversals.
+3. After 270 ms of the reversals, this end sends scrambled 1s. The far
+   end loops when the unscrambled 1s stop. After 270 ms of its scrambled
+   1s back, this end starts the test.
+4. `AT&T0` stops the signal for 77 ms. The far end finds the gap, and
+   stops its loop 110 ms after the signal comes back.
+
+If the far end does not answer in 3 s, the command gives ERROR.
+
 ### The self-test
 
 The self-test (`&T7`, `&T8`) sends the 511-bit pattern of V.52
 (x^9 + x^5 + 1) in place of the data of the DTE. The checker synchronises
 on the data that comes back (32 bits in a row that follow the pattern).
-It counts the bits in error. After a slip (64 errors in 256 bits), it
-synchronises again.
+It counts the bits in error. When the error ratio is 0.20 or more in 1 s
+(O.153 2.6), it synchronises again.
 
 ### Recognition of the patterns
 

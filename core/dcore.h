@@ -1021,6 +1021,10 @@ private:
 		Cause cause;
 		double rx_pow, tx_pow;
 		u64 samples;
+		/* the transmit power in the first second of data, and its
+		   samples (V.59's initialTxPower) */
+		double tx_pow0;
+		u64 samples0;
 		/* the rates each way from CONNECT on, as they changed (the
 		   last RATE_HISTORY) */
 		u32 tx_hist[RATE_HISTORY], rx_hist[RATE_HISTORY];

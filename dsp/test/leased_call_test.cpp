@@ -139,6 +139,8 @@ struct Line {
 	double change_at = -1, new_echo = 0;  /* the hybrid's echo from
 						 then (s) */
 	size_t new_delay = 0;                 /* and each way's delay */
+	std::vector<s16> *tap = nullptr;      /* the caller's signal, as
+						 it goes out */
 	long t = 0;
 	s32 rate;
 	bool changed = false;
@@ -194,6 +196,8 @@ void run(Line &l, End &c, End &a, double secs, Stop stop)
 		}
 		dmodem_process(c.m, ci.data(), co.data(), n);
 		dmodem_process(a.m, ai.data(), ao.data(), n);
+		if (l.tap)
+			l.tap->insert(l.tap->end(), co.begin(), co.end());
 		for (s32 i = 0; i < n; i++) {
 			l.ca.push_back(co[i]);
 			l.ce.push_back(co[i]);
@@ -648,7 +652,89 @@ TEST_P(RemoteLoop, SelfTest)
 
 INSTANTIATE_TEST_SUITE_P(Leased, RemoteLoop, ::testing::Values(
 	Mod{ "+MS=29", "V29", 9600 }, Mod{ "+MS=132", "V32bis", 14400 },
-	Mod{ "+MS=122", "V22bis", 2400 }), mod_name);
+	Mod{ "+MS=122", "V22bis", 2400 }, Mod{ "+MS=22", "V22", 1200 }),
+	mod_name);
+
+namespace {
+
+/* the longest run of samples in s that are all silent (|x| < 50) */
+size_t silent_run(const std::vector<s16> &s)
+{
+	size_t run = 0, best = 0;
+	for (s16 x : s) {
+		run = std::abs(x) < 50 ? run + 1 : 0;
+		best = std::max(best, run);
+	}
+	return best;
+}
+
+/* the start of 100 ms of s (at rate Hz) that repeats each 4 symbols
+   at 600 baud: unscrambled binary ones, each symbol the same point a
+   quadrant on (dibit 11); -1 for none */
+long periodic_at(const std::vector<s16> &s, s32 rate)
+{
+	const size_t len = static_cast<size_t>(rate / 10);
+	const size_t per = static_cast<size_t>(rate / 150);
+	for (size_t at = 0; at + len + per < s.size(); at += 40) {
+		double sig = 0, diff = 0;
+		for (size_t k = at; k < at + len; k++) {
+			double d = s[k] - s[k + per];
+			sig += static_cast<double>(s[k]) * s[k];
+			diff += d * d;
+		}
+		if (sig > 0 && diff < 1e-4 * sig)
+			return static_cast<long>(at);
+	}
+	return -1;
+}
+
+} // namespace
+
+/* V.22's and V.22 bis's own loop 2 signals (7.1 of each), not V.54's
+   (whose scrambled patterns do not repeat, and which has no gap): A
+   starts with unscrambled binary ones, and B loops; A ends the loop
+   with 77 +- 10 ms of no line signal, and B is out of the loop after
+   it (the data goes both ways) */
+class V22Loop2 : public ::testing::TestWithParam<Mod> {};
+
+/* (see V22Loop2) */
+TEST_P(V22Loop2, Signals)
+{
+	dmodem_init();
+	debug();
+	const Mod &m = GetParam();
+	Pair p("&L1", std::string(m.ms) + "\\N0",
+	       std::string(m.ms) + "\\N0&T4");
+	ASSERT_TRUE(p.connect()) << p.c.text << p.a.text;
+	ASSERT_TRUE(escape(p, p.c)) << p.c.text;
+	std::vector<s16> start;
+	p.line.tap = &start;
+	ASSERT_TRUE(command(p, p.c, "AT&T6", "CONNECT")) << p.c.text;
+	p.line.tap = nullptr;
+	EXPECT_GE(periodic_at(start, p.line.rate), 0)
+		<< "no unscrambled ones";
+	EXPECT_LT(silent_run(start), static_cast<size_t>(p.line.rate / 100));
+	run(p.line, p.c, p.a, 1, [] { return false; });
+	ASSERT_TRUE(escape(p, p.c)) << p.c.text;
+	std::vector<s16> end;
+	p.line.tap = &end;
+	ASSERT_TRUE(command(p, p.c, "AT&T0", "OK", 30)) << p.c.text;
+	run(p.line, p.c, p.a, 0.5, [] { return false; });
+	p.line.tap = nullptr;
+	/* (77 +- 10 ms) */
+	size_t gap = silent_run(end);
+	EXPECT_GE(gap, static_cast<size_t>(p.line.rate * 67 / 1000));
+	EXPECT_LE(gap, static_cast<size_t>(p.line.rate * 87 / 1000));
+	EXPECT_EQ(p.a.no_carriers, 0);
+	ASSERT_TRUE(command(p, p.c, "ATO", "CONNECT"));
+	run(p.line, p.c, p.a, 1, [] { return false; });
+	EXPECT_TRUE(p.exchange(m.rate / 8, 30, 41))
+		<< p.c.data.size() << " " << p.a.data.size();
+}
+
+INSTANTIATE_TEST_SUITE_P(Leased, V22Loop2, ::testing::Values(
+	Mod{ "+MS=122", "V22bis", 2400 }, Mod{ "+MS=22", "V22", 1200 }),
+	mod_name);
 
 /* AT&T6: loop 2 for the DTE's own data, CONNECT, and what it sends
    comes back to it (the far end's DTE gets none of it); AT&T0 after

@@ -289,6 +289,22 @@ long dp_runtime_v110(void *runtime)
 	return rt ? rt->v110_rate : 0;
 }
 
+/* see dsplibs.h */
+long dp_runtime_loop2(void *runtime, int cmd, int grant)
+{
+	struct dp_runtime *rt = static_cast<dp_runtime*>(runtime);
+	if (!rt)
+		return -1;
+	rt->loop2_grant = static_cast<s16>(grant ? 1 : 0);
+	if (!rt->loop2_own)
+		return -1;
+	if (cmd)
+		rt->loop2_cmd = static_cast<s16>(cmd);
+	long ev = rt->loop2_event;
+	rt->loop2_event = 0;
+	return ev;
+}
+
 /* 1 while a pump takes the exact PCM codes (no DC removal), else 0 */
 int dp_runtime_pcm(void *runtime)
 {
