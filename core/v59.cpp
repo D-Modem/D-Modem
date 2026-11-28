@@ -24,7 +24,8 @@
  *      +TMO <level>[N]=?       the objects there are, as tags (N: as
  *                              names): 0 all, 1 the high-level ones, 2
  *                              the mid-level ones, 3 the low-level ones
- *                              (txPower); 4: "(0,1)", names and tags
+ *                              (initialTxPower, txPower); 4: "(0,1)",
+ *                              names and tags
  *      +TMO <tag>              a four-digit tag: that object; two
  *                              digits: every object of that high-level
  *                              object ("All" after either: the same)
@@ -135,6 +136,7 @@ const V59Obj v59_objs[] = {
 	{ 0x07, 0x0704, "v8Result" },
 	/* 6.8.3 */
 	{ 0x09, 0x0900, "modeV90" },
+	{ 0x09, 0x0945, "initialTxPower" },
 	{ 0x09, 0x0947, "txPower" },
 	{ 0x09, 0x0948, "txSymbolRate" },
 	{ 0x09, 0x0949, "rxSymbolRate" },
@@ -153,6 +155,7 @@ const V59Obj v59_objs[] = {
 	/* 6.8.4 (its table numbers the common objects one off from 6.4's
 	   Tag-IDs; these are 6.4's) */
 	{ 0x0A, 0x0A00, "modeV91" },
+	{ 0x0A, 0x0A45, "initialTxPower" },
 	{ 0x0A, 0x0A47, "txPower" },
 	{ 0x0A, 0x0A4C, "txDataHistory" },
 	{ 0x0A, 0x0A4D, "rxDataHistory" },
@@ -162,6 +165,7 @@ const V59Obj v59_objs[] = {
 	{ 0x0A, 0x0A05, "remoteCodecLaw" },
 	/* 6.8.5 */
 	{ 0x0B, 0x0B00, "modeV92" },
+	{ 0x0B, 0x0B45, "initialTxPower" },
 	{ 0x0B, 0x0B47, "txPower" },
 	{ 0x0B, 0x0B48, "v92SymbolRate" },
 	{ 0x0B, 0x0B4C, "txDataHistory" },
@@ -175,9 +179,16 @@ const V59Obj v59_objs[] = {
 	{ 0x0B, 0x0B56, "digitalPadLoss" },
 	{ 0x0B, 0x0B07, "localCodecLaw" },
 	{ 0x0B, 0x0B08, "remoteCodecLaw" },
+	{ 0x0B, 0x0B10, "sP1Enable" },
+	{ 0x0B, 0x0B11, "lastCallSP1" },
+	{ 0x0B, 0x0B20, "cWDEnable" },
 	{ 0x0B, 0x0B21, "mOHEnable" },
+	{ 0x0B, 0x0B22, "lastMOHaction" },
+	{ 0x0B, 0x0B23, "mOHTimeout" },
+	{ 0x0B, 0x0B24, "lastMOHduration" },
 	/* 6.8.6 */
 	{ 0x0C, 0x0C00, "modeV34" },
+	{ 0x0C, 0x0C45, "initialTxPower" },
 	{ 0x0C, 0x0C47, "txPower" },
 	{ 0x0C, 0x0C48, "txSymbolRate" },
 	{ 0x0C, 0x0C49, "rxSymbolRate" },
@@ -192,6 +203,7 @@ const V59Obj v59_objs[] = {
 	{ 0x0C, 0x0C53, "roundTripDelay" },
 	/* 6.8.7 */
 	{ 0x0D, 0x0D00, "modeV32B" },
+	{ 0x0D, 0x0D45, "initialTxPower" },
 	{ 0x0D, 0x0D47, "txPower" },
 	{ 0x0D, 0x0D4C, "txDataHistory" },
 	{ 0x0D, 0x0D4D, "rxDataHistory" },
@@ -202,12 +214,14 @@ const V59Obj v59_objs[] = {
 	{ 0x0D, 0x0D53, "roundTripDelay" },
 	/* 6.8.8 */
 	{ 0x0E, 0x0E00, "modeV22B" },
+	{ 0x0E, 0x0E45, "initialTxPower" },
 	{ 0x0E, 0x0E47, "txPower" },
 	{ 0x0E, 0x0E4C, "dataRateHistory" },
 	{ 0x0E, 0x0E4E, "rxLevelEstimate" },
 	{ 0x0E, 0x0E4F, "noiseEstimate" },
 	/* 6.8.9 */
 	{ 0x0F, 0x0F00, "modeV23" },
+	{ 0x0F, 0x0F45, "initialTxPower" },
 	{ 0x0F, 0x0F47, "txPower" },
 	{ 0x0F, 0x0F01, "duplex" },
 	{ 0x0F, 0x0F02, "transmitDataRate" },
@@ -215,6 +229,7 @@ const V59Obj v59_objs[] = {
 	{ 0x0F, 0x0F4E, "rxLevelEstimate" },
 	/* 6.8.10 */
 	{ 0x10, 0x1000, "modeV21" },
+	{ 0x10, 0x1045, "initialTxPower" },
 	{ 0x10, 0x1047, "txPower" },
 	{ 0x10, 0x104E, "rxLevelEstimate" },
 	/* 6.8.11 to 6.8.14: the fax modulations' modes */
@@ -224,6 +239,7 @@ const V59Obj v59_objs[] = {
 	{ 0x18, 0x1800, "modeV27T" },
 	/* 6.8.15 */
 	{ 0x23, 0x2300, "modeV18" },
+	{ 0x23, 0x2345, "initialTxPower" },
 	{ 0x23, 0x2347, "txPower" },
 	{ 0x23, 0x234E, "rxLevelEstimate" },
 	/* 6.8.18: the modulations V.59 has no object for (K56flex, V.32terbo,
@@ -245,6 +261,7 @@ const V59Obj v59_objs[] = {
 	/* 6.12 */
 	{ 0x2F, 0x2F00, "modeV42" },
 	{ 0x2F, 0x2F01, "protocolNegotiation" },
+	{ 0x2F, 0x2F02, "v42featureNegotiation" },
 	{ 0x2F, 0x2F03, "txFrameSize" },
 	{ 0x2F, 0x2F04, "rxFrameSize" },
 	{ 0x2F, 0x2F05, "txWindow" },
@@ -557,6 +574,28 @@ std::string Modem::v59_value(u16 tag) const
 	   (16 bits, held at their most) */
 	case 0x2F01:
 		return !up ? V59_NULL : cfg_.ec ? "1" : cfg_.mnp_on ? "2" : "0";
+	/* Table 19: the V.42 features (a BIT STRING): no SREJ, the
+	   normal procedure (bit 2), TEST frames answered (3), the FCS in
+	   use (4: 16 bits, 5: 32 bits), the detection phase (6), ODP and
+	   ADP bypassed by V.92's quick connect (7); the fallback without
+	   error control (8: disconnect, 9: V.14 buffered, 10: direct) */
+	case 0x2F02: {
+		if (!up || !cfg_.ec)
+			return V59_NULL;
+		u32 f = 1u << 2 | 1u << 3;
+		f |= link_->hdlc().tx_fcs32() ? 1u << 5 : 1u << 4;
+		if (cfg_.ec_detector)
+			f |= 1u << 6;
+		else if ((d.have & DP_STATS_V92) && (d.v92_qc & 2))
+			f |= 1u << 7;
+		/* (+ES's fallback of our role: Table 20/V.250) */
+		const u32 *es = kept("+ES");
+		u32 fb = stats_.caller ? es[1] : es[2];
+		bool drop = stats_.caller ? fb >= 2 : fb >= 4;
+		bool direct = stats_.caller ? fb == 1 : fb == 0 || fb == 3;
+		f |= drop ? 1u << 8 : direct ? 1u << 10 : 1u << 9;
+		return hex(f, 0, true);
+	}
 	case 0x2F03:
 		return !ec ? V59_NULL : dec(cfg_.ec ? link_->config().tx_info :
 					    link_->config().mnp_info);
@@ -679,6 +718,44 @@ std::string Modem::v59_value(u16 tag) const
 		return dec(v59_mode(tag));
 	if (tag == 0x0B21)
 		return boolean(moh_off_ == 0);
+	/* +PCW: 2 ignores V.92's call waiting */
+	if (tag == 0x0B20)
+		return boolean(kept("+PCW")[0] != 2);
+	/* V.92's quick connect and modem-on-hold, as the pump saw them
+	   (Table 12/V.59 for the last hold's result, Table 33/V.92's T1
+	   for its time) */
+	if (tag == 0x0B10 || tag == 0x0B11 || (tag >= 0x0B22 &&
+					      tag <= 0x0B24)) {
+		if (!(d.have & DP_STATS_V92))
+			return V59_NULL;
+		switch (tag) {
+		case 0x0B10:
+			return boolean(d.v92_qc & 1);
+		case 0x0B11:
+			return boolean(d.v92_qc & 2);
+		case 0x0B22:
+			return d.moh_last ? dec(static_cast<u32>(d.moh_last - 1)) :
+				V59_NULL;
+		case 0x0B23: {
+			static const u16 t1[] = { 0, 10, 20, 30, 40, 60, 120,
+						  180, 240, 360, 480, 720,
+						  960 };
+			if (d.moh_t1 < 0)
+				return V59_NULL;
+			if (d.moh_t1 == 13)
+				return "unlimited";
+			u32 sec = d.moh_t1 > 0 && d.moh_t1 < 13 ?
+				t1[d.moh_t1] : 60;
+			return dec(sec) + "s";
+		}
+		default:
+			if (d.moh_ms < 0)
+				return V59_NULL;
+			return dec(static_cast<u32>(d.moh_ms / 1000)) + "." +
+				dec(static_cast<u32>(d.moh_ms % 1000 / 100)) +
+				"s";
+		}
+	}
 
 	/* the modulations' objects: NULL but for the last call's */
 	if (static_cast<s16>(high) != v59_high_now())
@@ -686,6 +763,11 @@ std::string Modem::v59_value(u16 tag) const
 	const bool line = d.have & DP_STATS_LINE;
 	const bool pcm = d.have & DP_STATS_PCM;
 	switch (low) {
+	case 0x45:
+		/* (the level the pump started data at: its first second) */
+		return stats_.samples0 ? v59_dbm0(10 * log10(stats_.tx_pow0 /
+			static_cast<double>(stats_.samples0) /
+			DP_DBM0_POWER + 1e-9)) : V59_NULL;
 	case 0x47:
 		return stats_.samples ? v59_dbm0(level(false)) : V59_NULL;
 	case 0x48:
@@ -804,12 +886,14 @@ s16 Modem::at_TMO(char *p, s16 *len)
 				add(names ? h.name : high_tag(h.tag));
 		if (level != 1) {
 			/* each object once (ModemCapability's are the
-			   modulations' too): the mid-level ones, txPower
-			   (of TxPowerLevel) the low-level */
+			   modulations' too): the mid-level ones,
+			   initialTxPower and txPower (of TxPowerLevel) the
+			   low-level */
 			for (const auto &o : v59_objs) {
 				if (o.high == 0x01 && o.tag >> 8 != 0x01)
 					continue;
-				bool lowlevel = (o.tag & 0xFF) == 0x47;
+				bool lowlevel = (o.tag & 0xFF) == 0x45 ||
+					(o.tag & 0xFF) == 0x47;
 				if ((level == 2 && lowlevel) ||
 				    (level == 3 && !lowlevel))
 					continue;

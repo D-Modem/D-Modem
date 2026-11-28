@@ -111,6 +111,10 @@ nav:
       - "V.54: technical details": standards/v54-details.md
       - "V.52 and O.153": standards/v52.md
       - "V.52 and O.153: technical details": standards/v52-details.md
+      - "V.58": standards/v58.md
+      - "V.58: technical details": standards/v58-details.md
+      - "V.59": standards/v59.md
+      - "V.59: technical details": standards/v59-details.md
   - The modem:
     - The modem core: core.md
     - The data pumps: dsp/README.md

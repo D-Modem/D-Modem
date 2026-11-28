@@ -639,6 +639,14 @@ struct V34Moh {
 	void moh_back();
 	s32 moh_ans;            /* MOH_BACK: samples of the remote's ANSam */
 	s16 moh_backed;         /* we took the remote back (for the log) */
+	/* V.59's lastMOHaction (Table 12's code + 1, 0: none),
+	   mOHTimeout's T1 code (-1 + 1: none) and lastMOHduration (ms,
+	   -1: none); when the hold began (moh_t0_on) */
+	s16 moh_last, moh_last_t1;
+	s32 moh_t0, moh_ms;
+	s16 moh_t0_on, moh_ms_on;
+	void moh_record(s16 code, s16 t1);
+	void moh_up();
 	void moh_request(s32 hold_secs);
 	void moh_req_test();
 	s16 moh_step(s32 c);
@@ -857,6 +865,8 @@ struct V34Qc {
 	u16 qc_frame;           /* bits 20:29, the first in bit 0 */
 	s16 ev_qc;
 	s16 qc_done;            /* QC1a answered (or tried) */
+	s16 qc_used;            /* the call came up by quick connect (V.59's
+				   lastCallSP1) */
 	s16 qc_lapm;
 	Goertzel toneq_g;       /* TONEq, 980 Hz */
 	Goertzel toneq_space_g; /* V.21(L)'s space, 1180 Hz: CM, not TONEq */
@@ -2680,6 +2690,35 @@ static s16 moh_t1_secs(s16 code)
 	return code > 0 && code < 14 ? t[code] : 60;
 }
 
+/* the result of a modem-on-hold transaction for V.59 (Table 12/V.59:
+   0 accepted, 1 declined, 2 denied, 3 cleared down), with the T1 code
+   granted (-1: none); an accepted one starts the hold's time */
+template <class P>
+void V34Moh<P>::moh_record(s16 code, s16 t1)
+{
+	P &self = static_cast<P &>(*this);
+	moh_last = static_cast<s16>(code + 1);
+	if (t1 >= 0)
+		moh_last_t1 = static_cast<s16>(t1 + 1);
+	if (code == 0) {
+		moh_t0 = self.total;
+		moh_t0_on = 1;
+	}
+}
+
+/* data again after a hold: how long it held (lastMOHduration) */
+template <class P>
+void V34Moh<P>::moh_up()
+{
+	P &self = static_cast<P &>(*this);
+	if (!moh_t0_on)
+		return;
+	moh_ms = static_cast<s32>((s64{self.total} - moh_t0) * 1000 /
+				  self.srate);
+	moh_ms_on = 1;
+	moh_t0_on = 0;
+}
+
 /* an MH sequence from the remote, in a retrain (that is how it begins:
    its tone A, then MH sequences instead of the reversal) or while we
    answer one */
@@ -2697,6 +2736,7 @@ s16 V34Moh<P>::mh_event()
 		/* the answer to ours (Table 34/V.92) */
 		if (moh_req == MH_REQ && mh_sig == MH_ACK) {
 			moh_req_t1 = mh_info;
+			moh_record(0, mh_info);
 			DSP_DBG("v34: MHack, T1 %d s: the remote on hold for "
 				"%d s\n", moh_t1_secs(mh_info), moh_req_hold);
 			/* then our silence (9.10.2.1/V.92), for longer than
@@ -2711,6 +2751,7 @@ s16 V34Moh<P>::mh_event()
 			/* denied: a fast reconnect (or a cleardown,
 			   with DSP_V92_MOH_REQ's hold time 0) */
 			moh_req = moh_req_hold ? MH_FRR : MH_CDA;
+			moh_record(moh_req == MH_CDA ? 3 : 2, -1);
 			DSP_DBG("v34: MHnack: %s\n", mh_name(moh_req));
 			self.cctx.make_mh(moh_req, moh_req);
 			self.cc_send();
@@ -2741,6 +2782,7 @@ s16 V34Moh<P>::mh_event()
 		/* after our MHnack it would rather clear down */
 		if (self.state == MOH_RESP && moh_resp == MH_NACK) {
 			DSP_DBG("v34: MHcda: cleardown\n");
+			moh_record(3, -1);
 			moh_drop = 1;
 		}
 		break;
@@ -2759,6 +2801,8 @@ void V34Moh<P>::moh_respond(s16 sig)
 	moh_resp = sig;
 	moh_drop = 0;
 	moh_ack_end = -1;
+	moh_record(sig == MH_ACK ? 0 : sig == MH_NACK ? 2 : 3,
+		   sig == MH_ACK ? moh_t1 : -1);
 	self.cctx.make_mh(sig, sig == MH_ACK ? moh_t1 : sig);
 	self.cc_send();
 	self.rt_blocks = self.rt_heard = self.quiet_blocks = 0;
@@ -2809,6 +2853,8 @@ void V34Moh<P>::moh_back()
 {
 	P &self = static_cast<P &>(*this);
 	DSP_DBG("v34: taking the remote back from hold\n");
+	/* (the end of the hold, for V.59's lastMOHduration) */
+	moh_up();
 	self.caller = 1;
 	self.pcm = self.v90a_on = 0;
 	self.v8_ok = self.v8_cj = self.v8_sync = 0;
@@ -3898,6 +3944,8 @@ s16 V34Pump::v92a_up_fail(const char *why)
    constellation; V.34's data encoder after our E */
 s16 V34Pump::v90a_data_setup()
 {
+	/* (back from a hold: its time, for V.59) */
+	moh_up();
 	const V90Mp &mp = v90rx.mp;
 	s16 mask = v90a_cp.rate_mask & 0x1FFF, n;
 	V34Params p;
@@ -4119,6 +4167,8 @@ void V34Pump::fs_data(unsigned char *b, s16 n)
 /* the upstream data mode, as our MP asked for it */
 s16 V34Pump::v90_data_setup()
 {
+	/* (back from a hold: its time, for V.59) */
+	moh_up();
 	V34Params p;
 	s16 n, mask = cp.rate_mask & 0x1FFF;
 
@@ -4253,11 +4303,22 @@ void V34Pump::stat_link()
 		stats->info_bits = m;
 		stats->have |= DP_STATS_INFO;
 	}
+	/* V.92's quick connect and modem-on-hold, for V.59 */
+	if (v92 || v92a) {
+		stats->v92_qc = ((v92 ? qc_ok : qca_ok) ? 1 : 0) |
+			(qc_used ? 2 : 0);
+		stats->moh_last = moh_last;
+		stats->moh_t1 = moh_last_t1 - 1;
+		stats->moh_ms = moh_ms_on ? moh_ms : -1;
+		stats->have |= DP_STATS_V92;
+	}
 }
 
 /* both MP sequences are known: set up the data mode */
 s16 V34Pump::data_setup()
 {
+	/* (back from a hold: its time, for V.59) */
+	moh_up();
 	const V34Mp *l = &ptx.mp, *r = &prx.mp;
 	s16 mask = l->rate_mask & r->rate_mask, ntx, nrx;
 	s16 ca = l->rate_ca < r->rate_ca ? l->rate_ca : r->rate_ca;
@@ -4861,6 +4922,9 @@ s16 V34V8<P>::v8_step(s32 c)
 			return DPSTAT_FAX;
 		}
 		if (v8_ok) {
+			/* (the remote's CM ends a hold: V.59's
+			   lastMOHduration) */
+			self.moh_up();
 			/* back from hold with a CM of no modulations: a
 			   cleardown (9.10.2.1/V.92) */
 			if (self.moh_end && !v8_remote_v34()) {
@@ -5167,6 +5231,7 @@ s16 V34Qc<P>::qc_step(s32 c)
 		break;
 	case QCC_GAP:
 		if (c >= ms2samples(75, self.srate)) {
+			self.qc_used = 1;
 			/* phase 2 as after V.8 for V.90, we the analogue
 			   modem, as the V.34 answerer (9.2.2/V.90) */
 			DSP_DBG("v34: V.92 quick connect: V.90 with us as the "
@@ -5253,6 +5318,7 @@ s16 V34Qc<P>::qc_step(s32 c)
 		break;
 	case QCA_GAP2:
 		if (c >= ms2samples(75, self.srate)) {
+			self.qc_used = 1;
 			/* phase 2 as after V.8 for V.90 */
 			self.pcm_tx = 0;
 			self.pcm = 1;
@@ -6868,6 +6934,8 @@ s16 V34Pump::handshake()
 			v90a_quiet = 0;
 			if (retraining && connected) {
 				retraining = 0;
+				/* (the end of a hold: its time, for V.59) */
+				moh_up();
 				DSP_DBG("v34: V.92 %s " RATE_FMT
 					" (analogue modem)\n",
 					moh_end || moh_backed ?
@@ -6979,6 +7047,8 @@ s16 V34Pump::handshake()
 			set_rates(rate_tx, rate_rx);
 			v90a_quiet = 0;
 			retraining = 0;
+			/* (the end of a hold: its time, for V.59) */
+			moh_up();
 			DSP_DBG("v34: V.90 %s " RATE_FMT " (analogue modem)\n",
 				moh_end || moh_backed ? "back from hold," :
 				"retrained", rate_tx, rate_rx);
@@ -7353,6 +7423,8 @@ s16 V34Pump::handshake()
 			rn_max = rate_rx / 2400;
 			if (retraining && connected) {
 				retraining = 0;
+				/* (the end of a hold: its time, for V.59) */
+				moh_up();
 				DSP_DBG("v34: V.90 %s, " RATE_FMT "\n",
 					moh_end || moh_backed ?
 					"back from hold" : "retrained",
@@ -7417,6 +7489,8 @@ s16 V34Pump::handshake()
 			if (retraining && connected) {
 				/* the link goes on (V.42 knows nothing of it) */
 				retraining = 0;
+				/* (the end of a hold: its time, for V.59) */
+				moh_up();
 				DSP_DBG("v34: %s, " RATE_FMT "\n",
 					moh_end || moh_backed ?
 					"back from hold" : "retrained",
@@ -7758,6 +7832,8 @@ s16 V34Pump::process(void *in, void *out, s32 cnt)
 				if (retraining && connected) {
 					/* after a retrain, or back from hold:
 					   the link goes on */
+					/* (the end of a hold: its time, for V.59) */
+					moh_up();
 					DSP_DBG("v34: V.92 %s, " RATE_FMT "\n",
 						moh_end || moh_backed ?
 						"back from hold" : "retrained",

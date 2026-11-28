@@ -2296,6 +2296,12 @@ void Modem::process(const s16 *in, s16 *out, s32 n)
 			stats_.rx_pow +=
 				static_cast<double>(scratch_[i]) * scratch_[i];
 			stats_.tx_pow += static_cast<double>(out[i]) * out[i];
+			/* (V.59's initialTxPower: the first second) */
+			if (stats_.samples0 < static_cast<u64>(srate_)) {
+				stats_.tx_pow0 += static_cast<double>(out[i]) *
+					out[i];
+				stats_.samples0++;
+			}
 		}
 		stats_.samples += n;
 	}

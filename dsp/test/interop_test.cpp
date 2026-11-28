@@ -741,6 +741,18 @@ std::vector<Call> calls()
 	      "[34][0-9]+/5[0-9]+ \\(analogue modem\\)",
 	      "EXPECT_B=(?s)INFO0a V.92 1.*MHreq: MHack \\(on hold\\).*"
 	      "on hold, ANSam.*V.9[02] back from hold" });
+	/* and the objects of V.59 for it (6.8.5/V.59), after the hold
+	   and the data again: the call made with quick connect, the last
+	   hold granted (lastMOHaction 0) for T1 60 s, and about 5 s on
+	   hold */
+	add("open", "open_v92a_moh_tmo", "open", "open8", "ATX3",
+	    { "NET=9600:8000:ulaw", "STREAM=60",
+	      "MIDCALL_A=8:AT+PMHR=5;WAIT 25;AT+TMO V92",
+	      "EXPECT_A=(?s)MHack, T1 60 s: the remote on hold for 5 s.*"
+	      "V.9[02] back from hold.*run cmd: AT\\+TMOV92",
+	      "EXPECT_MIDCALL_A=(?s)lastCallSP1\\{TRUE\\}.*"
+	      "lastMOHaction\\{0\\}.*mOHTimeout\\{60s\\}.*"
+	      "lastMOHduration\\{[5-7]\\.[0-9]s\\}" });
 	add("open", "open_v92a_moh_theirs", "open", "open8", "ATX3",
 	    { "NET=9600:8000:ulaw", "STREAM=50",
 	      "MIDCALL_B=8:AT+PMHR=5;WAIT 12",

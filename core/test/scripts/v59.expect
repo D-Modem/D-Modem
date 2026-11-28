@@ -21,7 +21,7 @@
       0 A: OK\r\n
       0 A< AT+TMO3=?\r
       0 A: \r\n
-      0 A: +TMO: (0947,0A47,0B47,0C47,0D47,0E47,0F47,1047,2347)\r\n
+      0 A: +TMO: (0945,0947,0A45,0A47,0B45,0B47,0C45,0C47,0D45,0D47,0E45,0E47,0F45,0F47,1045,1047,2345,2347)\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+TMO4N=?\r
@@ -187,6 +187,7 @@
   22500 A< AT+TMO 0C\r
   22500 A: \r\n
   22500 A: 0C00{1}\r\n
+  22500 A: 0C45{-15.0dBm0}\r\n
   22500 A: 0C47{-15.1dBm0}\r\n
   22500 A: 0C48{1}\r\n
   22500 A: 0C49{1}\r\n
@@ -222,6 +223,7 @@
   23340 A< AT+TMO V34 All\r
   23340 A: \r\n
   23340 A: modeV34{1}\r\n
+  23340 A: initialTxPower{-15.0dBm0}\r\n
   23340 A: txPower{-15.1dBm0}\r\n
   23340 A: txSymbolRate{1}\r\n
   23340 A: rxSymbolRate{1}\r\n
@@ -249,6 +251,7 @@
   23340 A< AT+TMO V90\r
   23340 A: \r\n
   23340 A: modeV90{2}\r\n
+  23340 A: initialTxPower{NULL}\r\n
   23340 A: txPower{NULL}\r\n
   23340 A: txSymbolRate{NULL}\r\n
   23340 A: rxSymbolRate{NULL}\r\n
@@ -269,6 +272,7 @@
   23340 A< AT+TMO\r
   23340 A: \r\n
   23340 A: modeV90{2}\r\n
+  23340 A: initialTxPower{NULL}\r\n
   23340 A: txPower{NULL}\r\n
   23340 A: txSymbolRate{NULL}\r\n
   23340 A: rxSymbolRate{NULL}\r\n
@@ -316,6 +320,7 @@
   23340 A: \r\n
   23340 A: modeV42{1}\r\n
   23340 A: protocolNegotiation{1}\r\n
+  23340 A: v42featureNegotiation{26C}\r\n
   23340 A: txFrameSize{128}\r\n
   23340 A: rxFrameSize{128}\r\n
   23340 A: txWindow{15}\r\n
@@ -405,6 +410,7 @@
   36980 A< AT+TMO V32\r
   36980 A: \r\n
   36980 A: modeV32B{1}\r\n
+  36980 A: initialTxPower{-17.9dBm0}\r\n
   36980 A: txPower{-17.8dBm0}\r\n
   36980 A: txDataHistory{14400}\r\n
   36980 A: rxDataHistory{14400}\r\n
@@ -419,6 +425,7 @@
   36980 A: \r\n
   36980 A: 2F00{3}\r\n
   36980 A: 2F01{0}\r\n
+  36980 A: 2F02{NULL}\r\n
   36980 A: 2F03{NULL}\r\n
   36980 A: 2F04{NULL}\r\n
   36980 A: 2F05{NULL}\r\n
