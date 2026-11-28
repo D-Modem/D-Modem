@@ -457,6 +457,141 @@ TEST(V61, SilenceSendsDataAlone)
 	EXPECT_GT(r.side[1].tone_share, 0.85) << r.side[1].text("answerer");
 }
 
+/* a V.61 call with the test settings env (name=value pairs) set for
+   its time and DSP_DEBUG=2: the result, the pumps' log in *log (on
+   stdout too with V61_LOG) */
+static LoopbackResult v61_logged(
+	LoopbackConfig c,
+	std::initializer_list<std::pair<const char *, const char *>> env,
+	std::string *log)
+{
+	for (auto &e : env)
+		setenv(e.first, e.second, 1);
+	setenv("DSP_DEBUG", "2", 1);
+	testing::internal::CaptureStderr();
+	LoopbackResult r = loopback_run(c);
+	*log = testing::internal::GetCapturedStderr();
+	if (getenv("V61_LOG"))
+		fputs(log->c_str(), stdout);
+	for (auto &e : env)
+		unsetenv(e.first);
+	unsetenv("DSP_DEBUG");
+	dsplibs_debug_level = 0;
+	return r;
+}
+
+/* Note 4 of Table 6/V.61: the bits marked * in the control segment are
+   the transmitter's suggested states, not for the receiver to rely on.
+   Both transmitters send them inverted (DSP_V61_CT_ALT), the caller
+   with speech (frames with speech), the answerer silent (data alone):
+   no control segment is taken as bad, no retrain, no errors */
+TEST(V61, ControlDefaultsNotChecked)
+{
+	LoopbackConfig c = line(61, 40, 15);
+	c.voice_hz[0] = 440;
+	c.voice_hz[1] = -1;
+	std::string log;
+	LoopbackResult r = v61_logged(c, { { "DSP_V61_CT_ALT", "1" } }, &log);
+
+	EXPECT_NE(log.find("test: the * bits of Table 6 inverted"),
+		  std::string::npos);
+	EXPECT_FALSE(r.dp_failed);
+	EXPECT_EQ(log.find("retrain 1"), std::string::npos);
+	EXPECT_EQ(log.find("equalization lost"), std::string::npos);
+	for (int k = 0; k < 2; k++) {
+		const char *who = k ? "answerer" : "caller";
+		EXPECT_TRUE(r.side[k].ok()) << r.side[k].text(who);
+		EXPECT_EQ(r.side[k].errors, 0) << r.side[k].text(who);
+	}
+}
+
+/* Note 1 of Table 10/V.61: B13 and B14 of rate word 1 are ignored in
+   reception.  Both modems set them (DSP_V61_RESERVED): the call
+   connects all the same */
+TEST(V61, ReservedBitsIgnored)
+{
+	std::string log;
+	LoopbackResult r = v61_logged(line(61, 40, 10),
+				      { { "DSP_V61_RESERVED", "1" } }, &log);
+	for (int k = 0; k < 2; k++) {
+		const char *who = k ? "answerer" : "caller";
+		EXPECT_TRUE(r.side[k].ok()) << r.side[k].text(who);
+		EXPECT_GE(r.side[k].rx_rate, 9600) << r.side[k].text(who);
+	}
+	/* R1 0FFF: the rates, B13 and B14 */
+	EXPECT_NE(log.find("R 0FFF"), std::string::npos) << log;
+}
+
+/* 9.1 and 9.2/V.61: R3 gives the data rates to use, within R2's.  The
+   answerer's R3 names all the common rates (DSP_V61_R3_ALL): the caller
+   takes the fastest, and sends E; the answerer's E gives its own */
+TEST(V61, R3WithSeveralRates)
+{
+	std::string log;
+	LoopbackResult r = v61_logged(line(61, 40, 10),
+				      { { "DSP_V61_R3_ALL", "1" } }, &log);
+	for (int k = 0; k < 2; k++) {
+		const char *who = k ? "answerer" : "caller";
+		EXPECT_TRUE(r.side[k].ok()) << r.side[k].text(who);
+		EXPECT_GE(r.side[k].rx_rate, 9600) << r.side[k].text(who);
+	}
+	EXPECT_NE(log.find("test: R3 with all the common rates"),
+		  std::string::npos);
+	EXPECT_EQ(r.side[0].tx_rate, r.side[1].rx_rate);
+	EXPECT_EQ(r.side[1].tx_rate, r.side[0].rx_rate);
+}
+
+/* 9.1 and 9.2/V.61: the caller's R2 calls for a GSTN cleardown
+   (DSP_V61_CLEARDOWN): the answerer trains again and its R3 calls for
+   one too, the caller clears the line on it, and neither connects */
+TEST(V61, Cleardown)
+{
+	std::string log;
+	LoopbackResult r = v61_logged(line(61, 40, 10),
+				      { { "DSP_V61_CLEARDOWN", "1c" } }, &log);
+	EXPECT_FALSE(r.side[0].connected);
+	EXPECT_FALSE(r.side[1].connected);
+	/* word 1 with B4, B8 and the sync bits alone */
+	EXPECT_NE(log.find("no common rate in 0991: cleardown"),
+		  std::string::npos) << log;
+	EXPECT_NE(log.find("R3 0991: cleardown"), std::string::npos) << log;
+}
+
+/* clause 11/V.61: a rate renegotiation (DSP_V61_RENEG) by the caller or
+   the answerer, down to 9600 bit/s: the other modem hears the preamble
+   and answers it (no retrain), both go on at 9600 bit/s; the errors all
+   in the one burst of the change over */
+TEST(V61, Renegotiation)
+{
+	for (const char *who : { "c", "a" }) {
+		std::string log;
+		LoopbackResult r = v61_logged(
+			line(61, 40, 15),
+			{ { "DSP_V61_RENEG",
+			    who[0] == 'c' ? "3000:9600c" : "3000:9600a" } },
+			&log);
+		EXPECT_NE(log.find("rate renegotiation 1 (ours)"),
+			  std::string::npos) << who;
+		EXPECT_NE(log.find("rate renegotiation 1 (remote)"),
+			  std::string::npos) << who;
+		EXPECT_NE(log.find("renegotiation preamble"),
+			  std::string::npos) << who;
+		EXPECT_EQ(log.find("retrain 1"), std::string::npos) << who;
+		for (int k = 0; k < 2; k++) {
+			const char *side = k ? "answerer" : "caller";
+			EXPECT_TRUE(r.side[k].connected) << who << " " << side;
+			EXPECT_EQ(r.side[k].tx_rate, 9600) << who << " " << side;
+			EXPECT_EQ(r.side[k].rx_rate, 9600) << who << " " << side;
+			EXPECT_LE(r.side[k].resyncs, 1) << who << ": "
+							 << r.side[k].text(side);
+			EXPECT_LT(r.side[k].errors, 2000) << who << ": "
+							  << r.side[k].text(side);
+			EXPECT_GT(r.side[k].checked, 60000) << who << ": "
+							    << r.side[k].text(side);
+		}
+	}
+}
+
 /* V.22 through AMR 12.2 (a mobile call): the codec turns the points by
    20 degrees and more now and then, which 1200 bit/s takes without an
    error */

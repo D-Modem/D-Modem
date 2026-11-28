@@ -2080,8 +2080,8 @@ void Modem::sync_command(dlink::SyncCommand c, u8 tx, u8 rx)
 }
 
 /* the DTE's retrain (what 1) or rate renegotiation (2) for the pump to
-   start (MDMPRM_LINK_REQ), online and with V.34, V.90, V.92 or the
-   V.32 family (their data modes take it; V.32's renegotiation is a
+   start (MDMPRM_LINK_REQ), online and with V.34, V.90, V.92, V.61 or
+   the V.32 family (their data modes take it; V.32's renegotiation is a
    retrain); false (logged) where it cannot be */
 bool Modem::link_req(s32 what)
 {
@@ -2091,7 +2091,8 @@ bool Modem::link_req(s32 what)
 	    stats_.dp == DP_V91 ||
 	    (id != DP_V8 && id != DP_V34 && id != DP_V90 && id != DP_V92 &&
 	     id != DP_K56 && id != DP_X2 && id != DP_V32 &&
-	     id != DP_V32BIS && id != DP_V32TERBO && id != DP_ZYX)) {
+	     id != DP_V32BIS && id != DP_V32TERBO && id != DP_ZYX &&
+	     id != DP_V61)) {
 		logf("%s asked: not with this modulation\n", n);
 		return false;
 	}

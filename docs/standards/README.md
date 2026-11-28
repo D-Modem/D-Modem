@@ -47,7 +47,7 @@ A standard that has no link has no pages yet.
 | [V.91](v91.md) ([details](v91-details.md)) | PCM between two digital modems |
 | [V.92](v92.md) ([details](v92-details.md)) | Quick connect, modem-on-hold and PCM upstream |
 | [V.18](v18.md) ([details](v18-details.md)) | Text telephones |
-| V.61 | Analogue simultaneous voice and data |
+| [V.61](v61.md) ([details](v61-details.md)) | Analogue simultaneous voice and data |
 
 ## Error correction and data compression
 
@@ -121,14 +121,14 @@ have no pages yet.
 
 | Recommendation | Subject | Referred to by |
 |---|---|---|
-| V.2 | The power levels for data transmission on telephone lines | V.21, V.25, V.26 bis, V.26 ter, V.27 ter, V.29, V.32, V.33 |
-| V.14 | Asynchronous characters on a synchronous channel | V.22, V.22 bis, V.26 ter, V.32, V.42, V.59, V.150.1, H.245 |
-| V.24 | The circuits between the DTE and the DCE | V.13, V.21, V.23, V.26 bis, V.58, V.110, V.120 |
+| V.2 | The power levels for data transmission on telephone lines | V.21, V.25, V.26 bis, V.26 ter, V.27 ter, V.29, V.32, V.33, V.61 |
+| V.14 | Asynchronous characters on a synchronous channel | V.22, V.22 bis, V.26 ter, V.32, V.42, V.59, V.61, V.150.1, H.245 |
+| V.24 | The circuits between the DTE and the DCE | V.13, V.21, V.23, V.26 bis, V.58, V.61, V.110, V.120 |
 | V.25 bis | Dialling with a synchronous or asynchronous DTE | V.25 |
 | V.26 | 2400 bit/s on 4-wire leased circuits | V.26 bis, V.27 ter, V.29 |
 | V.27 | 4800 bit/s on leased circuits | V.27 ter, V.29 |
-| V.28 | The electrical characteristics of the V.24 circuits | V.21, V.23, V.26 bis, V.27 ter, V.29 |
-| G.164, G.165, G.168 | Echo suppressors and echo cancellers | V.25, V.26 ter, V.32, V.152 |
+| V.28 | The electrical characteristics of the V.24 circuits | V.21, V.23, V.26 bis, V.27 ter, V.29, V.61 |
+| G.164, G.165, G.168 | Echo suppressors and echo cancellers | V.25, V.26 ter, V.32, V.61, V.152 |
 | G.191 | Software tools for speech and audio coding | G.711 |
 | G.721, G.726 | ADPCM speech coding | G.711, V.253 |
 | H.223, H.324 | Multimedia terminals on the telephone line | V.8, V.8 bis, V.80, V.251, H.245 |

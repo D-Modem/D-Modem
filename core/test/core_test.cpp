@@ -1808,11 +1808,11 @@ TEST(Core, V80Retrain)
 }
 
 /* ATO1 (V.250) back online with a retrain, ATO3 (Rockwell's) with a rate
-   renegotiation, on a V.34 call with LAPM; the link goes on; ATI11
-   counts them; ATO2 is an error */
-TEST(Core, RetrainOnRequest)
+   renegotiation, on a call with LAPM at modulation ms (+MS=34 ...); the
+   link goes on; ATI11 counts them; ATO2 is an error */
+static void retrain_on_request(const char *ms)
 {
-	Pair p("+MS=34");
+	Pair p(ms);
 	EXPECT_EQ(p.b->answer(), 0);
 	EXPECT_EQ(p.a->dial(""), 0);
 	ASSERT_TRUE(p.run_until([](Pair &q) {
@@ -1851,6 +1851,18 @@ TEST(Core, RetrainOnRequest)
 		std::regex_search(i11,
 		std::regex("Rate Renegotiation by Local Modem\\s+1\\b")))
 		<< i11;
+}
+
+/* (see retrain_on_request()) on V.34 */
+TEST(Core, RetrainOnRequest)
+{
+	retrain_on_request("+MS=34");
+}
+
+/* and on V.61 (its rate renegotiation of clause 11) */
+TEST(Core, RetrainOnRequestV61)
+{
+	retrain_on_request("+MS=61");
 }
 
 /* MNP 10 between two D-Modems: the caller starts at V.22 (*H1), and the
