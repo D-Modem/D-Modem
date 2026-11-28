@@ -56,6 +56,8 @@ struct T38Params {
 	s32 max_datagram = 0;           /* 0: not said */
 	bool redundancy = false;        /* T38FaxUdpEC: t38UDPRedundancy or
 					   t38UDPFEC (we may send it) */
+	bool fec = false;               /* T38FaxUdpEC: t38UDPFEC (we send
+					   FEC) */
 	std::string udp_ec;             /* T38FaxUdpEC as it came */
 	std::string addr;               /* where the UDPTL goes */
 	s32 port = 0;

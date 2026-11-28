@@ -366,7 +366,9 @@ Over T.38, the fax machine is a T.38 terminal (libdmodem, `dsp/t38.cpp`
 and `dsp/t30.cpp`). It has these items:
 
 - The IFP packets of T.38 versions 0 to 3.
-- UDPTL, with earlier packets repeated for redundancy.
+- UDPTL, with earlier packets repeated for redundancy, or with the
+  forward error correction (FEC) of T.38 Annex C when the far end gives
+  `t38UDPFEC`.
 - Transferred TCF.
 - Rates up to 14400 bit/s.
 - Error correction mode.
@@ -390,9 +392,6 @@ V.91 come through it with no changes, as through external media.
   127.0.0.1. Thus, `dmodem-ari` must run on the host of Asterisk.
 - **The SIP side of T.38** is only for Asterisk: UDP, no authentication,
   and only the calls that Asterisk makes to it.
-- **The FEC of UDPTL:** the program does not send forward error
-  correction. It answers an offer of FEC with redundancy. Of FEC packets
-  that arrive, it uses only the primary packet.
 - **ISDN:** the program does not accept clear channel (ISDN data) calls,
   because the external media of ARI sends only G.711 (refer to
   [isdn.md](isdn.md)).

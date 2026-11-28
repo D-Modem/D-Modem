@@ -137,7 +137,7 @@ noted):
 | Program | What it tests |
 |---|---|
 | `fax_test` | The class 1 modulations, T.4 and TIFF (also against the `tiffcp` of libtiff), and two T.30 machines back to back |
-| `t38_test` | T.38: the encodings of the IFP packets (the two versions), the redundancy of UDPTL, and two T.30 machines over T.38 with lost packets |
+| `t38_test` | T.38: the encodings of the IFP packets (the two versions), the redundancy and the FEC of UDPTL, and two T.30 machines over T.38 with lost packets |
 | `class1_t38_test` | Class 1 over T.38: a DTE of the test goes through T.30 with the commands of the engine against our T.30 machine over T.38. It sends and receives, with ECM, the two packet versions, and T.38 after some time on the audio. The fields and times of the packets |
 | `spandsp_test` (label `spandsp`) | The V.17 transmitter and T.4 encoder of spandsp into our receivers; our T.30 against the T.30 of spandsp, on the audio and over T.38 (its T.38 terminal) |
 

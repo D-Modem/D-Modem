@@ -304,6 +304,7 @@ T38Params t38_params(const SdpMedia &m)
 			p.udp_ec = a.second;
 			p.redundancy =
 				dsp::t38_udp_ec_redundancy(a.second.c_str());
+			p.fec = dsp::t38_udp_ec_fec(a.second.c_str());
 		}
 	}
 	p.addr = m.addr;

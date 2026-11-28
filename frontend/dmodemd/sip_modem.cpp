@@ -49,7 +49,8 @@ const size_t CONTROL_MAX = 255;
 
 /* T.38: the far end's datagrams if it says nothing of them, and the
    least we take; the octets of a datagram an IFP packet's own headers
-   need; the IFP packets each one repeats (redundancy); the longest
+   need; the IFP packets each one repeats (redundancy), or that each FEC
+   message covers; the longest
    datagram we read; the loop's longest wait while on T.38 (ms), and
    the most of its clock made up after a pause (samples) */
 const s16 T38_DATAGRAM = 400;
@@ -313,7 +314,8 @@ void SipLine::t38_begin(dcore::Modem &m)
 	datagram_ = t.max_datagram > 0 ? t.max_datagram : T38_DATAGRAM;
 	if (datagram_ < T38_DATAGRAM_MIN)
 		datagram_ = T38_DATAGRAM_MIN;
-	tx_.init(t.redundancy ? dsp::T38_EC_REDUNDANCY : dsp::T38_EC_NONE,
+	tx_.init(t.fec ? dsp::T38_EC_FEC :
+		 t.redundancy ? dsp::T38_EC_REDUNDANCY : dsp::T38_EC_NONE,
 		 T38_DEPTH);
 	rx_.init();
 	t38_start_ = dcore::monotonic_ms();
@@ -324,7 +326,8 @@ void SipLine::t38_begin(dcore::Modem &m)
 		return;
 	}
 	DBG("T.38 on: version %d, datagrams of %" PRId32 " octets, %s\n",
-	    version_, datagram_, t.redundancy ? "redundancy" : "no redundancy");
+	    version_, datagram_, t.fec ? "FEC" :
+	    t.redundancy ? "redundancy" : "no redundancy");
 }
 
 /* off T.38: the UDPTL socket closed */

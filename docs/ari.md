@@ -98,5 +98,3 @@ the extension hangs up or when the modem of the caller asks for data.
   same machine or on a trusted network.
 - It uses one thread for each call.
 - It does not accept ISDN data calls yet.
-- It does not send the forward error correction (FEC) of UDPTL, the
-  transport of T.38. It sends redundancy packets.

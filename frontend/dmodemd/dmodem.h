@@ -198,7 +198,8 @@ enum dmodem_fax_dir { DMODEM_FAX_RECEIVE, DMODEM_FAX_SEND };
 enum { DMODEM_FAX_V27 = 1, DMODEM_FAX_V29 = 2, DMODEM_FAX_V17 = 4 };
 
 /* T.38's UDPTL error recovery (T38FaxUdpEC) for the packets we send */
-enum dmodem_t38_ec { DMODEM_T38_EC_NONE, DMODEM_T38_EC_REDUNDANCY };
+enum dmodem_t38_ec { DMODEM_T38_EC_NONE, DMODEM_T38_EC_REDUNDANCY,
+		    DMODEM_T38_EC_FEC };
 
 struct dmodem_fax_config {
 	enum dmodem_law law;
@@ -227,7 +228,9 @@ struct dmodem_fax_config {
 	int t38_version;                /* T38FaxVersion agreed, 0 to 3 */
 	enum dmodem_t38_ec t38_ec;
 	int t38_redundancy;             /* the packets before in each (with
-					   DMODEM_T38_EC_REDUNDANCY; 0: 3) */
+					   DMODEM_T38_EC_REDUNDANCY), or in
+					   each FEC message (with
+					   DMODEM_T38_EC_FEC); 0: 3 */
 	int32_t t38_max_datagram;       /* the other end's T38FaxMaxDatagram
 					   (0: 400); with t38_ifp the
 					   longest IFP packet it takes */

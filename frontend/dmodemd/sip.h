@@ -212,6 +212,7 @@ struct T38 {
 	s32 max_datagram;               /* its T38FaxMaxDatagram, 0 if
 					   none */
 	bool redundancy;                /* T38FaxUdpEC t38UDPRedundancy */
+	bool fec;                       /* T38FaxUdpEC t38UDPFEC */
 };
 /* the current call's T.38 into t, while it is on; false if it is not */
 bool t38(T38 *t);

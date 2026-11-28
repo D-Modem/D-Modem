@@ -916,6 +916,7 @@ struct Peer {
 	s32 version = 0;
 	s32 max_datagram = 0;
 	bool redundancy = false;
+	bool fec = false;               /* its T38FaxUdpEC is t38UDPFEC */
 	std::string udp_ec;             /* its T38FaxUdpEC, as it is */
 };
 
@@ -938,6 +939,7 @@ Peer t38_params(const SdpMedia &m)
 			p.udp_ec = a.second;
 			p.redundancy =
 				dsp::t38_udp_ec_redundancy(a.second.c_str());
+			p.fec = dsp::t38_udp_ec_fec(a.second.c_str());
 		}
 	}
 	return p;
@@ -2641,7 +2643,7 @@ void take_t38(Call *c, const Peer &p)
 	say(3, "call %" PRIu32 ": T.38 on, to %s:%" PRId32 " (version %d%s)",
 	    c->serial,
 	    p.addr.c_str(), p.port, p.version,
-	    p.redundancy ? ", redundancy" : "");
+	    p.fec ? ", FEC" : p.redundancy ? ", redundancy" : "");
 	if (c->media)
 		c->media->active(false);
 	{
@@ -3729,6 +3731,7 @@ bool t38(T38 *t)
 	t->version = t38_peer_.version;
 	t->max_datagram = t38_peer_.max_datagram;
 	t->redundancy = t38_peer_.redundancy;
+	t->fec = t38_peer_.fec;
 	return true;
 }
 

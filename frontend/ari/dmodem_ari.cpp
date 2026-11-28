@@ -868,7 +868,9 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 				dmodem_fax_destroy(f);
 				cfg.t38 = 1;
 				cfg.t38_version = l.t38_peer.version;
-				cfg.t38_ec = l.t38_peer.redundancy ?
+				cfg.t38_ec = l.t38_peer.fec ?
+					DMODEM_T38_EC_FEC :
+					l.t38_peer.redundancy ?
 					DMODEM_T38_EC_REDUNDANCY :
 					DMODEM_T38_EC_NONE;
 				cfg.t38_max_datagram = l.t38_peer.max_datagram;
@@ -894,6 +896,7 @@ void run_fax(Call &c, Line &line, enum dmodem_law law,
 					    "%s:%" PRId32 "%s)", c.name.c_str(),
 					    l.t38_peer.version,
 					    l.t38_peer.addr.c_str(), l.t38_peer.port,
+					    l.t38_peer.fec ? ", FEC" :
 					    l.t38_peer.redundancy ?
 					    ", redundancy" : "");
 				t38 = true;
