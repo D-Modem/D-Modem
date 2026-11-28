@@ -89,6 +89,14 @@
 #include <utility>
 #include <vector>
 
+#ifdef __APPLE__
+#include <mach/mach.h>
+#include <mach/mach_error.h>
+#include <mach/mach_time.h>
+#include <mach/thread_policy.h>
+#include <pthread.h>
+#endif
+
 /* libre's declarations in a namespace of their own: its struct sip
    would be the namespace sip's name (the system headers it has are
    above; on Windows Winsock's, by portable.h) */
@@ -252,6 +260,44 @@ void say(s16 level, const char *fmt, ...)
 	dmd::local_time(ts.tv_sec, &tm);
 	fprintf(stderr, "%02d:%02d:%02d.%03ld sip: %s\n", tm.tm_hour,
 		tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000, buf.data());
+}
+
+/* the calling thread (the audio thread) woken on time for each tick of
+   20 ms (macOS; elsewhere nothing is done).  macOS coalesces the timers
+   of an ordinary thread, and its sleeps can run tens of ms long: then
+   the far end's jitter buffer plays the late frames as silence, and a
+   modem's training fails.  Mach's time constraint policy, as audio
+   threads have it, keeps the ticks on time and needs no root.  A thread
+   made later does not get the policy of the thread that made it, so
+   dmodemd's go_realtime() (main.cpp) does not give it to this thread.
+   Up to 5 ms of each tick to run; true if the policy is set. */
+bool clock_on_time()
+{
+#ifdef __APPLE__
+	mach_timebase_info_data_t tb;
+	thread_time_constraint_policy_data_t p;
+
+	mach_timebase_info(&tb);
+	const double per_ms = 1e6 * tb.denom / tb.numer;
+	p.period = static_cast<uint32_t>(20 * per_ms);
+	p.computation = static_cast<uint32_t>(5 * per_ms);
+	p.constraint = static_cast<uint32_t>(20 * per_ms);
+	p.preemptible = TRUE;
+	kern_return_t r = thread_policy_set(
+		pthread_mach_thread_np(pthread_self()),
+		THREAD_TIME_CONSTRAINT_POLICY,
+		reinterpret_cast<thread_policy_t>(&p),
+		THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+	if (r != KERN_SUCCESS) {
+		say(1, "audio: no time constraint policy: %s",
+		    mach_error_string(r));
+		return false;
+	}
+	say(4, "audio: Mach's time constraint policy");
+	return true;
+#else
+	return false;
+#endif
 }
 
 /* p as a string ("" if it has none) */
@@ -1906,6 +1952,7 @@ private:
 		struct timespec next;
 		bool was_on = false;
 
+		clock_on_time();
 		clock_gettime(CLOCK_MONOTONIC, &next);
 		while (!quit_) {
 			struct timespec now;
