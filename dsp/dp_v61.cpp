@@ -43,7 +43,17 @@
  *
  *    A retrain (clause 10) starts again from G and F: on the far end's
  *    tone for 128T in data, or when the receiver has lost its
- *    equalization.  The rate renegotiation of clause 11 is not done.
+ *    equalization.  A rate renegotiation (clause 11) in data, either
+ *    modem first:
+ *
+ *    initiator: preamble, R4 ... (64T at least, until R5), E, B1 (24T),
+ *               data
+ *    responder: data (on the preamble, until R4), preamble, R5 (64T),
+ *               E, B1 (24T), data
+ *
+ *    The caller's preamble is AA for 56T and CC for 8T, the answerer's
+ *    AC for 56T and CA for 8T.  R4 and R5 start from a scrambler of
+ *    zeros.
  *
  *    The speech comes from and goes to the voice path (MDMPRM_VOICE:
  *    DSVD's, a SmartUSB56's handset or dmodemd's --dsvd-audio); without
@@ -79,6 +89,12 @@ namespace dsp {
 #define V61_FRAME       70
 #define V61_B1_SYMS     128     /* ones after E (circuit 106 after it) */
 #define V61_CT_DELAY    50      /* E to the first control segment */
+#define V61_RN_B1_SYMS  24      /* ones after E in a rate renegotiation
+				   (11.1) */
+#define V61_CLEAR_SYMS  192     /* a cleardown's R3 or E (64T at least) */
+#define V61_PRE_RUN     24      /* symbols in a row that show the far
+				   end's renegotiation preamble in its
+				   data (of its 56 of AA or AC) */
 
 /* rate word bits, B0 the most significant */
 #define RB_HEADER       0xF000  /* 0000: a rate word, 1111: E */
@@ -172,6 +188,7 @@ enum v61_txm {
 	TXM_R,
 	TXM_E,
 	TXM_DATA,
+	TXM_PRE,                /* AA CC (caller), AC CA (answerer) */
 };
 
 enum v61_state {
@@ -206,6 +223,13 @@ enum v61_state {
 	C_E,
 	/* both */
 	V61_DATA,
+	/* a rate renegotiation (clause 11) */
+	RN_WAIT_R4,             /* the responder: data until R4 */
+	RN_PRE,                 /* our preamble */
+	RN_R,                   /* R4 or R5 */
+	RN_E,
+	RN_CLEAR,               /* no common rate: E for 64T, then clear */
+	A_CLEAR,                /* our R3 calls for a cleardown */
 };
 
 /* receiver phases */
@@ -319,6 +343,25 @@ struct V61Pump : PumpBase<V61Pump, v61_state>, QamRxCore<V61Pump> {
 	s32 g_on_syms;          /* answerer: G heard (symbols) */
 	s32 srd_seen;           /* samples of the far end's S or AA */
 
+	/* the rate renegotiation (clause 11) */
+	s16 reneg;              /* 1 ours, 2 the far end's, 0 none */
+	s16 renegs;
+	s32 reneg_end;          /* its time limit (samples) */
+	u16 rn_w1;              /* the word 1 of our R4 or R5 */
+	bool rn_got_r;          /* initiator: R5 (or the far end's R4) in */
+	s16 pre_run, pre_k;     /* the far end's preamble in its data */
+	s16 ev_pre;
+	s16 tx_b1;              /* B1's symbols after E: 128, 24 */
+	s16 rx_b1;
+	s32 reneg_at;           /* test: $DSP_V61_RENEG ms into data ... */
+	s32 reneg_to;           /* ... to this rate at most (bit/s) */
+	/* tests: the bits marked * in Table 6 sent inverted
+	   ($DSP_V61_CT_ALT), B13 B14 of word 1 set ($DSP_V61_RESERVED),
+	   the answerer's R3 with all the common rates ($DSP_V61_R3_ALL),
+	   the caller's R2 a cleardown ($DSP_V61_CLEARDOWN) */
+	bool ct_alt, reserved_test, r3_all, clear_test;
+	bool clearing;          /* answerer: our R3 calls for a cleardown */
+
 	void make_points();
 	void init_rate(s32 b);
 	/* the 4 point constellation's point in quadrant quad */
@@ -347,6 +390,9 @@ struct V61Pump : PumpBase<V61Pump, v61_state>, QamRxCore<V61Pump> {
 	bool in_data() const { return state == V61_DATA; }
 	s16 connect();
 	void retrain(bool remote);
+	void renegotiate(bool remote);
+	bool remote_retrain();
+	u16 w1_of(u16 rates) const;
 	u16 quality_caps();
 	float lost_limit(const struct v61_rate *r);
 	void voice_state(bool on);
@@ -620,6 +666,15 @@ void V61Pump::tx_frame_plan()
 			c[20] = 1;
 		}
 	}
+	/* (test: the bits marked * in Table 6 the other way) */
+	if (ct_alt) {
+		s16 n0 = baud == 3000 ? 7 : 0;
+		s16 n1 = tx_cur_ad ? n0 : n0 + 4;
+		for (s16 i = 1; i <= n1; i++)
+			c[i] ^= 1;
+		if (!tx_cur_ad)
+			c[baud == 3000 ? 28 : 20] ^= 1;
+	}
 }
 
 /* this symbol's speech for data point quad (5.5.2.3 to 5.5.2.6) */
@@ -661,7 +716,7 @@ cplx V61Pump::tx_data_symbol()
 	const s16 n = tx_cur_ad ? 2 : tx_rate->nbits;
 	u8 bits[8];
 	if (tx_pos < ctrl_at) {
-		if (tx_n < V61_B1_SYMS)
+		if (tx_n < tx_b1)
 			std::fill_n(bits, n, 1);
 		else
 			modem_get_bits(modem, 1, bits, n);
@@ -733,6 +788,16 @@ cplx V61Pump::tx_symbol()
 	case TXM_DATA:
 		z = tx_data_symbol();
 		break;
+	case TXM_PRE:
+		/* AA for 56T, CC for 8T (the caller); AC for 56T, CA for 8T
+		   (the answerer) */
+		if (caller)
+			tx_quad = tx_syms < 56 ? 0 : 2;
+		else
+			tx_quad = static_cast<s16>(((tx_syms & 1) ^
+						    (tx_syms >= 56)) * 2);
+		z = point4(tx_quad);
+		break;
 	}
 	tx_syms++;
 	return z;
@@ -766,8 +831,9 @@ void V61Pump::rx_word_bit(s16 bit)
 	if (++rx_nbits < 16)
 		return;
 	u16 w = static_cast<u16>(rx_bits);
+	/* (B13 and B14 of word 1 are not looked at: Note 1 of Table 10) */
 	if (rx_nbits >= 64 && word_ok(w, RB_ID) &&
-	    !(w & RB_RESERVED) && static_cast<u16>(rx_bits >> 48) == w) {
+	    static_cast<u16>(rx_bits >> 48) == w) {
 		u16 w2 = static_cast<u16>(rx_bits >> 32);
 		u16 w3 = static_cast<u16>(rx_bits >> 16);
 		if (!word_ok(w2, RB_B4) || !word_ok(w3, RB_B8))
@@ -791,6 +857,7 @@ void V61Pump::rx_word_bit(s16 bit)
 		   !rx_e_seen) {
 		rx_e_seen = 1;
 		rx_rate = rate_of_word(w);
+		rx_b1 = reneg ? V61_RN_B1_SYMS : V61_B1_SYMS;
 		ev_e = 1;
 		rxp = RX_DATA;
 		lost_mse = lost_limit(rx_rate);
@@ -840,10 +907,13 @@ void V61Pump::rx_control_end()
 			v = static_cast<s16>(v << 1 | c[at + i]);
 		return v;
 	};
+	/* the checks are the bits sent twice (5.6.1): D, L and G4 G3 G2
+	   (G4 G3 at 2800/s) in a frame with speech, D and C7 to C4 (C7 to
+	   C5) in data alone.  The bits marked * in Table 6 are only the
+	   transmitter's suggested states: not checked (Note 4) */
 	s16 d, dbar, ok;
 	s16 base = 0, delta = 0, gf = 0, lock = 0;
 	if (baud == 3000) {
-		ok = get(1, 7) == 0x6E;
 		d = c[14];
 		dbar = c[23];
 		if (rx_cur_ad) {
@@ -853,22 +923,22 @@ void V61Pump::rx_control_end()
 						((~get(25, 3) & 7) << 2));
 			delta = get(21, 2);
 			gf = c[28];
-			ok = ok && c[15] != c[24];
+			ok = c[15] != c[24] &&
+				(get(16, 3) ^ get(25, 3)) == 7;
 		} else
-			ok = ok && get(8, 4) == 0xE;
+			ok = (get(15, 4) ^ get(24, 4)) == 15;
 	} else {
 		d = c[7];
 		dbar = c[16];
-		ok = 1;
 		if (rx_cur_ad) {
 			lock = c[8] | !c[17];
 			base = static_cast<s16>(get(9, 5) |
 						((~get(18, 2) & 3) << 3));
 			delta = get(14, 2);
 			gf = c[20];
-			ok = c[8] != c[17];
+			ok = c[8] != c[17] && (get(9, 2) ^ get(18, 2)) == 3;
 		} else
-			ok = get(1, 4) == 0xE;
+			ok = (get(8, 3) ^ get(17, 3)) == 7;
 	}
 	ok = ok && d != dbar;
 	/* the D bit, its inverse and its copies: the majority, a tie data
@@ -899,6 +969,32 @@ void V61Pump::rx_data_symbol(cplx z)
 	s16 q, quad, k;
 	cplx d;
 	cplx aud = { 0, 0 };
+
+	/* the far end's renegotiation preamble (11.2): a caller's AA (one
+	   point again and again), an answerer's AC (two opposite points in
+	   turn), at any of the four phases */
+	bool pre_hold = false;
+	if (state == V61_DATA || reneg == 1) {
+		s16 a = nearest_point(pts4, 4, z);
+		bool on = cplx_pow(cplx_sub(z, pts4[a])) < 0.1f * V61_POWER &&
+			a == (caller ? (pre_k + 2) & 3 : pre_k);
+		pre_run = static_cast<s16>(on ? pre_run + 1 : 0);
+		pre_k = a;
+		if (pre_run >= V61_PRE_RUN) {
+			/* the rate signal follows: 104 clamped */
+			pre_run = 0;
+			rxp = RX_R;
+			rx_quad = a;
+			rx_nbits = 0;
+			rx_r[0] = rx_r[1] = rx_r[2] = 0;
+			rx_e_seen = 0;
+			ev_pre = 1;
+			DSP_DBG("v61: renegotiation preamble\n");
+			return;
+		}
+		/* (no training on it: its points are not data's) */
+		pre_hold = pre_run >= 4;
+	}
 
 	if (rx_cur_ad) {
 		/* the quadrant: the point nearest in angle */
@@ -931,7 +1027,7 @@ void V61Pump::rx_data_symbol(cplx z)
 	/* B1: the far end's scrambled ones, known (its scrambler is our
 	   descrambler's register, its differential code our last
 	   quadrant) */
-	const bool b1 = rx_n < V61_B1_SYMS && !ctrl;
+	const bool b1 = rx_n < rx_b1 && !ctrl;
 	if (b1) {
 		u32 reg = rx_scr;
 		s16 qb = 0;
@@ -946,7 +1042,9 @@ void V61Pump::rx_data_symbol(cplx z)
 	/* adaption: data alone at full speed; with speech the equalizer
 	   only while the speech is weak (the lock bit clear), the carrier
 	   slowly */
-	if (!rx_cur_ad) {
+	if (pre_hold) {
+		/* (nothing) */
+	} else if (!rx_cur_ad) {
 		rx_mse += 0.01f * (cplx_pow(cplx_sub(z, d)) / V61_POWER -
 				   rx_mse);
 		if (rx_mse > lost_mse)
@@ -1013,7 +1111,7 @@ void V61Pump::rx_symbol()
 		st = cplx_mulc(z, last_z);
 		a = atan2f(st.im, st.re);
 		sgn = a > 0 ? 1 : -1;
-		if (fabsf(a) > 0.9f && fabsf(a) < 2.2f && carrier.on &&
+		if (!reneg && fabsf(a) > 0.9f && fabsf(a) < 2.2f && carrier.on &&
 		    state != C_DCBA && state != C_SRD_KIND && state != A_ANS &&
 		    state != A_SRD_END) {
 			if (sgn != last_sgn) {
@@ -1151,10 +1249,14 @@ s16 V61Pump::connect()
 	s32 r = tx_ad_on ? 4800 : rx_rate->bps;
 	if (tx_ad_on)
 		voice_state(true);
+	pre_run = 0;
+	ev_pre = 0;
 	if (retraining) {
 		set_rates(t, r);
 		retraining = 0;
-		DSP_DBG("v61: retrained, %" PRId32 "/%" PRId32 "\n", t, r);
+		DSP_DBG("v61: %s, %" PRId32 "/%" PRId32 "\n",
+			reneg ? "renegotiated" : "retrained", t, r);
+		reneg = 0;
 		return DPSTAT_OK;
 	}
 	DSP_DBG("v61: %s, data alone at %" PRId32 "\n",
@@ -1169,8 +1271,10 @@ void V61Pump::retrain(bool remote)
 	DSP_DBG("v61: retrain %d (%s)\n", ++retrains, caller ? "G" : "F");
 	stat_retrain(remote);
 	retraining = 1;
+	reneg = 0;
+	pre_run = 0;
 	rx_reset();
-	ev_r = ev_e = ev_s = ev_frev = ev_grev = 0;
+	ev_r = ev_e = ev_s = ev_frev = ev_grev = ev_pre = 0;
 	timeout = total + ms2samples(15000, srate);
 	tone.set_freq(tone_freq = caller ? (baud == 2800 ? 1400.0f : 1500.0f)
 				  : (baud == 2800 ? 1960.0f : 2100.0f), srate);
@@ -1178,6 +1282,49 @@ void V61Pump::retrain(bool remote)
 	g_on_syms = 0;
 	set_tx(TXM_TONE);
 	set_state(caller ? C_G : A_F);
+}
+
+/* a rate renegotiation (clause 11), ours or the far end's (its
+   preamble heard in data): the preamble and the rate signal, the
+   equalizer and the echo canceller as data left them.  The initiator's
+   R4 answered by the responder's R5 (the rates it can take now), then
+   from each E and B1 (24T) at the fastest rate of the two.  Both at
+   once (each the other's R4 for an R5) end the same way.  A retrain if
+   it is not over in 3 s, or if the far end retrains instead.  The
+   responder sends data until R4 is in */
+void V61Pump::renegotiate(bool remote)
+{
+	if (!remote) {
+		DSP_DBG("v61: rate renegotiation %d (ours)\n", ++renegs);
+		stat_reneg(false);
+	}
+	retraining = 1;
+	reneg = remote ? 2 : 1;
+	ev_r = ev_e = 0;
+	rn_got_r = false;
+	reneg_end = total + ms2samples(3000, srate);
+	timeout = total + ms2samples(15000, srate);
+	if (remote)
+		set_state(RN_WAIT_R4);
+	else {
+		set_state(RN_PRE);
+		set_tx(TXM_PRE);
+	}
+}
+
+/* the far end retrains: its G (from a caller) or F (from an answerer)
+   for more than 128T (clause 10) */
+bool V61Pump::remote_retrain()
+{
+	const ToneTrk &t = caller ? (baud == 2800 ? f1960 : f2100)
+				  : (baud == 2800 ? g1400 : g1500);
+	return t.on_count > srate * 128 / baud;
+}
+
+/* rate word 1 with these rates (test: B13 and B14 set) */
+u16 V61Pump::w1_of(u16 rates) const
+{
+	return static_cast<u16>(W1(rates) | (reserved_test ? RB_RESERVED : 0));
 }
 
 /* the data mse past which the receiver at rate r has lost its
@@ -1332,16 +1479,23 @@ s16 V61Pump::handshake()
 			ec_mu = 0;
 			if (state == A_TRAIN1) {
 				set_state(A_R1);
-				start_words(TXM_R, W1(caps), W2(voice_ok),
+				start_words(TXM_R, w1_of(caps), W2(voice_ok),
 					    W3(1));
+			} else if (state == A_TRAIN2 && clearing) {
+				/* R3 calls for a cleardown (9.2) */
+				set_state(A_CLEAR);
+				start_words(TXM_R, w1_of(0), W2(0), W3(1));
 			} else if (state == A_TRAIN2) {
+				/* R3: our rate (test: all of the common
+				   ones) */
 				set_state(A_R3);
-				start_words(TXM_R, W1(tx_rate->bits),
+				start_words(TXM_R, w1_of(r3_all ? rn_w1 :
+							 tx_rate->bits),
 					    W2(tx_ad_on), W3(1));
 				ev_e = 0;
 			} else {
 				set_state(C_R2);
-				start_words(TXM_R, W1(r_words[0] & r2_caps),
+				start_words(TXM_R, w1_of(r_words[0] & r2_caps),
 					    W2(voice_ok && (r_words[1] & RB_AD)),
 					    W3(1));
 				ev_r = 0;
@@ -1359,11 +1513,17 @@ s16 V61Pump::handshake()
 	case A_WAIT_R2:
 		if (ev_r) {
 			ev_r = 0;
-			r = rate_of_word(r_words[0] & quality_caps());
+			rn_w1 = r_words[0] & quality_caps();
+			r = rate_of_word(rn_w1);
 			if (!r) {
-				DSP_DBG("v61: no common rate in %04X\n",
-					r_words[0]);
-				return DPSTAT_ERROR;
+				/* R3 calls for a cleardown too, after the
+				   second training (9.2) */
+				DSP_DBG("v61: no common rate in %04X: "
+					"cleardown\n", r_words[0]);
+				clearing = true;
+				set_state(A_TRAIN2);
+				set_tx(TXM_S);
+				break;
 			}
 			tx_rate = r;
 			tx_ad_on = voice_ok && (r_words[1] & RB_AD);
@@ -1378,10 +1538,25 @@ s16 V61Pump::handshake()
 			start_words(TXM_E, W1(tx_rate->bits) | RB_HEADER, 0, 0);
 		}
 		break;
+	case A_CLEAR:
+	case RN_CLEAR:
+		/* the cleardown's signal for 64T at least (Note 4 of 9.2,
+		   Note 2 of 11.2; 192T: the far end detects it in 48T or
+		   so after its training), then the line is cleared */
+		if (sym >= V61_CLEAR_SYMS && tx_word_bit == 0)
+			return DPSTAT_ERROR;
+		break;
+	case RN_E:
+		if (total >= reneg_end) {
+			retrain(false);
+			break;
+		}
+		[[fallthrough]];
 	case A_E:
 	case C_E:
 		if (txm == TXM_E && sym >= 8) {
 			set_tx(TXM_DATA);
+			tx_b1 = reneg ? V61_RN_B1_SYMS : V61_B1_SYMS;
 			tx_n = 0;
 			tx_pos = static_cast<s16>(ctrl_at - V61_CT_DELAY);
 			tx_cur_ad = tx_next_ad = 0;
@@ -1395,6 +1570,89 @@ s16 V61Pump::handshake()
 		}
 		if (txm == TXM_DATA && rxp == RX_DATA)
 			return connect();
+		break;
+
+	/* a rate renegotiation (clause 11) */
+	case RN_WAIT_R4:
+		/* the responder: data until R4 is in, then our preamble */
+		if (remote_retrain()) {
+			retrain(true);
+			break;
+		}
+		if (total >= reneg_end) {
+			retrain(false);
+			break;
+		}
+		if (ev_r) {
+			ev_r = 0;
+			DSP_DBG("v61: rate renegotiation %d (remote)\n",
+				++renegs);
+			stat_reneg(true);
+			set_state(RN_PRE);
+			set_tx(TXM_PRE);
+		}
+		break;
+	case RN_PRE:
+		if (remote_retrain()) {
+			retrain(true);
+			break;
+		}
+		if (total >= reneg_end) {
+			retrain(false);
+			break;
+		}
+		if (sym >= 64) {
+			/* R4 or R5: the rates we can take now, ours down
+			   from the fastest; the scrambler from zeros, the
+			   differential code from the preamble's last
+			   symbol (clause 11) */
+			u16 w = quality_caps();
+			for (s16 i = 0; i < V61_NRATES; i++)
+				if (reneg == 1 && reneg_to &&
+				    v61_rates[i].bps > reneg_to)
+					w &= ~v61_rates[i].bits;
+			rn_w1 = w;
+			DSP_DBG("v61: R%d %04X\n", reneg == 1 ? 4 : 5,
+				w1_of(w));
+			tx_scr = 0;
+			set_state(RN_R);
+			start_words(TXM_R, w1_of(w), W2(voice_ok), W3(1));
+		}
+		break;
+	case RN_R:
+		if (remote_retrain()) {
+			retrain(true);
+			break;
+		}
+		if (total >= reneg_end) {
+			retrain(false);
+			break;
+		}
+		/* the initiator: R5 (or the far end's own R4) */
+		if (reneg == 1 && ev_r) {
+			ev_r = 0;
+			rn_got_r = true;
+		}
+		/* E after 64T of R4 or R5 at least, at the end of a word:
+		   the fastest rate of the two */
+		if (tx_word_bit != 0 || sym < 64 || (reneg == 1 && !rn_got_r))
+			break;
+		r = rate_of_word(r_words[0] & rn_w1);
+		if (!r) {
+			/* E (no rate) for 64T, then the line cleared
+			   (Note 2 of 11.2) */
+			DSP_DBG("v61: no common rate in %04X: cleardown\n",
+				r_words[0]);
+			u16 e = W1(0) | RB_HEADER;
+			set_state(RN_CLEAR);
+			start_words(TXM_R, e, e, e);
+			break;
+		}
+		tx_rate = r;
+		tx_ad_on = voice_ok && (r_words[1] & RB_AD);
+		tx_silence_ok = (r_words[2] & RB_SILENCE) != 0;
+		set_state(RN_E);
+		start_words(TXM_E, W1(r->bits) | RB_HEADER, 0, 0);
 		break;
 
 	/* calling modem */
@@ -1479,7 +1737,7 @@ s16 V61Pump::handshake()
 	case C_WAIT_R1:
 		if (ev_r) {
 			ev_r = 0;
-			r2_caps = quality_caps();
+			r2_caps = clear_test ? 0 : quality_caps();
 			DSP_DBG("v61: rates we can receive: %04X\n", r2_caps);
 			set_state(C_TRAIN);
 			set_tx(TXM_S);
@@ -1490,9 +1748,17 @@ s16 V61Pump::handshake()
 		   training): its one rate */
 		if (ev_r && tx_word_bit == 0) {
 			ev_r = 0;
+			if (!ev_s)
+				break;
+			/* R3 calls for a cleardown (9.1) */
+			if (!(r_words[0] & RB_RATES)) {
+				DSP_DBG("v61: R3 %04X: cleardown\n",
+					r_words[0]);
+				return DPSTAT_ERROR;
+			}
+			/* the fastest of R3's rates (one, or more) */
 			r = rate_of_word(r_words[0] & r2_caps);
-			if (!r || !ev_s ||
-			    (r_words[0] & RB_RATES) != r->bits)
+			if (!r)
 				break;
 			tx_rate = r;
 			tx_ad_on = voice_ok && (r_words[1] & RB_AD);
@@ -1503,14 +1769,26 @@ s16 V61Pump::handshake()
 		break;
 
 	case V61_DATA:
-		/* the far end retrains: its G or F for 128T */
-		if ((!caller && (baud == 2800 ? g1400 : g1500).on_count >
-		     srate * 128 / baud) ||
-		    (caller && (baud == 2800 ? f1960 : f2100).on_count >
-		     srate * 128 / baud))
+		/* the far end renegotiates (its preamble heard, 11.2), or
+		   retrains (its G or F for 128T, clause 10) */
+		if (ev_pre) {
+			ev_pre = 0;
+			renegotiate(true);
+		} else if (remote_retrain())
 			retrain(true);
 		else if (retrain_at && count >= retrain_at && !retrains)
 			retrain(false);
+		else if (reneg_at && count >= reneg_at && !renegs)
+			renegotiate(false);
+		/* the core's retrain (1) or rate renegotiation (2) */
+		else if (modem_get_param(modem, MDMPRM_LINK_REQ) > 0) {
+			intptr_t q = modem_get_param(modem, MDMPRM_LINK_REQ);
+			modem_set_param(modem, MDMPRM_LINK_REQ, 0);
+			if (q == 2)
+				renegotiate(false);
+			else
+				retrain(false);
+		}
 		/* the equalization lost: 2 s past its rate's limit, or the
 		   control segments failing for 1 s, the signal there */
 		else if ((lost_syms >= 2 * baud || rx_bad_ctrl >= baud / 70) &&
@@ -1623,6 +1901,29 @@ s16 V61Pump::start(struct modem *m, enum DP_ID, s16 caller_, s32 srate_,
 	/* tests: DSP_V61_RETRAIN=<ms in data>[a|c], DSP_V61_LOST=0 */
 	retrain_at = static_cast<s32>(test_samples("DSP_V61_RETRAIN"));
 	lost_off = env_off("DSP_V61_LOST");
+	/* DSP_V61_RENEG=<ms in data>[:<bit/s>][a|c]: a rate renegotiation
+	   (to that rate at most) */
+	reneg = renegs = 0;
+	reneg_at = static_cast<s32>(test_samples("DSP_V61_RENEG"));
+	reneg_to = 0;
+	if (const char *e = pump_test_env("DSP_V61_RENEG", caller_))
+		if (const char *c = strchr(e, ':'))
+			reneg_to = static_cast<s32>(strtol(c + 1, nullptr, 10));
+	tx_b1 = rx_b1 = V61_B1_SYMS;
+	pre_run = pre_k = ev_pre = 0;
+	rn_w1 = 0;
+	rn_got_r = clearing = false;
+	/* DSP_V61_CT_ALT, DSP_V61_RESERVED, DSP_V61_R3_ALL,
+	   DSP_V61_CLEARDOWN=1[a|c] (see their members) */
+	ct_alt = pump_test_env("DSP_V61_CT_ALT", caller_) != nullptr;
+	reserved_test = pump_test_env("DSP_V61_RESERVED", caller_) != nullptr;
+	r3_all = !caller_ && pump_test_env("DSP_V61_R3_ALL", caller_);
+	clear_test = caller_ &&
+		pump_test_env("DSP_V61_CLEARDOWN", caller_) != nullptr;
+	if (ct_alt)
+		DSP_DBG("v61: test: the * bits of Table 6 inverted\n");
+	if (r3_all)
+		DSP_DBG("v61: test: R3 with all the common rates\n");
 
 	if (caller_) {
 		state = C_ANS;
