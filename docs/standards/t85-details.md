@@ -38,7 +38,7 @@ if the two ends agree on it.
 | Item | D-Modem |
 |---|---|
 | Send (`dsp/t30.cpp`) | DCS bit 78 when the far DIS has it. L0 128, TPBON, LRLTWO 0, MX 0, YD the real height. |
-| Receive | A DCS with bit 78, or bit 79 alone (spandsp sends it). Any L0, NEWLEN, ATMOVE and COMMENT. |
+| Receive | A DCS with bit 78, or bit 79 alone (spandsp sends it). Any L0, NEWLEN, ATMOVE and COMMENT. A BIE with D more than 0 or with DPON 1 is refused (Table 1 sets them to 0). |
 | DIS | Bits 78 and 79 (T.85 with any L0), with ECM |
 | Pages | Each ECM document is one BIE. The decoder stops at a limit of rows. |
 
@@ -48,4 +48,9 @@ pages with ECM between two D-Modem T.30 machines.
 
 ## Corrections (2026-11)
 
-None. The BIH that D-Modem sends agrees with Table 1.
+| Error | Correction |
+|---|---|
+| After SDRST, the decoder used the lines of the previous stripe as the lines above the next stripe. | The lines above the next stripe are background (T.82 6.2.5). |
+
+The test `Jbig.StripeReset` checks this correction. The BIH that
+D-Modem sends agrees with Table 1.

@@ -147,7 +147,8 @@ target_link_libraries(x2_rx_test PRIVATE dmodem_loopback dmodem_dsp)
 dmodem_gtest(x2_rx_test LABELS quick)
 dmodem_test_exe(rs_test rs_test.cpp ${S}/rs.cpp)
 dmodem_gtest(rs_test LABELS quick)
-# jbig.h: T.82's coder test and artificial image, T.85's markers
+# jbig.h: T.82's coder test and artificial image (sequential and
+# progressive), its tables, T.85's markers
 dmodem_test_exe(jbig_test jbig_test.cpp ${S}/jbig.cpp ${S}/t4.cpp)
 dmodem_gtest(jbig_test LABELS quick)
 # jpeg.h: T.4 Annex E's JPEG, T.42's CIELAB
