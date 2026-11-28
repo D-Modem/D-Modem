@@ -65,9 +65,9 @@ A standard that has no link has no pages yet.
 | [V.70](v70.md) ([details](v70-details.md)) | Digital simultaneous voice and data (DSVD) |
 | [V.75](v75.md) ([details](v75-details.md)) | The control of DSVD |
 | [V.76](v76.md) ([details](v76-details.md)) | A multiplexer on LAPM |
-| H.245 | Control messages for multimedia |
-| G.729 | Speech coding at 8 kbit/s, with Annexes A and B |
-| G.711 | PCM of voice frequencies (µ-law and A-law) |
+| [H.245](h245.md) ([details](h245-details.md)) | Control messages for multimedia |
+| [G.729](g729.md) ([details](g729-details.md)) | Speech coding at 8 kbit/s, with Annexes A and B |
+| [G.711](g711.md) ([details](g711-details.md)) | PCM of voice frequencies (µ-law and A-law) |
 
 ## ISDN and IP networks
 

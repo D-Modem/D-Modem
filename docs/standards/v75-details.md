@@ -19,8 +19,9 @@ details](../v70-details.md).
 - The user data of each frame is the H.245 message after the format
   identifier (FI) 133 (8.1, 8.2).
 - OpenLogicalChannel has the forward and the reverse parameters. The
-  forward parameters have the port number, the V.76 parameters of the
-  multiplexer and the V.75 parameters (Table 3).
+  forward parameters have the port number and the V.76 parameters of
+  the multiplexer. The V.76 parameters include the V.75 parameters
+  (Table 3).
 - An in-band TerminalCapabilitySet has one AlternativeCapabilitySet.
   Only the out-of-band channel can send simultaneousCapabilities.
 - A terminal ignores the capabilities that it does not know (6.4.1).

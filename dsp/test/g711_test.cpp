@@ -65,3 +65,24 @@ TEST(G711, SignAndMagnitude)
 	EXPECT_EQ(g711::decode(0, g711::encode(0, -1)), -8);
 	EXPECT_EQ(g711::decode(0, g711::encode_sm(0, -1)), 0);
 }
+
+/* each octet decodes to the quantized value of Tables 1a and 2a/G.711,
+   computed from the segment and the step here, independently of the
+   decoder's own arithmetic: A-law (even bits inverted, bit 1 1 for
+   positive) in 13 bit steps of 8, mu-law (all bits inverted) in 14 bit
+   steps of 4 */
+TEST(G711, TableValues)
+{
+	for (int c = 0; c < 256; c++) {
+		const int a = c ^ 0x55;
+		const int seg = a >> 4 & 7, m = a & 15;
+		const int mag = seg == 0 ? 2 * m + 1 : (2 * m + 33) << (seg - 1);
+		EXPECT_EQ(g711::alaw2lin(static_cast<unsigned char>(c)),
+			  (a & 0x80 ? 1 : -1) * mag * 8) << "A-law " << c;
+		const int u = ~c & 0xff;
+		const int us = u >> 4 & 7, um = u & 15;
+		const int umag = ((2 * um + 33) << us) - 33;
+		EXPECT_EQ(g711::ulaw2lin(static_cast<unsigned char>(c)),
+			  (u & 0x80 ? -1 : 1) * umag * 4) << "mu-law " << c;
+	}
+}
