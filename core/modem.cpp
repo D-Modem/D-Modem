@@ -150,7 +150,7 @@ static const char *const cause_text[] = {
 /* the result codes in words, by Result */
 static const char *const result_text[] = {
 	"OK", "CONNECT", "RING", "NO CARRIER", "ERROR", "", "NO DIALTONE",
-	"BUSY", "NO ANSWER", "FAX", "DATA", "VCON",
+	"BUSY", "NO ANSWER", "FAX", "DATA", "VCON", "+FCERROR",
 };
 
 /* CONNECT's number with ATV0 for a rate (Smart Link's ST56 numbers,
@@ -3342,6 +3342,8 @@ void Modem::report(Result r)
 			(clear_channel() ? "SYNC" : "VOICE");
 	} else if (verbose) {
 		line = result_text[static_cast<s16>(r)];
+	} else if (r == Result::FcError) {
+		line = "+F4";           /* (T.31 8.4.1) */
 	} else {
 		line = dec(r == Result::Fax ? 88 : r == Result::Data ? 89 :
 			   r == Result::Vcon ? 90 : static_cast<s16>(r));
@@ -4955,9 +4957,11 @@ void Modem::fax_process(s16 *in, s16 *out, s32 n)
 		commands_due_ = true;
 		break;
 	case FAX_STATUS_FRAME_ERROR:
+	case FAX_STATUS_FCERROR:
 		set_state(COMMAND_ONLINE);
 		fit_idle_ = 0;
-		report(Result::Error);
+		report(st == FAX_STATUS_FCERROR ? Result::FcError :
+		       Result::Error);
 		command_ = true;
 		commands_due_ = true;
 		break;

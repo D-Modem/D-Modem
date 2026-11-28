@@ -515,6 +515,8 @@ struct dsp_info {
 #define FAX_STATUS_CONNECT      3
 #define FAX_STATUS_NOCARRIER    4
 #define FAX_STATUS_FRAME_ERROR  5   /* an ERROR result, the call kept */
+#define FAX_STATUS_FCERROR      6   /* +FCERROR (T.31 8.4.1): +FRM or +FRH
+				       found a different signal */
 
 /* the class 1 commands of FAX_class1_command(), T.31 8.3.1 to 8.3.6 */
 enum FAX_CMD {
@@ -524,6 +526,8 @@ enum FAX_CMD {
 	FAX_CMD_FRM = 3,        /* +FRM: receive data */
 	FAX_CMD_FTH = 4,        /* +FTH: send HDLC frames */
 	FAX_CMD_FRH = 5,        /* +FRH: receive HDLC frames */
+	FAX_CMD_FAR = 6,        /* +FAR: adaptive reception (0 or 1) for the
+				   +FRM that follows; 0 once set */
 };
 
 /*

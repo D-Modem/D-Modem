@@ -134,8 +134,9 @@ void FAX_delete(void *obj);
    the call */
 int FAX_process(void *obj, void *in, void *out, int count);
 /* an enum FAX_CMD with its parameter (the modulation, or the time in
-   10 ms for +FTS and +FRS): 1 once started, its results then coming
-   from FAX_process(); -1 to refuse it, or without an engine */
+   10 ms for +FTS and +FRS, 0 or 1 for +FAR): 1 once started, its
+   results then coming from FAX_process(); 0 for +FAR, which is set at
+   once; -1 to refuse it, or without an engine */
 int FAX_class1_command(void *obj, unsigned cmd, unsigned param);
 /* from now on the engine works over T.38: it sends each IFP packet
    (struct t38_ifp, t38.h) with tx(ctx, ifp), with up to max_data octets

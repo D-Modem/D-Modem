@@ -60,7 +60,21 @@ at a time. It reads nothing after `<DLE><ETX>`:
   `+FTM` with its buffer empty), the carrier stops and the result is
   `ERROR` (8.3.3 and 8.3.5/T.31).
 
-The parameters `+FAR` (0), `+FCL`, `+FDD` (0), `+FIT` and `+FLO` are
+`+FRM` and `+FRH` give `+FCERROR` (`+F4` with `ATV0`) when a different
+signal comes before their `CONNECT` (8.4.1/T.31):
+
+- In `+FRM`, a second receiver listens to V.21 until the training. 4
+  flags in a row are V.21. The V.21 receiver continues after
+  `+FCERROR`, and the next `+FRH=3` gets the frames.
+- With `+FAR=1`, V.21 flags in `+FRM` give `+FRH:3`. Then the engine
+  does `+FRH=3` with no command (8.5.1/T.31).
+- In `+FRH`, a V.21 carrier for 500 ms with no 2 flags in a row is a
+  fast modulation in the band of V.21.
+- On T.38, the indicators and the data types tell the signal.
+
+For more data, refer to [T.31 in D-Modem](../standards/t31-details.md#t31-in-d-modem).
+
+The parameters `+FAR` (0, 1), `+FCL`, `+FDD` (0), `+FIT` and `+FLO` are
 in `core/at.cpp`. `+FIT=<time>,<action>` hangs up after `<time>`
 seconds in command state with no character from the DTE. With
 `<action>` 0, `+FCLASS` is 0 after the hangup (8.5.4/T.31).

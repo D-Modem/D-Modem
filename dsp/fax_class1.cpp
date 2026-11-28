@@ -10,6 +10,9 @@
  *    answering it sends CED and then behaves as if AT+FTH=3 was given.
  *    Data from and to the DTE is <DLE> shielded and ends with
  *    <DLE><ETX>.  HDLC frames are passed with their two FCS octets.
+ *    +FRM and +FRH give +FCERROR for a different signal before their
+ *    CONNECT (+FRM: V.21's flags, which with +FAR=1 give +FRH:3 and an
+ *    implied +FRH=3 instead; +FRH: a fast modulation).
  *
  *    The line is the call's audio, or T.38 (FAX_t38_start(), also in the
  *    middle of a call): the same commands and results, the signals as
@@ -32,6 +35,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <utility>
 
 #include "dm_types.h"
 #include "bits.h"
@@ -63,6 +67,14 @@ using namespace dsp;
 /* +FTH after its CONNECT, +FTM with its buffer empty: so long without
    the DTE's data, then ERROR (T.31 8.3.3, 8.3.5) */
 #define DTE_WAIT_MS 5000
+/* +FRH: so long a V.21 carrier with no two flags in a row (a fast
+   modulation in V.21's band), then +FCERROR (T.31 8.3.6, 8.4.1).  The
+   preamble's flags come at once with the carrier */
+#define FRH_OTHER_MS 500
+/* +FRM: so many flags in a row on V.21 before the training (V.21's
+   preamble, not the closing flags of our own echo), then +FCERROR, or
+   with +FAR=1 +FRH:3 (T.31 8.3.4, 8.5.1) */
+#define FRM_V21_FLAGS 3
 
 /* T.38: data octets in a packet (V.21: 7, T.38 7.5), the tails after
    the data (HDLC, T.4) before no-signal, the ECM frames waiting to go */
@@ -160,6 +172,11 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	s16 rx_carrier;
 	s32 rx_quiet;           /* samples of silence (FRS) */
 	float in_power;
+	/* +FRM: V.21 channel 2 heard as well until the training, for its
+	   flags (T.31 8.3.4): a different signal */
+	FaxRx vrx;
+	s16 vrx_on;
+	s16 far_on;             /* +FAR=1: adaptive reception (8.5.1) */
 
 	/* the caller's CNG (6.6/T.31: 4.2/T.30, 0.5 s of 1100 Hz every 3.5
 	   s) in its first +FRH, until the answerer's flags come: samples
@@ -168,6 +185,10 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 
 	/* frames from the HDLC receiver */
 	s32 rflags;             /* flags seen with the carrier on */
+	s16 flag_run;           /* flags in a row, the last ones (0: one
+				   alone; V.21's preamble, not chance bits) */
+	s32 v21_noflag;         /* +FRH: samples of V.21's carrier with no
+				   flags in a row */
 	struct rx_frame frames[FRAME_QUEUE];
 	s16 fhead, ftail;
 	s16 frh_connected;
@@ -264,6 +285,11 @@ struct Fax : HdlcTx<Fax, HDLC_MAX - 2, HdlcV21>,
 	void listen_v21();
 	void begin_ftm(enum fax_mod mod, s16 short_train);
 	s16 begin_frm(enum fax_mod mod, s16 short_train);
+	s16 frm_listen(enum fax_mod mod, s16 short_train);
+	void stop_vrx();
+	void frm_v21();
+	void other_signal();
+	void t38_signal(s16 mod);
 	void queue_frame(const u8 *d, s16 len, s16 ok);
 
 	/* T.38 */
@@ -347,6 +373,15 @@ void Fax::stop_rx()
 	rx_on = 0;
 	rx_trained = 0;
 	t38_rx_v21 = 0;
+	stop_vrx();
+}
+
+/* +FRM's V.21 receiver off */
+void Fax::stop_vrx()
+{
+	if (vrx_on)
+		vrx.release();
+	vrx_on = 0;
 }
 
 /* a received V.21 frame (with its FCS) into the queue, unless full */
@@ -434,7 +469,13 @@ void Fax::hdlc_rx_frame(HdlcV21, const u8 *d, s16 len, bool whole)
 		return;
 	}
 	rflags++;
-	if (!whole || len < 4)
+	if (whole && !len)
+		flag_run++;
+	else
+		flag_run = 0;
+	/* (+FRM's V.21 receiver looks for the flags only: the bits of a
+	   fast modulation give frames by chance) */
+	if (!whole || len < 4 || state == C1_FRM)
 		return;
 	queue_frame(d, len, hdlc_fcs(d, len) == HDLC_FCS_GOOD);
 }
@@ -592,6 +633,59 @@ static s16 mod_t38_ind(enum fax_mod mod, s16 long_train)
 	case FM_V17_12000: return T38_IND_V17_12000_SHORT + long_train;
 	case FM_V17_14400: return T38_IND_V17_14400_SHORT + long_train;
 	default:           return T38_IND_NO_SIGNAL;
+	}
+}
+
+/* the carrier of T.38's indicator ind (enum fax_mod; FM_NONE: V.33,
+   which class 1 has no code for), or -1 for none (no-signal, the tones,
+   V.8 and V.34) */
+static s16 t38_ind_mod(s16 ind)
+{
+	switch (ind) {
+	case T38_IND_V21_PREAMBLE:      return FM_V21;
+	case T38_IND_V27_2400:          return FM_V27_2400;
+	case T38_IND_V27_4800:          return FM_V27_4800;
+	case T38_IND_V29_7200:          return FM_V29_7200;
+	case T38_IND_V29_9600:          return FM_V29_9600;
+	case T38_IND_V17_7200_SHORT:
+	case T38_IND_V17_7200_LONG:     return FM_V17_7200;
+	case T38_IND_V17_9600_SHORT:
+	case T38_IND_V17_9600_LONG:     return FM_V17_9600;
+	case T38_IND_V17_12000_SHORT:
+	case T38_IND_V17_12000_LONG:    return FM_V17_12000;
+	case T38_IND_V17_14400_SHORT:
+	case T38_IND_V17_14400_LONG:    return FM_V17_14400;
+	case T38_IND_V33_12000:
+	case T38_IND_V33_14400:         return FM_NONE;
+	default:                        return -1;
+	}
+}
+
+/* the carrier of T.38's data type (as t38_ind_mod()), when the packet p
+   has data octets (not only the end of a frame or of the signal) */
+static s16 t38_data_mod(const struct t38_ifp *p)
+{
+	s16 k, any = 0;
+
+	for (k = 0; k < p->nfields; k++)
+		if ((p->field[k].type == T38_HDLC_DATA ||
+		     p->field[k].type == T38_T4_DATA) && p->field[k].len > 0)
+			any = 1;
+	if (!any)
+		return -1;
+	switch (p->type) {
+	case T38_DATA_V21:              return FM_V21;
+	case T38_DATA_V27_2400:         return FM_V27_2400;
+	case T38_DATA_V27_4800:         return FM_V27_4800;
+	case T38_DATA_V29_7200:         return FM_V29_7200;
+	case T38_DATA_V29_9600:         return FM_V29_9600;
+	case T38_DATA_V17_7200:         return FM_V17_7200;
+	case T38_DATA_V17_9600:         return FM_V17_9600;
+	case T38_DATA_V17_12000:        return FM_V17_12000;
+	case T38_DATA_V17_14400:        return FM_V17_14400;
+	case T38_DATA_V33_12000:
+	case T38_DATA_V33_14400:        return FM_NONE;
+	default:                        return -1;
 	}
 }
 
@@ -960,6 +1054,7 @@ void Fax::t38_rx_fast(const struct t38_ifp *p)
 		if (take && !rx_trained && fl->type != T38_HDLC_SIG_END &&
 		    fl->type != T38_T4_SIG_END) {
 			rx_trained = 1;
+			t38_rx_v21 = 0;         /* (frm_listen()) */
 			rbyte = rbitn = 0;
 			t38_hdlc_out = 0;
 			t38_ones = 0;
@@ -1034,9 +1129,11 @@ void Fax::t38_rx(const struct t38_ifp *p)
 			t38_sig = 1;
 			break;
 		}
+		t38_signal(t38_ind_mod(p->type));
 		return;
 	}
 	t38_sig = 1;
+	t38_signal(t38_data_mod(p));
 	if (p->type != T38_DATA_V21) {
 		t38_rx_fast(p);
 		return;
@@ -1177,6 +1274,7 @@ void Fax::begin_frh()
 	stop_tx();
 	set_state(C1_FRH);
 	frh_connected = 0;
+	v21_noflag = 0;
 	listen_v21();
 }
 
@@ -1191,6 +1289,7 @@ void Fax::listen_v21()
 		start_rx(FM_V21, 0, V21Rx::hdlc_rx_cb);
 		V21Rx::hdlc_rx_reset();
 		rflags = 0;
+		flag_run = 0;
 	}
 }
 
@@ -1212,7 +1311,89 @@ s16 Fax::begin_frm(enum fax_mod mod, s16 short_train)
 	stop_tx();
 	set_state(C1_FRM);
 	rbyte = rbitn = 0;
-	return start_rx(mod, short_train, frm_put_bit);
+	return frm_listen(mod, short_train);
+}
+
+/* +FRM's receivers: mod's, and V.21 channel 2's for its flags until the
+   training (T.31 8.3.4: a different signal).  T.38: V.21's frames taken
+   too, for the +FRH that follows a +FCERROR.  -1 when out of memory */
+s16 Fax::frm_listen(enum fax_mod mod, s16 short_train)
+{
+	if (start_rx(mod, short_train, frm_put_bit))
+		return -1;
+	if (t38) {
+		t38_rx_v21 = 1;
+		return 0;
+	}
+	if (vrx.init(FM_V21, 0, srate, V21Rx::hdlc_rx_cb, this, nullptr))
+		return 0;               /* (V.21's takes no memory) */
+	vrx_on = 1;
+	V21Rx::hdlc_rx_reset();
+	rflags = 0;
+	flag_run = 0;
+	return 0;
+}
+
+/* V.21's preamble while +FRM waits for its carrier (T.31 8.3.4): the
+   fast receiver off, V.21's kept (its frames for the +FRH=3 that
+   follows).  +FAR=0: +FCERROR.  +FAR=1: +FRH:3, then an implied
+   +FRH=3 (8.5.1, 8.4.2), its CONNECT with the flags */
+void Fax::frm_v21()
+{
+	DSP_DBG("fax: V.21 flags in +FRM%s\n", far_on ? ": +FRH:3" : "");
+	if (t38) {
+		stop_rx();
+		t38_rx_v21 = 1;
+	} else {
+		/* (untrained: nothing of it to keep for a short train) */
+		rx.release();
+		std::swap(rx, vrx);
+		vrx_on = 0;
+		rx_on = 1;
+	}
+	rx_mod = FM_V21;
+	rx_trained = 0;
+	if (far_on) {
+		static const char t[] = "\r\n+FRH:3\r\n";
+		modem_send_to_tty(modem, t, static_cast<int>(sizeof(t) - 1));
+		set_state(C1_FRH);
+		frh_connected = 0;
+		v21_noflag = 0;
+		return;
+	}
+	set_state(C1_IDLE);
+	report_status(FAX_STATUS_FCERROR);
+}
+
+/* +FRM or +FRH found a signal that is not the one asked for (T.31
+   8.4.1): back to command state with +FCERROR.  +FRM's receivers stop;
+   +FRH's V.21 receiver goes on (as in command state) */
+void Fax::other_signal()
+{
+	DSP_DBG("fax: a different signal in state %d: +FCERROR\n", state);
+	if (state == C1_FRM)
+		stop_rx();
+	set_state(C1_IDLE);
+	report_status(FAX_STATUS_FCERROR);
+}
+
+/* T.38: a carrier came (mod, its enum fax_mod; FM_NONE for one that
+   class 1 has no code for), from its indicator or its data: for +FRH
+   before its CONNECT a different signal unless V.21; for +FRM before
+   its CONNECT unless mod.  Tones (CED, CNG) and V.8 are not carriers
+   here (mod < 0) */
+void Fax::t38_signal(s16 mod)
+{
+	if (mod < 0)
+		return;
+	if (state == C1_FRH && !frh_connected && mod != FM_V21)
+		other_signal();
+	else if (state == C1_FRM && !rx_trained && mod != rx_mod) {
+		if (mod == FM_V21)
+			frm_v21();
+		else
+			other_signal();
+	}
 }
 
 /* a class 1 command (FAX_CMD_*); param: the T.31 <mod>, or the time in
@@ -1263,6 +1444,11 @@ int FAX_class1_command(void *obj, unsigned cmd, unsigned param)
 		if (!fax_mod_from_code(param, &mod, &short_train) || mod == FM_V21)
 			return -1;
 		return f->begin_frm(mod, short_train) ? -1 : 1;
+	case FAX_CMD_FAR:
+		if (param > 1)
+			return -1;
+		f->far_on = static_cast<s16>(param);
+		return 0;
 	default:
 		DSP_DBG("fax: bad command: %x\n", cmd);
 		return -1;
@@ -1297,6 +1483,7 @@ int FAX_t38_start(void *obj, void (*tx)(void *ctx, const void *ifp),
 		f->rx.release();
 		f->rx_on = 0;
 	}
+	f->stop_vrx();
 	if (f->state == C1_FRM && f->rx_trained) {
 		/* the data that was coming in is cut off */
 		f->out_end();
@@ -1325,6 +1512,10 @@ int FAX_t38_start(void *obj, void (*tx)(void *ctx, const void *ifp),
 		break;
 	case C1_FRH:
 		f->t38_rx_v21 = 1;
+		break;
+	case C1_FRM:
+		f->t38_rx_v21 = 1;
+		f->t38_ind(T38_IND_NO_SIGNAL);
 		break;
 	default:
 		f->t38_ind(T38_IND_NO_SIGNAL);
@@ -1355,7 +1546,7 @@ void FAX_t38_stop(void *obj)
 		f->start_rx(FM_V21, 0, Fax::V21Rx::hdlc_rx_cb);
 		break;
 	case C1_FRM:
-		f->start_rx(f->rx_mod, 0, frm_put_bit);
+		f->frm_listen(f->rx_mod, 0);
 		break;
 	default:
 		break;
@@ -1762,6 +1953,8 @@ int FAX_process(void *obj, void *in, void *out, int count)
 
 		if (f->rx_on && !f->tx_on)
 			f->rx.sample(x);
+		if (f->vrx_on && !f->tx_on)
+			f->vrx.sample(x);
 		f->count++;
 
 		/* the answerer's flags, or the first +FRH over: no more
@@ -1826,9 +2019,17 @@ int FAX_process(void *obj, void *in, void *out, int count)
 				f->report_status(fr->ok ? FAX_STATUS_OK : FAX_STATUS_FRAME_ERROR);
 			} else if (!f->frh_connected &&
 				   (f->t38 ? f->t38_v21_sig :
-				    f->rflags >= 2 && f->rx.carrier)) {
+				    f->flag_run >= 1 && f->rx.carrier)) {
 				f->frh_connected = 1;
 				f->report_status(FAX_STATUS_CONNECT);
+			} else if (!f->frh_connected && !f->t38) {
+				/* V.21's carrier with no preamble: a fast
+				   modulation, its chance flags alone */
+				if (!f->rx.carrier)
+					f->v21_noflag = 0;
+				else if (++f->v21_noflag >=
+					 ms2samples(FRH_OTHER_MS, f->srate))
+					f->other_signal();
 			} else if (f->frh_connected &&
 				   (f->t38 ? !f->t38_v21_sig :
 				    f->rx.carrier_run <
@@ -1842,8 +2043,12 @@ int FAX_process(void *obj, void *in, void *out, int count)
 		case C1_FRM:
 			if (f->t38)
 				break;  /* (t38_rx_fast) */
-			if (!f->rx_trained && f->rx.trained) {
+			if (!f->rx_trained && f->vrx_on &&
+			    f->flag_run >= FRM_V21_FLAGS && f->vrx.carrier) {
+				f->frm_v21();
+			} else if (!f->rx_trained && f->rx.trained) {
 				f->rx_trained = 1;
+				f->stop_vrx();
 				f->report_status(FAX_STATUS_CONNECT);
 			} else if (f->rx_trained && !f->rx.carrier) {
 				f->out_end();

@@ -4410,7 +4410,7 @@ TEST(Core, ZfaxPoll)
 	}, 30000));
 }
 
-/* T.31's class 1 parameters (Table 5, 8.5, Annex A): +FAR (0), +FCL
+/* T.31's class 1 parameters (Table 5, 8.5, Annex A): +FAR (0, 1), +FCL
    (0-255), +FDD (0), +FIT (0-255, 0 or 1) and +FLO (as +IFC) are taken
    and read back; +FTS=? and +FRS=? give their range */
 TEST(Core, FaxClass1Parameters)
@@ -4418,8 +4418,10 @@ TEST(Core, FaxClass1Parameters)
 	Line l;
 	Modem *m = make(l, "class1");
 	cmd(m, l, "ATE0+FCLASS=1\r");
+	EXPECT_EQ(cmd(m, l, "AT+FAR=?\r"), "\r\n+FAR: (0,1)\r\n\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FAR=1\r"), "\r\nOK\r\n");
+	EXPECT_EQ(cmd(m, l, "AT+FAR=2\r"), "\r\nERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+FAR=0\r"), "\r\nOK\r\n");
-	EXPECT_EQ(cmd(m, l, "AT+FAR=1\r"), "\r\nERROR\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+FCL=50\r"), "\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+FCL?\r"), "\r\n+FCL: 50\r\n\r\nOK\r\n");
 	EXPECT_EQ(cmd(m, l, "AT+FDD=0\r"), "\r\nOK\r\n");
@@ -4479,6 +4481,91 @@ TEST(Core, FaxClass1DteTimeouts)
 	p.b->dte_input("AT+FCLASS?\r", 11);
 	p.step();
 	EXPECT_NE(p.got_b.find("\r\n0\r\n"), std::string::npos) << p.got_b;
+}
+
+/* class 1 (T.31 8.3.4, 8.4, 8.5.1): the caller's +FRM=96 hears the
+   answerer's V.21 frames: +FCERROR (ATV0: +F4), and the +FRH=3 that
+   follows has the frame; with +FAR=1, +FRH:3 and then CONNECT */
+TEST(Core, FaxClass1FcError)
+{
+	Pair p("");
+	auto until = [&p](auto cond, int ms) {
+		for (int t = 0; t < ms; t += 20) {
+			if (cond())
+				return t;
+			p.step();
+		}
+		return cond() ? ms : -1;
+	};
+	auto has_a = [&p](const char *s) {
+		return [&p, s] { return p.got_a.find(s) != std::string::npos; };
+	};
+	auto has_b = [&p](const char *s) {
+		return [&p, s] { return p.got_b.find(s) != std::string::npos; };
+	};
+	/* a DIS from B's DTE (+FTH=3's CONNECT came): a final frame */
+	auto dis = [&p]() {
+		static const char f[] = "\xff\x13\x80\x00\x46\x00\x10\x03";
+		p.b->dte_input(f, sizeof(f) - 1);
+	};
+	p.a->dte_input("AT+FCLASS=1\r", 12);
+	p.b->dte_input("AT+FCLASS=1\r", 12);
+	p.step();
+	p.b->dte_input("ATA\r", 4);
+	p.a->dte_input("ATD\r", 4);
+	/* the first DIS to A's first +FRH=3, after B's CED */
+	ASSERT_GE(until(has_b("CONNECT"), 10000), 0) << p.got_b;
+	dis();
+	ASSERT_GE(until(has_a("\x10\x03\r\nOK\r\n"), 5000), 0) << p.got_a;
+	ASSERT_GE(until(has_b("OK"), 3000), 0) << p.got_b;
+	/* B's DIS again, A's +FRM=96 */
+	p.got_a.clear();
+	p.got_b.clear();
+	p.a->dte_input("AT+FRM=96\r", 10);
+	p.step();
+	p.b->dte_input("AT+FTH=3\r", 9);
+	ASSERT_GE(until(has_b("CONNECT"), 3000), 0) << p.got_b;
+	p.got_b.clear();
+	dis();
+	ASSERT_GE(until(has_a("\r\n+FCERROR\r\n"), 3000), 0) << p.got_a;
+	EXPECT_EQ(p.got_a.find("CONNECT"), std::string::npos) << p.got_a;
+	p.got_a.clear();
+	p.a->dte_input("AT+FRH=3\r", 9);
+	ASSERT_GE(until(has_a("\x10\x03\r\nOK\r\n"), 3000), 0) << p.got_a;
+	EXPECT_NE(p.got_a.find("\xff\x13\x80"), std::string::npos);
+	ASSERT_GE(until(has_b("OK"), 3000), 0) << p.got_b;
+
+	/* ATV0: +F4 */
+	p.got_a.clear();
+	p.got_b.clear();
+	p.a->dte_input("ATV0\r", 5);
+	ASSERT_GE(until(has_a("0\r"), 1000), 0) << p.got_a;
+	p.got_a.clear();
+	p.a->dte_input("AT+FRM=96\r", 10);
+	p.step();
+	p.b->dte_input("AT+FTH=3\r", 9);
+	ASSERT_GE(until(has_b("CONNECT"), 3000), 0) << p.got_b;
+	dis();
+	ASSERT_GE(until(has_a("+F4\r"), 3000), 0) << p.got_a;
+	ASSERT_GE(until(has_b("OK"), 3000), 0) << p.got_b;
+
+	/* +FAR=1: +FRH:3, then CONNECT and the frame */
+	p.got_a.clear();
+	p.got_b.clear();
+	p.step();
+	p.a->dte_input("ATV1+FAR=1\r", 11);
+	ASSERT_GE(until(has_a("OK\r\n"), 1000), 0) << p.got_a;
+	p.got_a.clear();
+	p.a->dte_input("AT+FRM=96\r", 10);
+	p.step();
+	p.b->dte_input("AT+FTH=3\r", 9);
+	ASSERT_GE(until(has_b("CONNECT"), 3000), 0) << p.got_b;
+	dis();
+	ASSERT_GE(until(has_a("\x10\x03\r\nOK\r\n"), 3000), 0) << p.got_a;
+	size_t r = p.got_a.find("+FRH:3\r\n"), c = p.got_a.find("CONNECT");
+	EXPECT_NE(r, std::string::npos) << p.got_a;
+	EXPECT_LT(r, c) << p.got_a;
+	EXPECT_EQ(p.got_a.find("FCERROR"), std::string::npos) << p.got_a;
 }
 
 /* T.32's parameters (Appendix I): +FCQ, +FCT, +FNR and the like give
