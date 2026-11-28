@@ -763,6 +763,7 @@ struct V34CcRx {
 				   signal is not ours) until resync() */
 	float pin;              /* the power in the band (fast) */
 	float level;            /* and its level when there (slow) */
+	s16 level_n;            /* the symbols in level (to V34CC_LEVEL_N) */
 	s32 sym;
 	float mse;
 	/* what came: PPh, Sh then S-bar h, AC, an MPh, E */

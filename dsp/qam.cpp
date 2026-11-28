@@ -220,7 +220,7 @@ s16 QamRx::sample(float x)
 			for (i = 0; i < eq_len; i++)
 				out = cplx_add(out, cplx_mul(eq[i], eq_buf[i]));
 			eq_out = out;
-			rot = cplx_make(cosf(theta), -sinf(theta));
+			rot = cplx_make(dsp_cosf(theta), -dsp_sinf(theta));
 			z = cplx_mul(out, rot);
 			theta += dtheta;
 			theta = remainderf(theta, 2 * static_cast<float>(M_PI));
@@ -272,7 +272,7 @@ void QamRx::adapt(cplx d, float mu, float k1, float k2)
 /* turns theta so that the last output z points the way d does */
 void QamRx::align_phase(cplx d)
 {
-	float a = atan2f(z.im, z.re) - atan2f(d.im, d.re);
+	float a = dsp_atan2f(z.im, z.re) - dsp_atan2f(d.im, d.re);
 	theta = remainderf(theta + a, 2 * static_cast<float>(M_PI));
 }
 

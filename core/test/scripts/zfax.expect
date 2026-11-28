@@ -15,16 +15,16 @@
   10300 B: \r\n
   10300 B: CONNECT 41333\r\n
   10300 until B 'CONNECT': yes
-  10320 A: \r\n
-  10320 A: CONNECT 56000\r\n
-  10320 until A 'CONNECT': yes
   10340 A: \r\n
-  10340 A: NO CARRIER\r\n
-  10380 B: \r\n
-  10380 B: NO CARRIER\r\n
-  10380 until B 'NO CARRIER': yes
-  10880 B< AT+FCLASS?\r
-  10880 B: \r\n
-  10880 B: 6\r\n
-  10880 B: \r\n
-  10880 B: OK\r\n
+  10340 A: CONNECT 56000\r\n
+  10340 until A 'CONNECT': yes
+  10360 A: \r\n
+  10360 A: NO CARRIER\r\n
+  10400 B: \r\n
+  10400 B: NO CARRIER\r\n
+  10400 until B 'NO CARRIER': yes
+  10900 B< AT+FCLASS?\r
+  10900 B: \r\n
+  10900 B: 6\r\n
+  10900 B: \r\n
+  10900 B: OK\r\n

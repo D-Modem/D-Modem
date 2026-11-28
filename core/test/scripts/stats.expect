@@ -140,21 +140,21 @@
   22500 A: Nonlinear Encoding (Tx/Rx)          OFF/OFF\r\n
   22500 A: Precoding (Tx/Rx)                   ON/OFF\r\n
   22500 A: Shaping (Tx/Rx)                     ON/ON\r\n
-  22500 A: Estimated SNR (dB)                  29.4\r\n
-  22500 A: Estimated Noise Level (dBm0)        -44.2\r\n
-  22500 A: Receive Signal Power Level (dBm0)   -14.7\r\n
-  22500 A: Transmit Signal Power Level (dBm0)  -15.0\r\n
-  22500 A: Round Trip Delay (ms)               37\r\n
-  22500 A: Near Echo Level (dBm0)              -58.3\r\n
-  22500 A: Far Echo Level (dBm0)               -27.0\r\n
+  22500 A: Estimated SNR (dB)                  29.6\r\n
+  22500 A: Estimated Noise Level (dBm0)        -44.4\r\n
+  22500 A: Receive Signal Power Level (dBm0)   -14.8\r\n
+  22500 A: Transmit Signal Power Level (dBm0)  -15.1\r\n
+  22500 A: Round Trip Delay (ms)               38\r\n
+  22500 A: Near Echo Level (dBm0)              -57.7\r\n
+  22500 A: Far Echo Level (dBm0)               -27.1\r\n
   22500 A: Carrier Frequency Offset (Hz)       0.0\r\n
-  22500 A: Timing Offset (ppm)                 0\r\n
+  22500 A: Timing Offset (ppm)                 -2\r\n
   22500 A: Characters Sent                     3003\r\n
   22500 A: Characters Received                 3000\r\n
-  22500 A: Transmit Frame Count                8\r\n
+  22500 A: Transmit Frame Count                7\r\n
   22500 A: Transmit Frame Error Count          0\r\n
   22500 A: Receive Frame Count                 7\r\n
-  22500 A: Receive Frame Error Count           18\r\n
+  22500 A: Receive Frame Error Count           0\r\n
   22500 A: Retrains by Local Modem             0\r\n
   22500 A: Retrains Requested by Remote Modem  0\r\n
   22500 A: Rate Renegotiation by Local Modem   1\r\n
@@ -171,7 +171,7 @@
   22500 A: HIGHEST RX rate............. 24000 BPS\r\n
   22500 A: PROTOCOL.................... LAPM\r\n
   22500 A: COMPRESSION................. ZSTD\r\n
-  22500 A: Line QUALITY................ 004\r\n
+  22500 A: Line QUALITY................ 003\r\n
   22500 A: Rx LEVEL.................... 015\r\n
   22500 A: Highest Rx State............ N/A\r\n
   22500 A: Highest TX State............ N/A\r\n
@@ -198,7 +198,7 @@
   22500 A: DIAG <2A4D3263 14=2B>\r\n
   22500 A: DIAG <2A4D3263 15=0C>\r\n
   22500 A: DIAG <2A4D3263 16=1E>\r\n
-  22500 A: DIAG <2A4D3263 17=25>\r\n
+  22500 A: DIAG <2A4D3263 17=26>\r\n
   22500 A: DIAG <2A4D3263 18=00000800>\r\n
   22500 A: DIAG <2A4D3263 20=C>\r\n
   22500 A: DIAG <2A4D3263 21=C>\r\n
@@ -225,10 +225,10 @@
   22500 A: DIAG <2A4D3263 53=00000BB8>\r\n
   22500 A: DIAG <2A4D3263 54=0000>\r\n
   22500 A: DIAG <2A4D3263 55=0000>\r\n
-  22500 A: DIAG <2A4D3263 56=00000008>\r\n
+  22500 A: DIAG <2A4D3263 56=00000007>\r\n
   22500 A: DIAG <2A4D3263 57=00000007>\r\n
   22500 A: DIAG <2A4D3263 58=0000>\r\n
-  22500 A: DIAG <2A4D3263 59=0012>\r\n
+  22500 A: DIAG <2A4D3263 59=0000>\r\n
   22500 A: DIAG <2A4D3263 60=2>\r\n
   22500 A: \r\n
   22500 A: OK\r\n
@@ -255,7 +255,7 @@
   26340 A: HIGHEST RX rate............. 24000 BPS\r\n
   26340 A: PROTOCOL.................... LAPM\r\n
   26340 A: COMPRESSION................. ZSTD\r\n
-  26340 A: Line QUALITY................ 003\r\n
+  26340 A: Line QUALITY................ 004\r\n
   26340 A: Rx LEVEL.................... 015\r\n
   26340 A: Highest Rx State............ N/A\r\n
   26340 A: Highest TX State............ N/A\r\n
@@ -284,18 +284,18 @@
   26340 B: Nonlinear Encoding (Tx/Rx)          OFF/OFF\r\n
   26340 B: Precoding (Tx/Rx)                   OFF/ON\r\n
   26340 B: Shaping (Tx/Rx)                     ON/ON\r\n
-  26340 B: Estimated SNR (dB)                  48.5\r\n
+  26340 B: Estimated SNR (dB)                  48.4\r\n
   26340 B: Estimated Noise Level (dBm0)        -63.5\r\n
-  26340 B: Receive Signal Power Level (dBm0)   -15.0\r\n
-  26340 B: Transmit Signal Power Level (dBm0)  -15.0\r\n
-  26340 B: Round Trip Delay (ms)               37\r\n
+  26340 B: Receive Signal Power Level (dBm0)   -15.1\r\n
+  26340 B: Transmit Signal Power Level (dBm0)  -15.1\r\n
+  26340 B: Round Trip Delay (ms)               39\r\n
   26340 B: Carrier Frequency Offset (Hz)       0.0\r\n
-  26340 B: Timing Offset (ppm)                 -7\r\n
+  26340 B: Timing Offset (ppm)                 2\r\n
   26340 B: Characters Sent                     3000\r\n
   26340 B: Characters Received                 3006\r\n
-  26340 B: Transmit Frame Count                9\r\n
+  26340 B: Transmit Frame Count                8\r\n
   26340 B: Transmit Frame Error Count          0\r\n
-  26340 B: Receive Frame Count                 10\r\n
+  26340 B: Receive Frame Count                 9\r\n
   26340 B: Receive Frame Error Count           0\r\n
   26340 B: Retrains by Local Modem             0\r\n
   26340 B: Retrains Requested by Remote Modem  0\r\n
@@ -315,12 +315,12 @@
   26340 A: DIAG <2A4D3263 5="C14513942A0D">\r\n
   26340 A: DIAG <2A4D3263 10=0F>\r\n
   26340 A: DIAG <2A4D3263 11=0F>\r\n
-  26340 A: DIAG <2A4D3263 12=2D>\r\n
+  26340 A: DIAG <2A4D3263 12=2C>\r\n
   26340 A: DIAG <2A4D3263 13=03>\r\n
   26340 A: DIAG <2A4D3263 14=2A>\r\n
   26340 A: DIAG <2A4D3263 15=0C>\r\n
   26340 A: DIAG <2A4D3263 16=1E>\r\n
-  26340 A: DIAG <2A4D3263 17=25>\r\n
+  26340 A: DIAG <2A4D3263 17=26>\r\n
   26340 A: DIAG <2A4D3263 18=00000800>\r\n
   26340 A: DIAG <2A4D3263 20=C>\r\n
   26340 A: DIAG <2A4D3263 21=C>\r\n
@@ -347,10 +347,10 @@
   26340 A: DIAG <2A4D3263 53=00000BB8>\r\n
   26340 A: DIAG <2A4D3263 54=0000>\r\n
   26340 A: DIAG <2A4D3263 55=0000>\r\n
-  26340 A: DIAG <2A4D3263 56=0000000A>\r\n
+  26340 A: DIAG <2A4D3263 56=00000009>\r\n
   26340 A: DIAG <2A4D3263 57=00000008>\r\n
   26340 A: DIAG <2A4D3263 58=0000>\r\n
-  26340 A: DIAG <2A4D3263 59=0012>\r\n
+  26340 A: DIAG <2A4D3263 59=0000>\r\n
   26340 A: DIAG <2A4D3263 60=51>\r\n
   26340 A: \r\n
   26340 A: OK\r\n
@@ -364,9 +364,9 @@
   26340 B: DIAG <2A4D3263 5="C14513942A0D">\r\n
   26340 B: DIAG <2A4D3263 10=0F>\r\n
   26340 B: DIAG <2A4D3263 11=0F>\r\n
-  26340 B: DIAG <2A4D3263 12=40>\r\n
+  26340 B: DIAG <2A4D3263 12=3F>\r\n
   26340 B: DIAG <2A4D3263 13=00>\r\n
-  26340 B: DIAG <2A4D3263 17=25>\r\n
+  26340 B: DIAG <2A4D3263 17=27>\r\n
   26340 B: DIAG <2A4D3263 18=00000800>\r\n
   26340 B: DIAG <2A4D3263 20=C>\r\n
   26340 B: DIAG <2A4D3263 21=C>\r\n
@@ -393,8 +393,8 @@
   26340 B: DIAG <2A4D3263 53=00000BBE>\r\n
   26340 B: DIAG <2A4D3263 54=0000>\r\n
   26340 B: DIAG <2A4D3263 55=0000>\r\n
-  26340 B: DIAG <2A4D3263 56=00000009>\r\n
-  26340 B: DIAG <2A4D3263 57=0000000A>\r\n
+  26340 B: DIAG <2A4D3263 56=00000008>\r\n
+  26340 B: DIAG <2A4D3263 57=00000009>\r\n
   26340 B: DIAG <2A4D3263 58=0000>\r\n
   26340 B: DIAG <2A4D3263 59=0000>\r\n
   26340 B: DIAG <2A4D3263 60=41>\r\n
