@@ -32,7 +32,8 @@
  *
  *    V.152's voice band data: our G.711 formats marked a=gpmd:<pt>
  *    vbd=yes, with a=maxmptime (20 ms), and a VBD format of an offer's
- *    taken first.  Its assured mode, for a lossy trunk: RFC 2198's
+ *    taken first.  Our packets are no longer than the far end's
+ *    a=maxmptime (or a=ptime) for the format: 20, 10 or 5 ms.  Its assured mode, for a lossy trunk: RFC 2198's
  *    redundancy (red/8000, $SIP_RED frames again, 2 unless set),
  *    offered on every call and taken when an offer has it: each packet
  *    we send has the frames before it again, and a packet of the far
@@ -775,6 +776,41 @@ s16 te_pt(const SdpMedia &m)
 	return dyn_pt(m, "telephone-event/8000");
 }
 
+/* the packets of 20 ms of audio that format pt of audio line m takes
+   (1, 2 or 4: 20, 10 or 5 ms each): V.152 7.1.0.2, no packet longer
+   than the far end's maximum, its a=maxmptime entry for pt (a=ptime
+   then ignored), else its a=ptime, else 20 ms */
+s16 ptime_parts(const SdpMedia &m, s16 pt)
+{
+	s32 ms = 20;
+	const std::string *mx = m.attr("maxmptime");
+	const std::string *pt_attr = m.attr("ptime");
+	if (mx) {
+		std::vector<std::string> times;
+		size_t at = 0;
+		while (at < mx->size()) {
+			size_t sp = mx->find(' ', at);
+			if (sp == std::string::npos)
+				sp = mx->size();
+			if (sp > at)
+				times.push_back(mx->substr(at, sp - at));
+			at = sp + 1;
+		}
+		const std::string want = std::to_string(pt);
+		for (size_t i = 0; i < m.fmts.size() && i < times.size(); i++) {
+			s32 v;
+			if (m.fmts[i] == want && dcore::parse_long(times[i], v) &&
+			    v > 0)
+				ms = v;
+		}
+	} else if (pt_attr) {
+		s32 v;
+		if (dcore::parse_long(*pt_attr, v) && v > 0)
+			ms = v;
+	}
+	return ms >= 20 ? 1 : ms >= 10 ? 2 : 4;
+}
+
 /* RFC 2198's redundancy for format pt of audio line m: a red/8000
    format whose a=fmtp has only pt (or that has none), its frames again
    into *level (as its a=fmtp has them, else ours); -1 if it has none
@@ -1477,12 +1513,14 @@ public:
 
 	/* the far end's RTP at a (len), in payload type pt of law, its
 	   telephone-events in te (-1: none), RFC 2198's redundancy in red
-	   with level frames again (-1: none); send: whether it is to have
+	   with level frames again (-1: none), each 20 ms of ours in parts
+	   packets (1, 2 or 4: ptime_parts()); send: whether it is to have
 	   ours */
 	void remote(const struct sockaddr_storage &a, socklen_t len, s16 pt,
-		    s16 law, s16 te, s16 red, s16 level, bool send)
+		    s16 law, s16 te, s16 red, s16 level, s16 parts, bool send)
 	{
 		std::lock_guard<std::mutex> lk(mu_);
+		parts_ = parts;
 		peer_ = a;
 		peer_len_ = len;
 		pt_ = pt;
@@ -1535,6 +1573,7 @@ private:
 	struct sockaddr_storage peer_ = {};
 	socklen_t peer_len_ = 0;
 	s16 pt_ = 0, law_ = 1, te_ = -1, red_ = -1, red_level_ = 0;
+	s16 parts_ = 1;                 /* packets for each 20 ms of ours */
 	std::shared_ptr<Srtp> srtp_;
 	std::shared_ptr<Relay> relay_;
 	s16 sse_ = -1;
@@ -1552,6 +1591,7 @@ private:
 	struct Past {
 		u32 ts;
 		s16 pt;
+		u16 n;                  /* its samples in d */
 		u8 d[SAMPLES];
 	};
 	std::vector<Past> past_;
@@ -1764,42 +1804,56 @@ private:
 			     len);
 	}
 
-	/* a frame of the modem's (out) in RTP to peer: in format pt, or
-	   with RFC 2198's redundancy (level of the frames before it again,
-	   in format red) */
+	/* a frame of the modem's (out) in RTP to peer, in parts packets
+	   (1, 2 or 4, V.152's packet time): each in format pt, or with
+	   RFC 2198's redundancy (level of the packets before it again, in
+	   format red) */
 	void send_rtp(const s16 *out, s16 pt, s16 law, s16 red, s16 level,
-		      const struct sockaddr_storage &peer, socklen_t len)
+		      s16 parts, const struct sockaddr_storage &peer,
+		      socklen_t len)
+	{
+		const u16 n = static_cast<u16>(SAMPLES / parts);
+		for (s16 k = 0; k < parts; k++)
+			send_part(out + k * n, n,
+				  static_cast<u32>(ts_ + k * n), pt, law, red,
+				  level, peer, len);
+	}
+
+	/* n samples of the modem's (out) at timestamp ts in one RTP
+	   packet to peer (see send_rtp()) */
+	void send_part(const s16 *out, u16 n, u32 ts, s16 pt, s16 law,
+		       s16 red, s16 level,
+		       const struct sockaddr_storage &peer, socklen_t len)
 	{
 		u8 p[12 + 4 * RED_MAX + 1 + (RED_MAX + 1) * SAMPLES +
 		     Srtp::TAG_MAX];
 		Past now;
 
-		now.ts = ts_;
+		now.ts = ts;
 		now.pt = pt;
-		for (u16 i = 0; i < SAMPLES; i++)
+		now.n = n;
+		for (u16 i = 0; i < n; i++)
 			now.d[i] = dsp::g711::encode(law >= 2, out[i]);
 		/* (a new start: none before it to go again) */
 		if (marker_ || red < 0 || level <= 0)
 			past_.clear();
 		if (red < 0 || level <= 0) {
-			header(p, pt, marker_, ts_);
-			memcpy(p + 12, now.d, SAMPLES);
-			send_packet(p, 12 + SAMPLES, peer, len);
+			header(p, pt, marker_, ts);
+			memcpy(p + 12, now.d, n);
+			send_packet(p, 12 + n, peer, len);
 			marker_ = false;
 			return;
 		}
 		dmd::red::Block r[RED_MAX];
 		size_t nr = 0;
 		for (const Past &x : past_)
-			r[nr++] = { static_cast<u8>(x.pt), x.ts, x.d,
-				    SAMPLES };
-		dmd::red::Block pri = { static_cast<u8>(pt), ts_, now.d,
-					SAMPLES };
-		header(p, red, marker_, ts_);
-		size_t n = dmd::red::encode(r, nr, pri, p + 12,
+			r[nr++] = { static_cast<u8>(x.pt), x.ts, x.d, x.n };
+		dmd::red::Block pri = { static_cast<u8>(pt), ts, now.d, n };
+		header(p, red, marker_, ts);
+		size_t m = dmd::red::encode(r, nr, pri, p + 12,
 					    sizeof(p) - 12 - Srtp::TAG_MAX);
-		if (n) {
-			send_packet(p, 12 + n, peer, len);
+		if (m) {
+			send_packet(p, 12 + m, peer, len);
 			if (nr)
 				red_sent_++;
 		}
@@ -1960,7 +2014,7 @@ private:
 			socklen_t len;
 			s16 in[SAMPLES], out[SAMPLES];
 			bool on, send;
-			s16 pt, law, te, sse, red, level;
+			s16 pt, law, te, sse, red, level, parts;
 
 			next.tv_nsec += TICK_NS;
 			if (next.tv_nsec >= 1000000000L) {
@@ -1994,6 +2048,7 @@ private:
 				te = te_;
 				red = red_;
 				level = red_level_;
+				parts = parts_;
 				crypt_ = srtp_;
 				rl_ = relay_;
 				sse = sse_;
@@ -2043,8 +2098,8 @@ private:
 			bool quiet = rl_ && relay_frame(sse, te, send, peer,
 							 len);
 			if (!flash(te, send, peer, len) && send && !quiet)
-				send_rtp(out, pt, law, red, level, peer,
-					 len);
+				send_rtp(out, pt, law, red, level, parts,
+					 peer, len);
 			ts_ += SAMPLES;
 		}
 	}
@@ -2540,6 +2595,7 @@ bool take_audio(Call *c, const Sdp &s, const SdpMedia &m)
 	}
 	c->media->keys(srtp);
 	c->media->remote(a, len, pt, law, te, red, level,
+			 ptime_parts(m, pt),
 			 d != "sendonly" && d != "inactive" &&
 			 m.addr != "0.0.0.0");
 	law_ = law;

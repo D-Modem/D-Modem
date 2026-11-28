@@ -81,6 +81,10 @@ nav:
       - "V.110: technical details": standards/v110-details.md
       - "V.120": standards/v120.md
       - "V.120: technical details": standards/v120-details.md
+      - "V.150.1": standards/v150-1.md
+      - "V.150.1: technical details": standards/v150-1-details.md
+      - "V.152": standards/v152.md
+      - "V.152: technical details": standards/v152-details.md
       - "V.70": standards/v70.md
       - "V.70: technical details": standards/v70-details.md
       - "V.75": standards/v75.md

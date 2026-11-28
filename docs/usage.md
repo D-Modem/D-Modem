@@ -80,7 +80,8 @@ In its offers, dmodemd marks the G.711 formats as voice band data
 its echo canceller, comfort noise and silence suppression for the call.
 If an offer has a format with this mark, the answer has that format.
 The offer also tells, in the `a=maxmptime` of V.152, that dmodemd sends and
-receives 20 ms packets. `SIP_V152=no` removes the marks.
+receives 20 ms packets. When the far end gives a shorter `a=maxmptime` or
+`a=ptime`, dmodemd sends 10 or 5 ms packets. `SIP_V152=no` removes the marks.
 
 On a trunk that loses packets, the lost packets of the far end can go to
 the modem as gaps of silence. Then the modem must retrain or

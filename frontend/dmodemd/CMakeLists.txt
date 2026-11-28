@@ -540,6 +540,13 @@ if(DMODEM_DMODEMD)
 			$<TARGET_FILE:dmodemd> --red)
 		set_tests_properties(dmodemd_red PROPERTIES LABELS quick
 			TIMEOUT 60)
+		# the same with a far end of 10 ms packets (V.152's
+		# a=maxmptime and a=ptime): none of ours longer
+		dmodem_add_test(dmodemd_ptime ${Python3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/test/clearmode_test.py
+			$<TARGET_FILE:dmodemd> --ptime10)
+		set_tests_properties(dmodemd_ptime PROPERTIES LABELS quick
+			TIMEOUT 60)
 		# --misdn: two dmodemd on fake mISDN cards calling each
 		# other through the script's ISDN network
 		if(TARGET dmodem_fake_misdn)

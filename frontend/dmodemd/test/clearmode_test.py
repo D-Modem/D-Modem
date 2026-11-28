@@ -34,6 +34,12 @@
 # it: none of dmodemd's missing at the far end, and dmodemd's log at the
 # call's end (our BYE) must have recovered some of ours.
 #
+# --ptime10: the same calls with a far end of 10 ms packets (V.152
+# 7.1.0.2): out, our answer has a=ptime:10; in, our offer has
+# a=maxmptime:10 for each format and a=ptime:20, which it overrides;
+# each of dmodemd's packets must be 10 ms (80 octets) at most, and the
+# data must go both ways.
+#
 # DMODEMD_DEBUG=<level>: dmodemd's -d (its log in $TMPDIR/clearmode.log)
 import base64, os, random, re, select, shutil, socket, subprocess, sys
 import tempfile, threading
@@ -44,6 +50,10 @@ import srtp
 dmodemd = sys.argv[1]
 SRTP = "--srtp" in sys.argv[2:]
 RED = "--red" in sys.argv[2:]
+PTIME10 = "--ptime10" in sys.argv[2:]
+# our packets' time (ms) and octets
+PTIME = 10 if PTIME10 else 20
+N = 8 * PTIME
 RED_PT, LEVEL = 106, 2
 SUITE = "AES_CM_128_HMAC_SHA1_80"
 OUR_KEY = os.urandom(30)          # our master key || salt
@@ -52,7 +62,8 @@ OUR_KEY = os.urandom(30)          # our master key || salt
 # side by side, and the runner may hold a port of its own)
 log = open(os.path.join(tempfile.gettempdir(),
             "clearmode%s.log" % ("-srtp" if SRTP else
-                                 "-red" if RED else "")), "wb")
+                                 "-red" if RED else
+                                 "-ptime10" if PTIME10 else "")), "wb")
 FLAG, ONES = 0x7E, 0xFF
 
 # the reason, and the end of the log (SIP and dmodemd's output) for CI
@@ -124,6 +135,7 @@ class ClearEnd:
         self.rx_newest = None
         self.rx_count = 0
         self.missing = 0
+        self.longest = 0            # dmodemd's longest packet (octets)
         self.tx = srtp.Srtp(key) if key else None
         self.unprotect = srtp.Srtp(theirs) if theirs else None
         self.tx_bits = []           # characters' bits waiting
@@ -181,8 +193,8 @@ class ClearEnd:
         seq, ts, ssrc = 0, 0, 0x1234
         nxt = time.time()
         while not self.stop:
-            # 20 ms of octets out, what came in
-            payload = bytes(self.out_octet() for _ in range(160))
+            # PTIME ms of octets out, what came in
+            payload = bytes(self.out_octet() for _ in range(N))
             pt = self.pt
             if self.red is not None:
                 frames = self.past + [(ts, self.pt, payload)]
@@ -194,8 +206,8 @@ class ClearEnd:
             if self.red is None or seq % 3 != 1:
                 self.rtp.sendto(self.tx.protect(pkt) if self.tx else pkt,
                                 self.peer)
-            seq, ts = (seq + 1) & 0xFFFF, ts + 160
-            nxt += 0.02
+            seq, ts = (seq + 1) & 0xFFFF, ts + N
+            nxt += PTIME / 1000
             while True:
                 left = nxt - time.time()
                 r, _, _ = select.select([self.rtp], [], [], max(left, 0))
@@ -212,6 +224,7 @@ class ClearEnd:
                     if d is None:
                         fail("an SRTP packet failed its tag")
                 if len(d) > 12 and d[1] & 0x7F == self.pt:
+                    self.longest = max(self.longest, len(d) - 12)
                     for o in d[12:]:
                         self.in_octet(o)
                 elif self.red is not None and len(d) > 12 and \
@@ -229,7 +242,7 @@ class ClearEnd:
         if blocks is None:
             fail("a RED packet we can't read: %r" % d[12:40])
         for t, pt, data in blocks:
-            if pt != self.pt or len(data) != 160:
+            if pt != self.pt or len(data) != N:
                 fail("a RED block of format %d, %d octets" % (pt, len(data)))
             self.rx.setdefault(t, data)
         if self.rx_next is None:
@@ -241,12 +254,12 @@ class ClearEnd:
                 for o in self.rx.pop(self.rx_next):
                     self.in_octet(o)
             elif ((self.rx_newest - self.rx_next) & 0xFFFFFFFF) >= \
-                    160 * (LEVEL + 1) and \
+                    N * (LEVEL + 1) and \
                     (self.rx_newest - self.rx_next) & 0x80000000 == 0:
                 self.missing += 1
             else:
                 break
-            self.rx_next = (self.rx_next + 160) & 0xFFFFFFFF
+            self.rx_next = (self.rx_next + N) & 0xFFFFFFFF
 
 # SIP
 def free_pair():
@@ -306,12 +319,14 @@ def reply(req, code, text, a, body="", tag="far1"):
     m += "Content-Length: %d\r\n\r\n%s" % (len(body), body)
     sip_send(m, a)
 # (in SRTP, with our key under crypto tag)
-def sdp(fmts, rtpmaps, tag=1, fmtps=()):
+def sdp(fmts, rtpmaps, tag=1, fmtps=(), maxmptime=None, ptime=20):
     return ("v=0\r\no=far 1 1 IN IP4 127.0.0.1\r\ns=far\r\nc=IN IP4 127.0.0.1\r\n"
             "t=0 0\r\nm=audio %d RTP/%s %s\r\n" % (
                 RTP_PORT, "SAVP" if SRTP else "AVP", fmts) +
             "".join("a=rtpmap:%s\r\n" % r for r in rtpmaps) +
-            "".join("a=fmtp:%s\r\n" % f for f in fmtps) + "a=ptime:20\r\n" +
+            "".join("a=fmtp:%s\r\n" % f for f in fmtps) +
+            "a=ptime:%d\r\n" % ptime +
+            ("a=maxmptime:%s\r\n" % maxmptime if maxmptime else "") +
             ("a=crypto:%d %s inline:%s\r\n" % (
                 tag, SUITE, base64.b64encode(OUR_KEY).decode()) if SRTP else ""))
 # the audio line of an SDP body: its address, port and formats, the
@@ -482,6 +497,11 @@ def bye_and_check(ruri, frm, to, call_id, cseq, far):
         fail("%d frames of dmodemd's not had from its redundancy" % far.missing)
     return m.group(0).decode()
 
+# --ptime10: none of dmodemd's packets longer than ours (N octets)
+def check_ptime(far):
+    if far.longest > N:
+        fail("a packet of %d octets to a far end of %d ms" % (far.longest, PTIME))
+
 # out: dmodemd dials with +MS=CLEAR
 def outgoing():
     p, fd = start_dmodemd(False)
@@ -517,7 +537,8 @@ def outgoing():
                                           "%d red/8000" % RED_PT],
                                          fmtps=["%d 97/97/97" % RED_PT]))
         else:
-            reply(req, 200, "OK", a, sdp(fmts[0], [fmts[0] + " CLEARMODE/8000"]))
+            reply(req, 200, "OK", a, sdp(fmts[0], [fmts[0] + " CLEARMODE/8000"],
+                                         ptime=PTIME))
         while True:
             r = sip_recv(5)
             if not r:
@@ -528,6 +549,7 @@ def outgoing():
                        OUR_KEY if SRTP else None, theirs,
                        RED_PT if RED else None)
         data_both_ways(dte, far)
+        check_ptime(far)
         red = ""
         if RED:
             contact = re.search(r"<([^>]+)>", hdrs["contact"]).group(1)
@@ -537,7 +559,8 @@ def outgoing():
         far.stop = True
         print("out: CONNECT 64000 in CLEARMODE%s, data both ways%s" % (
             " over SRTP" if SRTP else
-            " over a lossy trunk with redundancy" if RED else "", red),
+            " over a lossy trunk with redundancy" if RED else
+            " in packets of 10 ms" if PTIME10 else "", red),
             flush=True)
     finally:
         p.kill()
@@ -565,7 +588,8 @@ def incoming():
                         "%d red/8000" % RED_PT],
                        fmtps=["%d 97/97/97/97" % RED_PT])
         else:
-            body = sdp("97 8 0", ["97 CLEARMODE/8000", "8 PCMA/8000", "0 PCMU/8000"])
+            body = sdp("97 8 0", ["97 CLEARMODE/8000", "8 PCMA/8000", "0 PCMU/8000"],
+                       maxmptime="10 10 10" if PTIME10 else None)
         via = "Via: SIP/2.0/UDP 127.0.0.1:%d;branch=z9hG4bK%d;rport" % (
             SIP_PORT, random.randrange(10**9))
         frm = "<sip:far@127.0.0.1:%d>;tag=far2" % SIP_PORT
@@ -601,6 +625,7 @@ def incoming():
         far = ClearEnd(rtp, dm_rtp, 97, OUR_KEY if SRTP else None, theirs,
                        RED_PT if RED else None)
         data_both_ways(dte, far)
+        check_ptime(far)
         red = ""
         if RED:
             red = "; " + bye_and_check(
@@ -608,7 +633,8 @@ def incoming():
         far.stop = True
         print("in: answered in CLEARMODE%s, CONNECT 64000, data both ways%s" % (
             " over SRTP" if SRTP else
-            " over a lossy trunk with redundancy" if RED else "", red),
+            " over a lossy trunk with redundancy" if RED else
+            " in packets of 10 ms" if PTIME10 else "", red),
             flush=True)
     finally:
         p.kill()
