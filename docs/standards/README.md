@@ -91,8 +91,8 @@ A standard that has no link has no pages yet.
 
 | Recommendation | Subject |
 |---|---|
-| V.54 | Loop test devices |
-| V.52 and O.153 | The 511-bit test pattern |
+| [V.54](v54.md) ([details](v54-details.md)) | Loop test devices |
+| [V.52 and O.153](v52.md) ([details](v52-details.md)) | The 511-bit test pattern |
 | V.58 | The management information model of a DCE |
 | V.59 | Managed objects for diagnostic information |
 

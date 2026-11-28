@@ -90,6 +90,25 @@ struct dp_runtime {
 	s16 v8bis_sig;          /* V.8 bis: the initiating signal call
 				   progress heard (v8bis::Sig), for
 				   DP_V8BIS */
+	/* remote loop 2 of V.22 and V.22 bis (7.1), signalled by the
+	   pump (dp_runtime_loop2()): the core's command (LOOP2_START,
+	   LOOP2_END), the far end may have it here, the pump's last
+	   event (LOOP2_EV_*), and the pump does it (in data) */
+	s16 loop2_cmd;
+	s16 loop2_grant;
+	s16 loop2_event;
+	s16 loop2_own;
+};
+
+/* dp_runtime's loop2_cmd and loop2_event */
+enum {
+	LOOP2_START = 1, LOOP2_END = 2,
+	LOOP2_EV_UP = 1,        /* A: the far end loops */
+	LOOP2_EV_FAILED = 2,    /* A: no answer */
+	LOOP2_EV_ENDED = 3,     /* A: the termination sent */
+	LOOP2_EV_LOOP = 4,      /* B: loop 2 here */
+	LOOP2_EV_UNLOOP = 5,    /* B: the loop is over */
+	LOOP2_EV_ASKED = 6,     /* B: the far end asks for it */
 };
 
 /*

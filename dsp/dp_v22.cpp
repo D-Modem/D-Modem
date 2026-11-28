@@ -77,7 +77,21 @@ enum v22_tx {
 	TX_FLAGS,       /* scrambled HDLC flags at 1200 bit/s (fast
 			   connect, S49 bit 1) */
 	TX_DATA,
+	/* remote loop 2 (7.1/V.22, 7.1/V.22 bis), at the data rate:
+	   unscrambled binary ones, scrambled reversals, scrambled
+	   binary ones, no line signal */
+	TX_L2_USB1,
+	TX_L2_REV,
+	TX_L2_SB1,
+	TX_L2_GAP,
 };
+
+/* remote loop 2 in data (7.1/V.22, 7.1/V.22 bis): none; DCE A's
+   unscrambled ones (the initiation), its scrambled ones, the loop up,
+   its 77 ms without line signal (the termination); DCE B's scrambled
+   reversals, its loop */
+enum v22_loop2 { L2_IDLE, L2_A_USB1, L2_A_SB1, L2_A_UP, L2_A_GAP,
+		 L2_B_REV, L2_B_LOOP };
 
 enum v22_state {
 	/* answering side */
@@ -174,6 +188,24 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	s32 sb1_at;             /* when 270 ms of them were in */
 	V22Scrambler rx_scr12, rx_scr24;
 
+	/* remote loop 2 (loop2_symbol()) */
+	enum v22_loop2 l2;
+	s32 l2_n;               /* symbols in its step */
+	s32 l2_usb1;            /* unscrambled ones at the data rate in a
+				   row, symbols */
+	s32 l2_quiet;           /* B: symbols without them */
+	s32 l2_rev;             /* descrambled reversals in a row, bits */
+	s16 l2_last;            /* the last descrambled bit */
+	s16 l2_off;             /* B: the line signal went in the loop */
+	float l2_fast, l2_ref;  /* the matched filter's power: now (2 ms),
+				   and the line signal's (100 ms) */
+	s32 l2_low, l2_high;    /* samples below and above it */
+	s16 l2_hold;            /* B in the loop, the line signal 20 dB
+				   down now (A's termination): the
+				   receiver does not adapt to what is left
+				   (our own echo) */
+	s16 tx_rev;             /* the next bit of TX_L2_REV */
+
 	const char *mode_name() const;
 	/* its name in the log (the mode's) */
 	const char *tag() const { return mode_name(); }
@@ -200,6 +232,16 @@ struct V22Pump : PumpBase<V22Pump, v22_state> {
 	s16 handshake();
 	s16 start(struct modem *m, enum DP_ID id, s16 caller_, s32 srate_,
 		  s32 max_frag);
+	/* the remote loop 2 of the call is gone with the pump */
+	~V22Pump() override
+	{
+		if (rt)
+			rt->loop2_own = 0;
+	}
+	void loop2_event(s16 ev);
+	void loop2_cmd();
+	void loop2_symbol(const u8 *bits, s16 n, s16 raw, s16 q34_raw);
+	void loop2_level(float p);
 	s16 sample(float x, float *y);
 	/* cnt samples in and out, through sample() */
 	s16 process(void *in, void *out, s32 cnt) override
@@ -287,6 +329,21 @@ cplx V22Pump::tx_symbol()
 	case TX_DATA:
 		modem_get_bits(modem, 1, bits, n);
 		break;
+	case TX_L2_USB1:
+		/* unscrambled ones at the data rate: dibit 11 (and Q3Q4 11
+		   at 2400 bit/s) */
+		tx_quad = (tx_quad + dibit2quad[3]) & 3;
+		return rot90(v22_points[n == 4 ? 3 : 1], tx_quad);
+	case TX_L2_REV:
+		for (i = 0; i < n; i++) {
+			bits[i] = static_cast<u8>(tx_rev);
+			tx_rev ^= 1;
+		}
+		break;
+	case TX_L2_SB1:
+		break;
+	case TX_L2_GAP:
+		return cplx_make(0, 0);
 	}
 	for (i = 0; i < n; i++)
 		bits[i] = tx_scr.scramble(bits[i] & 1);
@@ -397,8 +454,149 @@ void V22Pump::rx_bits(s16 dquad, s16 q34_16, s16 dq_raw)
 			memcpy(bits, b24, 4);
 	}
 
-	if (state == V22_DATA && carrier.on())
+	if (state == V22_DATA && carrier.on()) {
+		if (dp.id != DP_B212)
+			loop2_symbol(bits, rx_rate == 2400 ? 4 : 2, raw,
+				     q34_16);
 		modem_put_bits(modem, 1, bits, rx_rate == 2400 ? 4 : 2);
+	}
+}
+
+/* a loop 2 event ev for the core (dp_runtime_loop2()) */
+void V22Pump::loop2_event(s16 ev)
+{
+	DSP_DBG("%s: loop 2 event %d\n", mode_name(), ev);
+	if (rt)
+		rt->loop2_event = ev;
+}
+
+/* the core's loop 2 command, once per symbol in data: DCE A starts
+   with unscrambled ones (7.1.1), or ends with 77 ms of no line signal
+   (7.1.2); a test that is not up yet ends at once */
+void V22Pump::loop2_cmd()
+{
+	s16 cmd = rt ? rt->loop2_cmd : 0;
+	if (!cmd)
+		return;
+	rt->loop2_cmd = 0;
+	if (cmd == LOOP2_START && l2 == L2_IDLE) {
+		l2 = L2_A_USB1;
+		l2_n = 0;
+		l2_rev = 0;
+		set_tx(TX_L2_USB1);
+	} else if (cmd == LOOP2_END && l2 == L2_A_UP) {
+		l2 = L2_A_GAP;
+		l2_n = 0;
+		set_tx(TX_L2_GAP);
+	} else if (cmd == LOOP2_END &&
+		   (l2 == L2_A_USB1 || l2 == L2_A_SB1)) {
+		l2 = L2_IDLE;
+		set_tx(TX_DATA);
+		loop2_event(LOOP2_EV_ENDED);
+	}
+}
+
+/* a symbol received in data (its n descrambled bits, the raw dibit and
+   Q3Q4): remote loop 2's signals (7.1/V.22, 7.1/V.22 bis).  B: 190 ms
+   of unscrambled ones (154 to 231) ask for the loop, if the core grants
+   it; it answers with scrambled reversals, and loops when the ones
+   stop.  A: 270 ms (231 to 308) of the reversals, then of its own
+   scrambled ones back, and the loop is up */
+void V22Pump::loop2_symbol(const u8 *bits, s16 n, s16 raw, s16 q34_raw)
+{
+	const bool usb1 = raw == 3 && (n == 2 || q34_raw == 3);
+	l2_usb1 = usb1 ? l2_usb1 + 1 : 0;
+	for (s16 i = 0; i < n; i++) {
+		l2_rev = bits[i] != l2_last ? l2_rev + 1 : 0;
+		l2_last = bits[i];
+	}
+	const s32 sb1 = n == 4 ? run_sb1_24 : run_sb1_12;
+	const s32 limit = MS2SYM(3000);
+	/* (A's gap counts samples: handshake()) */
+	if (l2 != L2_A_GAP)
+		l2_n++;
+	switch (l2) {
+	case L2_IDLE:
+		if (rt && rt->loop2_grant && l2_usb1 >= MS2SYM(190)) {
+			l2 = L2_B_REV;
+			l2_n = l2_quiet = 0;
+			tx_rev = 1;
+			set_tx(TX_L2_REV);
+			loop2_event(LOOP2_EV_ASKED);
+		}
+		break;
+	case L2_A_USB1:
+		if (l2_rev >= MS2SYM(270) * n) {
+			l2 = L2_A_SB1;
+			l2_n = 0;
+			set_tx(TX_L2_SB1);
+		} else if (l2_n >= limit) {
+			l2 = L2_IDLE;
+			set_tx(TX_DATA);
+			loop2_event(LOOP2_EV_FAILED);
+		}
+		break;
+	case L2_A_SB1:
+		if (sb1 >= MS2SYM(270)) {
+			l2 = L2_A_UP;
+			set_tx(TX_DATA);
+			loop2_event(LOOP2_EV_UP);
+		} else if (l2_n >= limit) {
+			l2 = L2_IDLE;
+			set_tx(TX_DATA);
+			loop2_event(LOOP2_EV_FAILED);
+		}
+		break;
+	case L2_B_REV:
+		l2_quiet = usb1 ? 0 : l2_quiet + 1;
+		if (l2_quiet >= MS2SYM(20)) {
+			l2 = L2_B_LOOP;
+			l2_off = 0;
+			set_tx(TX_DATA);
+			loop2_event(LOOP2_EV_LOOP);
+		} else if (l2_n >= limit) {
+			l2 = L2_IDLE;
+			set_tx(TX_DATA);
+			loop2_event(LOOP2_EV_UNLOOP);
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+/* the matched filter's power p, a sample in data: B in the loop finds
+   A's termination (7.1.2/V.22, 7.1.2/V.22 bis), the line signal 20 dB
+   down for 17 ms (V.22: 17 +- 7) or 45 ms (V.22 bis: 40 to 65), then
+   back for 110 ms (155 +- 50 at the most), and leaves the loop.  (The
+   matched filter, not circuit 109's band pass: our own signal's echo
+   is far below the line signal there) */
+void V22Pump::loop2_level(float p)
+{
+	l2_fast += (p - l2_fast) * (1000.0f / (2 * srate));
+	const bool low = l2_fast < 0.01f * l2_ref;
+	l2_hold = low && l2 == L2_B_LOOP;
+	if (!low && !l2_off)
+		l2_ref += (p - l2_ref) * (1000.0f / (100 * srate));
+	if (l2 != L2_B_LOOP) {
+		l2_low = l2_high = 0;
+		return;
+	}
+	if (!l2_off) {
+		l2_low = low ? l2_low + 1 : 0;
+		if (l2_low >= ms2samples(rx_rate == 2400 ? 45 : 17, srate)) {
+			DSP_DBG("%s: loop 2: no line signal\n", mode_name());
+			l2_off = 1;
+			l2_high = 0;
+		}
+		return;
+	}
+	l2_high = l2_fast > 0.1f * l2_ref ? l2_high + 1 : 0;
+	if (l2_high >= ms2samples(V22_BACK_MS, srate)) {
+		l2 = L2_IDLE;
+		l2_off = 0;
+		loop2_event(LOOP2_EV_UNLOOP);
+	}
 }
 
 /* the equalizer back to a single centre tap */
@@ -557,9 +755,13 @@ void V22Pump::rx_sample(float x)
 	}
 	if (++mf_pos >= mf_len)
 		mf_pos = 0;
+	if (state == V22_DATA)
+		loop2_level(cplx_pow(y));
 
-	/* AGC to the constellation power */
-	agc_pwr += agc_alpha * (cplx_pow(y) - agc_pwr);
+	/* AGC to the constellation power (held while the line signal is
+	   gone in data: loop2_level()) */
+	if (!l2_hold)
+		agc_pwr += agc_alpha * (cplx_pow(y) - agc_pwr);
 	g = agc_pwr > 1e-3f ?
 		sqrtf(V22_SYM_POWER * (1 - V22_ALPHA / 4) / agc_pwr) : 0;
 	y = cplx_scale(y, g);
@@ -593,7 +795,7 @@ void V22Pump::rx_sample(float x)
 				   mid.im * (prev_sym.im - s.im)) /
 				V22_SYM_POWER;
 			if (e > 1) e = 1; else if (e < -1) e = -1;
-			if (carrier.on()) {
+			if (carrier.on() && !l2_hold) {
 				t_adj += 0.001f * sps * e;
 				/* +-1000 ppm at most */
 				if (t_adj > 0.001f * sps)
@@ -612,7 +814,8 @@ void V22Pump::rx_sample(float x)
 	/* adaptation only with a carrier; the equalizer is frozen while
 	   the slicer may not match what the remote sends (1200 -> 2400) */
 	mu = state == V22_DATA ? 0.01f : 0.05f;
-	adapt = carrier.on() && carrier_run > ms2samples(20, srate);
+	adapt = carrier.on() && carrier_run > ms2samples(20, srate) &&
+		!l2_hold;
 	eq_freeze = remote_bis && rx_rate == 1200 &&
 		total - s1_seen > ms2samples(350, srate);
 	eq_mu = mu;
@@ -629,6 +832,9 @@ void V22Pump::set_rx_rate(s32 rate)
 void V22Pump::set_tx(enum v22_tx mode)
 {
 	tx_mode = mode;
+	/* (loop 2's signals at the data rate) */
+	if (mode >= TX_L2_USB1)
+		return;
 	if (mode == TX_SB1_2400 || (mode == TX_DATA && tx_rate == 2400))
 		tx_rate = 2400;
 	else if (mode != TX_DATA)
@@ -650,6 +856,12 @@ s16 V22Pump::connect()
 {
 	set_state(V22_DATA);
 	set_tx(TX_DATA);
+	/* V.22 and V.22 bis signal remote loop 2 themselves (not Bell
+	   212A) */
+	if (rt && dp.id != DP_B212) {
+		rt->loop2_own = 1;
+		rt->loop2_cmd = rt->loop2_event = 0;
+	}
 	return connect_at(tx_rate, rx_rate);
 }
 
@@ -835,6 +1047,13 @@ s16 V22Pump::handshake()
 			return connect();
 		break;
 	case V22_DATA:
+		loop2_cmd();
+		/* A: the 77 ms without line signal over */
+		if (l2 == L2_A_GAP && ++l2_n >= ms2samples(77, srate)) {
+			l2 = L2_IDLE;
+			set_tx(TX_DATA);
+			loop2_event(LOOP2_EV_ENDED);
+		}
 		/* the call's statistics: the carriers (the caller's 1200
 		   Hz, the answerer's 2400), the receiver's carrier offset
 		   (not its timing loop's, which wanders by some hundred

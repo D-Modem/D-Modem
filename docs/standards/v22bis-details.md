@@ -131,7 +131,8 @@ far modem detects the end of the signal in 40 ms to 65 ms.
 | 16-point receiver | After 40 ms of scrambled ONE bits at 2400 bit/s |
 | Circuit 109 | `Circuit109`: ON to OFF in 45 ms at 2400 bit/s (46 ms to 55 ms in the tests). After a dropout, ON after 110 ms. |
 | Fast connect | A D-Modem extension (`fast`), not part of V.22 bis. It keeps its own short times. |
-| Not implemented | The rate change of 6.6, the remote loop 2 of clause 7 |
+| Remote loop 2 (7.1) | As [V.22](v22-details.md#v22-in-d-modem), at the data rate (2400 bit/s or 1200 bit/s). Modem B finds the gap after 45 ms. |
+| Not implemented | The rate change of 6.6 |
 
 ### Corrections (2026-11)
 
@@ -140,6 +141,7 @@ far modem detects the end of the signal in 40 ms to 65 ms.
 | The answer modem sent its S1 when it detected the S1 of the call modem. V.22 bis requires the S1 at the end of the received S1 (6.3.1.1.2 b). | The answer modem waits for the end of the S1 of the call modem. |
 | The two modems timed the 600 ms from the detection of the far S1 (40 ms into it). V.22 bis times it from the end of the far S1. Thus, the change to 2400 bit/s came about 60 ms early. | The two modems time the 600 ms from the end of the far S1. |
 | The carrier detector had the errors of [V.22](v22-details.md#corrections-2026-11). It took up to about 180 ms to turn OFF. V.22 bis requires 40 ms to 65 ms. | The same `Circuit109` as V.22, with 45 ms at 2400 bit/s. |
+| Remote loop 2 used the patterns of V.54 clause 6. V.22 bis 7.1 says that its signals are not compatible with V.54. | The signals of 7.1, as in [V.22](v22-details.md#corrections-2026-11). |
 
 The test `V22.Circuit109` (`dsp/test/pump_test.cpp`) measures the levels
 and the times.

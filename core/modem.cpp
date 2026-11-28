@@ -64,6 +64,9 @@ extern "C" void dp_runtime_set_framed(void *runtime, int framed)
    (dsplibs.h): weak as well */
 extern "C" void dp_runtime_set_v110(void *runtime, long rate) DCORE_WEAK;
 extern "C" long dp_runtime_v110(void *runtime) DCORE_WEAK;
+/* V.22's and V.22 bis's loop 2, signalled by the pump */
+extern "C" long dp_runtime_loop2(void *runtime, int cmd, int grant)
+	DCORE_WEAK;
 /* an MNP 10 start-up's answerer: its answer tone already sent
    (dsplibs.h): weak as well */
 extern "C" void dp_runtime_set_restart(void *runtime, int ans_sent)
@@ -1654,6 +1657,7 @@ void Modem::update_status(Status s)
 			break;
 		}
 		test_.set_plain(link_->plain());
+		test_.set_rate(static_cast<u32>(tx_rate_));
 		/* V.13 (S48=1) on a call with no error correction */
 		sim_on_ = sregs_[SREG_SIM_CARRIER] && link_->plain();
 		if (sim_on_)
@@ -1827,9 +1831,18 @@ bool Modem::link_plain() const
 	return link_->plain();
 }
 
-/* what the test did: its results to the DTE */
+/* what the test did: its results to the DTE (first the pump's loop 2,
+   when the pump signals it: V.22, V.22 bis) */
 void Modem::test_events()
 {
+	if (DCORE_HAS(dp_runtime_loop2) && dp_runtime_) {
+		bool grant = test_.grant() && link_plain();
+		long ev = dp_runtime_loop2(dp_runtime_, test_.pump_cmd(),
+					   grant);
+		test_.set_pump(ev >= 0);
+		if (ev > 0)
+			test_.pump_event(static_cast<int>(ev));
+	}
 	switch (test_.event()) {
 	case v54::LoopTest::Event::None:
 		break;

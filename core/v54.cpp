@@ -51,18 +51,20 @@ void Checker::bit(u8 b)
 		good_ = p == b ? good_ + 1 : 0;
 		if (good_ >= 32) {
 			locked_ = true;
-			gen_.s = hist_;
+			ref_ = hist_;
 			win_ = win_err_ = 0;
 		}
 		return;
 	}
-	u8 e = gen_.bit() != b;
+	u8 p = ((ref_ >> 8) ^ (ref_ >> 4)) & 1;
+	ref_ = static_cast<u16>(((ref_ << 1) | p) & 0x1ff);
+	u8 e = p != b;
 	bits_++;
 	errors_ += e;
 	win_err_ += e;
-	if (++win_ < 256)
+	if (++win_ < window_)
 		return;
-	if (win_err_ >= 64) {
+	if (5 * win_err_ >= window_) {
 		/* a slip: the pattern again */
 		locked_ = false;
 		good_ = 0;
@@ -139,7 +141,62 @@ void LoopTest::remote(bool self_test)
 	gen_ = Prbs9();
 	check_.reset();
 	ack_.reset();
+	if (pump_) {
+		/* (the pump's initiation; Prep until its answer) */
+		pump_cmd_ = PUMP_START;
+		set(Phase::Prep);
+		return;
+	}
 	set(Phase::Prep, PREP_BITS);
+}
+
+/* see v54.h */
+void LoopTest::pump_event(int ev)
+{
+	switch (ev) {
+	case PUMP_UP:
+		if (phase_ == Phase::Prep) {
+			check_.reset();
+			set(Phase::Test);
+			event_ = Event::Started;
+		}
+		break;
+	case PUMP_FAILED:
+		if (phase_ == Phase::Prep) {
+			set(Phase::Idle);
+			event_ = Event::NoAck;
+		}
+		break;
+	case PUMP_ENDED:
+		if (phase_ == Phase::Term) {
+			set(Phase::Idle);
+			event_ = Event::Ended;
+		}
+		break;
+	case PUMP_ASKED:
+		if (phase_ == Phase::Idle) {
+			asked_ = true;
+			set(Phase::Ack);
+			event_ = Event::Looping;
+		}
+		break;
+	case PUMP_LOOP:
+		if (phase_ == Phase::Ack) {
+			loop_.clear();
+			set(Phase::Loop);
+		}
+		break;
+	case PUMP_UNLOOP:
+		if (asked_ &&
+		    (phase_ == Phase::Ack || phase_ == Phase::Loop)) {
+			loop_.clear();
+			set(Phase::Idle);
+			event_ = Event::Unlooped;
+		}
+		break;
+	default:
+		break;
+	}
 }
 
 /* see v54.h */
@@ -168,6 +225,13 @@ void LoopTest::end()
 	case Phase::Settle:
 	case Phase::Test:
 		scr_ = Scrambler();
+		if (pump_) {
+			/* (the pump's termination; Term until it is
+			   over) */
+			pump_cmd_ = PUMP_END;
+			set(Phase::Term);
+			break;
+		}
 		set(Phase::Term, TERM_BITS);
 		break;
 	case Phase::Loop:
@@ -207,6 +271,20 @@ u8 LoopTest::tx(u8 link_bit)
 {
 	u8 o;
 
+	if (pump_) {
+		/* (the pump sends its own signals in these phases) */
+		switch (phase_) {
+		case Phase::Prep:
+		case Phase::WaitAck:
+		case Phase::Settle:
+		case Phase::Term:
+		case Phase::TermOnes:
+		case Phase::Ack:
+			return 1;
+		default:
+			break;
+		}
+	}
 	switch (phase_) {
 	case Phase::Idle:
 		return link_bit;
@@ -267,7 +345,7 @@ void LoopTest::rx(u8 b)
 	b &= 1;
 	switch (phase_) {
 	case Phase::Idle:
-		if (grant_ && plain_ && prep_.bit(b)) {
+		if (!pump_ && grant_ && plain_ && prep_.bit(b)) {
 			prep_.reset();
 			asked_ = true;
 			scr_ = Scrambler();
@@ -289,7 +367,7 @@ void LoopTest::rx(u8 b)
 	case Phase::Loop:
 		if (loop_.size() < LOOP_MAX)
 			loop_.push_back(b);
-		if (!asked_)
+		if (!asked_ || pump_)
 			break;
 		if (!term_.seen()) {
 			term_.bit(b);

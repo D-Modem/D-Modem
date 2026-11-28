@@ -126,7 +126,8 @@ remote loop 2:
 | Scrambler | `V22Scrambler` (`dsp/dsp_util.cpp`), with the inversion after 64 ONE bits |
 | Handshake | 155 ms of unscrambled ONE bits, 456 ms, 270 ms, 765 ms |
 | Circuit 109 | `Circuit109` (`dsp/dsp.h`): ON above about -43.4 dBm0, OFF below about -47 dBm0. ON to OFF in 11 ms (12 ms to 21 ms in the tests). After a dropout in data, ON after 110 ms. |
-| Not implemented | 600 bit/s, mode v), controlled carrier, remote loop 2 of clause 7 |
+| Remote loop 2 (7.1) | The pump sends and identifies the signals of 7.1 in data (`loop2_cmd()`, `loop2_symbol()`, `loop2_level()`). Modem B identifies 190 ms of unscrambled ONE bits, and closes the loop 20 ms after they stop. Modem A identifies 270 ms of reversals, then 270 ms of its scrambled ONE bits. It stops after 3 s with no answer. To end the loop, modem A sends no signal for 77 ms. Modem B finds the gap after 17 ms at the output of the matched filter (20 dB below the line signal), and opens the loop 110 ms after the signal comes back. Bell 212A does not have this loop. |
+| Not implemented | 600 bit/s, mode v), controlled carrier |
 
 ### Corrections (2026-11)
 
@@ -140,3 +141,13 @@ A check against 3.2 and 3.3 found three errors in the carrier detector:
 
 The test `V22.Circuit109` (`dsp/test/pump_test.cpp`) measures the levels
 and the times.
+
+A check against 7.1 found one more error:
+
+| Error | Correction |
+|---|---|
+| Remote loop 2 used the patterns of V.54 clause 6 (scrambled 0s, scrambled 1s, and 8192 bits of TERM). V.22 7.1 says that its signals are not compatible with V.54. | The pump sends and identifies the signals of 7.1: unscrambled ONE bits, scrambled reversals, scrambled ONE bits, and 77 ms without a line signal at the end. The core asks the pump for the loop (`dp_runtime_loop2()`). |
+
+The test `Leased/V22Loop2.Signals` (`dsp/test/leased_call_test.cpp`)
+finds the unscrambled ONE bits and the 77 ms gap in the signal of
+modem A. Then it sends data both ways.
