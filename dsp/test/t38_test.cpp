@@ -285,9 +285,10 @@ TEST(T38Udptl, FecRecovers)
 	}
 	/* 0 1 2 (3 lost) 4 5 (6 7 lost) 8 9 10 (11 12 13 lost) 14 ... */
 	for (k = 0; k < 20; k++)
-		if (k != 3 && k != 6 && k != 7 && (k < 11 || k > 13))
+		if (k != 3 && k != 6 && k != 7 && (k < 11 || k > 13)) {
 			ASSERT_EQ(rx.packet(sent[k].data(), (int)sent[k].size(),
 					    got, &g), 0);
+		}
 	ASSERT_EQ(g.ifp.size(), 20u);
 	for (k = 0; k < 20; k++) {
 		if (k == 6 || k == 7 || (k >= 11 && k <= 13)) {
@@ -317,8 +318,9 @@ TEST(T38Udptl, FecBurst)
 		Bytes b = test_ifp(k);
 		n = tx.packet(b.data(), (int)b.size(), pkt, sizeof(pkt));
 		ASSERT_GT(n, 0);
-		if (k < 20 || k > 22)
+		if (k < 20 || k > 22) {
 			ASSERT_EQ(rx.packet(pkt, n, got, &g), 0);
+		}
 	}
 	EXPECT_EQ(rx.fec_order, 1);
 	ASSERT_EQ(g.ifp.size(), 30u);
@@ -379,8 +381,9 @@ TEST(T38Udptl, FecOtherOrder)
 			continue;
 		Bytes b = asterisk_fec(packets, k, 3, 3);
 		ASSERT_EQ(rx.packet(b.data(), (int)b.size(), got, &g), 0);
-		if (k == 9)
+		if (k == 9) {
 			EXPECT_EQ(rx.fec_order, 2);
+		}
 	}
 	ASSERT_EQ(g.ifp.size(), 40u);
 	for (k = 0; k < 40; k++)
@@ -395,8 +398,9 @@ TEST(T38Udptl, FecOtherOrder)
 			continue;
 		Bytes b = asterisk_fec(packets, k, 3, 3);
 		ASSERT_EQ(rx.packet(b.data(), (int)b.size(), got, &h), 0);
-		if (k == 6)
+		if (k == 6) {
 			EXPECT_EQ(rx.fec_order, 0);
+		}
 	}
 	ASSERT_EQ(h.ifp.size(), 12u);
 	EXPECT_TRUE(h.ifp[4].empty());
