@@ -732,6 +732,10 @@ private:
 	s16 at_PMH(char *p, s16 *len);
 	s16 at_FCLASS(char *p, s16 *len);
 	s16 at_FLO(char *p, s16 *len);
+	unsigned fax2_nr() const;
+	s16 fax2_param_cmd(const struct Fax2Param &t, const std::string &name,
+			      bool query, bool range, bool set, const char *v,
+			      const char *end);
 	s16 at_zfax(char *p, s16 *len);
 	s16 at_CK(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);

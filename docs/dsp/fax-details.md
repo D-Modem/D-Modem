@@ -223,7 +223,11 @@ controls the speed of the machine.
    `t30_resume()`).
 2. For each page, it waits until the page of the DTE has come and is
    decoded (`next_page()` returns 2 until then).
-3. It waits for the post-page command of `+FET` (`post_page()`).
+3. It waits for the post-page command of `+FET` (`post_page()`). In
+   class 2.0, `<DLE><ppm>` at the end of the page data also gives it
+   (`,` MPS, `;` EOM, `.` EOP, T.32 8.3.3.7). Then the result is `OK`
+   (or `+FHS:00` and `OK` after EOP) when the remote answers, with no
+   `+FPS:`.
 4. It reports the CFR (`T30_EV_TRAINED`) and each MCF
    (`T30_EV_PAGE_SENT`).
 
@@ -231,6 +235,11 @@ controls the speed of the machine.
 the received items, the session (`T30_EV_TRAINED`) and the pages with
 their post-page commands (`T30_EV_POST`), for the results of `ATA` and for
 each `+FDR`.
+
+**Reports:** in class 2.0, `+FNR=<rpr>,<tpr>,<idr>,<nsr>` enables
+`+FIS:` and `+FTC:` (rpr), `+FCS:` (tpr), and `+FTI:`, `+FCI:` and
+`+FPI:` (idr). They are all off at the start (T.32 8.5.1.11). Class 2
+gives all the reports.
 
 **Page data:** the pages of the DTE are MH with EOLs, in the bit order of
 `+FBO`. The engine decodes them into a bitmap and codes them again for

@@ -24,6 +24,10 @@
  *    whole and confirmed (MCF) as they come, whatever the DTE does; it
  *    has them in its time.
  *
+ *    Class 2.0 also ends a page with <DLE><ppm> (',' MPS, ';' EOM, '.'
+ *    EOP: OK, or +FHS:00 and OK, once the remote answered, no +FPS),
+ *    and gives +FIS/+FTC, +FCS and the identities as +FNR says.
+ *
  *    Class 2 says +FCON, +FCSI, +FDIS, +FDCS, +FTSI, +FPTS and +FHNG
  *    instead, and its hangup codes in decimal.  The data is MH whatever
  *    the remote used (MR, ECM: this end decodes and codes it again), its
@@ -137,6 +141,8 @@ struct Fax2 {
 	bool trained = false;           /* a CFR since the DIS */
 	bool fcs_due = false;           /* +FCS not yet told for it */
 	int fet = -1;                   /* +FET's for the page, -1: none */
+	bool ppm = false;               /* class 2.0: the page ended with
+					   <DLE><ppm>, no +FPS: after it */
 	bool page_sent = false;         /* its MCF came */
 	int page_post = 0;
 	std::string data;               /* the page from the DTE */
@@ -265,12 +271,19 @@ std::string Fax2::params(const unsigned *v) const
 /* +FIS:<v> or the like */
 void Fax2::info(const char *c20, const char *c2, const unsigned *v)
 {
+	/* class 2.0: as +FNR says (+FCS: tpr, +FIS: and +FTC: rpr) */
+	unsigned bit = strcmp(c20, "FCS") == 0 ? 2 : 1;
+	if (set.cls == 20 && !(set.nr & bit))
+		return;
 	text(std::string("+") + name(c20, c2) + ":" + params(v));
 }
 
 /* +FCI:"<id>" or the like (none for no identity) */
 void Fax2::ident(const char *c20, const char *c2, const char *id)
 {
+	/* class 2.0: as +FNR's idr says */
+	if (set.cls == 20 && !(set.nr & 4))
+		return;
 	if (id && *id)
 		text(std::string("+") + name(c20, c2) + ":\"" + id + "\"");
 }
@@ -345,10 +358,14 @@ void Fax2::end_command(const struct t30_status &st)
 }
 
 /* +FDT: the DTE's characters, the <DLE> codes taken out; at <DLE><ETX>
-   the page decoded for next_page(), and OK */
+   the page decoded for next_page(), and OK.  Class 2.0 (T.32 8.3.3.7,
+   Table 9): <DLE><ppm> ends the page with its post-page message, ','
+   MPS, ';' EOM, '.' EOP, as +FET=0, 1 or 2 after <DLE><ETX>, without
+   its +FPS: */
 void Fax2::dte_page()
 {
 	char c;
+	int post = -1;
 
 	/* a character at a time: what follows <DLE><ETX> is commands */
 	while (modem_recv_from_tty(modem, &c, 1) == 1) {
@@ -365,7 +382,10 @@ void Fax2::dte_page()
 		} else if (c == SUB) {
 			data += DLE;
 			data += DLE;
-		} else if (c == ETX) {
+		} else if (c == ETX ||
+			   (set.cls == 20 &&
+			    (post = c == ',' ? 0 : c == ';' ? 1 :
+			     c == '.' ? 2 : -1) >= 0)) {
 			struct t30_status st;
 			t30_get_status(t30, &st);
 			ready.release();
@@ -384,6 +404,14 @@ void Fax2::dte_page()
 				return;
 			}
 			have_ready = true;
+			if (post >= 0) {
+				/* (the OK, ERROR or +FHS once the remote
+				   answered) */
+				fet = post;
+				ppm = true;
+				start(CMD_FET);
+				return;
+			}
 			result(FAX_STATUS_OK);
 			/* what follows is commands */
 			return;
@@ -481,7 +509,9 @@ void Fax2::step(const struct t30_status &st)
 			char line[48];
 			snprintf(line, sizeof(line), "+%s:1,0,0,0,0",
 				 name("FPS", "FPTS"));
-			text(line);
+			if (!ppm)
+				text(line);
+			ppm = false;
 			page_sent = false;
 			if (page_post == 2) {
 				/* the DCN, then +FHS */
@@ -971,6 +1001,7 @@ int FAX2_command(void *obj, unsigned cmd, unsigned param,
 	f->set.br = s->br;
 	f->set.ec = s->ec;
 	f->set.bo = s->bo;
+	f->set.nr = s->nr;
 	switch (cmd) {
 	case FAX2_CMD_FDT:
 		if (!st.sending || f->have_ready)

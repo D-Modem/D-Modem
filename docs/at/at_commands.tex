@@ -4137,9 +4137,17 @@ others & The modem accepts them in their ranges. \\ \hline
 first bit of the page data is the top bit of each octet (0, the
 \emph{default}: the lowest bit).  The modem keeps \cmdl[plusFBO]{+FCR}
 and \cmdl[plusFBO]{+FPS}.  \cmdl[plusFBO]{+FHS?} gives the last hangup
-status.  Fax programs send other \cmdr{+F} settings in \std{Class 2}
-(\cmdr{+FNR}, \cmdr{+FIE}, \cmdr{+FCT} and other settings).  The modem
-keeps them, but they have no effect.
+status.  The modem keeps the other parameters of T.32 (\cmdr{+FNR},
+\cmdr{+FIE}, \cmdr{+FCQ}, \cmdr{+FCT}, \cmdr{+FRY}, \cmdr{+FMS},
+\cmdr{+FPP}, \cmdr{+FEA}, \cmdr{+FBU}, \cmdr{+FAP}, \cmdr{+FND},
+\cmdr{+FFC} and \cmdr{+FRQ}) in their ranges, with the T.32 values at
+the start.  In \std{Class 2.0} their numbers are hexadecimal.  Only
+\cmdr{+FNR} has an effect: in \std{Class 2.0}, \cmdr{+FNR}=\p{rpr},\p{tpr},\p{idr}
+enables the \cmdr{+FIS:} and \cmdr{+FTC:}, the \cmdr{+FCS:}, and the
+\cmdr{+FTI:}, \cmdr{+FCI:} and \cmdr{+FPI:} reports (all off at the
+start).  \std{Class 2} gives all the reports.  \cmdr{+FIP} sets the
+\std{Class 2} parameters as at the start, and keeps \cmdr{+FCLASS}.
+Other \cmdr{+F} settings in \std{Class 2} are kept with no effect.
 \begin{syntax}
 \item +FBO=\p{n}, +FCR=\p{n}, +FPS=\p{n}
 \item +FHS?

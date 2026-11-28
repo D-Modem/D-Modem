@@ -175,6 +175,10 @@ struct fax2_settings {
 	unsigned zpoll;         /* class 6, ZyXEL's #B2: calling, we poll
 				   (our CIG and DTC after the DIS, then we
 				   receive) */
+	unsigned nr;            /* class 2.0's +FNR (T.32 8.5.1.11): bit 0
+				   +FIS: and +FTC:, bit 1 +FCS:, bit 2
+				   +FTI:, +FCI: and +FPI: reported (class 2
+				   reports them all) */
 };
 /* the class 2 commands for FAX2_command() */
 enum FAX2_CMD { FAX2_CMD_FDT, FAX2_CMD_FDR, FAX2_CMD_FET, FAX2_CMD_FKS };

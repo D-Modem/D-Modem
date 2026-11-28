@@ -1916,6 +1916,41 @@ std::string fax2_list(const u32 *u)
 
 } // namespace
 
+/* the T.32 parameters that the engine does not use, with their values
+   at the start and their highest values (Appendix I, Table I.1): the
+   lowest is 0.  A highest of 0 is a service that D-Modem does not
+   have (+FAP: subaddress, selective polling, password; +FFC: format
+   conversion) */
+struct Fax2Param {
+	const char *name;
+	u16 n;
+	u32 start[4], hi[4];
+};
+static const Fax2Param fax2_params[] = {
+	{ "FNR", 4, { 0, 0, 0, 0 }, { 1, 1, 1, 1 } },
+	{ "FIE", 1, { 0 }, { 1 } },
+	{ "FCQ", 2, { 1, 0 }, { 2, 2 } },
+	{ "FRQ", 2, { 0, 0 }, { 0x64, 0xff } },
+	{ "FCT", 1, { 0x1e }, { 0xff } },
+	{ "FRY", 1, { 0 }, { 0xff } },
+	{ "FMS", 1, { 0 }, { 5 } },
+	{ "FND", 1, { 0 }, { 1 } },
+	{ "FBU", 1, { 0 }, { 1 } },
+	{ "FAP", 3, { 0, 0, 0 }, { 0, 0, 0 } },
+	{ "FPP", 1, { 0 }, { 1 } },
+	{ "FEA", 1, { 0 }, { 1 } },
+	{ "FFC", 4, { 0, 0, 0, 0 }, { 0, 0, 0, 0 } },
+};
+
+/* the T.32 parameter called name (fax2_params); NULL if none */
+static const Fax2Param *fax2_param(const std::string &name)
+{
+	for (const auto &t : fax2_params)
+		if (name == t.name)
+			return &t;
+	return nullptr;
+}
+
 /* class 2 and 2.0 (T.32): either's names (+FLID or +FLI and the
    like).  +FLI (the identity), +FPI (the polling one, CIG), +FLP (a
    document to be polled), +FSP (we poll: +FDR after the DIS), +FCC and
@@ -1960,7 +1995,8 @@ s16 Modem::at_fax2(char *p, s16 *len)
 		u32 x = decimal(v, &e);
 		if (e == v || e != end || x < lo || x > hi)
 			return false;
-		*out = x;
+		if (out)
+			*out = x;
 		return true;
 	};
 
@@ -2056,6 +2092,22 @@ s16 Modem::at_fax2(char *p, s16 *len)
 			fax2_command(FAX2_CMD_FDR, 0);
 	if (name == "FKS" && action)
 		return fax_ && fax2_ ? fax2_command(FAX2_CMD_FKS, 0) : 0;
+	/* +FIP[=0] (8.3.6): the class 2 settings as at the start, the
+	   class kept */
+	if (name == "FIP" && (action || (set && one(0, 0, nullptr)))) {
+		u8 cls = fax_class_;
+		u32 f34[5];
+		std::copy(f34_, f34_ + 5, f34);
+		fax2_reset();
+		fax_class_ = cls;
+		std::copy(f34, f34 + 5, f34_);
+		return 0;
+	}
+	if (const Fax2Param *t = fax2_param(name)) {
+		if (!c2)
+			return -1;
+		return fax2_param_cmd(*t, name, query, range, set, v, end);
+	}
 	/* (not class 1's commands, nor names that are no +F setting) */
 	if (!c2 || name.size() < 2 || name[0] != 'F' ||
 	    (name.size() == 3 && strchr("TR", name[1]) &&
@@ -2076,6 +2128,91 @@ s16 Modem::at_fax2(char *p, s16 *len)
 	if (query)
 		return show("0");
 	return range ? show("") : 0;
+}
+
+/* a T.32 parameter of fax2_params (name as the class 2.0 spells it):
+   ? its values (as at the start if never set), =? its ranges, =<values>
+   checked against them and kept in f2_other_ (in decimal).  Class
+   2.0's numbers are hexadecimal (T.32 6.1), class 2's decimal */
+s16 Modem::fax2_param_cmd(const Fax2Param &t, const std::string &name,
+			  bool query, bool range, bool set, const char *v,
+			  const char *end)
+{
+	const bool hexa = fax_class_ == 20;
+	auto num = [hexa](u32 x) {
+		return hexa ? hex(x, 1, true) : dec(x);
+	};
+	/* a number at q in base 16 or 10, to end at most: past it */
+	auto parse = [](const char *q, const char *end, bool h, u32 *x) {
+		*x = 0;
+		while (q < end && isxdigit(static_cast<unsigned char>(*q)) &&
+		       (h || is_digit(*q)) && *x <= 0xffff) {
+			*x = *x * (h ? 16 : 10) +
+				static_cast<u32>(is_digit(*q) ? *q - '0' :
+						 upper(*q) - 'A' + 10);
+			q++;
+		}
+		return q;
+	};
+	/* the values now: as at the start, or as kept (in decimal) */
+	u32 cur[4];
+	std::copy(t.start, t.start + 4, cur);
+	std::string *kept_v = nullptr;
+	for (auto &o : f2_other_)
+		if (o.first == name)
+			kept_v = &o.second;
+	if (kept_v) {
+		const char *q = kept_v->c_str(), *ke = q + kept_v->size();
+		for (u16 i = 0; i < t.n && q < ke; i++) {
+			q = parse(q, ke, false, &cur[i]);
+			if (q < ke && *q == ',')
+				q++;
+		}
+	}
+	if (query) {
+		std::string l;
+		for (u16 i = 0; i < t.n; i++)
+			l += (i ? "," : "") + num(cur[i]);
+		puts(l);
+		crlf();
+		return 0;
+	}
+	if (range) {
+		std::string l;
+		for (u16 i = 0; i < t.n; i++)
+			l += std::string(i ? "," : "") + "(0" +
+				(t.hi[i] == 0 ? "" : t.hi[i] == 1 ? ",1" :
+				 "-" + num(t.hi[i])) + ")";
+		puts(l);
+		crlf();
+		return 0;
+	}
+	if (!set)
+		return -1;
+	/* each value in its range; one left out keeps its value */
+	const char *q = v;
+	for (u16 i = 0; q < end; i++) {
+		if (i >= t.n)
+			return -1;
+		if (*q != ',') {
+			u32 x;
+			const char *e = parse(q, end, hexa, &x);
+			if (e == q || x > t.hi[i])
+				return -1;
+			cur[i] = x;
+			q = e;
+		}
+		if (q < end && *q++ != ',')
+			return -1;
+	}
+	std::string l;
+	for (u16 i = 0; i < t.n; i++)
+		l += (i ? "," : "") + dec(cur[i]);
+	if (kept_v)
+		*kept_v = l;
+	else
+		f2_other_.emplace_back(name, l);
+	return 0;
 }
 
 /* +FMI, +FMM, +FMR (T.31 Annex A); the class 1 commands +FTS, +FRS
