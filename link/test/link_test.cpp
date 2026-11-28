@@ -5167,3 +5167,109 @@ TEST(Link, V76VoiceHeader)
 	      r.type == h245::Type::ClcAck, "UA with CloseLogicalChannelAck");
 	CHECK(!d.on && d.closed == 1, "the voice channel closed");
 }
+
+/* a UI frame on DLCI 30, which no DLC has: dropped.  (First in an
+   exchange() after another: the new transmitter's first frame may
+   not reach the far end) */
+static const std::vector<u8> FILLER = { 30 << 2 | 3, 0x03 };
+
+/* an audio channel's OpenLogicalChannel: G.729 Annex A, UNERM both
+   ways, the audio header, channel lcn */
+static h245::Msg audio_olc(u16 lcn)
+{
+	h245::Msg m;
+	m.type = h245::Type::Olc;
+	m.lcn = m.ch.lcn = lcn;
+	m.ch.port = 1;
+	m.ch.kind = h245::Kind::Audio;
+	m.ch.fwd.erm = m.ch.rev.erm = false;
+	m.ch.fwd.n401 = m.ch.rev.n401 = 11;
+	m.ch.fwd.audio_header = m.ch.rev.audio_header = true;
+	return m;
+}
+
+/* the frames of out equal to f */
+static int count_frames(const std::vector<std::vector<u8>> &out,
+			const std::vector<u8> &f)
+{
+	int n = 0;
+	for (const std::vector<u8> &g : out)
+		n += g.size() >= f.size() &&
+			std::equal(f.begin(), f.end(), g.begin());
+	return n;
+}
+
+/* 6.1.1/V.76 and 6.2.2/V.70: the responder that opens a voice channel
+   itself takes DLCI 63 (its DLCIs count down), its SABME (C/R 0) sent
+   again after a DM with F 0 (7.1.2.1/V.76: ignored); when the
+   initiator's open on DLCI 1 crosses it, the responder gives its own
+   up and takes the initiator's */
+TEST(Link, V76VoiceResponderDlci)
+{
+	VoiceDte d("responder", 500);
+	Link l;
+	l.init(&d, true, lapm_config(0));
+	l.start_v76(false);
+	h245::Msg data;
+	CHECK(h245::decode(OLC_DATA.data(), OLC_DATA.size(), &data), "data");
+	std::vector<std::vector<u8>> out = exchange(l, {
+		u_frame(0 << 2 | 3, 0x7f, &data) }, 70);
+	CHECK(d.up, "the data channel up");
+	h245::Msg m;
+	CHECK(find_u(out, 63 << 2 | 1, 0x7f, &m) &&
+	      m.type == h245::Type::Olc && m.ch.kind == h245::Kind::Audio,
+	      "the responder's voice SABME on DLCI 63");
+	CHECK(!find_u(out, 1 << 2 | 1, 0x7f, &m), "none on DLCI 1");
+
+	out = exchange(l, { FILLER, { 63 << 2 | 1, 0x0f } }, 60);
+	CHECK(count_frames(out, { 63 << 2 | 1, 0x7f }) >= 1,
+	      "a DM with F 0 ignored: the SABME again");
+	CHECK(!d.on, "not open");
+
+	h245::Msg a = audio_olc(5);
+	out = exchange(l, { FILLER, u_frame(1 << 2 | 3, 0x7f, &a) }, 8);
+	CHECK(find_u(out, 1 << 2 | 3, 0x73, &m) &&
+	      m.type == h245::Type::OlcAck && m.lcn == 5,
+	      "the initiator's crossing open taken");
+	CHECK(d.on && d.opened == 1, "the voice channel open");
+}
+
+/* 7.3/V.76: our voice channel's DISC (P 1) goes again until its answer;
+   a UA with F 1 ends it; and the owner hears at once */
+TEST(Link, V76VoiceDiscAgain)
+{
+	VoiceDte d("responder", 500);
+	d.opens = false;
+	Link l;
+	l.init(&d, true, lapm_config(0));
+	l.start_v76(false);
+	h245::Msg data;
+	CHECK(h245::decode(OLC_DATA.data(), OLC_DATA.size(), &data), "data");
+	h245::Msg a = audio_olc(2);
+	exchange(l, { u_frame(0 << 2 | 3, 0x7f, &data),
+		      u_frame(1 << 2 | 3, 0x7f, &a) }, 8);
+	CHECK(d.on, "the voice channel open");
+	l.close_voice();
+	CHECK(!d.on && d.closed == 1, "the owner hears at once");
+	std::vector<std::vector<u8>> out = exchange(l, {}, 130);
+	const int discs = count_frames(out, { 1 << 2 | 1, 0x53 });
+	CHECK(discs >= 2, "the DISC again (%d)", discs);
+	out = exchange(l, { FILLER, { 1 << 2 | 1, 0x73 } }, 130);
+	CHECK(count_frames(out, { 1 << 2 | 1, 0x53 }) <= 1,
+	      "no DISC after the UA");
+	CHECK(d.closed == 1, "closed once");
+}
+
+/* 6.1.1/V.76: a SABME with a two-octet address (DLCI 200) gets a DM at
+   that address, F as P */
+TEST(Link, V76TwoOctetAddress)
+{
+	Dte d("responder");
+	Link l;
+	l.init(&d, true, lapm_config(0));
+	l.start_v76(false);
+	const u8 a0 = (200 >> 7) << 2 | 2, a1 = (200 & 0x7f) << 1 | 1;
+	std::vector<std::vector<u8>> out = exchange(l, { { a0, a1, 0x7f } }, 8);
+	CHECK(count_frames(out, { a0, a1, 0x1f }) == 1,
+	      "DM at the two-octet address");
+}
