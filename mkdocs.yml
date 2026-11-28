@@ -77,6 +77,10 @@ nav:
       - "V.44: technical details": standards/v44-details.md
       - "V.250": standards/v250.md
       - "V.250: technical details": standards/v250-details.md
+      - "V.251": standards/v251.md
+      - "V.251: technical details": standards/v251-details.md
+      - "V.253": standards/v253.md
+      - "V.253: technical details": standards/v253-details.md
       - "V.80": standards/v80.md
       - "V.80: technical details": standards/v80-details.md
       - "V.25": standards/v25.md

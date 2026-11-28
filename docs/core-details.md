@@ -347,6 +347,16 @@ sufficient:
   commands and sent no reports.
 - **`+GCAP`** gives `+FCLASS,+MS,+MV18S,+ES,+DS`, each group of commands
   that the core has (V.250 Table 2). The old core gave only `+FCLASS,+MS`.
+- **Voice reads and tests.** `AT+V<name>?` gives the values only
+  (`128`), and `AT+V<name>=?` gives the ranges in parentheses
+  (`(0-128)`), as V.253 6.3.3 tells. The old core gave `+VGT=128` and
+  `+VGT=0-128`. The `#V` commands keep the old forms. `AT+VIP=?`,
+  `AT+VTX=?`, `AT+VRX=?` and `AT+VTR=?` give OK (the old core: ERROR).
+- **`AT+VRID`** gives the caller ID of the last call again (V.253
+  9.1.3). The old core did not have it.
+- **V.8 reports.** With `AT+A8E=6` (call) or `AT+A8E=,5` (answer), the
+  core sends `+A8A:1`, `+A8M:` and `+A8J:1` before CONNECT (V.251 6.3
+  to 6.5).
 - **Statistics.** `ATI11` gives the statistics of the last call (the old
   core: ERROR). `ATI6` (of USRobotics; in the old core, its second stored
   profile, empty) and `AT&V1` (in the form of Rockwell; the old core:

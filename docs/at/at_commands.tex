@@ -1951,7 +1951,10 @@ message themselves.
 \begin{syntax}
 \item AT\#CID=\p{n} (or AT+VCID=\p{n})
 \item AT\#CID?
-\item AT\#CID=? (gives \rc{0,1,2})
+\item AT\#CID=? (gives \rc{0,1,2}; AT+VCID=? gives \rc{(0-2)})
+\item AT+VRID[=\p{m}] (the caller ID of the last call again: \p{m} 0
+  the fields, 1 the message in hexadecimal)
+\item AT+VRID=? (gives \rc{(0,1)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{If \p{n} = 0--2.}
@@ -2389,6 +2392,11 @@ This command gives the controls of \std{V.251} for \std{V.8} and \std{V.8 bis}.
 \begin{itemize}
 \item \p{v8o} and \p{v8a} are 1: the modem does \std{V.8} itself when it
   calls and when it answers (\cmdl[plusMS]{+MS} sets if it does).
+\item \p{v8o} 6 and \p{v8a} 5: the same, and the modem reports the
+  \std{V.8} session before \rc{CONNECT}.  The caller gives \rc{+A8A:1}
+  (ANSam), \rc{+A8M:}\p{JM} and \rc{+A8J:1}.  The answerer gives
+  \rc{+A8M:}\p{CM} and \rc{+A8J:1}.  The octets are in hexadecimal, the
+  call function first.
 \item \p{v8cf} is 0: the \std{DTE} has no call function.
 \item \p{v8b} 1 starts a data call with \std{V.8 bis}.  When the modem
   answers, it sends MRe before its answer tone.  If the caller answers
@@ -2404,7 +2412,7 @@ not apply to a leased line or a clear channel.  Refer to
 \begin{syntax}
 \item +A8E=[\p{v8o}][,[\p{v8a}][,[\p{v8cf}][,[\p{v8b}]]]]
 \item +A8E? (gives \rc{+A8E: 1,1,0,0})
-\item +A8E=? (gives \rc{+A8E: (1),(1),(0),(0,1)})
+\item +A8E=? (gives \rc{+A8E: (1,6),(1,5),(0),(0,1)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{Always.}
@@ -4556,8 +4564,9 @@ disconnects.
 
 With \cmdl[plusFCLASS]{AT+FCLASS=8}, the modem accepts the voice commands
 of \std{V.253}.  In the other modes, they are \rc{ERROR}, but
-\cmdl[hashCID]{+VCID} is not.  Each \cmdr{+V} parameter accepts \cmdr{?}
-(its values) and \cmdr{=?} (their ranges).
+\cmdl[hashCID]{+VCID} and +VRID are not.  Each \cmdr{+V} parameter accepts
+\cmdr{?} (its values, for example \rc{128}) and \cmdr{=?} (their ranges,
+for example \rc{(0-128)}), as \std{V.253} tells.
 
 \begin{command}{vcmds}{+VIP}{Initialize Voice Parameters}
 This command sets the voice settings to their values at the start.
@@ -4599,7 +4608,7 @@ modem accepts \p{s} and \p{e} for silence compression (0 to 255) and
 keeps them, but the modem does not compress silence.
 \begin{syntax}
 \item +VSM=\p{m}[,\p{r}[,\p{s}[,\p{e}]]]
-\item +VSM? (gives \cmdl[plusVSM]{+VSM=1,8000,0,0} at the start)
+\item +VSM? (gives \rc{1,8000,0,0} at the start)
 \item +VSM=? (lists the formats, one on each line)
 \end{syntax}
 \begin{results}
@@ -4752,7 +4761,7 @@ event (16), and the audio is silent during the event.
 \begin{syntax}
 \item +VTS=\p{string}
 \item +VTS? (gives the tone settings)
-\item +VTS=? (gives \cmdl[plusVTS]{+VTS=0-4000,0-4000,0-6000})
+\item +VTS=? (gives \rc{(0-4000),(0-4000),(0-6000)})
 \end{syntax}
 \begin{results}
 \res{\rc{OK}}{After the last element.}

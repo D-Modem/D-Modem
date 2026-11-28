@@ -668,6 +668,7 @@ private:
 	const char *dp_name(s16 id) const;
 	const char *protocol_name() const;
 	const char *compression_name() const;
+	void v8_reports();
 	void connect_reports(s16 m);
 	void set_cause(Cause c);
 	void call_stats();
@@ -728,6 +729,8 @@ private:
 	s16 at_zfax(char *p, s16 *len);
 	s16 at_CK(char *p, s16 *len);
 	s16 at_CID(char *p, s16 *len);
+	s16 at_VRID(char *p, s16 *len);
+	void cid_keep(void *cid);
 	s16 at_voice(char *p, s16 *len, bool hash = false);
 	s16 at_hash(char *p, s16 *len);
 	s16 at_CLS(char *p, s16 *len);
@@ -860,6 +863,9 @@ private:
 	void *idle_cid_ = nullptr;
 	/* caller_id()'s MDMF message, until the first RING */
 	std::vector<u8> cid_msg_;
+	/* the last caller ID message that the modem reported, for +VRID
+	   (V.253 9.1.3) */
+	std::vector<u8> cid_last_;
 
 	char dial_string_[128] = {};
 	/* what call progress dials: the dial string, and after a ';'

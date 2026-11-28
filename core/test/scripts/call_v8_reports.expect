@@ -1,0 +1,37 @@
+      0 A< ATE0X3+MS=34+A8E=6,1\r
+      0 A: ATE0X3+MS=34+A8E=6,1\r\r\n
+      0 A: OK\r\n
+      0 B< ATE0+MS=34+A8E=1,5\r
+      0 B: ATE0+MS=34+A8E=1,5\r\r\n
+      0 B: OK\r\n
+      0 A< AT+A8E=?;+A8E?\r
+      0 A: \r\n
+      0 A: +A8E: (1,6),(1,5),(0),(0,1)\r\n
+      0 A: +A8E: 6,1,0,0\r\n
+      0 A: \r\n
+      0 A: OK\r\n
+      0 B< ATA\r
+      0 A< ATD\r
+  13040 B: \r\n
+  13040 B: +A8M:C14513942A0D\r\n
+  13040 B: \r\n
+  13040 B: +A8J:1\r\n
+  13040 B: \r\n
+  13040 B: CONNECT 33600\r\n
+  13100 A: \r\n
+  13100 A: +A8A:1\r\n
+  13100 A: \r\n
+  13100 A: +A8M:C14513942A0D\r\n
+  13100 A: \r\n
+  13100 A: +A8J:1\r\n
+  13100 A: \r\n
+  13100 A: CONNECT 33600\r\n
+  13100 until A 'CONNECT': yes
+  13100 until B 'CONNECT': yes
+  13420 A: \r\n
+  13420 A: NO CARRIER\r\n
+  13440 B: \r\n
+  13440 B: NO CARRIER\r\n
+  13440 until B 'NO CARRIER': yes
+  13940 A: state 0, tx 33600 rx 33600, idle
+  13940 B: state 0, tx 33600 rx 33600, idle

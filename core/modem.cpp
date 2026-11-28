@@ -892,6 +892,7 @@ s16 Modem::stop_call()
 		dcr_ = nullptr;
 	}
 	if (cid_) {
+		cid_keep(cid_);
 		CID_delete(cid_);
 		cid_ = nullptr;
 	}
@@ -1448,6 +1449,43 @@ const char *Modem::protocol_name() const
 	if (v110_ && !cfg_.ec && !cfg_.mnp_on)
 		return "V.110";
 	return cfg_.ec ? "LAPM" : cfg_.mnp_on ? "MNP" : "NONE";
+}
+
+/* V.251's indications of a V.8 session that the DCE controls (+A8E
+   <v8o> 6 calling, <v8a> 5 answering), before CONNECT: the caller
+   +A8A:1 (ANSam), +A8M:<JM> and +A8J:1 (CJ sent); the answerer
+   +A8M:<CM> and +A8J:1 (CJ received).  The octets in hexadecimal, the
+   call function's first (4.1/V.251).  Nothing when V.8 did not
+   complete */
+void Modem::v8_reports()
+{
+	const u32 *a = kept("+A8E");
+	const struct dp_stats &d = dp_stats_;
+	if (!a || (caller_ ? a[0] != 6 : a[1] != 5) || d.v8_cm_n <= 0 ||
+	    d.v8_jm_n <= 0)
+		return;
+	/* each an intermediate result code (5.7.2/V.250) */
+	auto line = [this](const std::string &t) {
+		puts(t);
+		if (sregs_[SREG_VERBOSE]) {
+			crlf();
+			crlf();
+		} else
+			put_text(reinterpret_cast<const char *>(
+					 &sregs_[SREG_CR_CHAR]), 1);
+	};
+	auto octets = [](const unsigned char *b, int n) {
+		std::string v;
+		for (int i = 0; i < n; i++)
+			v += hex(b[i], 2, true);
+		return v;
+	};
+	if (caller_) {
+		line("+A8A:1");
+		line("+A8M:" + octets(d.v8_jm, d.v8_jm_n));
+	} else
+		line("+A8M:" + octets(d.v8_cm, d.v8_cm_n));
+	line("+A8J:1");
 }
 
 /* V.250's intermediate result codes before a data call's CONNECT, in
@@ -3164,6 +3202,7 @@ void Modem::report(Result r)
 	if (r == Result::Connect) {
 		u16 a = sregs_[SREG_CONNNECT_MSG_FORMAT];
 		s16 m = modulation(dp_stats_, dp_);
+		v8_reports();
 		if (mode_ == MODEM_MODE_DATA)
 			connect_reports(m);
 		/* V.18's automoding: the mode found, as +MV18S numbers it
@@ -4161,6 +4200,7 @@ void Modem::idle_audio(const s16 *in, s32 n)
 				       mode_ == MODEM_MODE_VOICE);
 	if (idle_cid_ &&
 	    CID_process(idle_cid_, const_cast<s16 *>(in), n) != 0) {
+		cid_keep(idle_cid_);
 		CID_delete(idle_cid_);
 		idle_cid_ = nullptr;
 	}
@@ -4194,6 +4234,7 @@ void Modem::ring_signal(bool on)
 	report(Result::Ring);
 	if (!cid_msg_.empty()) {
 		/* voice mode's report is a packet, as on the line */
+		cid_last_ = cid_msg_;
 		if (cid_requested_)
 			CID_report(handle(), cid_requested_,
 				   mode_ == MODEM_MODE_VOICE, cid_msg_.data(),
@@ -4276,6 +4317,16 @@ void Modem::cid_process(s16 *in, s16 *out, s32 n)
 		logf("caller ID failed\n");
 	if (ret)
 		cid_stop();
+}
+
+/* the message that the caller ID receiver cid reported, kept for
+   +VRID; nothing if it reported none */
+void Modem::cid_keep(void *cid)
+{
+	u8 b[256];
+	int n = CID_message(cid, b, static_cast<int>(sizeof(b)));
+	if (n > 0)
+		cid_last_.assign(b, b + n);
 }
 
 /* the end of caller ID: the line stops, and the auto answer if the

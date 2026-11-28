@@ -8,12 +8,12 @@
       0 A: OK\r\n
       0 A< AT+VGT?\r
       0 A: AT+VGT?\r\r\n
-      0 A: +VGT=128\r\n
+      0 A: 128\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VGT=?\r
       0 A: AT+VGT=?\r\r\n
-      0 A: +VGT=0-128\r\n
+      0 A: (0-128)\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VGT=100\r
@@ -21,7 +21,7 @@
       0 A: OK\r\n
       0 A< AT+VGT?\r
       0 A: AT+VGT?\r\r\n
-      0 A: +VGT=100\r\n
+      0 A: 100\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VGR=129\r
@@ -46,7 +46,7 @@
       0 A: OK\r\n
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n
-      0 A: +VSM=1,8000,0,0\r\n
+      0 A: 1,8000,0,0\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSM=1,8000\r
@@ -60,7 +60,7 @@
       0 A: OK\r\n
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n
-      0 A: +VSM=129,11025,128,5\r\n
+      0 A: 129,11025,128,5\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSM=4,11025\r
@@ -71,7 +71,7 @@
       0 A: OK\r\n
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n
-      0 A: +VSM=4,8000,0,0\r\n
+      0 A: 4,8000,0,0\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSM=2,8000\r
@@ -85,7 +85,7 @@
       0 A: OK\r\n
       0 A< AT+VSM?\r
       0 A: AT+VSM?\r\r\n
-      0 A: +VSM=132,7200,0,0\r\n
+      0 A: 132,7200,0,0\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSM=1,8000\r
@@ -93,7 +93,7 @@
       0 A: OK\r\n
       0 A< AT+VSD=?\r
       0 A: AT+VSD=?\r\r\n
-      0 A: +VSD=0-255,0-255\r\n
+      0 A: (0-255),(0-255)\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSD=100,40\r
@@ -101,7 +101,7 @@
       0 A: OK\r\n
       0 A< AT+VSD?\r
       0 A: AT+VSD?\r\r\n
-      0 A: +VSD=100,40\r\n
+      0 A: 100,40\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VSD=100\r
@@ -112,7 +112,7 @@
       0 A: OK\r\n
       0 A< AT+VIT?\r
       0 A: AT+VIT?\r\r\n
-      0 A: +VIT=10\r\n
+      0 A: 10\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VNH=1\r
@@ -120,17 +120,17 @@
       0 A: OK\r\n
       0 A< AT+VNH?\r
       0 A: AT+VNH?\r\r\n
-      0 A: +VNH=0\r\n
+      0 A: 0\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTD=?\r
       0 A: AT+VTD=?\r\r\n
-      0 A: +VTD=0-6000\r\n
+      0 A: (0-6000)\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTD?\r
       0 A: AT+VTD?\r\r\n
-      0 A: +VTD=100\r\n
+      0 A: 100\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTD=6001\r
@@ -141,17 +141,17 @@
       0 A: OK\r\n
       0 A< AT+VTD?\r
       0 A: AT+VTD?\r\r\n
-      0 A: +VTD=5\r\n
+      0 A: 5\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTS=?\r
       0 A: AT+VTS=?\r\r\n
-      0 A: +VTS=0-4000,0-4000,0-6000\r\n
+      0 A: (0-4000),(0-4000),(0-6000)\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTS?\r
       0 A: AT+VTS?\r\r\n
-      0 A: +VTS=933,0,150\r\n
+      0 A: 933,0,150\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VTS=[933,0,100]\r
@@ -185,7 +185,7 @@
       0 A: OK\r\n
       0 A< AT+VGT?\r
       0 A: AT+VGT?\r\r\n
-      0 A: +VGT=128\r\n
+      0 A: 128\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+IFC=2,2\r
@@ -193,7 +193,7 @@
       0 A: OK\r\n
       0 A< AT+VLS?\r
       0 A: AT+VLS?\r\r\n
-      0 A: +VLS=0\r\n
+      0 A: 0\r\n
       0 A: \r\n
       0 A: OK\r\n
       0 A< AT+VLS=1\r
@@ -201,7 +201,7 @@
      20 A: OK\r\n
     100 A< AT+VLS?\r
     100 A: AT+VLS?\r\r\n
-    100 A: +VLS=1\r\n
+    100 A: 1\r\n
     100 A: \r\n
     100 A: OK\r\n
     100 A< AT+VTS=[933,0,10]\r
@@ -212,7 +212,7 @@
     560 A: OK\r\n
     700 A< AT+VTD?\r
     700 A: AT+VTD?\r\r\n
-    700 A: +VTD=100\r\n
+    700 A: 100\r\n
     700 A: \r\n
     700 A: OK\r\n
     700 A< AT+VTD=5\r
@@ -229,7 +229,7 @@
    1000 A: OK\r\n
    1000 A< AT+VLS?\r
    1000 A: AT+VLS?\r\r\n
-   1000 A: +VLS=0\r\n
+   1000 A: 0\r\n
    1000 A: \r\n
    1000 A: OK\r\n
    1000 A< AT+VLS=0\r

@@ -96,6 +96,11 @@ int CID_process(void *cid, void *in, int count);
 int CID_report(struct modem *m, unsigned cid_val, int packet,
 	       const void *msg, int len);
 
+/* the message that the receiver cid reported last (from its type octet
+   to its checksum) to buf (max octets at most): its length, 0 if it has
+   none */
+int CID_message(void *cid, void *buf, int max);
+
 /* the voice engine (V.253) of modem m at srate samples/s */
 void *VOICE_create(struct modem *m, u32 srate);
 void VOICE_delete(void *obj);

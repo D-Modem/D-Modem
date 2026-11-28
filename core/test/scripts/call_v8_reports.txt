@@ -1,0 +1,14 @@
+# V.251 6.3 to 6.5: +A8E <v8o> 6 (A) and <v8a> 5 (B), the V.8 session
+# that the DCE controls: A reports +A8A:1, +A8M:<JM> and +A8J:1, B
+# +A8M:<CM> and +A8J:1, before CONNECT
+A ATE0X3+MS=34+A8E=6,1\r
+B ATE0+MS=34+A8E=1,5\r
+A AT+A8E=?;+A8E?\r
+B ATA\r
+A ATD\r
+until A CONNECT 30000
+until B CONNECT 3000
+hangup A
+until B NO CARRIER 10000
+run 500
+state
