@@ -632,6 +632,92 @@ static void send_document(const Session &s, const std::string &in)
 	EXPECT_TRUE(same_pages(in, out));
 }
 
+/* 5.4.3.1/T.30, T5: an ECM receiver that answers RNR again and again
+   ($DSP_T30_RNR) gets the sender's RR each time for 60 s from the first
+   RNR, then DCN; the times at which the sender saw the first RNR and
+   ended in *first, *end (s) */
+static void rnr_call(double *first, double *end, std::string *log)
+{
+	std::string in = fax_file("in.tif"), out = fax_file("out.tif");
+	Doc tx, rx;
+	struct t30_config c = {};
+	struct t30_status sa = {};
+	short ab[160] = { 0 }, ba[160] = { 0 }, oa[160], ob[160];
+	long n;
+
+	*first = *end = -1;
+	ASSERT_TRUE(write_test_doc(in, true));
+	ASSERT_EQ(tx.in.open(in.c_str()), 0);
+	ASSERT_EQ(rx.out.open(out.c_str()), 0);
+	setenv("DSP_T30_RNR", "1", 1);
+	dsplibs_debug_level = 2;
+	testing::internal::CaptureStderr();
+	c.srate = 8000;
+	c.max_bps = 14400;
+	c.ecm = 1;
+	c.sending = 1;
+	c.next_page = next_page;
+	c.ctx = &tx;
+	T30 *a = t30_create(&c);
+	c.sending = 0;
+	c.next_page = NULL;
+	c.page_received = page_received;
+	c.ctx = &rx;
+	T30 *b = t30_create(&c);
+	size_t seen = 0;
+	for (n = 0; n < 8000L * 300; n += 160) {
+		t30_process(a, ba, oa, 160);
+		t30_process(b, ab, ob, 160);
+		for (int i = 0; i < 160; i++) {
+			ab[i] = g711_ulaw(oa[i]);
+			ba[i] = g711_ulaw(ob[i]);
+		}
+		/* (the log so far: the sender's first RR) */
+		if (*first < 0 && n % 8000 == 0) {
+			std::string l = testing::internal::GetCapturedStderr();
+			*log += l;
+			testing::internal::CaptureStderr();
+			if (log->find("send 1 frames, fcf 6f", seen) !=
+			    std::string::npos)
+				*first = n / 8000.0;
+			seen = log->size() > 64 ? log->size() - 64 : 0;
+		}
+		t30_get_status(a, &sa);
+		if (sa.result != T30_RUNNING) {
+			*end = n / 8000.0;
+			break;
+		}
+	}
+	*log += testing::internal::GetCapturedStderr();
+	unsetenv("DSP_T30_RNR");
+	dsplibs_debug_level = 0;
+	t30_get_status(a, &sa);
+	EXPECT_EQ(sa.result, T30_ERR_NO_RESPONSE)
+		<< t30_result_text(sa.result);
+	t30_free(a);
+	t30_free(b);
+	rx.out.close();
+	tx.in.close();
+}
+
+/* (see rnr_call()) the call ends 60 s after the first RNR, within the
+   tolerance of 5 s and the last RR's time */
+TEST(T30, T5EndsTheBusyReceiver)
+{
+	double first, end;
+	std::string log;
+	rnr_call(&first, &end, &log);
+	ASSERT_GE(first, 0) << "no RR";
+	ASSERT_GE(end, 0) << "the call did not end";
+	printf("first RR at %.1f s, the end at %.1f s\n", first, end);
+	if (getenv("T30_LOG"))
+		fputs(log.c_str(), stdout);
+	EXPECT_GE(end - first, 55.0);
+	EXPECT_LE(end - first, 65.0);
+	EXPECT_NE(log.find("T5: the receiver busy for 60 s"),
+		  std::string::npos);
+}
+
 class T30Pair : public testing::TestWithParam<Session> {};
 
 /* the session's two machines over the line, a document of two test
@@ -644,6 +730,39 @@ TEST_P(T30Pair, SendsTheDocument)
 	debug_level();
 	ASSERT_TRUE(write_test_doc(in, s.light));
 	send_document(s, in);
+}
+
+/* the third octet of the FIF of the frame what ("DIS", "DCS") the log
+   shows first, -1 if none */
+static int fif_octet3(const std::string &log, const char *what)
+{
+	size_t i = log.find(std::string("t30: ") + what + " fif");
+	unsigned a, b, c;
+	if (i == std::string::npos ||
+	    sscanf(log.c_str() + i + 9 + strlen(what), " %x %x %x", &a, &b,
+		   &c) != 3)
+		return -1;
+	return static_cast<int>(c);
+}
+
+/* Table 2/T.30, bits 19 and 20: the recording length.  0 1 is
+   unlimited, 1 0 is A4 and B4.  Our receiver takes any length: its DIS
+   says unlimited, and the sender's DCS chooses unlimited */
+TEST(T30, RecordingLengthBits)
+{
+	std::string in = fax_file("in.tif");
+	ASSERT_TRUE(write_test_doc(in, true));
+	dsplibs_debug_level = 2;
+	testing::internal::CaptureStderr();
+	send_document(Session{ 9600, false, 0, true }, in);
+	std::string log = testing::internal::GetCapturedStderr();
+	dsplibs_debug_level = 0;
+	int dis = fif_octet3(log, "DIS"), dcs = fif_octet3(log, "DCS");
+	ASSERT_GE(dis, 0) << "no DIS in the log";
+	ASSERT_GE(dcs, 0) << "no DCS in the log";
+	/* bit 19 is 0x04 of the third octet, bit 20 0x08 */
+	EXPECT_EQ(dis & 0x0c, 0x08) << std::hex << dis;
+	EXPECT_EQ(dcs & 0x0c, 0x08) << std::hex << dcs;
 }
 
 /* error correction mode: the page in blocks of HDLC frames, coded in

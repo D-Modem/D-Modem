@@ -100,7 +100,7 @@ A standard that has no link has no pages yet.
 
 | Recommendation | Subject |
 |---|---|
-| T.30 | The procedures of a Group 3 fax call |
+| [T.30](t30.md) ([details](t30-details.md)) | The procedures of a Group 3 fax call |
 | [T.4](t4.md) ([details](t4-details.md)) | Group 3 fax pages: MH and MR coding |
 | [T.6](t6.md) ([details](t6-details.md)) | MMR coding |
 | T.31 | Class 1 fax AT commands |
