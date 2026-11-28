@@ -413,8 +413,20 @@ inline int stream_pair(int sv[2])
 {
 	return socketpair_cloexec(AF_UNIX, SOCK_STREAM, 0, sv);
 }
-/* fd duplicated, close on exec: as the Windows fd_dup() */
-inline int fd_dup(int fd) { return fcntl(fd, F_DUPFD_CLOEXEC, 0); }
+/* fd duplicated, close on exec: as the Windows fd_dup().  (Mac OS X
+   before 10.7 has no F_DUPFD_CLOEXEC: F_DUPFD, then FD_CLOEXEC) */
+inline int fd_dup(int fd)
+{
+#ifdef F_DUPFD_CLOEXEC
+	return fcntl(fd, F_DUPFD_CLOEXEC, 0);
+#else
+	int d = fcntl(fd, F_DUPFD, 0);
+
+	if (d >= 0)
+		fcntl(d, F_SETFD, FD_CLOEXEC);
+	return d;
+#endif
+}
 /* localtime_r(): as the Windows local_time() above */
 inline void local_time(time_t t, struct tm *tm) { localtime_r(&t, tm); }
 

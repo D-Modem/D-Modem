@@ -1,0 +1,124 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 2488830..dd254e5 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -529,7 +529,7 @@ if(USE_OPENSSL)
+     src/tls/openssl/sni.c
+     src/hmac/openssl/hmac.c
+   )
+-elseif(APPLE)
++elseif(APPLE AND NOT USE_MBEDTLS)
+   list(APPEND SRCS
+     src/aes/apple/aes.c
+     src/hmac/apple/hmac.c
+diff --git a/cmake/re-config.cmake b/cmake/re-config.cmake
+index 8dea2f6..309c76f 100644
+--- a/cmake/re-config.cmake
++++ b/cmake/re-config.cmake
+@@ -48,7 +48,7 @@ if(USE_TLS1_3_PHA AND NOT HAVE_LIBRESSL AND NOT USE_MBEDTLS AND OPENSSL_FOUND)
+   list(APPEND RE_DEFINITIONS HAVE_TLS1_3_POST_HANDSHAKE_AUTH)
+ endif()
+ 
+-check_symbol_exists("arc4random" "stdlib.h" HAVE_ARC4RANDOM)
++check_symbol_exists("arc4random_buf" "stdlib.h" HAVE_ARC4RANDOM)
+ if(HAVE_ARC4RANDOM)
+   list(APPEND RE_DEFINITIONS HAVE_ARC4RANDOM)
+ endif()
+diff --git a/src/hmac/hmac_sha1.c b/src/hmac/hmac_sha1.c
+index d69536a..7f45520 100644
+--- a/src/hmac/hmac_sha1.c
++++ b/src/hmac/hmac_sha1.c
+@@ -9,7 +9,7 @@
+ #include <openssl/sha.h>
+ #include <openssl/hmac.h>
+ #include <openssl/err.h>
+-#elif defined (__APPLE__)
++#elif defined (__APPLE__) && !defined (USE_MBEDTLS)
+ #include <CommonCrypto/CommonHMAC.h>
+ #elif defined (WIN32)
+ #include <windows.h>
+@@ -108,7 +108,7 @@ void hmac_sha1(const uint8_t *k,  /* secret key */
+ 
+ 	if (!HMAC(EVP_sha1(), k, (int)lk, d, ld, out, NULL))
+ 		ERR_clear_error();
+-#elif defined (__APPLE__)
++#elif defined (__APPLE__) && !defined (USE_MBEDTLS)
+ 	(void)t;
+ 
+ 	CCHmac(kCCHmacAlgSHA1, k, lk, d, ld, out);
+@@ -152,7 +152,7 @@ void hmac_sha256(const uint8_t *key, size_t key_len,
+ 	if (!HMAC(EVP_sha256(), key, (int)key_len, data, data_len, out, NULL))
+ 		ERR_clear_error();
+ 
+-#elif defined (__APPLE__)
++#elif defined (__APPLE__) && !defined (USE_MBEDTLS)
+ 	(void)out_len;
+ 
+ 	CCHmac(kCCHmacAlgSHA256, key, key_len, data, data_len, out);
+diff --git a/src/md5/wrap.c b/src/md5/wrap.c
+index 6b8168b..17bdc9b 100644
+--- a/src/md5/wrap.c
++++ b/src/md5/wrap.c
+@@ -7,7 +7,7 @@
+ #include <stddef.h>
+ #include <openssl/evp.h>
+ #include <openssl/md5.h>
+-#elif defined (__APPLE__)
++#elif defined (__APPLE__) && !defined (USE_MBEDTLS)
+ #include <CommonCrypto/CommonDigest.h>
+ #elif defined (WIN32)
+ #include <windows.h>
+@@ -43,7 +43,7 @@ void md5(const uint8_t *d, size_t n, uint8_t *md)
+ 	EVP_DigestUpdate(ctx, d, n);
+ 	EVP_DigestFinal_ex(ctx, md, NULL);
+ 	EVP_MD_CTX_free(ctx);
+-#elif defined (__APPLE__)
++#elif defined (__APPLE__) && !defined (USE_MBEDTLS)
+ 	CC_MD5(d, (unsigned int)n, md);
+ 
+ #elif defined (WIN32)
+diff --git a/src/sha/wrap.c b/src/sha/wrap.c
+index 8694500..79e8a3e 100644
+--- a/src/sha/wrap.c
++++ b/src/sha/wrap.c
+@@ -9,7 +9,7 @@
+ #include <re_mbuf.h>
+ #ifdef USE_OPENSSL
+ #include <openssl/sha.h>
+-#elif defined (__APPLE__)
++#elif defined (__APPLE__) && !defined (USE_MBEDTLS)
+ #include <CommonCrypto/CommonDigest.h>
+ #elif defined (WIN32)
+ #include <windows.h>
+@@ -56,7 +56,7 @@ void sha1(const uint8_t *d, size_t n, uint8_t *md)
+ {
+ #ifdef USE_OPENSSL
+ 	(void)SHA1(d, n, md);
+-#elif defined (__APPLE__)
++#elif defined (__APPLE__) && !defined (USE_MBEDTLS)
+ 	CC_SHA1(d, (uint32_t)n, md);
+ #elif defined (WIN32)
+ 	compute_hash(CALG_SHA1, d, n, md, SHA1_DIGEST_SIZE);
+@@ -87,7 +87,7 @@ void sha256(const uint8_t *d, size_t n, uint8_t *md)
+ {
+ #ifdef USE_OPENSSL
+ 	(void)SHA256(d, n, md);
+-#elif defined (__APPLE__)
++#elif defined (__APPLE__) && !defined (USE_MBEDTLS)
+ 	CC_SHA256(d, (uint32_t)n, md);
+ #elif defined (WIN32)
+ 	compute_hash(CALG_SHA_256, d, n, md, SHA256_DIGEST_SIZE);
+diff --git a/src/thread/thread.c b/src/thread/thread.c
+index 281cb2f..3d99565 100644
+--- a/src/thread/thread.c
++++ b/src/thread/thread.c
+@@ -90,7 +90,9 @@ static int handler(void *p)
+ #elif defined(WIN32)
+ 	/* Not implemented */
+ #elif defined(DARWIN)
++#if __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ >= 1060
+ 	(void)pthread_setname_np(th.name);
++#endif
+ #elif defined(HAVE_PTHREAD)
+ #if defined(OPENBSD)
+ 	(void)pthread_set_name_np(*th.thr, th.name);
