@@ -74,10 +74,19 @@ It is C++, in `namespace dlink`.
       (Appendix III.3/V.42);
     - it gets an XID response that it cannot read (empty, or no general
       format).
-  - XID frames have no sequence number. After the originator removes
-    zstd from its XID, it ignores an XID response that names zstd. That
-    response is late, and answers an earlier XID. T401 continues for the
-    response to the current XID.
+  - XID frames have no sequence number. Thus the originator does not
+    change its offer while a response to an earlier XID can still come:
+    1. T401 of the last XID with zstd is two times longer (9.2.1/V.42
+       sets no value for T401). A response that is later than one T401
+       thus comes before the offer changes.
+    2. When that T401 expires, the originator starts a new negotiation
+       (8.10.2/V.42) with an XID without zstd. T401 and N400 start
+       again.
+    3. After that, it ignores an XID response that names zstd. That
+       response is late, and answers an earlier XID. T401 continues for
+       the response to the current XID.
+    4. A response that is more than two T401s late can still answer
+       the earlier offer. The originator cannot identify it.
   - USRobotics HST in the user data subfield of XID, as a Courier sends
     it (`Config::hst`, for `AT+MS=HST`): the set `HST` (PI 0xFF), the
     capability (PI 0xC0: options, then the forward rates as bits 2 to
@@ -253,7 +262,7 @@ are in [x2-upgrade-details.md](x2-upgrade-details.md).
 | HST | `LapmHst`, `Hst` | a recorded Courier's XID command and response: the answerer's response with HST and its turn on the DM; the caller's DM (FCS-16) and its SABME first after HST is up; the start rate between two Links; without HST, LAPM as before; the HST link against a Courier's first frames, and between two Links, with the turns of the channels |
 | LAPM faults | `LapmBadFrames`, `LapmNrPastVs`, `LapmUnsolicitedDm`, `LapmBitErrors`, `LapmSlowDte`, `LapmCompressedSlowDte`, `LapmN400` | frames LAPM must drop; an N(R) past V(S) ignored; an unsolicited DM (F = 0) while idle, which asks for the link (8.8/V.42: an SABME, not the link up; ignored after a release); REJ and T401 recovery; a slow DTE (RNR); five retransmissions of an unanswered XID and five polls with the line cut, no more |
 | XID not agreed | `LapmSabmeWithoutXid`, `LapmBadXidThenSabme`, `LapmCallerXidNotAgreed`, `LapmXidOutOfRangeThenSabme` | an SABME with no XID, and an XID command with no general format, at the answerer; a DM (F = 0) to the first XID, a DM after the XID was sent again, and an XID response that LAPM cannot read, at the originator; an XID command with a V.44 parameter below its minimum, then an SABME, at the answerer: the defaults of V.42 (no compression, FCS-16) with the data unchanged each way, or the release |
-| XID offers that change | `LapmZstdIgnored`, `LapmXidResponseLate` | an answerer that ignores an XID with zstd (with and without V.8): the originator removes zstd and LAPM comes up; XID responses later than T401: the two ends agree on the same compression, and text and noise go through each way |
+| XID offers that change | `LapmZstdIgnored`, `LapmXidResponseLate`, `LapmXidOfferChanges` | an answerer that ignores an XID with zstd (with and without V.8): the originator removes zstd and LAPM comes up; XID responses later than T401: the two ends agree on the same compression, and text and noise go through each way; an answerer that agrees V.42bis to the offer with zstd and no compression to the offer without it, with its responses later than T401: the originator has what the answerer agreed to |
 | Detection and async | `DetectHangup`, `AdpCellular`, `Async`, `V14`, `OdpUnanswered`, `LapmCallerAsyncRemote` | a hangup during T400; an originator against a cellular answerer's ADPs, "EM" then "EC" (LAPM) or "EM" alone (async after T400); async; an answerer or caller that uses async after T400; a LAPM answerer with an async caller |
 | MNP | `MnpLr`, `MnpResponder`, `MnpResponderNoLr`, `Mnp`, `MnpIdleStart`, `MnpAfterOdp`, `MnpOctets`, `MnpBitErrors`, `MnpSlowDte`, `MnpRequired`, `MnpN400` | our LR octet for octet as the Agere modem's, FCS and all, three of them unanswered, then async; our responder against the Agere modem's LR, then an LA, an LT, an LN (LNA) and an LD as HDLC frames; against SYN DLE STX with no LR after it (async after its wait, nothing sent); no data for 20 s, then the LR of the caller again on T404 and the data phase continues; MNP first, and after ODPs a V.42 answerer did not answer; framing mode 2 and no optimizations; bit errors in both modes; a slow DTE (no credit); MNP required against a modem without it; N400 with the line cut |
 | MNP 5 | `Mnp5`, `MnpMnp5` | round trips (text, noise, runs, every value, flushes); the Agere modem's MNP 5 octets decoded and coded again; MNP with MNP 5 both ways |

@@ -2467,6 +2467,13 @@ struct Relay {
 	std::vector<std::pair<long, std::vector<uint8_t>>> late;
 	bool (*drop)(const std::vector<uint8_t> &) = nullptr;
 	bool relaying = false;
+	/* a scripted answerer in place of la once the frames are relayed
+	   (script()): the caller's frames get its answers, not la's */
+	bool scripted = false;
+	/* (scripted) the XID commands read, whether the last before the
+	   SABME named zstd, and whether a SABME came */
+	int xids = 0;
+	bool zstd_read = false, sabme = false;
 
 	/* the two Links with their configurations */
 	Relay(const Config &cc, const Config &ca) : p(cc, ca) {
@@ -2503,8 +2510,12 @@ struct Relay {
 			}
 			p.lc.put_bits(1, b.data(), 48);
 			for (; n_c < from_c.rx.size(); n_c++)
-				if (!drop || !drop(from_c.rx[n_c]))
+				if (scripted)
+					script(from_c.rx[n_c]);
+				else if (!drop || !drop(from_c.rx[n_c]))
 					to_a.tx.push_back(from_c.rx[n_c]);
+			if (scripted)
+				n_a = from_a.rx.size();
 			for (; n_a < from_a.rx.size(); n_a++) {
 				const auto &f = from_a.rx[n_a];
 				late.emplace_back(now + (is_xid(f) ? delay : 0),
@@ -2518,6 +2529,30 @@ struct Relay {
 				p.lc.set_online(true);
 			if (p.da.up)
 				p.la.set_online(true);
+		}
+	}
+	/* the scripted answerer's turn on the caller's frame f: an XID
+	   command that names zstd gets a response that agrees V.42bis both
+	   ways, one without zstd a response with no compression (delayed
+	   delay bits); a SABME before the link is up gets UA; one that
+	   drop() takes, nothing */
+	void script(const std::vector<uint8_t> &f) {
+		static const std::vector<uint8_t> plain = { 0x03, 0xaf, 0x82,
+			0x80, 0x00, 0x05, 0x03, 0x03, 0x8a, 0x89, 0x00 };
+		static const std::vector<uint8_t> v42bis = { 0x03, 0xaf, 0x82,
+			0x80, 0x00, 0x05, 0x03, 0x03, 0x8a, 0x89, 0x00,
+			0xf0, 0x00, 0x0f, 0x00, 0x03, 'V', '4', '2', 0x01, 0x01,
+			0x03, 0x02, 0x02, 0x08, 0x00, 0x03, 0x01, 0x20 };
+		if (drop && drop(f))
+			return;
+		if (is_xid(f) && f[0] == 0x03 && !sabme) {
+			xids++;
+			zstd_read = names_set(f, "ZST");
+			late.emplace_back(now + delay, zstd_read ? v42bis : plain);
+		} else if (f.size() == 2 && f[0] == 0x03 && f[1] == 0x7f &&
+			   !sabme) {
+			sabme = true;
+			late.emplace_back(now, std::vector<uint8_t>{ 0x03, 0x73 });
 		}
 	}
 };
@@ -2560,6 +2595,41 @@ static void check_agreed(const char *name, Relay &r)
 		      "%s: %s, %zu and %zu of 3000 octets", name,
 		      t ? "noise" : "text", p.da.got.size(), p.dc.got.size());
 	}
+}
+
+/* XID responses later than T401 from an answerer that agrees V.42bis
+   to an offer with zstd and no compression to one without it, so that a
+   late response to the first offer cannot be told from one to the
+   second: the last XID with zstd waits two T401s, so the response to it
+   comes before the offer changes, and the caller has what the answerer
+   agreed to; with V.8 before the call or not, and with no response to
+   the offers with zstd (the offer changes once) */
+TEST(Link, LapmXidOfferChanges)
+{
+	for (int far = 0; far < 2; far++)
+		for (int ignore = 0; ignore < 2; ignore++) {
+			rnd_state = 12345;
+			Config cc = lapm_config(3, true, true);
+			cc.fcs32 = false;
+			Relay r(cc, lapm_config(3));
+			r.scripted = true;
+			r.delay = ignore ? 0 : 30000;  /* T401: 20928 bits */
+			if (ignore)
+				r.drop = drop_zstd_xid;
+			r.start(far);
+			r.run(9600 * 20);
+			char name[48];
+			snprintf(name, sizeof(name), "%s%s",
+				 ignore ? "zstd ignored" : "late responses",
+				 far ? ", v.8" : "");
+			const Config &c = r.p.lc.config();
+			CHECK(r.sabme && r.p.dc.up && r.p.lc.ec(),
+			      "%s: LAPM up (%d XIDs)", name, r.xids);
+			const int want = r.zstd_read ? 3 : 0;
+			CHECK(c.comp == want && !c.v44 && !c.zstd,
+			      "%s: caller %d (V.44 %d, zstd %d), answerer %d",
+			      name, c.comp, c.v44, c.zstd, want);
+		}
 }
 
 /* an answerer that ignores an XID with zstd's set (a Courier, #92):
