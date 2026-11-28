@@ -61,6 +61,8 @@ nav:
       - "V.33: technical details": standards/v33-details.md
       - "V.17": standards/v17.md
       - "V.17: technical details": standards/v17-details.md
+      - "V.34": standards/v34.md
+      - "V.34: technical details": standards/v34-details.md
       - "V.25": standards/v25.md
       - "V.25: technical details": standards/v25-details.md
   - The modem:

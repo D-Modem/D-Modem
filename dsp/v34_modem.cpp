@@ -827,7 +827,7 @@ void V34Rx::pp_align()
 		}
 	}
 	/* rotate the receiver by the phase of the correlation */
-	qam.theta += atan2f(best.im, best.re);
+	qam.theta += dsp_atan2f(best.im, best.re);
 	DSP_DBG("v34 rx: PP offset %d\n", pp_off);
 }
 
@@ -1000,12 +1000,12 @@ float V34Rx::eq_delay() const
 	float w = 2 * static_cast<float>(M_PI) * 0.25f / 2;  /* per T/2 tap */
 	s16 i;
 	for (i = 0; i < qam.eq_len; i++) {
-		c = cplx_make(cosf(w * i), sinf(w * i));
+		c = cplx_make(dsp_cosf(w * i), dsp_sinf(w * i));
 		hp = cplx_add(hp, cplx_mulc(qam.eq[i], c));
 		hm = cplx_add(hm, cplx_mul(qam.eq[i], c));
 	}
 	/* phase(H(f)) - phase(H(-f)) = -2 pi 2f delay */
-	return -atan2f(cplx_mulc(hp, hm).im, cplx_mulc(hp, hm).re) /
+	return -dsp_atan2f(cplx_mulc(hp, hm).im, cplx_mulc(hp, hm).re) /
 		(2 * static_cast<float>(M_PI) * 0.5f) * qam.sps;
 }
 

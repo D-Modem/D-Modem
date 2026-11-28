@@ -1468,3 +1468,74 @@ TEST(V32, RateWords)
 			  std::string::npos) << dp << " " << max << "\n" << log;
 	}
 }
+
+/* the reversals of tone A (2400 Hz, *a) in what the caller hears and of
+   tone B (1200 Hz, *b) in what the answerer hears, in a V.34 call's
+   phase 2 (from 3 s on, after V.8), each after 20 ms of its tone without
+   a reversal (not the DPSK of the INFO frames) */
+static void v34_tone_flips(const std::string &dump, int srate,
+			   std::vector<double> *a, std::vector<double> *b)
+{
+	const double from = 3.0 * srate, quiet = 0.035 * srate;
+	for (int k = 0; k < 2; k++) {
+		std::vector<double> f = v32_flips(dump + (k ? ".a" : ".c"),
+						  k ? 1200 : 2400, srate, 400);
+		std::vector<double> *out = k ? b : a;
+		for (size_t i = 1; i < f.size(); i++)
+			if (f[i] >= from && f[i] - f[i - 1] >= quiet)
+				out->push_back(f[i]);
+	}
+}
+
+/* 11.2.1/V.34: in phase 2 each reversal of tone A or B that answers a
+   reversal of the far modem's tone is on the line 40 +- 1 ms after that
+   reversal was at the line terminals: the caller's B-bar after A-bar,
+   the answerer's A after B-bar, and the caller's B-bar after the
+   answerer's second A-bar (before L1).  (Line delays as in
+   V32.TurnRoundDelay: 37 samples to the answerer, 53 to the caller,
+   and the dumps a block, 48 samples, early.) */
+TEST(V34, ToneReversalDelay)
+{
+	for (int srate : { 8000, 9600 }) {
+		LoopbackConfig c = line(34, 40, 5, srate);
+		c.flat = true;
+		std::string dump = testing::TempDir() + "v34_turn";
+		c.dump = dump.c_str();
+		loopback_run(c);
+		std::vector<double> a, b;
+		v34_tone_flips(dump, srate, &a, &b);
+		remove((dump + ".a").c_str());
+		remove((dump + ".c").c_str());
+		const double ms = srate / 1000.0;
+		/* each B-bar 25 to 75 ms after an A reversal: the caller's
+		   delay; the first A reversal after the first B-bar: the
+		   answerer's */
+		std::vector<double> caller, answerer;
+		for (double bb : b) {
+			for (double aa : a)
+				if (bb - aa > 25 * ms && bb - aa < 75 * ms) {
+					caller.push_back(((bb - 37) - (aa + 48)) /
+							 ms);
+					break;
+				}
+		}
+		/* (the B-bar of the first pair) */
+		for (double bb : b)
+			for (double aa : a)
+				if (answerer.empty() && bb - aa > 25 * ms &&
+				    bb - aa < 75 * ms)
+					for (double a2 : a)
+						if (a2 > bb && a2 - bb < 75 * ms) {
+							answerer.push_back(
+								((a2 - 53) -
+								 (bb + 48)) / ms);
+							break;
+						}
+		/* (later pairs are L1 and L2) */
+		ASSERT_GE(caller.size(), 2u) << srate;
+		ASSERT_GE(answerer.size(), 1u) << srate;
+		for (int i = 0; i < 2; i++)
+			EXPECT_NEAR(caller[i], 40, 1) << srate << " caller";
+		EXPECT_NEAR(answerer[0], 40, 1) << srate << " answerer";
+	}
+}

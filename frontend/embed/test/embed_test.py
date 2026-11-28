@@ -78,8 +78,9 @@ def wait_for(p, text, t, procs, since=0):
 
 port_a = free_port()
 port_b = free_port()
-a = start("A", "-p", str(port_a), "-L")
-b = start("B", "-p", str(port_b), "-s")
+# (-d 2: the modem log on stderr, so that a failure shows the cause)
+a = start("A", "-p", str(port_a), "-L", "-d", "2", "-S", "4")
+b = start("B", "-p", str(port_b), "-s", "-d", "2", "-S", "4")
 procs = (a, b)
 
 for p in procs:
@@ -89,8 +90,9 @@ for p in procs:
     wait_for(p, "OK", 10, procs)
 print("AT and ATI3: OK on both")
 
+since = len(a.out)
 send(a, "ATS0=1\r")
-pos = wait_for(a, "OK", 10, procs, len(a.out) - 2)
+wait_for(a, "OK", 10, procs, since)
 send(b, "ATX3DTsip:a@127.0.0.1:%d\r" % port_a)
 wait_for(b, "CONNECT", 90, procs)
 wait_for(a, "CONNECT", 30, procs)

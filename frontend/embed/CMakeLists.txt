@@ -70,7 +70,8 @@ if(DMODEM_TESTS AND NOT WIN32)
 		dmodem_add_test(dmodem_embed ${Python3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/test/embed_test.py
 			$<TARGET_FILE:embed_cat>)
-		set_tests_properties(dmodem_embed PROPERTIES LABELS quick
-			TIMEOUT 180)
+		set_tests_properties(dmodem_embed PROPERTIES TIMEOUT 180)
+		# (append: dmodem_add_test gives a flaky test the label flaky)
+		set_property(TEST dmodem_embed APPEND PROPERTY LABELS quick)
 	endif()
 endif()
