@@ -271,7 +271,8 @@ struct dmodem_fax *dmodem_fax_create(const struct dmodem_fax_config *cfg)
 			cfg->t38_max_datagram : 400;
 		if (f->t38_max_datagram < 32)
 			f->t38_max_datagram = 32;
-		f->tx.init(cfg->t38_ec == DMODEM_T38_EC_REDUNDANCY ?
+		f->tx.init(cfg->t38_ec == DMODEM_T38_EC_FEC ? T38_EC_FEC :
+			   cfg->t38_ec == DMODEM_T38_EC_REDUNDANCY ?
 			   T38_EC_REDUNDANCY : T38_EC_NONE,
 			   cfg->t38_redundancy > 0 ? cfg->t38_redundancy : 3);
 		f->rx.init();

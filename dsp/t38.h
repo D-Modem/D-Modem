@@ -5,7 +5,8 @@
  *    t38.h - ITU-T T.38 fax over IP: the IFP packets (Annex A) in the
  *            encoding of the 1998 version (T38FaxVersion 0) and of the
  *            2002 one (1 to 3), and their UDPTL transport (sequence
- *            numbers, and the packets before again for redundancy)
+ *            numbers, and the packets before again for redundancy, or
+ *            the parity FEC of Annex C)
  *
  *    The octets of HDLC and T.4 data are the line's bits with the first
  *    one in the most significant bit (T.38 7.1.2), not in the lowest as
@@ -86,37 +87,60 @@ s16 t38_ifp_decode(struct t38_ifp *p, s16 version, const unsigned char *buf,
 void t38_reverse(unsigned char *out, const unsigned char *in, s32 n);
 
 /* UDPTL's error recovery (T38FaxUdpEC): what we send */
-enum t38_ec { T38_EC_NONE, T38_EC_REDUNDANCY };
+enum t38_ec { T38_EC_NONE, T38_EC_REDUNDANCY, T38_EC_FEC };
 
 #define UDPTL_IFP_MAX   512             /* an IFP packet, octets */
-#define UDPTL_HISTORY   8               /* the IFP packets kept to repeat */
+#define UDPTL_HISTORY   16              /* the IFP packets kept to repeat,
+					   or to make FEC from */
+#define UDPTL_RX_WINDOW 32              /* the IFP packets kept to repair
+					   with FEC (a power of 2) */
 
 /* UDPTL, sending: each IFP packet numbered, with the ones before it
-   again for redundancy */
+   again for redundancy, or with the FEC of the ones before (Annex C) */
 struct UdptlTx {
 	s16 ec;                         /* enum t38_ec */
-	s16 depth;                      /* the packets before, at most
-					   UDPTL_HISTORY */
+	s16 depth;                      /* redundancy: the packets before,
+					   FEC: the packets in each FEC
+					   message (fec-npackets, n) */
+	s16 entries;                    /* FEC: the FEC messages in a
+					   packet (m), depth * entries at
+					   most UDPTL_HISTORY */
 	u16 seq;
 	unsigned char hist[UDPTL_HISTORY][UDPTL_IFP_MAX];
 	s16 hist_len[UDPTL_HISTORY];
 	s16 nhist;
 
-	void init(s16 ec_, s16 depth_);
+	/* ec (enum t38_ec) with depth packets before (redundancy, at most
+	   UDPTL_HISTORY), or FEC messages of depth packets each, entries
+	   of them in a packet; sequence number 0 */
+	void init(s16 ec_, s16 depth_, s16 entries_ = 1);
 	/* the UDPTL packet for len octets of ifp into buf (max octets, as
-	   many of the packets before as fit); its length, -1 if even the
-	   IFP packet does not */
+	   many of the packets before, or of the FEC messages, as fit); its
+	   length, -1 if even the IFP packet does not */
 	s32 packet(const unsigned char *ifp, s32 len, unsigned char *buf,
 		   s32 max);
 };
 
 /* UDPTL, receiving: the IFP packets once each, in their order; a lost
-   one from the next packet's redundancy where it has it (FEC: the
-   primary packets only), else to fn as lost: len 0, ifp NULL */
+   one from the next packet's redundancy or FEC where it has it, else
+   to fn as lost: len 0, ifp NULL */
 struct UdptlRx {
 	s32 expected;                   /* the next sequence number, -1:
 					   none yet */
+	/* the IFP packets had (and made again), by sequence number modulo
+	   UDPTL_RX_WINDOW: -1 for none */
+	s32 win_seq[UDPTL_RX_WINDOW];
+	s16 win_len[UDPTL_RX_WINDOW];
+	unsigned char win[UDPTL_RX_WINDOW][UDPTL_IFP_MAX];
+	/* the order of the FEC messages of a packet, when it has more than
+	   one: 0 not known yet, 1 as Annex C.2.2 and Figure C.3 give it
+	   (the first message from the packet just before), 2 the other
+	   way round (spandsp's, Asterisk's) */
+	s16 fec_order;
+	s32 recovered;                  /* the IFP packets made again from
+					   FEC */
 
+	/* no packet yet */
 	void init();
 	/* len octets of a UDPTL packet: each IFP packet not had before to
 	   fn, oldest first; -1 if it is no UDPTL packet */
@@ -140,12 +164,14 @@ inline bool t38_same_nocase(const char *a, const char *b)
 
 /* T38FaxUdpEC in SDP (Annex D.2.3, Table D.2): the value an answer
    gives for the value offered (any case, NULL or "" for none): the same
-   for t38UDPNoEC and t38UDPRedundancy, which we have, else (t38UDPFEC:
-   no FEC here) t38UDPRedundancy */
+   for t38UDPNoEC, t38UDPRedundancy and t38UDPFEC, which we have, else
+   t38UDPRedundancy */
 inline const char *t38_udp_ec_answer(const char *offered)
 {
 	if (offered && t38_same_nocase(offered, "t38UDPNoEC"))
 		return "t38UDPNoEC";
+	if (offered && t38_same_nocase(offered, "t38UDPFEC"))
+		return "t38UDPFEC";
 	return "t38UDPRedundancy";
 }
 
@@ -156,6 +182,20 @@ inline bool t38_udp_ec_redundancy(const char *value)
 {
 	return value && (t38_same_nocase(value, "t38UDPRedundancy") ||
 			 t38_same_nocase(value, "t38UDPFEC"));
+}
+
+/* the far end's T38FaxUdpEC (any case) is t38UDPFEC: we send FEC */
+inline bool t38_udp_ec_fec(const char *value)
+{
+	return value && t38_same_nocase(value, "t38UDPFEC");
+}
+
+/* the error recovery we send for the far end's T38FaxUdpEC (any case,
+   NULL or "" for none): enum t38_ec */
+inline s16 t38_udp_ec_tx(const char *value)
+{
+	return t38_udp_ec_fec(value) ? T38_EC_FEC :
+	       t38_udp_ec_redundancy(value) ? T38_EC_REDUNDANCY : T38_EC_NONE;
 }
 
 } // namespace dsp

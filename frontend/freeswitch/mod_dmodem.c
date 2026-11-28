@@ -767,9 +767,9 @@ static void *SWITCH_THREAD_FUNC t38_clock(switch_thread_t *thread, void *obj)
 
 /* our side of T.38 into *o (the other end's address in it left as it
    is): version, the fax's top rate, TCF sent, our longest datagram,
-   redundancy (or none) */
+   T38FaxUdpEC udp_ec (NULL: none) */
 static void t38_ours(switch_t38_options_t *o, int version, int max_bps,
-		     int redundancy)
+		     const char *udp_ec)
 {
 	o->T38FaxVersion = (uint16_t)version;
 	o->T38MaxBitRate = max_bps > 0 && max_bps < 14400 ? max_bps : 14400;
@@ -779,7 +779,7 @@ static void t38_ours(switch_t38_options_t *o, int version, int max_bps,
 	o->T38FaxRateManagement = "transferredTCF";
 	o->T38FaxMaxBuffer = 2000;
 	o->T38FaxMaxDatagram = T38_MAX_DATAGRAM;
-	o->T38FaxUdpEC = redundancy ? "t38UDPRedundancy" : NULL;
+	o->T38FaxUdpEC = udp_ec;
 	o->T38VendorInfo = "0 0 0";
 }
 
@@ -791,7 +791,8 @@ static void t38_config(struct dmodem_fax_config *cfg,
 	cfg->t38 = 1;
 	cfg->t38_version = o->T38FaxVersion < version ? o->T38FaxVersion :
 		version;
-	cfg->t38_ec = o->T38FaxUdpEC &&
+	cfg->t38_ec = !o->T38FaxUdpEC ? DMODEM_T38_EC_NONE :
+		!strcasecmp(o->T38FaxUdpEC, "t38UDPFEC") ? DMODEM_T38_EC_FEC :
 		!strcasecmp(o->T38FaxUdpEC, "t38UDPRedundancy") ?
 		DMODEM_T38_EC_REDUNDANCY : DMODEM_T38_EC_NONE;
 	cfg->t38_max_datagram = (int)o->T38FaxMaxDatagram;
@@ -878,7 +879,7 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 			switch_core_session_message_t msg = { 0 };
 			switch_t38_options_t *o =
 				switch_core_session_alloc(session, sizeof(*o));
-			t38_ours(o, 0, fs->max_bps, 1);
+			t38_ours(o, 0, fs->max_bps, "t38UDPRedundancy");
 			switch_channel_set_private(channel, "t38_options", o);
 			switch_channel_set_app_flag_key("T38", channel,
 							CF_APP_T38_REQ);
@@ -910,7 +911,10 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 			} else {
 				t38_config(&cfg, o, 3);
 				t38_ours(o, cfg.t38_version, fs->max_bps,
-					 cfg.t38_ec == DMODEM_T38_EC_REDUNDANCY);
+					 cfg.t38_ec == DMODEM_T38_EC_FEC ?
+					 "t38UDPFEC" :
+					 cfg.t38_ec == DMODEM_T38_EC_REDUNDANCY ?
+					 "t38UDPRedundancy" : NULL);
 				msg.message_id =
 					SWITCH_MESSAGE_INDICATE_T38_DESCRIPTION;
 			}
@@ -943,6 +947,7 @@ static int run_fax(struct line *l, enum dmodem_fax_dir dir, const char *file,
 					  cfg.t38_version,
 					  switch_str_nil(o->remote_ip),
 					  o->remote_port,
+					  cfg.t38_ec == DMODEM_T38_EC_FEC ? ", FEC" :
 					  cfg.t38_ec == DMODEM_T38_EC_REDUNDANCY ?
 					  ", redundancy" : "");
 			t38 = 1;

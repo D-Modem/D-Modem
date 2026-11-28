@@ -52,9 +52,19 @@ An IFP packet has a type, and for data a list of fields.
 | Primary IFP packet | A length, then the IFP packet |
 | Error recovery | A choice bit: 0 secondary IFP packets, 1 FEC |
 | Secondary packets | A count, then each packet before with its length, newest first. The sequence numbers are contiguous. |
+| FEC (fec-info) | `fec-npackets` (n) as an INTEGER: a length, then the octets of the value. Then a count (m), then each FEC message with its length. |
 
 A gateway need not send redundant packets. A receiving gateway can
 ignore them.
+
+## The FEC (Annex C)
+
+| Item | Rule |
+|---|---|
+| FEC message | The exclusive OR of n IFP packets, each one with zeros at the end to the length of the longest (C.2) |
+| The packets of message I (1 to m) | In the packet with sequence number S: S - I, S - I - m, and to S - I - (n - 1) m (C.2.2, Figure C.3) |
+| Repair | If one packet of a message is lost, the exclusive OR of the message and the other packets gives it again |
+| Negotiation | `t38UDPFEC` in SDP. A gateway that receives FEC must also receive redundancy (9.1.3). |
 
 ## The SDP parameters (Annex D)
 
@@ -70,13 +80,17 @@ ignore them.
 
 | Item | D-Modem |
 |---|---|
-| Coding (`dsp/t38.cpp`) | IFP packets in version 0 and in versions 1 to 3. UDPTL with redundancy. |
+| Coding (`dsp/t38.cpp`) | IFP packets in version 0 and in versions 1 to 3. UDPTL with redundancy or with FEC. |
 | Terminals | The T.30 machine (`dsp/t30.cpp`), Class 1 (`dsp/fax_class1.cpp`) and Class 2 (`dsp/fax_class2.cpp`). Each sends the signals as packets at the speed of the modulation. |
 | V.21 packets | 7 octets of frame data at most |
 | TCF | Method 2 (`transferredTCF`) |
-| SDP (`frontend/dmodemd/sip.cpp`, `frontend/ari/sip.cpp`) | Version 0 to 3, `T38MaxBitRate:14400`, `T38FaxMaxDatagram:400`. `T38FaxUdpEC`: the offered value for `t38UDPNoEC` and `t38UDPRedundancy`, else `t38UDPRedundancy`. |
-| Redundancy | Sent when the far end gives `t38UDPRedundancy` or `t38UDPFEC`. Received and used to recover lost packets. |
-| Not implemented | Sending FEC. A received FEC packet gives only its primary packet. V.34 over T.38. TCP and RTP transport. |
+| SDP (`frontend/dmodemd/sip.cpp`, `frontend/ari/sip.cpp`, `frontend/freeswitch/mod_dmodem.c`) | Version 0 to 3, `T38MaxBitRate:14400`, `T38FaxMaxDatagram:400`. `T38FaxUdpEC`: the offered value for `t38UDPNoEC`, `t38UDPRedundancy` and `t38UDPFEC`, else `t38UDPRedundancy`. |
+| Redundancy | Sent when the far end gives `t38UDPRedundancy`. Received and used to recover lost packets. |
+| FEC, sent | Sent when the far end gives `t38UDPFEC`. Each packet has one FEC message (m = 1) of the 3 packets before it (n = 3). The first packets have FEC of fewer packets. |
+| FEC, received | A lost packet is made again from the FEC of the next packet that arrives, if that FEC message lost only that packet. D-Modem does not use the FEC of a packet if n × m is more than 32. |
+| FEC message length | The length of the longest packet. C.2.1 adds 2 octets, but it does not give their contents. spandsp and Asterisk also use the length of the longest packet. |
+| FEC order | spandsp and Asterisk put the FEC messages of a packet in the opposite order: their first message is I = m. With one message (m = 1), the two orders are the same. Thus, D-Modem sends one message only. When it receives more than one message, D-Modem finds the order from messages for which it has all the packets. Until it knows the order, it does not use these messages. |
+| Not implemented | V.34 over T.38. TCP and RTP transport. |
 
 The tests `T38Ifp.*`, `T38Udptl.*` and `T38Pair.*`
 (`dsp/test/t38_test.cpp`) check the coding and send fax calls over
@@ -91,6 +105,10 @@ through Asterisk and FreeSWITCH.
 |---|---|
 | An answer to a `t38UDPNoEC` offer gave `t38UDPRedundancy` (D.2.3: the same value, when the answerer supports it) | The answer gives `t38UDPNoEC` |
 | For a far end with `t38UDPFEC`, D-Modem sent no redundancy, but its answer said `t38UDPRedundancy` | It sends redundancy (Table D.2: either scheme) |
+| D-Modem did not send FEC (Annex C). Its answer to a `t38UDPFEC` offer gave `t38UDPRedundancy`. It used only the primary packet of a received FEC packet. | It sends and receives FEC. Its answer to a `t38UDPFEC` offer gives `t38UDPFEC` (D.2.3). |
+| `mod_dmodem` (FreeSWITCH) sent no error recovery to a far end with `t38UDPFEC`, and its answer did not give `T38FaxUdpEC` | It sends FEC, and its answer gives `t38UDPFEC` |
 
-The test `T38Sdp.UdpEc` (`dsp/test/t38_test.cpp`) checks these
-corrections.
+The tests `T38Sdp.UdpEc`, `T38Udptl.FecEncoding`,
+`T38Udptl.FecRecovers`, `T38Udptl.FecBurst`, `T38Udptl.FecOtherOrder`
+and the `_fec` cases of `T38Pair.SendsTheDocument`
+(`dsp/test/t38_test.cpp`) check these corrections.
