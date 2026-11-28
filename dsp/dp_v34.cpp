@@ -64,13 +64,19 @@ namespace dsp {
 #define PROBE_PERIOD    64      /* L1/L2 repeat at 150 Hz */
 #define TRN3_LEN        5120    /* TRN symbols in phase 3 */
 #define TRN4_LEN        5120    /* and in phase 4 (about 1.5 s, as the original) */
-/* a reversal reaches the line this long after we decide on it (the
-   pulse shaping), and we see the remote's reversal this long after it
-   was on the line: answers that must follow 40 ms after a reversal
-   wait the rest */
+/* a reversal reaches the line CC_TX_DELAY after we decide on it (the
+   pulse shaping), and we decide on the remote's reversal CC_RX_DELAY
+   after it was on the line: answers that must follow 40 ms after a
+   reversal wait the rest (V34Pump::rev_wait()).  At 8000 Hz the
+   converters add RS_PATH_DELAY each way.  (Measured with
+   V34.ToneReversalDelay of pump_test.  13 ms of CC_RX_DELAY, and no
+   converter delay, gave 28 to 29 ms at 9600 Hz and 31 to 50 ms at 8000
+   Hz in place of 40 +- 1 ms, and a round trip estimate 13 ms short.) */
 #define CC_TX_DELAY     (4 * CC_SPS)
-#define CC_RX_DELAY     (13 * static_cast<s32>(V34_SRATE) / 1000)
-#define REV_WAIT        (ms2samples(40, V34_SRATE) - CC_TX_DELAY - CC_RX_DELAY)
+#define CC_RX_DELAY     CC_SPS
+/* a converter's delay, samples at 9600 Hz: half of the 480 taps of its
+   prototype at 48 kHz (5 ms), and one sample of the FIFO */
+#define RS_PATH_DELAY   49
 
 /* our CM / JM: V-series data call; V.34, V.32bis, V.22bis, V.23 (duplex)
    and V.21; LAPM, PSTN access (a JM: of the modulations, what both have) */
@@ -882,6 +888,24 @@ struct V34Pump : PumpBase<V34Pump, v34_state>, PcmFrames<V34Pump>,
 
 	/* (srate: of the pump, 9600) */
 	s32 line_rate;          /* 9600, or 8000 through the converters */
+	/* our reversal's delay from the decision to the line, and the
+	   remote's from the line to our decision (samples at 9600 Hz) */
+	s32 cc_tx_delay() const
+	{
+		return CC_TX_DELAY + (line_rate == V34_SRATE ? 0 : RS_PATH_DELAY);
+	}
+	/* (see cc_tx_delay()) */
+	s32 cc_rx_delay() const
+	{
+		return CC_RX_DELAY + (line_rate == V34_SRATE ? 0 : RS_PATH_DELAY);
+	}
+	/* from our decision on the remote's reversal to our decision on
+	   the reversal that answers it 40 ms later on the line */
+	s32 rev_wait() const
+	{
+		return ms2samples(40, V34_SRATE) - cc_tx_delay() -
+			cc_rx_delay();
+	}
 	s16 analog;             /* an analogue line: 9600 Hz, or 8000 Hz
 				   with dp_runtime_set_analog() */
 	s16 digital_line;       /* not an analogue line: 8000 Hz with the
@@ -1961,7 +1985,7 @@ template <class P>
 s32 V34Cc<P>::rev_on_line()
 {
 	P &self = static_cast<P &>(*this);
-	return cc_rev ? -1 : self.total - rev_sent - CC_TX_DELAY;
+	return cc_rev ? -1 : self.total - rev_sent - self.cc_tx_delay();
 }
 
 /* one 64 sample period of L1/L2 (10.1.2.4/V.34), at V34_LEVEL rms */
@@ -5635,7 +5659,7 @@ s16 V34Pump::hdx_step(s32 c)
 		}
 		break;
 	case P2H_S_40:
-		if (c >= REV_WAIT) {
+		if (c >= rev_wait()) {
 			set_state(P2H_S_REV);
 			cc_rev = 1;
 		}
@@ -6139,8 +6163,8 @@ s16 V34Pump::handshake()
 		if (!ev_rev && info0_resend(c))
 			break;
 		if (ev_rev && rev_time > rev_sent) {
-			rtd = rev_time - rev_sent - CC_TX_DELAY -
-				CC_RX_DELAY - ms2samples(40, srate);
+			rtd = rev_time - rev_sent - cc_tx_delay() -
+				cc_rx_delay() - ms2samples(40, srate);
 			DSP_DBG("v34: round trip %ld ms\n",
 				static_cast<long>(rtd) * 1000 / srate);
 			stat_rtd(rtd);
@@ -6149,7 +6173,7 @@ s16 V34Pump::handshake()
 		}
 		break;
 	case P2A_S2_40:
-		if (c >= REV_WAIT) {
+		if (c >= rev_wait()) {
 			set_state(P2A_S2_10);
 			cc_rev = 1;
 		}
@@ -6166,7 +6190,7 @@ s16 V34Pump::handshake()
 		}
 		break;
 	case P2A_ABAR_40:
-		if (c >= REV_WAIT) {
+		if (c >= rev_wait()) {
 			set_state(P2A_A_10);
 			cc_rev = 1;
 		}
@@ -6340,7 +6364,7 @@ s16 V34Pump::handshake()
 		}
 		break;
 	case P2C_B_40:
-		if (c >= REV_WAIT) {
+		if (c >= rev_wait()) {
 			set_state(P2C_BBAR_10);
 			cc_rev = 1;
 			ev_rev = 0;
@@ -6354,8 +6378,8 @@ s16 V34Pump::handshake()
 		break;
 	case P2C_SILENCE:
 		if (ev_rev && !rtd) {
-			rtd = rev_time - rev_sent - CC_TX_DELAY -
-				CC_RX_DELAY - ms2samples(40, srate);
+			rtd = rev_time - rev_sent - cc_tx_delay() -
+				cc_rx_delay() - ms2samples(40, srate);
 			DSP_DBG("v34: round trip %ld ms\n",
 				static_cast<long>(rtd) * 1000 / srate);
 			stat_rtd(rtd);
@@ -6390,7 +6414,7 @@ s16 V34Pump::handshake()
 		}
 		break;
 	case P2C_B2_40:
-		if (c >= REV_WAIT) {
+		if (c >= rev_wait()) {
 			set_state(P2C_BBAR2_10);
 			cc_rev = 1;
 		}

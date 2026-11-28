@@ -61,73 +61,73 @@
   15860 B: \r\n
   15860 B: CONNECT 41333\r\n
   15860 until B 'CONNECT': yes
-  15880 A: \r\n
-  15880 A: CONNECT 56000\r\n
-  15880 until A 'CONNECT': yes
   15900 A: \r\n
-  15900 A: NO CARRIER\r\n
-  15940 B: \r\n
-  15940 B: NO CARRIER\r\n
-  15940 until B 'NO CARRIER': yes
-  16440 B< AT+FCLASS?\r
-  16440 B: \r\n
-  16440 B: 0\r\n
-  16440 B: \r\n
-  16440 B: OK\r\n
-  16440 B< AT+FCLASS=1\r
-  16440 B: \r\n
-  16440 B: OK\r\n
-  16440 B< ATA\r
-  16440 A< ATD\r
-  26520 B: \r\n
-  26520 B: DATA\r\n
-  26520 until B 'DATA': yes
-  26740 B: \r\n
-  26740 B: CONNECT 41333\r\n
-  26740 until B 'CONNECT': yes
-  26760 A: \r\n
-  26760 A: CONNECT 56000\r\n
-  26760 until A 'CONNECT': yes
-  26780 B: \r\n
-  26780 B: NO CARRIER\r\n
+  15900 A: CONNECT 56000\r\n
+  15900 until A 'CONNECT': yes
+  15920 A: \r\n
+  15920 A: NO CARRIER\r\n
+  15960 B: \r\n
+  15960 B: NO CARRIER\r\n
+  15960 until B 'NO CARRIER': yes
+  16460 B< AT+FCLASS?\r
+  16460 B: \r\n
+  16460 B: 0\r\n
+  16460 B: \r\n
+  16460 B: OK\r\n
+  16460 B< AT+FCLASS=1\r
+  16460 B: \r\n
+  16460 B: OK\r\n
+  16460 B< ATA\r
+  16460 A< ATD\r
+  26540 B: \r\n
+  26540 B: DATA\r\n
+  26540 until B 'DATA': yes
+  26760 B: \r\n
+  26760 B: CONNECT 41333\r\n
+  26760 until B 'CONNECT': yes
   26800 A: \r\n
-  26800 A: NO CARRIER\r\n
-  26800 until A 'NO CARRIER': yes
-  27300 B< AT+FCLASS?\r
-  27300 B: \r\n
-  27300 B: 0\r\n
-  27300 B: \r\n
-  27300 B: OK\r\n
-  27300 A< AT+FCLASS=1\r
-  27300 A: \r\n
-  27300 A: OK\r\n
-  27300 B< AT+FCLASS=1\r
-  27300 B: \r\n
-  27300 B: OK\r\n
-  27300 B< ATA\r
-  27300 A< ATD\r
-  27860 B: \r\n
-  27860 B: FAX\r\n
-  27860 until B 'FAX': yes
-  30920 B: \r\n
-  30920 B: CONNECT\r\n
-  30920 until B 'CONNECT': yes
-  30940 A: \r\n
-  30940 A: NO CARRIER\r\n
-  30940 B: \r\n
-  30940 B: NO CARRIER\r\n
-  31420 B< AT+FCLASS?\r
-  31420 B: \r\n
-  31420 B: 1\r\n
-  31420 B: \r\n
-  31420 B: OK\r\n
-  31420 B< ATZ\r
-  31420 B: \r\n
-  31420 B: OK\r\n
-  31420 B< AT+FAA?\r
-  31420 B: AT+FAA?\r\r\n
-  31420 B: +FAA: 0\r\n
-  31420 B: \r\n
-  31420 B: OK\r\n
-  31520 A: state 0, tx 41300 rx 56000, idle
-  31520 B: state 0, tx 56000 rx 41300, idle
+  26800 A: CONNECT 56000\r\n
+  26800 until A 'CONNECT': yes
+  26820 B: \r\n
+  26820 B: NO CARRIER\r\n
+  26840 A: \r\n
+  26840 A: NO CARRIER\r\n
+  26840 until A 'NO CARRIER': yes
+  27340 B< AT+FCLASS?\r
+  27340 B: \r\n
+  27340 B: 0\r\n
+  27340 B: \r\n
+  27340 B: OK\r\n
+  27340 A< AT+FCLASS=1\r
+  27340 A: \r\n
+  27340 A: OK\r\n
+  27340 B< AT+FCLASS=1\r
+  27340 B: \r\n
+  27340 B: OK\r\n
+  27340 B< ATA\r
+  27340 A< ATD\r
+  27900 B: \r\n
+  27900 B: FAX\r\n
+  27900 until B 'FAX': yes
+  30960 B: \r\n
+  30960 B: CONNECT\r\n
+  30960 until B 'CONNECT': yes
+  30980 A: \r\n
+  30980 A: NO CARRIER\r\n
+  30980 B: \r\n
+  30980 B: NO CARRIER\r\n
+  31460 B< AT+FCLASS?\r
+  31460 B: \r\n
+  31460 B: 1\r\n
+  31460 B: \r\n
+  31460 B: OK\r\n
+  31460 B< ATZ\r
+  31460 B: \r\n
+  31460 B: OK\r\n
+  31460 B< AT+FAA?\r
+  31460 B: AT+FAA?\r\r\n
+  31460 B: +FAA: 0\r\n
+  31460 B: \r\n
+  31460 B: OK\r\n
+  31560 A: state 0, tx 41300 rx 56000, idle
+  31560 B: state 0, tx 56000 rx 41300, idle

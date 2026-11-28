@@ -318,14 +318,18 @@ void V34CcRx::symbol()
 	}
 }
 
+/* the symbols that give the remote's level before it can hold the
+   timing and the gain (see V34CcRx::sample()) */
+#define V34CC_LEVEL_N 32
+
 /* a line sample at 9600 Hz */
 void V34CcRx::sample(float x)
 {
 	/* the gain and the timing held without the signal (once it has
 	   had its level), as it fades too: it comes back at its level, not
 	   into a gain the silence or the primary channel has moved */
-	s16 idle = hold || ended || (level > 0 && !on) ||
-		   (level > 0 && pin < 0.5f * level);
+	s16 idle = hold || ended ||
+		   (level_n >= V34CC_LEVEL_N && (!on || pin < 0.5f * level));
 	qam.timing_hold = idle;
 	qam.agc_hold = idle;
 	if (hold) {
@@ -346,7 +350,14 @@ void V34CcRx::sample(float x)
 		ended = 1;
 	on = on_;
 	if (on && !ended) {
-		level += (level ? 0.01f : 1.0f) * (pin - level);
+		/* the mean of the first V34CC_LEVEL_N symbols, then slowly:
+		   the start of the signal can be some times stronger than
+		   the rest, and a level from it held the timing and the gain
+		   for some hundred symbols */
+		if (level_n < V34CC_LEVEL_N)
+			level_n++;
+		level += (level_n < V34CC_LEVEL_N ? 1.0f / level_n : 0.01f) *
+			(pin - level);
 		symbol();
 	}
 }
