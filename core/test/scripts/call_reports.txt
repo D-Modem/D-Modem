@@ -1,0 +1,26 @@
+# V.250 6.4.3, 6.5.5 and 6.6.3: with +MR=1, +ER=1 and +DR=1, the
+# modem reports +MCR, +MRR, +ER and +DR before CONNECT (and +ILRR
+# with +ILRR=1 and a fixed +IPR); B, with them 0, reports none.
+# The second call has no error control (+ER: NONE) and +MR=0
+A ATE0X3+MS=122+MR=1+ER=1+DR=1+IPR=19200+ILRR=1\r
+B ATE0+MS=122\r
+B ATA\r
+A ATD\r
+until A CONNECT 30000
+until B CONNECT 2000
+state
+hangup A
+until B NO CARRIER 10000
+run 500
+state
+A AT+ES=0,0,1+MR=0+IPR=0\r
+until A OK 1000
+B ATA\r
+A ATD\r
+until A CONNECT 30000
+until B CONNECT 10000
+state
+hangup A
+until B NO CARRIER 10000
+run 500
+state

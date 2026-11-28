@@ -1322,8 +1322,10 @@ s16 Modem::at_ampT(char *p, s16 *len)
 	}
 }
 
-/* ATS<n>? reads S-register n, ATS<n>=<v> sets it (S103 as \N); n and v
-   in decimal, a leading 0 no octal (ATS08=1, ATS0=010) */
+/* ATS<n>? reads S-register n, as three decimal digits with leading
+   zeros (V.250 5.3.2); ATS<n>=<v> sets it (S103 as \N); n and v in
+   decimal, a leading 0 no octal (ATS08=1, ATS0=010).  ATS<n>=? and a
+   value out of range are an ERROR, and the register does not change */
 s16 Modem::at_S(char *p, s16 *len)
 {
 	const char *e;
@@ -1334,16 +1336,24 @@ s16 Modem::at_S(char *p, s16 *len)
 	if (*e == '?') {
 		if (n == SREG_VCVM_TONES || n == SREG_VCVM_RENEGS)
 			vcvm_refresh();
-		puts(dec(sregs_[n]));
+		char d[4];
+		snprintf(d, sizeof(d), "%03u",
+			 static_cast<unsigned>(sregs_[n]));
+		puts(d);
 		crlf();
 		*len = static_cast<s16>(e + 1 - p);
 		return 0;
 	}
-	if (*e != '=')
+	if (*e != '=' || e[1] == '?')
 		return -1;
 	v = decimal(e + 1, &e);
-	/* S44 and S45 (V.cvm's) are read only */
-	if (n == SREG_VCVM_TONES || n == SREG_VCVM_RENEGS)
+	/* S44 and S45 (V.cvm's) are read only.  A value that a register
+	   cannot hold is an ERROR (V.250 5.6.2), and S3, S4 and S5 take
+	   0 to 127 only (6.2.1 to 6.2.3) */
+	if (n == SREG_VCVM_TONES || n == SREG_VCVM_RENEGS || v > 255)
+		return -1;
+	if ((n == SREG_CR_CHAR || n == SREG_LF_CHAR || n == SREG_BS_CHAR) &&
+	    v > 127)
 		return -1;
 	set_sreg(static_cast<u32>(n), static_cast<s32>(v));
 	if (n == SREG_EC && v <= 5)
@@ -1703,7 +1713,8 @@ s16 Modem::at_identity(char *p, s16 *len)
 	s16 n = 4;
 
 	if (starts_nocase(p, "+GCAP")) {
-		text = "+GCAP: +FCLASS,+MS";
+		/* each command group that we have (V.250 Table 2) */
+		text = "+GCAP: +FCLASS,+MS,+MV18S,+ES,+DS";
 		n = 5;
 	} else if (starts_nocase(p, "+GSN")) {
 		const char *sn = host_.serial_number();
@@ -3025,6 +3036,15 @@ const char *kept_param_ranges(s16 i)
 bool ms_may_choose(u32 id)
 {
 	return ms_choosable(id);
+}
+
+/* (see config.h): the first +MS name of the modulation id */
+const char *ms_carrier(u16 id)
+{
+	for (const auto &m : ms_names)
+		if (m.id == id)
+			return m.name;
+	return nullptr;
 }
 
 } // namespace dcore

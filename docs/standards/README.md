@@ -82,10 +82,10 @@ A standard that has no link has no pages yet.
 
 | Recommendation | Subject |
 |---|---|
-| V.250 | AT commands |
+| [V.250](v250.md) ([details](v250-details.md)) | AT commands |
 | V.251 | AT commands for V.8 and V.8 bis |
 | V.253 | AT commands for voice |
-| V.80 | Synchronous access mode |
+| [V.80](v80.md) ([details](v80-details.md)) | Synchronous access mode |
 
 ## Tests and management
 
