@@ -77,6 +77,26 @@ nav:
       - "V.44: technical details": standards/v44-details.md
       - "X.75": standards/x75.md
       - "X.75: technical details": standards/x75-details.md
+      - "V.110": standards/v110.md
+      - "V.110: technical details": standards/v110-details.md
+      - "V.120": standards/v120.md
+      - "V.120: technical details": standards/v120-details.md
+      - "V.150.1": standards/v150-1.md
+      - "V.150.1: technical details": standards/v150-1-details.md
+      - "V.152": standards/v152.md
+      - "V.152: technical details": standards/v152-details.md
+      - "V.70": standards/v70.md
+      - "V.70: technical details": standards/v70-details.md
+      - "V.75": standards/v75.md
+      - "V.75: technical details": standards/v75-details.md
+      - "V.76": standards/v76.md
+      - "V.76: technical details": standards/v76-details.md
+      - "H.245": standards/h245.md
+      - "H.245: technical details": standards/h245-details.md
+      - "G.729": standards/g729.md
+      - "G.729: technical details": standards/g729-details.md
+      - "G.711": standards/g711.md
+      - "G.711: technical details": standards/g711-details.md
       - "V.250": standards/v250.md
       - "V.250: technical details": standards/v250-details.md
       - "V.251": standards/v251.md

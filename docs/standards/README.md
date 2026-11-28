@@ -62,21 +62,21 @@ A standard that has no link has no pages yet.
 
 | Recommendation | Subject |
 |---|---|
-| V.70 | Digital simultaneous voice and data (DSVD) |
-| V.75 | The control of DSVD |
-| V.76 | A multiplexer on LAPM |
-| H.245 | Control messages for multimedia |
-| G.729 | Speech coding at 8 kbit/s, with Annexes A and B |
-| G.711 | PCM of voice frequencies (µ-law and A-law) |
+| [V.70](v70.md) ([details](v70-details.md)) | Digital simultaneous voice and data (DSVD) |
+| [V.75](v75.md) ([details](v75-details.md)) | The control of DSVD |
+| [V.76](v76.md) ([details](v76-details.md)) | A multiplexer on LAPM |
+| [H.245](h245.md) ([details](h245-details.md)) | Control messages for multimedia |
+| [G.729](g729.md) ([details](g729-details.md)) | Speech coding at 8 kbit/s, with Annexes A and B |
+| [G.711](g711.md) ([details](g711-details.md)) | PCM of voice frequencies (µ-law and A-law) |
 
 ## ISDN and IP networks
 
 | Recommendation | Subject |
 |---|---|
-| V.110 | Rate adaption on an ISDN B-channel |
-| V.120 | HDLC rate adaption on an ISDN B-channel |
-| V.150.1 | Modem relay over IP |
-| V.152 | Voice band data over IP |
+| [V.110](v110.md) ([details](v110-details.md)) | Rate adaption on an ISDN B-channel |
+| [V.120](v120.md) ([details](v120-details.md)) | HDLC rate adaption on an ISDN B-channel |
+| [V.150.1](v150-1.md) ([details](v150-1-details.md)) | Modem relay over IP |
+| [V.152](v152.md) ([details](v152-details.md)) | Voice band data over IP |
 
 ## The interface to the computer
 

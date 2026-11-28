@@ -338,6 +338,10 @@ public:
 	   adaption: the modem's link (characters, or V.42) in place of
 	   Config::b2's */
 	void set_b2(B2 b2) { asked_.b2 = b2; }
+	/* and the characters of a user rate of user bit/s on V.110's
+	   frames of line bit/s (RA0, 5.3.3/V.110): stop elements added
+	   (Async::set_pace()) */
+	void set_async_pace(s32 user, s32 line) { async_.set_pace(user, line); }
 	/* we hang up: LAPM sends DISC, MNP LD */
 	void disconnect();
 	/* DSVD: the voice channel closed by us, the data going on (V.76's

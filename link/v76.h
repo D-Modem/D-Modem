@@ -28,7 +28,11 @@
  *    (clause 9) both ways (the initiator asks for it; the responder
  *    takes what the remote asks).  The initiator opens it on DLCI 1
  *    with the data channel (again if its SABME is not answered); the
- *    responder takes the first one opened.  A frame goes out every
+ *    responder takes the first one opened.  The responder opens one on
+ *    DLCI 63 (its DLCIs count down, 6.1.1/V.76) if the initiator opens
+ *    none in 1 s, and takes the initiator's if the two opens cross
+ *    (6.2.2/V.70).  A DISC is sent again until its UA or DM (7.3/V.76).
+ *    A frame goes out every
  *    10 ms of the line's bits once the owner has its 80 samples
  *    (Owner::voice_in()), before the data channel's; what comes in is
  *    decoded to the owner (voice_out()), a lost frame (the audio
@@ -97,7 +101,7 @@ public:
 private:
 	enum { CTRL_FRAMES = 4, CTRL_SIZE = 2 + 64,
 	       VOICE_SIZE = 2 + 1 + g729::FRAME_OCTETS };
-	enum class VState : u8 { Closed, Opening, Open };
+	enum class VState : u8 { Closed, Opening, Open, Closing };
 	struct Slot {
 		Frame frame;
 		u8 buf[CTRL_SIZE];
@@ -106,6 +110,10 @@ private:
 	u8 addr(u8 dlci, bool cmd) const;
 	void tx_unnum(u8 dlci, bool cmd, u8 ctrl,
 		      const std::vector<u8> &ud = {});
+	void tx_raw(const u8 *a, s16 alen, u8 ctrl,
+		    const std::vector<u8> &ud = {});
+	u8 new_dlci() const;
+	void voice_disc();
 	void rx_open(Frame *f, u8 dlci);
 	bool rx_voice(Frame *f, u8 dlci, const h245::Msg &m, u8 *cause);
 	void rx_xid(Frame *f, u8 dlci);

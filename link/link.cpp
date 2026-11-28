@@ -34,6 +34,7 @@ s16 Link::init(Owner *owner, bool caller, const Config &cfg)
 	owner_ = owner;
 	caller_ = caller;
 	cfg_ = asked_ = cfg;
+	async_.set_pace(0, 0);
 	stats_ = Stats();
 	online_ = false;
 	mode_ = Mode::Idle;

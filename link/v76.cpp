@@ -23,6 +23,8 @@ enum {
 	FLAG_BITS = 384,        /* the initiator's flags before its first
 				   frame (at least 16, clause 7/V.76) */
 	DLCI_FIRST = 0,         /* the initiator's first DLCI (Annex C) */
+	DLCI_LAST = 63,         /* the responder's first DLCI (6.1.1/V.76):
+				   the highest of a one-octet address */
 	VOICE_TRIES = 4,        /* our voice SABME's tries */
 	VOICE_PORT = 1,         /* the voice channel's port (data: 0) */
 	VOICE_CREDIT = 4,       /* voice frames' bits saved up at most */
@@ -95,10 +97,21 @@ void Mux::opening()
 	lapm_->open();
 	if (link_->voice() && link_->voice_opens()) {
 		vtries_ = 0;
-		vdlci_ = dlci_ == DLCI_FIRST + 1 ? DLCI_FIRST + 2 : DLCI_FIRST + 1;
+		vdlci_ = new_dlci();
 		vlcn_ = static_cast<u16>(lcn_ + 1);
 		open_voice();
 	}
+}
+
+/* the DLCI for a new DLC of ours (6.1.1/V.76): the initiator's count up
+   from 0, the responder's down from 63, the data channel's passed
+   over */
+u8 Mux::new_dlci() const
+{
+	if (initiator_)
+		return static_cast<u8>(dlci_ == DLCI_FIRST + 1 ? DLCI_FIRST + 2 :
+				       DLCI_FIRST + 1);
+	return static_cast<u8>(dlci_ == DLCI_LAST ? DLCI_LAST - 1 : DLCI_LAST);
 }
 
 /* our voice channel's SABME on vdlci_ (again after no answer): G.729
@@ -147,8 +160,7 @@ void Mux::clock(s32 bits)
 		vwait_ = 0;
 		if (vstate_ == VState::Closed && dlci_ >= 0) {
 			vtries_ = 0;
-			vdlci_ = dlci_ == DLCI_FIRST + 1 ? DLCI_FIRST + 2 :
-				DLCI_FIRST + 1;
+			vdlci_ = new_dlci();
 			vlcn_ = static_cast<u16>(lcn_ + 1);
 			open_voice();
 		}
@@ -156,6 +168,17 @@ void Mux::clock(s32 bits)
 	if (vtimer_ <= 0 || (vtimer_ -= bits) > 0)
 		return;
 	vtimer_ = 0;
+	if (vstate_ == VState::Closing) {
+		/* (7.3.3/V.76: the DISC again, at N400 closed) */
+		if (vtries_ < VOICE_TRIES) {
+			voice_disc();
+			return;
+		}
+		link_->logf("v76: DLCI %d: no answer to DISC.", vdlci_);
+		vstate_ = VState::Closed;
+		vdlci_ = -1;
+		return;
+	}
 	if (vstate_ != VState::Opening)
 		return;
 	if (vtries_ < VOICE_TRIES) {
@@ -178,18 +201,32 @@ void Mux::voice_closed()
 		link_->voice_state(false);
 }
 
-/* (see v76.h) */
+/* (see v76.h): the owner hears at once; the DISC goes again until its
+   UA or DM (7.3/V.76) */
 void Mux::close_voice()
 {
-	if (vstate_ == VState::Closed)
+	if (vstate_ == VState::Closed || vstate_ == VState::Closing)
 		return;
+	const bool was = vstate_ == VState::Open;
+	vstate_ = VState::Closing;
+	vtries_ = 0;
+	voice_disc();
+	if (was)
+		link_->voice_state(false);
+}
+
+/* the voice channel's DISC (P 1) with CloseLogicalChannel, T401 (about
+   a second of line bits) for its answer */
+void Mux::voice_disc()
+{
 	h245::Msg m;
 	m.type = h245::Type::Clc;
 	m.lcn = vlcn_;
 	log_msg("out", static_cast<u8>(vdlci_), m);
 	tx_unnum(static_cast<u8>(vdlci_), true, U_DISC | PF,
 		 h245::user_data(m));
-	voice_closed();
+	vtimer_ = link_->tx_rate() > 0 ? link_->tx_rate() : 28800;
+	vtries_++;
 }
 
 /* (see v76.h): nothing while no channel is open or opening */
@@ -236,17 +273,26 @@ u8 Mux::addr(u8 dlci, bool cmd) const
    with user data ud: on the ring, or dropped when it is full */
 void Mux::tx_unnum(u8 dlci, bool cmd, u8 ctrl, const std::vector<u8> &ud)
 {
+	const u8 a = addr(dlci, cmd);
+	tx_raw(&a, 1, ctrl, ud);
+}
+
+/* a U frame with the address octets a (alen of them), control octet
+   ctrl and user data ud: on the ring, or dropped when it is full */
+void Mux::tx_raw(const u8 *a, s16 alen, u8 ctrl, const std::vector<u8> &ud)
+{
 	const s16 next = static_cast<s16>((tail_ + 1) % CTRL_FRAMES);
-	if (next == head_ || ud.size() > CTRL_SIZE - 2) {
+	if (next == head_ || ud.size() + alen > CTRL_SIZE - 1) {
 		link_->logf("err: v76: control queue full: frame dropped.");
 		return;
 	}
 	Frame &f = slot_[tail_].frame;
-	f.buf[0] = addr(dlci, cmd);
-	f.buf[1] = ctrl;
+	for (s16 i = 0; i < alen; i++)
+		f.buf[i] = a[i];
+	f.buf[alen] = ctrl;
 	for (size_t i = 0; i < ud.size(); i++)
-		f.buf[2 + i] = ud[i];
-	f.size = static_cast<s16>(2 + ud.size());
+		f.buf[alen + 1 + i] = ud[i];
+	f.size = static_cast<s16>(alen + 1 + ud.size());
 	tail_ = next;
 }
 
@@ -321,14 +367,26 @@ void Mux::tx_complete(Frame *f)
    data channel's frames to it (the UA or DM of its SABME, the remote's
    DISC, with V.75's messages read for the log and answered); a SABME
    opening another DLC to rx_open(); a DISC on a DLC that is not open
-   answered with DM (7.4/V.76); anything else on one dropped.  Two-
-   octet addresses (DLCIs over 63) are not ours */
+   answered with DM (7.4/V.76); anything else on one dropped.  Our DLCs
+   have one-octet addresses: a SABME or DISC with a two-octet address
+   (6.1.1/V.76) gets a DM at the same address, and other frames there
+   are dropped */
 void Mux::rx_complete(Frame *f)
 {
 	if (f->count < 2)
 		return;
 	const u8 a = f->buf[0];
 	if (!(a & 1)) {
+		if (f->count >= 3 && (f->buf[1] & 1) && command(a)) {
+			const u8 u = static_cast<u8>(f->buf[2] & ~PF);
+			if ((f->buf[2] & 3) == 3 && (u == U_SABME || u == U_DISC)) {
+				link_->logf("v76: DLCI %d (two-octet address): DM.",
+					    (a >> 2) << 7 | f->buf[1] >> 1);
+				tx_raw(f->buf, 2,
+				       static_cast<u8>(U_DM | (f->buf[2] & PF)));
+				return;
+			}
+		}
 		link_->logf("err: v76: two-octet address: frame dropped.");
 		return;
 	}
@@ -442,9 +500,12 @@ void Mux::rx_open(Frame *f, u8 dlci)
 bool Mux::rx_voice(Frame *f, u8 dlci, const h245::Msg &m, u8 *cause)
 {
 	const h245::Channel &c = m.ch;
+	/* (our own open crossing the initiator's: the responder backs
+	   off and takes the initiator's, 6.2.2/V.70) */
+	const bool crossed = !initiator_ && vstate_ == VState::Opening;
 	if (!link_->voice())
 		*cause = h245::TYPE_NOT_SUPPORTED;
-	else if (vstate_ != VState::Closed)
+	else if (vstate_ != VState::Closed && !crossed)
 		*cause = h245::TYPE_NOT_AVAILABLE;
 	else if (c.fwd.erm || c.fwd.crc != 16 ||
 		 (c.has_rev && (c.rev.erm || c.rev.crc != 16)))
@@ -453,6 +514,9 @@ bool Mux::rx_voice(Frame *f, u8 dlci, const h245::Msg &m, u8 *cause)
 		*cause = h245::UNSPECIFIED;
 	if (*cause != h245::UNSPECIFIED)
 		return false;
+	if (crossed)
+		link_->logf("v76: DLCI %d: our voice channel crossed the "
+			    "initiator's: ours given up.", vdlci_);
 	/* the opener's forward direction is what we receive */
 	vdlci_ = dlci;
 	vlcn_ = m.lcn;
@@ -487,9 +551,11 @@ void Mux::voice_open()
 }
 
 /* a frame on the voice channel's DLC: speech (a UI command) to the
-   owner; our SABME's UA (open) or DM (refused); the remote's DISC
-   (closed: UA with CloseLogicalChannelAck); its SABME again (our UA
-   lost: again) */
+   owner; our SABME's UA (open) or DM (refused), F 1 only (7.1.2.1/V.76);
+   the remote's DISC (closed: UA with CloseLogicalChannelAck); its
+   SABME again (our UA lost: again).  After our DISC only its UA or DM
+   (F 1) is taken: a DISC that crosses ours gets a UA, a SABME a DM
+   (7.5/V.76), anything else is dropped */
 void Mux::voice_frame(Frame *f, u8 ctrl, bool cmd)
 {
 	const u8 u = static_cast<u8>(ctrl & ~PF);
@@ -502,6 +568,18 @@ void Mux::voice_frame(Frame *f, u8 ctrl, bool cmd)
 	if (msg)
 		log_msg("in", dlci, m);
 
+	if (vstate_ == VState::Closing) {
+		const bool fin = (ctrl & PF) != 0;
+		if (!cmd && fin && (u == U_UA || u == U_DM)) {
+			vstate_ = VState::Closed;
+			vdlci_ = -1;
+			vtimer_ = 0;
+		} else if (cmd && (u == U_DISC || u == U_SABME)) {
+			tx_unnum(dlci, false, static_cast<u8>(
+				(u == U_DISC ? U_UA : U_DM) | (ctrl & PF)));
+		}
+		return;
+	}
 	if (u == U_UI && cmd) {
 		if (vstate_ != VState::Open)
 			return;
@@ -543,13 +621,13 @@ void Mux::voice_frame(Frame *f, u8 ctrl, bool cmd)
 		}
 		return;
 	}
-	if (!cmd && u == U_UA && vstate_ == VState::Opening) {
+	if (!cmd && u == U_UA && vstate_ == VState::Opening && (ctrl & PF)) {
 		/* as asked: the audio header both ways */
 		vhdr_tx_ = vhdr_rx_ = true;
 		voice_open();
 		return;
 	}
-	if (!cmd && u == U_DM && vstate_ == VState::Opening) {
+	if (!cmd && u == U_DM && vstate_ == VState::Opening && (ctrl & PF)) {
 		link_->logf("v76: DLCI %u: voice channel refused.", dlci);
 		voice_closed();
 		return;

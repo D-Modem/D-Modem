@@ -196,10 +196,10 @@ to it as its own number. On an mISDN card, the
 `AT+B2=9` selects V.120 (`link/lapb.cpp`, B2 protocol 9 of CAPI), the
 protocol of North American ISDN terminal adapters.
 
-- **Addressing:** the frames of Q.921, with a two octet address for logical
-  link 256 (the default of V.120). The calling end takes the user side. Thus,
-  its commands have C/R 0 (address `08 01`), and the commands of the called end
-  have C/R 1 (address `0A 01`).
+- **Addressing:** a two octet address for logical link 256 (the default
+  of V.120). The C/R bit is the same for the two directions (Table
+  4/V.120): the commands of the two ends have C/R 0 (address `08 01`),
+  and their responses have C/R 1 (address `0A 01`).
 - **Extended mode:** SABME, sequence numbers modulo 128 in two control
   octets, and a window of 7 frames. Recovery, timers, the busy
   condition and the commands that cross are the same as for X.75. V.120
@@ -209,6 +209,7 @@ protocol of North American ISDN terminal adapters.
   complete). The modem removes each header that the far end sends, with its extension
   octets.
 - **Result codes:** `CONNECT 64000/V.120` with `\V1`. `ATH` sends DISC.
+- **More:** refer to [V.120: technical details](standards/v120-details.md#v120-in-d-modem).
 - **Not done:**
   - logical links other than 256, or more than one at a time;
   - UI frames;
@@ -243,6 +244,10 @@ type command of 3GPP TS 27.007.
 | `71` | 9600 | 16 kbit/s |
 | `75`, `79` | 14400, 19200 | 32 kbit/s |
 | `80`, `81` | 28800, 38400 | 64 kbit/s |
+
+Asynchronous 14400 and 28800 bit/s go on the frames of 19200 and 38400
+bit/s (RA0, Table 8/V.110). The modem adds stop elements, so that the
+characters come at the user rate. `CONNECT` gives the user rate.
 | `83` | 56000 (7 bits in each octet, no frames) | 64 kbit/s |
 
 `<name>` selects how the data of the user goes:
@@ -272,6 +277,17 @@ looks for it again.
 
 At 56000 bit/s, there are no frames. Thus, the modem connects immediately.
 
+### How a V.110 call ends
+
+- **`ATH`:** the modem sends frames with S OFF, X ON and the D bits 0
+  (7.1.4/V.110). The other end answers with the same frames, or with S
+  OFF. Then the modem stops, after 1 s at most.
+- **The other end ends the call:** the modem answers its frames with
+  the same frames, and gives `NO CARRIER`.
+- **Lost frames:** the modem sets X OFF and looks for the frames again.
+  After 3 s with no frames, it sends frames with S and X OFF and the D
+  bits 0, and gives `NO CARRIER`.
+
 ### An answerer that finds the rate itself
 
 An answerer with `AT+CBST=0` looks for the V.110 frames of the caller at each
@@ -282,12 +298,14 @@ to E3 bits of the frames.
 - It finds all rates from 600 to 38400 bit/s, which include 7200, 12000
   and 24000. These rates have no `<speed>` value of their own.
 - It finds 300 bit/s as 600 (300 uses the frames of 600), and it does not find
-  56000 (56000 has no frames). For those two rates, also set `+CBST` on
+  56000 (56000 has no frames). It finds asynchronous 14400 and 28800 as
+  19200 and 38400 (their frames). For those rates, also set `+CBST` on
   the answerer.
 
 ### Not done
 
-48000 bit/s, and the network independent clocking bits (E4 to E6).
+48000 bit/s, and the network independent clocking bits (E4 to E6). For
+the full list, refer to [V.110: technical details](standards/v110-details.md#v110-in-d-modem).
 
 ## dmodemd: SIP in CLEARMODE
 

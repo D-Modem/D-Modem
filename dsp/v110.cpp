@@ -107,7 +107,7 @@ void v110_frame_bits(u8 bits[80], const V110Frame &f)
 }
 
 /* see v110.h */
-void V110Adapt::to_frame(V110Frame &f, const u8 *user) const
+void V110Adapt::to_frame(V110Frame &f, const u8 *user)
 {
 	const u8 *mask = fill_mask(rate_->fill);
 	s16 u = 0;
@@ -121,6 +121,11 @@ void V110Adapt::to_frame(V110Frame &f, const u8 *user) const
 		f.e[i] = (rate_->e123 >> i) & 1;
 	for (s16 i = 3; i < 7; i++)
 		f.e[i] = 1;
+	/* (600 bit/s, and 300 on it: E7 0 in the fourth frame, X.30's
+	   4 x 80 bit multiframe) */
+	if (rate_->e123 == E_600 && count_ == 3)
+		f.e[6] = 0;
+	count_ = static_cast<u8>((count_ + 1) & 3);
 }
 
 /* see v110.h */

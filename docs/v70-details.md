@@ -67,12 +67,19 @@ channel:
 | 6 | The remote's DISC: UA with CloseLogicalChannelAck, closed (`voice_state(false)`) | the same |
 
 If the initiator opens no voice channel in 1 s, a responder with a voice
-path opens it with the same steps (`voice_opens()`). For example, a PBX
-that waits for the voice channel of the other side does this.
+path opens it with the same steps (`voice_opens()`), on DLCI 63 (the
+DLCIs of the responder count down, 6.1.1/V.76). For example, a PBX that
+waits for the voice channel of the other side does this. If the open of
+the initiator crosses the open of the responder, the responder gives up
+its own open and accepts the open of the initiator (6.2.2/V.70).
 
-If nobody answers a SABME, the modem sends it again after about one second of line bits,
-four times in total. If a SABME comes again after the channel is open, the modem
-answers it with the UA again.
+If nobody answers a SABME or the DISC of the voice channel, the modem
+sends it again after about one second of line bits, four times in total.
+Only a UA or a DM with F 1 answers it (7.1.2.1/V.76). If a SABME comes
+again after the channel is open, the modem answers it with the UA again.
+A SABME or a DISC with a two-octet address gets a DM. The standards are
+described in [V.70](standards/v70.md), [V.75](standards/v75.md) and
+[V.76](standards/v76.md).
 
 The audio header (clause 9/V.75, Table 7) is one octet: bit 1 silence,
 bit 2 a SID frame, bits 3 to 7 a sequence number that counts the
@@ -175,6 +182,7 @@ the module of H.245) gives for each message.
 | `Core.DsvdVoice` | Both modems with a voice path: the voice channel opened after the data channel, each side's tone heard at the other (over 80% of the received signal's energy at the tone), the data alongside, the channel closed at the hang-up |
 | `Link.V76Voice`, `Link.V76VoiceHeader` (`link/test/link_test.cpp`) | Two Links at 28800 bit/s: two seconds of voice both ways with data alongside; the audio header's sequence numbers, an ERM audio channel and a second one refused, three lost frames concealed, the DISC |
 | `Link.V76VoiceResponderOpens` | An initiator that waits: the responder opens the voice channel 1 s after the data channel, each side hears the tone of the other, the initiator closes it and the data continues |
+| `Link.V76VoiceResponderDlci`, `Link.V76VoiceDiscAgain`, `Link.V76TwoOctetAddress` | The voice SABME of the responder on DLCI 63, a DM with F 0 ignored, an open of the initiator that crosses it accepted; the DISC sent again until its UA; a DM for a SABME with a two-octet address |
 | `Link.V76VoiceSilence` | One side quiet (low noise) for two seconds: the far end still hears 10 ms every 10 ms, comfort noise within 10 dB of the room's level and no tone, and the data of that side gets more than 1.5 times the data of a side that talks |
 | `G729a.*`, `G729aBcg729.BothWays`, `DsvdAudio.*` | The coder ([testing-details.md](testing-details.md)) |
 | `Core.A8e` | `+DSVD`'s value and range |

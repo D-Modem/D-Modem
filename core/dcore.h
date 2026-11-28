@@ -421,6 +421,10 @@ public:
 	bool clear_channel() const;
 	/* +CBST's V.110 user rate, 0 for none */
 	s32 cbst_rate() const;
+	/* the rate of V.110's frames for it: asynchronous 14400 and
+	   28800 bit/s on 19200's and 38400's (RA0, Table 8/V.110), else
+	   cbst_rate() */
+	s32 cbst_frame_rate() const;
 	/* the line's audio runs (process()) */
 	bool started() const { return started_; }
 	/* we dialled */

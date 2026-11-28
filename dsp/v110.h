@@ -68,19 +68,25 @@ void v110_frame_bits(u8 bits[80], const V110Frame &f);
 /* the user's bits in, a frame out, and back (Tables 6a-6f) */
 class V110Adapt {
 public:
-	/* the user rate's adaption */
-	void init(const V110Rate *r) { rate_ = r; }
+	/* the user rate's adaption, its frames counted from 0 */
+	void init(const V110Rate *r)
+	{
+		rate_ = r;
+		count_ = 0;
+	}
 	/* (see init()) */
 	const V110Rate *rate() const { return rate_; }
-	/* f's D and E1-E3 from rate()->user_bits bits of user (the rest of
-	   E ones) */
-	void to_frame(V110Frame &f, const u8 *user) const;
+	/* the next frame f: its D and E1-E3 from rate()->user_bits bits of
+	   user, E4-E6 ones; E7 one, but 0 in every fourth frame at 600
+	   bit/s (the multiframe of Table 5/V.110, Note 2) */
+	void to_frame(V110Frame &f, const u8 *user);
 	/* the user's bits in f (rate()->user_bits of them, the first copy
 	   of each repeated one) */
 	void from_frame(u8 *user, const V110Frame &f) const;
 
 private:
 	const V110Rate *rate_ = nullptr;
+	u8 count_ = 0;          /* the frames made, modulo 4 */
 };
 
 /* frame synchronisation on an intermediate rate's bits (V.110 5.1.2.3,

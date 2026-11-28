@@ -130,7 +130,8 @@ void Async::start(Link *link)
 	link->set_timer(0, Link::Timer::None);
 }
 
-/* the DTE's next character, queued; false if it has none */
+/* the DTE's next character, queued (with RA0's added stop elements,
+   set_pace()); false if it has none */
 bool Async::tx_fill()
 {
 	u8 ch;
@@ -138,6 +139,15 @@ bool Async::tx_fill()
 	if (link_->read_chars(&ch, 1) != 1)
 		return false;
 	queue_char(tx_, ch);
+	/* RA0: the character's time at the user rate in line bits, the
+	   ones past its 10 as added stop elements */
+	if (pace_user_ > 0 && pace_line_ > pace_user_) {
+		pace_acc_ += 10 * pace_line_;
+		const s32 bits = pace_acc_ / pace_user_;
+		pace_acc_ -= bits * pace_user_;
+		const s16 extra = static_cast<s16>(bits - 10);
+		queue_bits(tx_, (1u << extra) - 1, extra);
+	}
 	return true;
 }
 

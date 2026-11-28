@@ -27,9 +27,9 @@ namespace dlink {
    commands and the called end's responses, A (0x03) the others */
 static const u8 ADDR_A = 0x03, ADDR_B = 0x01;
 
-/* V.120's logical link (V.120 2.3.2): its address octets, C/R 0 and 1
-   (Q.921 3.3.3: the user side's commands and the network side's
-   responses C/R 0) */
+/* V.120's logical link 256 (6.2.2/V.120): its address octets, C/R 0
+   and 1; the C/R bit is the same for the two directions (Table 4):
+   every command has C/R 0, every response C/R 1 */
 static const u8 V120_LLI_0[2] = { 0x08, 0x01 }, V120_LLI_1[2] = { 0x0a, 0x01 };
 /* V.120's terminal adaption header (V.120 2.4.1): E 1 (no extension),
    BR 0, C2 C1 0, B and F 1 */
@@ -65,8 +65,8 @@ void Lapb::init(Link *link, Variant v)
 		alen_ = 2;
 		info_at_ = 2 + 2 + 1;
 		sabm_ = U_SABME;
-		memcpy(cmd_addr_, caller ? V120_LLI_0 : V120_LLI_1, 2);
-		memcpy(rsp_addr_, caller ? V120_LLI_1 : V120_LLI_0, 2);
+		memcpy(cmd_addr_, V120_LLI_0, 2);
+		memcpy(rsp_addr_, V120_LLI_1, 2);
 	} else {
 		tag_ = "x75";
 		modulus_mask_ = 7;
@@ -712,7 +712,9 @@ void Lapb::rx_complete(Frame *f)
 		return;
 	}
 	heard_ = true;
-	const bool cmd = at_rsp;
+	/* X.75: the remote's commands have the address of our responses;
+	   V.120: every command has C/R 0, as ours */
+	const bool cmd = variant_ == Variant::V120 ? at_cmd : at_rsp;
 	const u8 c = f->buf[alen_];
 	if (frmr_) {
 		const u8 t = static_cast<u8>(c & ~PF);

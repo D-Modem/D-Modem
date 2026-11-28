@@ -219,12 +219,25 @@ private:
 class Async : public BitFramer<Async> {
 public:
 	void start(Link *link);
+	/* V.110's RA0 (5.3.3/V.110): the characters of a user rate of
+	   user bit/s on a line of line bit/s, stop elements added after
+	   each so that they come no faster than at the user rate; 0, 0
+	   (or user == line) for none */
+	void set_pace(s32 user, s32 line)
+	{
+		pace_user_ = user;
+		pace_line_ = line;
+		pace_acc_ = 0;
+	}
 
 private:
 	friend class BitFramer<Async>;
 	bool tx_fill();
 	s32 tx_idle(s16 nbits, u8 mask, u8 *&buf, s32 &n);
 	void rx_scan();
+
+	s32 pace_user_ = 0, pace_line_ = 0;
+	s32 pace_acc_ = 0;              /* the line's bits owed, times user */
 };
 
 /* 7.2/V.42: the originator sends ODPs, the answerer ADPs once it has
