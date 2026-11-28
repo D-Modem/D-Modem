@@ -236,7 +236,7 @@ are in [x2-upgrade-details.md](x2-upgrade-details.md).
 |---|---|---|
 | Compression | `V44`, `V44Preset`, `Zstd`, `ZstdDict`, `V42bis`, `V42bisStepup` | V.42bis, V.44 and zstd round trips (text, noise, escape characters, repeats, small dictionaries, flushes); V.44's transparent mode (the encoder's test and the decoder; EPM an error); V.cvm's preset dictionary and zstd dictionary; two V.42bis STEPUPs taken and a third a C-ERROR |
 | HDLC | `Hdlc`, `HdlcFcs32`, `BitsMasked` | 200 frames through a bit error; CRC-32's check value, frames with an FCS-32 (runs of 1s among them) to receivers that take FCS-32, FCS-16 or both, and one with a bit error dropped; every item to the pump `nbits` wide with nothing above it, in every mode |
-| LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmFcs32`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; the 32-bit FCS (the caller's XID with and without it, the answerer's response, a SABME with each FCS, FCS-16 when either side has it off, and the data with bit errors); no compression; one direction only; each V.42bis parameter the smaller of the two |
+| LAPM | `Lapm`, `LapmDirections`, `LapmZstd`, `LapmFcs32`, `LapmV42bis`, `LapmNoCompression`, `LapmOneDirection`, `LapmV42bisParameters`, `LapmV44Directions`, `LapmV44Defaults`, `LapmXidOutOfRange` | detection, XID, V.44 both ways; V.42bis when either side has no V.44; `+DS`/`+DS44` directions; zstd when both offer it; the 32-bit FCS (the caller's XID with and without it, the answerer's response, a SABME with each FCS, FCS-16 when either side has it off, and the data with bit errors); no compression; one direction only; each V.42bis parameter the smaller of the two; V.44's parameters for each direction, its defaults, and a parameter less than its minimum (the connection stops) |
 | HST | `LapmHst`, `Hst` | a recorded Courier's XID command and response: the answerer's response with HST and its turn on the DM; the caller's DM (FCS-16) and its SABME first after HST is up; the start rate between two Links; without HST, LAPM as before; the HST link against a Courier's first frames, and between two Links, with the turns of the channels |
 | LAPM faults | `LapmBadFrames`, `LapmNrPastVs`, `LapmUnsolicitedDm`, `LapmBitErrors`, `LapmSlowDte`, `LapmCompressedSlowDte`, `LapmN400` | frames LAPM must drop; an N(R) past V(S) ignored; an unsolicited DM (F = 0) while idle, which asks for the link (8.8/V.42: an SABME, not the link up; ignored after a release); REJ and T401 recovery; a slow DTE (RNR); five retransmissions of an unanswered XID and five polls with the line cut, no more |
 | XID not agreed | `LapmSabmeWithoutXid`, `LapmBadXidThenSabme`, `LapmCallerXidNotAgreed` | an SABME with no XID, and an XID command with no general format, at the answerer; a DM (F = 0) to the first XID, a DM after the XID was sent again, and an XID response that LAPM cannot read, at the originator: the defaults of V.42 (no compression, FCS-16) with the data unchanged each way, or the release |
@@ -265,8 +265,22 @@ with each other and with ours. `v44.h` describes the tokens.
 | 0x45 / 0x46 | the longest string, transmit / receive |
 | 0x47 / 0x48 | the history, transmit / receive |
 
-For each pair, each side uses the smaller of its own value and the value
-of the remote. The result is the same in the two directions.
+T is the direction of the encoder of the modem that sends the XID, and
+R is the direction of its decoder. Our encoder uses the smaller of our
+T value and the R value of the remote. Our decoder uses the smaller of
+our R value and the T value of the remote. Thus, the two directions can
+have different values.
+
+- We offer the same values for T and R. After XID, our T values are the
+  values of our encoder, and our R values are the values of our decoder
+  (`Config::v44_codewords_r` and the others).
+- If the XID of the remote does not have a parameter, we use the default
+  of Table 10/V.44: 1024 codewords, strings of 255, a history of 3 × P1.
+- A value less than the minimum (256 codewords, strings of 32, a history
+  of 512) is a procedural error. LAPM stops the connection: no XID
+  response, no SABME, or DISC in the data phase. A V.42bis N2 less than
+  512 or N7 less than 6 is also a procedural error. Refer to [V.44:
+  technical details](standards/v44-details.md).
 
 **Coding.** The two sides start in compressed mode, with codewords from
 4 in 6 bits and ordinals of 7 bits.

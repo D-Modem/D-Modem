@@ -99,6 +99,7 @@ private:
 	s16 tx_xid(u8 addr);
 	bool rx_xid(Frame *f, bool response);
 	void xid_defaults();
+	void xid_error();
 	bool xid_stale(const Frame *f) const;
 	void fcs_seen(const Frame *f, bool sabme);
 	s16 tx_info();
@@ -138,6 +139,8 @@ private:
 	/* the parameters are settled before the link is first up: by an
 	   XID that we could read, or by the defaults of V.42 */
 	bool xid_done_ = false;
+	/* the remote's last XID had a procedural error (xid_error()) */
+	bool xid_bad_ = false;
 	/* the remote's XID had the Hayes HMP set (hayes_xid.h): our
 	   response has the Hayes sets too */
 	bool hayes_rx_ = false;

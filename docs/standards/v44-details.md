@@ -126,6 +126,9 @@ errors:
 |---|---|
 | P1, P2, P3 that we offer | 4096 codewords, strings of 255 characters, a history of 12288 |
 | C0 | N = 0: negotiation in XID |
+| Parameters for each direction | Our encoder uses our P1T and the P1R of the far modem. Our decoder uses our P1R and the P1T of the far modem. The same for P2 and P3. |
+| A parameter that the XID does not have | The default of Table 10 |
+| A parameter less than its minimum | A procedural error. LAPM stops the connection. |
 | String matching | A hash of the first two characters, not the tree of 6.2. The result is the same: the longest string. |
 | Compressibility test | The bits of the codes for the last 256 characters, against 8 bits for each character. Transparent mode above 2080 bits, compressed mode below 1984 bits. The mode stays for 512 characters after a change. FLUSH and EID count in the test. |
 | FLUSH | When the DTE has no more data for now |
@@ -138,3 +141,6 @@ errors:
 |---|---|---|
 | Compressibility test (7.11.5) | The encoder did not have a test. It stayed in compressed mode. Noise became 12 % larger. | The encoder has the test above. Noise is 0.5 % larger. With a FLUSH after each character, the data is half as large as before. |
 | EPM (Table 9) | The decoder ignored EPM, and then sent the parameters to the DTE as data | A procedural error |
+| Parameters for each direction (7.4) | We used the lowest of all the P1 values for the two directions. With a far modem that has different values for T and R, our decoder and its encoder did not agree. | Each direction has its own values |
+| Defaults (Table 10) | A parameter that the XID did not have had no limit. We used our own value, not the default. | The default |
+| Values less than the minimum (7.4) | The link continued with no compression | A procedural error. The connection stops. |

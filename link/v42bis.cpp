@@ -39,8 +39,8 @@ enum { ECM = 0, EID = 1, RESET = 2 };
 enum {
 	N6 = 3,                 /* control codewords: a root is N6 + ordinal */
 	N5 = N6 + 256,          /* the first codeword of a longer string */
-	MIN_CODEWORDS = 512,    /* N2, P1's default (5.1) */
-	MIN_STRING = 6,         /* N7, P2's default (5.1) */
+	MIN_CODEWORDS = V42BIS_MIN_CODEWORDS,
+	MIN_STRING = V42BIS_MIN_STRING,
 	ESCAPE_STEP = 51,       /* the escape character's step (9.2 b) */
 	/* the compressibility estimate: bits for the last WINDOW characters
 	   as codewords, starting at what they cost as characters; compressed

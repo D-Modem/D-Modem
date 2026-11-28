@@ -1862,6 +1862,41 @@ TEST(Link, LapmV42bisParameters)
 	transfer("lapm, v42bis 1024/16", p, 20000, 20000, 9600 * 60);
 }
 
+/* V.44's parameters for each direction (7.4/V.44): the encoder of one
+   end has the smaller of its P1T and the other end's P1R, and the same
+   for P2 and P3; a caller that offers less for its decoder than for its
+   encoder, and the data through each way */
+TEST(Link, LapmV44Directions)
+{
+	rnd_state = 12345;
+	Config cc = lapm_config(3), ca = lapm_config(3);
+	cc.v44_codewords_r = 1024;
+	cc.v44_max_string_r = 64;
+	cc.v44_history_r = 4096;
+	Pair p(cc, ca);
+	p.start(true, true);
+	p.run(9600 * 3);
+	CHECK(p.dc.up && p.da.up, "LAPM up");
+	const Config &c = p.lc.config(), &a = p.la.config();
+	CHECK(c.v44 && a.v44 && c.comp == 3 && a.comp == 3, "V.44 both ways");
+	CHECK(c.v44_codewords == 4096 && c.v44_max_string == 255 &&
+	      c.v44_history == 12288 && c.v44_codewords_r == 1024 &&
+	      c.v44_max_string_r == 64 && c.v44_history_r == 4096,
+	      "caller: encoder %d/%d/%d, decoder %d/%d/%d",
+	      (int)c.v44_codewords, (int)c.v44_max_string, (int)c.v44_history,
+	      (int)c.v44_codewords_r, (int)c.v44_max_string_r,
+	      (int)c.v44_history_r);
+	CHECK(a.v44_codewords == 1024 && a.v44_max_string == 64 &&
+	      a.v44_history == 4096 && a.v44_codewords_r == 4096 &&
+	      a.v44_max_string_r == 255 && a.v44_history_r == 12288,
+	      "answerer: encoder %d/%d/%d, decoder %d/%d/%d",
+	      (int)a.v44_codewords, (int)a.v44_max_string, (int)a.v44_history,
+	      (int)a.v44_codewords_r, (int)a.v44_max_string_r,
+	      (int)a.v44_history_r);
+	transfer("lapm + v44, each direction its own", p, 60000, 60000,
+		 9600 * 120);
+}
+
 /* bit errors: REJ and T401 recovery, and no link error */
 TEST(Link, LapmBitErrors)
 {
@@ -2565,6 +2600,112 @@ static std::vector<uint8_t> line_chars(const std::vector<uint8_t> &bits)
 		i += 10;
 	}
 	return out;
+}
+
+/* an XID command with the V.44 set, C0 and P0 only (the user data
+   subfield, Table A.1/V.44), and pars after them */
+static std::vector<uint8_t> v44_xid(std::vector<uint8_t> pars = {})
+{
+	std::vector<uint8_t> f = { 0x03, 0xaf, 0x82, 0xff, 0x40, 3, 'V', '4',
+				   '4', 0x41, 1, 0, 0x42, 1, 3 };
+	f.insert(f.end(), pars.begin(), pars.end());
+	return f;
+}
+
+/* V.44's parameters that an XID does not have are the defaults of
+   Table 10/V.44 (P1 1024, P2 255, P3 3 x P1), not our own: an answerer
+   that gets them so */
+TEST(Link, LapmV44Defaults)
+{
+	Dte d("answerer");
+	Link l;
+	l.init(&d, false, lapm_config(3));
+	l.start(true, false);
+	Script s(l);
+	s.send(v44_xid({ 0x43, 2, 0x08, 0x00 }));       /* P1T 2048 only */
+	s.rounds(4);
+	CHECK(s.out().size() == 1 && is_xid(s.out()[0]) &&
+	      names_set(s.out()[0], "V44"), "an XID response with V.44");
+	const Config &c = l.config();
+	CHECK(c.v44 && c.v44_codewords == 1024 && c.v44_max_string == 255 &&
+	      c.v44_history == 3072 && c.v44_codewords_r == 2048 &&
+	      c.v44_max_string_r == 255 && c.v44_history_r == 6144,
+	      "encoder %d/%d/%d, decoder %d/%d/%d", (int)c.v44_codewords,
+	      (int)c.v44_max_string, (int)c.v44_history,
+	      (int)c.v44_codewords_r, (int)c.v44_max_string_r,
+	      (int)c.v44_history_r);
+}
+
+/* a compression parameter less than its minimum is a procedural error
+   (5.1/V.42bis, 7.4/V.44): the connection stops.  An answerer with
+   such an XID command sends no response; a caller with such an XID
+   response sends no SABME */
+TEST(Link, LapmXidOutOfRange)
+{
+	struct Case {
+		const char *name;
+		std::vector<uint8_t> xid;
+		bool v44;
+	};
+	/* the private group with V.42bis (Table 9/V.42bis): P0 3, then
+	   N2 and N7 */
+	auto v42 = [](uint8_t n2_hi, uint8_t n2_lo, uint8_t n7) {
+		return std::vector<uint8_t>{ 0x03, 0xaf, 0x82, 0xf0, 0x00,
+					     15, 0x00, 3, 'V', '4', '2',
+					     0x01, 1, 3, 0x02, 2, n2_hi,
+					     n2_lo, 0x03, 1, n7 };
+	};
+	const Case cases[] = {
+		{ "V.44 P1T 255", v44_xid({ 0x43, 2, 0x00, 0xff }), true },
+		{ "V.44 P1R 100", v44_xid({ 0x44, 2, 0x00, 100 }), true },
+		{ "V.44 P2T 31", v44_xid({ 0x45, 1, 31 }), true },
+		{ "V.44 P3R 511", v44_xid({ 0x48, 2, 0x01, 0xff }), true },
+		{ "V.42bis N2 511", v42(0x01, 0xff, 32), false },
+		{ "V.42bis N7 5", v42(0x08, 0x00, 5), false },
+	};
+	for (const Case &k : cases) {
+		Dte d("answerer");
+		Link l;
+		l.init(&d, false, lapm_config(3, k.v44));
+		l.start(true, false);
+		Script s(l);
+		s.send(k.xid);
+		s.rounds(4);
+		CHECK(s.out().empty() && d.released && !d.up,
+		      "%s: %zu frames, released %d", k.name, s.out().size(),
+		      d.released);
+	}
+	/* in range: a response */
+	{
+		Dte d("answerer");
+		Link l;
+		l.init(&d, false, lapm_config(3));
+		l.start(true, false);
+		Script s(l);
+		s.send(v44_xid({ 0x43, 2, 0x01, 0x00, 0x45, 1, 32, 0x48, 2,
+				 0x02, 0x00 }));
+		s.rounds(4);
+		CHECK(s.out().size() == 1 && is_xid(s.out()[0]) &&
+		      !d.released, "in range: no response");
+	}
+	/* the caller: an XID response with V.44's P1R 200 */
+	{
+		Dte d("caller");
+		Link l;
+		l.init(&d, true, lapm_config(3));
+		l.start(true, false);
+		Script s(l);
+		s.rounds(3);
+		CHECK(s.out().size() == 1 && is_xid(s.out()[0]),
+		      "the caller's XID (%zu frames)", s.out().size());
+		std::vector<uint8_t> r = v44_xid({ 0x44, 2, 0x00, 200 });
+		r[0] = 0x01;                    /* a response */
+		s.send(r);
+		s.rounds(4);
+		CHECK(s.out().size() == 1 && d.released && !d.up,
+		      "caller: %zu frames, released %d", s.out().size(),
+		      d.released);
+	}
 }
 
 /* the bodies of the MNP octet frames in chars (good FCS only) */
