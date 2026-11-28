@@ -276,17 +276,36 @@ TEST(V110Osmo, OsmocomCallsEachRate)
 	}
 }
 
+/* libosmocore's rate index for the frames of an asynchronous user rate:
+   14400 and 28800 in the 19200 and 38400 frames (V.110 Table 5; the
+   characters with extra stop bits), the others in their own; -1 for
+   none */
+int osmo_index(int user)
+{
+	int frame = user == 14400 ? 19200 : user == 28800 ? 38400 : user;
+	for (int i = 0; i < osmo_peer_rates(); i++) {
+		int ir, chunk;
+		if (osmo_peer_rate(i, &ir, &chunk) == frame)
+			return i;
+	}
+	return -1;
+}
+
 /* D-Modem calls at each +CBST rate libosmocore has; libosmocore's RA1
    takes its frames (E1-E3 right) and the text goes both ways */
 TEST(V110Osmo, DModemCallsEachRate)
 {
 	debug();
-	for (int i = 0; i < osmo_peer_rates(); i++) {
-		Osmo o(i);
-		int speed = cbst_speed(o.rate);
-		if (!speed)
+	for (int r = 0; r < osmo_peer_rates(); r++) {
+		int ir, chunk;
+		int user = osmo_peer_rate(r, &ir, &chunk);
+		int speed = cbst_speed(user);
+		int i = osmo_index(user);
+		if (!speed || i < 0)
 			continue;
-		SCOPED_TRACE(o.rate);
+		Osmo o(i);
+		o.rate = user;
+		SCOPED_TRACE(user);
 		std::string init = "ATE0X3\\N0+MS=CLEAR;+CBST=" +
 			std::to_string(speed) + "\r";
 		Modem d(init.c_str());
