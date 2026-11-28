@@ -47,6 +47,13 @@ struct T4Page {
 	   padded with fill to at least min_bits, RTC at the end (rtc), EOLs
 	   ending on a byte boundary (align, as TIFF's T4Options bit 2) */
 	void encode_mh(T4Bits *out, s16 min_bits, s16 align, s16 rtc) const;
+	/* ... in MR (T.4 4.2): one row in MH, then at most k - 1 rows
+	   coded against the row above (k: 2 at standard resolution, 4 at
+	   fine); a tag bit after each EOL, RTC of six EOL + 1 */
+	void encode_mr(T4Bits *out, s16 k, s16 min_bits, s16 align, s16 rtc) const;
+	/* ... in MMR (T.6): all rows coded against the row above, no EOLs,
+	   EOFB at the end, padded to an octet */
+	void encode_mmr(T4Bits *out) const;
 	/* a whole page from a buffer: compression as TIFF's (2 MH without
 	   EOLs, 3 T.4 with EOLs, 1D or, t4opts & 1, 2D; 4 T.6), msb_first as
 	   TIFF's FillOrder 1; rows: how many to expect (0: until the end of
@@ -76,6 +83,11 @@ struct T4Bits {
 	void put_code(const char *bits);
 	void put_run(s16 run, s16 black);
 	void put_eol(s16 align);
+	/* a mode code of Table 4/T.4 (M_PASS, M_HORIZ or M_V0 + d) */
+	void put_mode(s16 mode);
+	/* a row coded against the row above: their changes as
+	   row_changes() gives them */
+	void put_2d(s16 width, const s16 *ref, s16 nref, const s16 *ch, s16 n);
 	s16 line_empty() const;
 };
 

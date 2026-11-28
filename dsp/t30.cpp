@@ -278,6 +278,8 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 					   2 colour (with ECM only) */
 	s16 t85;                        /* the pages in T.85 (JBIG), not MH
 					   or MR (with ECM only) */
+	s16 mmr;                        /* the pages in MMR (T.6), with ECM
+					   only */
 	s16 t43;                        /* in T.43 (lossless JBIG): 1 grey,
 					   2 colour (with ECM only) */
 	s16 mrc;                        /* in T.44 (MRC): 1 grey, 2 colour */
@@ -421,6 +423,7 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void ecm_frame_in(const unsigned char *d, s16 len);
 	bool ecm_block_decodes(bool last, unsigned char *map);
 	void jbig_page();
+	void mmr_page();
 	void jpeg_page();
 	void t43_page();
 	void mrc_page();
@@ -786,6 +789,7 @@ void T30::send_dis_dtc(s16 dtc)
 	if (cfg.ecm) {
 		set_bit(fif, 24);               /* a fourth octet */
 		set_bit(fif, 27);               /* error correction mode */
+		set_bit(fif, 31);               /* T.6 (MMR), with ECM */
 		len = 4;
 		if (!cfg.no_t85 || !cfg.no_colour || cfg.bft) {
 			t85_octets(fif);
@@ -950,6 +954,7 @@ void T30::dcs_coding(const unsigned char *fif, s16 len)
 	t43 = ecm_on && !bft && !mrc && !jpeg && get_bit(fif, len, 36) ?
 		1 + get_bit(fif, len, 69) : 0;
 	t85 = ecm_on && !bft && !mrc && dcs_t85(fif, len);
+	mmr = ecm_on && !bft && !mrc && !jpeg && !t43 && !t85 && get_bit(fif, len, 31);
 }
 
 /* the coding, for the log */
@@ -958,7 +963,7 @@ const char *T30::coding_name() const
 	return bft ? "binary file" : mrc == 2 ? "T.44 colour" : mrc ? "T.44 grey" :
 		jpeg == 2 ? "JPEG colour" : jpeg ? "JPEG grey" :
 		t43 == 2 ? "T.43 colour" : t43 ? "T.43 grey" :
-		t85 ? "T.85" : mr ? "MR" : "MH";
+		t85 ? "T.85" : mmr ? "MMR" : mr ? "MR" : "MH";
 }
 
 /* a DCS: the rate and page settings the sender chose; the TCF follows
@@ -1184,13 +1189,17 @@ void T30::rx_message()
  *    sending: the calling machine
  */
 
-/* the page in MH for the line: rows filled to the minimum scan line
-   time at the call's rate, RTC at the end */
+/* the page for the line, in MR if the remote takes it (else MH): rows
+   filled to the minimum scan line time at the call's rate, RTC at the
+   end */
 void T30::encode_page()
 {
 	s32 bps = rates[rate].bps;
 	page_bits.release();
-	page.encode_mh(&page_bits, min_ms * bps / 1000, 0, 1);
+	if (mr)
+		page.encode_mr(&page_bits, fine ? 4 : 2, min_ms * bps / 1000, 0, 1);
+	else
+		page.encode_mh(&page_bits, min_ms * bps / 1000, 0, 1);
 	page_pos = 0;
 }
 
@@ -1290,6 +1299,13 @@ void T30::send_dcs()
 			set_bit(fif, 78);       /* L0 128 (bit 79 0) */
 			len = 10;
 		}
+	}
+	/* black and white pages: MMR (T.6, with ECM), MR or MH */
+	if (!(ecm_on && (bft || mrc || jpeg || t43 || t85))) {
+		if (ecm_on && mmr)
+			set_bit(fif, 31);
+		else if (mr)
+			set_bit(fif, 16);
 	}
 	DSP_DBG("t30: DCS: %" PRId32 " bit/s, %s, min scan %d ms%s%s\n",
 		rates[rate].bps, fine ? "fine" : "standard",
@@ -1391,6 +1407,10 @@ s16 T30::choose()
 	min_ms = dis_min_ms(dis, dis_len);
 	ecm_on = cfg.ecm && get_bit(dis, dis_len, 27);
 	t85 = ecm_on && !cfg.no_t85 && get_bit(dis, dis_len, 78);
+	/* MH, or the two dimensional codings the remote has (T.4 4.2,
+	   T.6: with ECM only) */
+	mr = !cfg.mh_only && get_bit(dis, dis_len, 16);
+	mmr = ecm_on && !cfg.mh_only && get_bit(dis, dis_len, 31);
 	ecm_size = ECM_SIZE;
 	if (v34_on && !ecm_on)
 		return -1;      /* (T.30 Annex F: ECM only) */
@@ -1840,7 +1860,13 @@ void T30::start_ecm_page()
 		   frames') */
 		jbig_encode(&page, JbigOptions(), &ecm_doc);
 	} else {
-		page.encode_mh(&page_bits, 0, 0, 1);
+		/* MMR, MR or MH */
+		if (mmr)
+			page.encode_mmr(&page_bits);
+		else if (mr)
+			page.encode_mr(&page_bits, fine ? 4 : 2, 0, 0, 1);
+		else
+			page.encode_mh(&page_bits, 0, 0, 1);
 		ecm_doc.assign((page_bits.n + 7) / 8, 0);
 		for (k = 0; k < page_bits.n; k++)
 			if (t4_bits_get(&page_bits, k))
@@ -2091,6 +2117,8 @@ enum state T30::ecm_page_end(s16 fcf2)
 			t43_page();
 		else if (t85)
 			jbig_page();
+		else if (mmr)
+			mmr_page();
 		else
 			t4rx.end();
 		page_ok = p->rows > 0 && p->bad_rows * 20 < p->rows;
@@ -2141,6 +2169,19 @@ void T30::jbig_page()
 	if (r)
 		rx_page.bad_rows = rx_page.rows ? 1 : 0;
 	jp.release();
+	doc_rx.clear();
+}
+
+/* T.6: the page's MMR (its octets the first bit lowest, T.4 A.3.6.2)
+   into rx_page; data that ends before EOFB, or a code that is no code,
+   ends the page there */
+void T30::mmr_page()
+{
+	rx_page.release();
+	rx_page.init(T4_WIDTH, fine);
+	rx_page.decode(doc_rx.data(), doc_rx.size(), 4, 0, 0, T85_MAX_ROWS);
+	DSP_DBG("t30: MMR page of %zu octets: %" PRId32 " rows\n",
+		doc_rx.size(), rx_page.rows);
 	doc_rx.clear();
 }
 
@@ -2330,7 +2371,7 @@ s16 T30::page_t43(const T4Page &p) const
 bool T30::ecm_block_decodes(bool last, unsigned char *map)
 {
 	s16 k, bad = -1;
-	if (t85 || jpeg || t43 || mrc || bft) {
+	if (t85 || jpeg || t43 || mrc || bft || mmr) {
 		/* the BIE, JPEG, BCIE or MRC is decoded at the end of the page
 		   (a file's octets taken); its frames came with good FCSs */
 		for (k = 0; k < ecm_rx_frames; k++)
@@ -3424,6 +3465,8 @@ void t30_get_status(T30 *t, struct t30_status *s)
 	s->fine = t->fine;
 	s->ecm = t->ecm_on;
 	s->t85 = t->t85;
+	s->mr = t->mr && !t->mmr && !t->t85 && !t->jpeg && !t->t43 && !t->mrc && !t->bft;
+	s->mmr = t->mmr && !t->t85 && !t->jpeg && !t->t43 && !t->mrc && !t->bft;
 	s->jpeg = t->jpeg;
 	s->t43 = t->t43;
 	s->mrc = t->mrc;

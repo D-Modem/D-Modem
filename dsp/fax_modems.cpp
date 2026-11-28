@@ -470,8 +470,11 @@ void FaxTx::init(enum fax_mod mod_, s16 short_train_, s32 srate_, fax_get_bit_t 
 		    info(mod_).alpha, 6, sqrtf(info(mod_).power),
 		    fax_tx_rms(mod_) * 1.41421f);
 	/* the receivers of the original library want the symbols at this
-	   phase of the sample clock (as with V.32) */
-	qam.t = is_v17(mod_) ? 0.25f : 0.5f;
+	   phase of the sample clock.  V.17: at 1/6 of a sample its
+	   constellation errors are the smallest at all rates (some 3 dB
+	   better than at 1/4, where at 14400 bit/s after a short train
+	   a page could lose bits through mu-law) */
+	qam.t = is_v17(mod_) ? 1.0f / 6 : 0.5f;
 	if (is_v17(mod_)) {
 		scr = 0x2ECDD5;
 		/* after a short train the original library goes on with

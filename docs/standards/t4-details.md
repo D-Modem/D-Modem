@@ -97,17 +97,20 @@ element against the line above it (the reference line):
 | Item | D-Modem (`dsp/t4.cpp`) |
 |---|---|
 | Code tables | Tables 2, 3a, 3b and 4. The tables agree with the text of T.4 (checked word by word). |
-| Encoder | MH only: an EOL before each line, fill up to the minimum time from the DIS, RTC at the end. With ECM, no fill. |
+| Encoder | MH and MR (`encode_mh()`, `encode_mr()`): an EOL before each line (in MR, with the tag bit), fill up to the minimum time from the DIS, RTC at the end. In MR, K is 2 at standard resolution and 4 at fine. With ECM, no fill. A call sends MR when bit 16 of the DIS is 1. With `mh_only` (`t30_config`), a call sends MH only. |
 | Line decoder (`T4Rx`) | MH and MR, from the bits of the line, with the tag bit. A line with an error is a copy of the line above it. Six EOLs with no data between them give RTC. |
 | Maximum line time | A line of more than 13 s (data and fill) ends the call with DCN. |
 | Page decoder (TIFF) | MH without EOLs (TIFF compression 2), T.4 with EOLs (3, MH or MR) and T.6 (4) |
 | Page width | 1728 pels. The DIS offers A4 width only. |
 | Resolutions | Standard and fine (7.7 lines/mm) |
-| Not implemented | The MR and MMR encoders, the uncompressed mode, widths of more than 1728 pels on the line |
+| Not implemented | The uncompressed mode, widths of more than 1728 pels on the line |
 
 The tests `SpandspT4` (`dsp/test/spandsp_test.cpp`) send MH and MR
 pages from the encoder of spandsp into the line decoder, with and
-without fill. The tests `T4Libtiff` (`dsp/test/fax_test.cpp`) decode
+without fill. `SpandspT4.OurEncoderIntoSpandsp` and
+`SpandspT4Random.OurEncoderIntoSpandsp` send our MR and MMR pages into
+the decoder of spandsp. `T4.MrAndMmrRoundTrip` decodes our MR and MMR
+pages again. The tests `T4Libtiff` (`dsp/test/fax_test.cpp`) decode
 the MH, MR and MMR pages that libtiff codes.
 
 ## Corrections (2026-11)
@@ -115,6 +118,8 @@ the MH, MR and MMR pages that libtiff codes.
 | Error | Correction |
 |---|---|
 | The receiver did not limit the time of a scan line. A sender that sent fill without an end kept the call in phase C. | A line of more than 13 s ends the call (3.2). |
+| A call sent pages in MH only. There was no MR encoder (4.2). | `encode_mr()` codes MR. A call sends MR when the remote accepts it. |
 
-The test `T4.LineTimeLimit` (`dsp/test/fax_test.cpp`) checks this
-correction.
+The test `T4.LineTimeLimit` (`dsp/test/fax_test.cpp`) checks the line
+time. `T4.MrAndMmrRoundTrip` and the tests `T30Pair.SendsTheDocument`
+check the MR encoder.
