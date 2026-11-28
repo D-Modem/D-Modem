@@ -78,6 +78,9 @@ private:
 		INFO_FRAMES = LAPM_MAX_WIN + 1,
 		CTRL_FRAMES = 8,
 		MAX_RTX = 5,            /* N400 */
+		/* after V.8: the retransmission from which our XID offers
+		   no zstd (the third XID) */
+		ZSTD_RETRY_V8 = 2,
 	};
 	struct Slot {
 		Frame frame;
@@ -94,7 +97,9 @@ private:
 	s16 tx_unnum(u8 addr, u8 ctrl);
 	s16 tx_super(u8 addr, u8 ctrl, s16 pf);
 	s16 tx_xid(u8 addr);
-	void rx_xid(Frame *f, bool response);
+	bool rx_xid(Frame *f, bool response);
+	void xid_defaults();
+	bool xid_stale(const Frame *f) const;
 	void fcs_seen(const Frame *f, bool sabme);
 	s16 tx_info();
 	s16 reject_info();
@@ -130,6 +135,9 @@ private:
 	   remote's ADP (an older V.42 ignores an XID with the private
 	   set: the Courier) */
 	bool no_zstd_ = false;
+	/* the parameters are settled before the link is first up: by an
+	   XID that we could read, or by the defaults of V.42 */
+	bool xid_done_ = false;
 	/* the remote's XID had the Hayes HMP set (hayes_xid.h): our
 	   response has the Hayes sets too */
 	bool hayes_rx_ = false;

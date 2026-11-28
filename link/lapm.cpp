@@ -200,6 +200,35 @@ static void for_each_param(const u8 *p, s16 n, Fn fn)
 	}
 }
 
+/* the groups of the XID information field x of len octets (12.2.2),
+   after its format identifier: the parameters of the parameter
+   negotiation group to param, of the private group to priv, of the user
+   data subfield (the last, with no GL) to user, each as for
+   for_each_param(); a group that runs past the end ends them */
+template <class Param, class Priv, class User>
+static void for_each_group(const u8 *x, s16 len, Param param, Priv priv,
+			   User user)
+{
+	for (s16 i = 1; i < len;) {
+		const u8 gi = x[i];
+		if (gi == GI_USER) {
+			for_each_param(x + i + 1, len - i - 1, user);
+			break;
+		}
+		if (i + 3 > len)
+			break;
+		const s32 gl =
+			static_cast<s32>(x[i + 1]) << 8 | x[i + 2];
+		if (i + 3 + gl > len)
+			break;
+		if (gi == GI_PARAM)
+			for_each_param(x + i + 3, gl, param);
+		else if (gi == GI_PRIVATE)
+			for_each_param(x + i + 3, gl, priv);
+		i += 3 + gl;
+	}
+}
+
 
 /*
  *    the call
@@ -221,6 +250,7 @@ void Lapm::init(Link *link, s16 tx_win, s16 rx_win, s16 tx_info,
 	v76_ = false;
 	fcs32_asked_ = fcs32_ = false;
 	no_zstd_ = false;
+	xid_done_ = false;
 	hayes_rx_ = false;
 	cmd_ud_.clear();
 	rsp_ud_.clear();
@@ -437,10 +467,12 @@ void Lapm::t401_timeout()
 		/* an XID unanswered by a remote whose ADP said it has
 		   V.42: offered again without zstd's private set, which
 		   an older V.42 takes for a reason to ignore the frame
-		   (the USRobotics Courier answering); not after V.8,
-		   whose first XIDs a noisy start of the line may take */
+		   (the USRobotics Courier answering); after V.8, whose
+		   first XIDs a noisy start of the line may take, from
+		   the third XID on */
 		if (config_ && !was_up_ && link_->caller() &&
-		    link_->phase_v42() && !link_->detect_far() &&
+		    link_->phase_v42() &&
+		    (!link_->detect_far() || rtx_count_ >= ZSTD_RETRY_V8) &&
 		    link_->cfg().zstd && !no_zstd_) {
 			no_zstd_ = true;
 			link_->logf("ec: XID unanswered: offered without zstd.");
@@ -1024,6 +1056,10 @@ void Lapm::rx_unnum_cmd(Frame *f)
 
 	switch (f->buf[1] & ~PF) {
 	case U_SABME:
+		/* no XID before the first SABME (7.2.2, 8.3/V.42: the
+		   originator may omit the negotiation): V.42's defaults */
+		if (state_ == IDLE && !was_up_ && !xid_done_ && !v76_)
+			xid_defaults();
 		fcs_seen(f, true);
 		connect();
 		tx_unnum(rsp_addr_, static_cast<u8>(U_UA | pf));
@@ -1042,7 +1078,11 @@ void Lapm::rx_unnum_cmd(Frame *f)
 		link_->status(Status::Released);
 		break;
 	case U_XID:
-		rx_xid(f, false);
+		/* an XID command that we cannot read, before the link is
+		   first up: our response and the link have V.42's
+		   defaults */
+		if (!rx_xid(f, false) && state_ == IDLE && !was_up_ && !v76_)
+			xid_defaults();
 		tx_xid(rsp_addr_);
 		/* MNP 10 agreed: MNP once the response is out */
 		if (mnp_agreed_) {
@@ -1117,6 +1157,21 @@ void Lapm::rx_unnum_rsp(Frame *f)
 			   would establish, is the Courier's turn to HST */
 			link_->hst_switch();
 		} else if (state_ == IDLE && !was_up_ && !hst_pending_) {
+			/* our XID sent again: the remote may have agreed
+			   to an earlier one in a response that we did not
+			   get (Appendix III.3/V.42), so we cannot know its
+			   parameters */
+			if (config_ && rtx_count_ && !v76_) {
+				config_ = false;
+				link_->logf("ec: DM after our XID was sent "
+					    "again: parameters not known.");
+				release(true);
+				break;
+			}
+			/* else the remote agreed to nothing: V.42's
+			   defaults */
+			if (!xid_done_ && !v76_)
+				xid_defaults();
 			config_ = false;
 			establish();
 		} else if (state_ == DATA)
@@ -1125,7 +1180,22 @@ void Lapm::rx_unnum_rsp(Frame *f)
 	case U_XID:
 		if (!config_)
 			break;
-		rx_xid(f, true);
+		/* the answer to an XID from before our offer changed: T401
+		   runs on for the answer to the current one */
+		if (xid_stale(f)) {
+			link_->logf("ec: XID response with zstd after our "
+				    "offer without it: ignored.");
+			break;
+		}
+		/* a response that we cannot read, before the link is first
+		   up: we do not know what the remote agreed */
+		if (!rx_xid(f, true) && state_ == IDLE && !was_up_ &&
+		    !v76_) {
+			config_ = false;
+			link_->logf("ec: XID response not read: release.");
+			release(true);
+			break;
+		}
 		config_ = false;
 		timer_stop();
 		/* HST both ways: a DM (F 0) as the Courier sends, then HST,
@@ -1166,8 +1236,8 @@ void Lapm::rx_unnum_rsp(Frame *f)
    end): k and N401 settled by 9.2.3 and 9.2.4, the compression it asks
    for (V.42bis's private parameters, V.44's user data subfield) to
    the Link, which decides; nothing without the general purpose
-   format */
-void Lapm::rx_xid(Frame *f, bool response)
+   format; false if it has no such format */
+bool Lapm::rx_xid(Frame *f, bool response)
 {
 	const u8 *x = f->buf + 2;
 	const s16 len = f->count - 2;
@@ -1175,8 +1245,10 @@ void Lapm::rx_xid(Frame *f, bool response)
 	if (len < 1 || x[0] != FI_GENERAL) {
 		link_->logf("ec: XID %s without parameters.",
 			    response ? "response" : "command");
-		return;
+		return false;
 	}
+	if (state_ == IDLE && !was_up_)
+		xid_done_ = true;
 	Config r;
 	bool hdlc32 = false;
 	s16 p0 = 0;
@@ -1286,24 +1358,7 @@ void Lapm::rx_xid(Frame *f, bool response)
 		}
 	};
 
-	for (s16 i = 1; i < len;) {
-		const u8 gi = x[i];
-		if (gi == GI_USER) {
-			for_each_param(x + i + 1, len - i - 1, user);
-			break;
-		}
-		if (i + 3 > len)
-			break;
-		const s32 gl =
-			static_cast<s32>(x[i + 1]) << 8 | x[i + 2];
-		if (i + 3 + gl > len)
-			break;
-		if (gi == GI_PARAM)
-			for_each_param(x + i + 3, gl, param);
-		else if (gi == GI_PRIVATE)
-			for_each_param(x + i + 3, gl, priv);
-		i += 3 + gl;
-	}
+	for_each_group(x, len, param, priv, user);
 
 	/* V.44 when its set is named and it asks for a direction: its P0
 	   then says which */
@@ -1362,6 +1417,54 @@ void Lapm::rx_xid(Frame *f, bool response)
 		    r.v44 ? " (V.44)" : "", tx_win_, rx_win_, tx_info_,
 		    rx_info_, r.fcs32 ? ", FCS-32" : "");
 	link_->update_config(r);
+	return true;
+}
+
+/* no XID agreed before the link is first up (the remote sent its SABME
+   or DM without one, or an XID command that we cannot read): V.42's
+   defaults (9.2), the same at the two ends: no compression (V.42bis,
+   V.44, zstd, ADC), no Hayes sets, no MNP 10, the 16-bit FCS, k 15 and
+   N401 128 */
+void Lapm::xid_defaults()
+{
+	Config r;
+	xid_done_ = true;
+	fcs32_asked_ = fcs32_ = false;
+	hayes_rx_ = false;
+	mnp_agreed_ = false;
+	tx_win_ = rx_win_ = LAPM_DFLT_WIN;
+	tx_info_ = rx_info_ = LAPM_DFLT_INFO;
+	link_->hdlc().set_tx_fcs32(false);
+	link_->hdlc().set_rx_fcs(RX_FCS16);
+	r.comp = 0;
+	r.v44 = r.zstd = false;
+	r.hst = 0;
+	r.fcs32 = false;
+	r.tx_win = r.rx_win = LAPM_DFLT_WIN;
+	r.tx_info = r.rx_info = LAPM_DFLT_INFO;
+	r.ec = r.detect = true;
+	link_->logf("ec: no XID agreed: V.42's defaults.");
+	link_->update_config(r);
+}
+
+/* whether the XID response f answers an XID of ours from before our
+   offer changed: it names zstd's private set after we offered it no
+   more (XID frames have no sequence number) */
+bool Lapm::xid_stale(const Frame *f) const
+{
+	const u8 *x = f->buf + 2;
+	const s16 len = f->count - 2;
+	bool zstd = false;
+
+	if (!no_zstd_ || len < 1 || x[0] != FI_GENERAL)
+		return false;
+	auto none = [](u8, const u8 *, s16) {};
+	auto priv = [&](u8 pi, const u8 *pv, s16 pl) {
+		if (pi == PI_ZSTD_SET && pl == 3 && !memcmp(pv, "ZST", 3))
+			zstd = true;
+	};
+	for_each_group(x, len, none, priv, none);
+	return zstd;
 }
 
 /* the FCS of a received frame f, while the 32-bit FCS is agreed and

@@ -79,8 +79,8 @@ def wait_for(p, text, t, procs, since=0):
 port_a = free_port()
 port_b = free_port()
 # (-d 2: the modem log on stderr, so that a failure shows the cause)
-a = start("A", "-p", str(port_a), "-L", "-d", "2")
-b = start("B", "-p", str(port_b), "-s", "-d", "2")
+a = start("A", "-p", str(port_a), "-L", "-d", "2", "-S", "4")
+b = start("B", "-p", str(port_b), "-s", "-d", "2", "-S", "4")
 procs = (a, b)
 
 for p in procs:

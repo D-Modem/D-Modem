@@ -2131,6 +2131,371 @@ TEST(Link, LapmN400)
 
 
 /*
+ *    XID not agreed, and XID offers that change (#196, #197)
+ *
+ */
+
+/* a scripted remote for the Link l: the frames it sends (send()) and
+   the frames that l sent (out()), in rounds of 600 bits each way; it
+   takes each FCS */
+struct Script {
+	NullOwner o;
+	Link side;
+	Hdlc tx, rx;
+	FrameSource src, dst;
+	Link &l;
+	/* the remote of link */
+	explicit Script(Link &link) : l(link) {
+		side.init(&o, true, Config());
+		tx.start(&side);
+		rx.start(&side);
+		tx.set_framer(&src, true);
+		rx.set_framer(&dst, false);
+		rx.set_rx_fcs(RX_FCS16 | RX_FCS32);
+	}
+	/* the frame f to l */
+	void send(const std::vector<uint8_t> &f) { src.tx.push_back(f); }
+	/* n rounds each way */
+	void rounds(int n) {
+		uint8_t bits[600];
+		for (int k = 0; k < n; k++) {
+			tx.get_bits(1, bits, sizeof(bits));
+			l.put_bits(1, bits, sizeof(bits));
+			l.get_bits(1, bits, sizeof(bits));
+			rx.put_bits(1, bits, sizeof(bits));
+		}
+	}
+	/* the frames that l sent */
+	const std::vector<std::vector<uint8_t>> &out() const {
+		return dst.rx;
+	}
+};
+
+/* whether the frame f contains the three characters of id (a set's
+   name in an XID) */
+static bool names_set(const std::vector<uint8_t> &f, const char *id)
+{
+	return std::search(f.begin(), f.end(), id, id + 3) != f.end();
+}
+
+/* whether f is an XID frame */
+static bool is_xid(const std::vector<uint8_t> &f)
+{
+	return f.size() >= 2 && (f[1] & 0xef) == 0xaf;
+}
+
+/* the information fields of the I frames in frames with the address
+   addr, in sequence */
+static std::vector<uint8_t> info_of(
+	const std::vector<std::vector<uint8_t>> &frames, uint8_t addr)
+{
+	std::vector<uint8_t> v;
+	for (auto &f : frames)
+		if (f.size() > 3 && f[0] == addr && !(f[1] & 1))
+			v.insert(v.end(), f.begin() + 3, f.end());
+	return v;
+}
+
+/* the link l is up with V.42's defaults (no compression, FCS-16), and
+   the scripted remote s and l exchange characters without a change:
+   l's I frames have its DTE d's characters, and the remote's I frame
+   (address addr) gets to d unchanged */
+static void check_plain(const char *name, Script &s, Link &l, Dte &d,
+			uint8_t addr)
+{
+	CHECK(d.up, "%s: up", name);
+	CHECK(l.config().comp == 0 && !l.config().v44 && !l.config().zstd,
+	      "%s: compression %d (V.44 %d, zstd %d)", name, l.config().comp,
+	      l.config().v44, l.config().zstd);
+	CHECK(!l.hdlc().tx_fcs32() && l.hdlc().rx_fcs() == RX_FCS16,
+	      "%s: FCS-16", name);
+	l.set_online(true);
+	const std::string out = "from the D-Modem, plain text";
+	const std::string in = "from the remote, plain text";
+	d.to_send.assign(out.begin(), out.end());
+	d.pos = 0;
+	d.got.clear();
+	std::vector<uint8_t> i = { addr, 0x00, 0x00 };
+	i.insert(i.end(), in.begin(), in.end());
+	const size_t before = s.out().size();
+	s.send(i);
+	s.rounds(8);
+	std::vector<std::vector<uint8_t>> after(s.out().begin() + before,
+						s.out().end());
+	const uint8_t own = addr == 0x01 ? 0x03 : 0x01;
+	CHECK(d.got == std::vector<uint8_t>(in.begin(), in.end()),
+	      "%s: %zu octets in, %zu out", name, in.size(), d.got.size());
+	CHECK(info_of(after, own) ==
+	      std::vector<uint8_t>(out.begin(), out.end()),
+	      "%s: our I frames are not the plain text", name);
+}
+
+/* an answerer with V.44 (and zstd off) that gets a SABME with no XID
+   before it (7.2.2, 8.3/V.42): V.42's defaults, no V.44 */
+TEST(Link, LapmSabmeWithoutXid)
+{
+	for (int zstd = 0; zstd < 2; zstd++) {
+		Dte d("answerer");
+		Link l;
+		l.init(&d, false, lapm_config(3, true, zstd));
+		l.start(true, false);
+		Script s(l);
+		s.send({ 0x03, 0x7f });
+		s.rounds(4);
+		CHECK(!s.out().empty() && s.out().back() ==
+		      std::vector<uint8_t>({ 0x03, 0x73 }), "UA to the SABME");
+		check_plain(zstd ? "sabme, zstd" : "sabme", s, l, d, 0x03);
+	}
+}
+
+/* an answerer that gets an XID command it cannot read (no general
+   format, or nothing), then the SABME: its response names no
+   compression, and the link has V.42's defaults */
+TEST(Link, LapmBadXidThenSabme)
+{
+	const std::vector<std::vector<uint8_t>> bad = {
+		{ 0x03, 0xaf },
+		{ 0x03, 0xaf, 0x81 },
+		{ 0x03, 0xbf, 0x00, 0x80, 0x00, 0x00 },
+	};
+	for (auto &x : bad) {
+		Dte d("answerer");
+		Link l;
+		Config c = lapm_config(3, true, true);
+		l.init(&d, false, c);
+		l.start(true, false);
+		Script s(l);
+		s.send(x);
+		s.rounds(4);
+		CHECK(s.out().size() == 1 && is_xid(s.out()[0]),
+		      "an XID response (%zu frames)", s.out().size());
+		if (!s.out().empty()) {
+			const auto &r = s.out()[0];
+			CHECK(!names_set(r, "V42") && !names_set(r, "V44") &&
+			      !names_set(r, "ZST"),
+			      "the response names compression");
+		}
+		s.send({ 0x03, 0x7f });
+		s.rounds(4);
+		check_plain("bad xid", s, l, d, 0x03);
+	}
+}
+
+/* an originator with V.44 (zstd off) whose only XID gets a DM (F = 0,
+   8.8/V.42): the remote agreed to nothing, so V.42's defaults; a DM
+   after the XID was sent again, or an XID response that it cannot read,
+   releases the link: the remote may have agreed to parameters that we
+   do not know */
+TEST(Link, LapmCallerXidNotAgreed)
+{
+	{
+		Dte d("caller");
+		Link l;
+		l.init(&d, true, lapm_config(3));
+		l.start(true, false);
+		Script s(l);
+		s.rounds(3);
+		CHECK(s.out().size() == 1 && is_xid(s.out()[0]),
+		      "the caller's XID (%zu frames)", s.out().size());
+		s.send({ 0x03, 0x0f });
+		s.rounds(4);
+		CHECK(!s.out().empty() && s.out().back() ==
+		      std::vector<uint8_t>({ 0x03, 0x7f }), "SABME after the DM");
+		s.send({ 0x03, 0x73 });
+		s.rounds(4);
+		check_plain("dm", s, l, d, 0x01);
+	}
+	{
+		Dte d("caller");
+		Link l;
+		l.init(&d, true, lapm_config(3));
+		l.start(true, false);
+		Script s(l);
+		s.rounds(40);
+		int xids = 0;
+		for (auto &f : s.out())
+			xids += is_xid(f);
+		CHECK(xids == 2, "%d XIDs before the DM", xids);
+		s.send({ 0x03, 0x0f });
+		s.rounds(4);
+		CHECK(d.released && !d.up, "released on the DM after the XID "
+		      "was sent again");
+		CHECK(s.out().size() == 2, "%zu frames after the DM (last "
+		      "%02x %02x)", s.out().size(), s.out().back()[0],
+		      s.out().back()[1]);
+	}
+	const std::vector<std::vector<uint8_t>> bad = {
+		{ 0x03, 0xaf },
+		{ 0x03, 0xaf, 0x81, 0x80, 0x00, 0x00 },
+	};
+	for (auto &x : bad) {
+		Dte d("caller");
+		Link l;
+		l.init(&d, true, lapm_config(3));
+		l.start(true, false);
+		Script s(l);
+		s.rounds(3);
+		s.send(x);
+		s.rounds(4);
+		CHECK(d.released && !d.up, "released on an XID response that "
+		      "it cannot read (%zu octets)", x.size());
+		CHECK(s.out().size() == 1, "%zu frames after it",
+		      s.out().size());
+	}
+}
+
+/* the caller's and the answerer's Links, after the detection phase,
+   with the frames between them read and sent again: the caller's
+   dropped by drop(), the answerer's XID responses delayed delay bits */
+struct Relay {
+	Pair p;
+	NullOwner o;
+	Link side;
+	Hdlc c_rx, a_tx, a_rx, c_tx;
+	FrameSource from_c, to_a, from_a, to_c;
+	size_t n_c = 0, n_a = 0;
+	long now = 0, delay = 0;
+	std::vector<std::pair<long, std::vector<uint8_t>>> late;
+	bool (*drop)(const std::vector<uint8_t> &) = nullptr;
+	bool relaying = false;
+
+	/* the two Links with their configurations */
+	Relay(const Config &cc, const Config &ca) : p(cc, ca) {
+		side.init(&o, true, Config());
+		for (Hdlc *h : { &c_rx, &a_tx, &a_rx, &c_tx })
+			h->start(&side);
+		c_rx.set_framer(&from_c, false);
+		a_rx.set_framer(&from_a, false);
+		a_tx.set_framer(&to_a, true);
+		c_tx.set_framer(&to_c, true);
+	}
+	/* the call starts: V.8 before it or not (far) */
+	void start(bool far) {
+		p.lc.start(true, true, far);
+		p.la.start(true, true, far);
+	}
+	/* run both ways, 48 bits at a time: bit by bit until the caller's
+	   detection phase is done, then frame by frame */
+	void run(long bits) {
+		std::vector<uint8_t> b(48);
+		for (long k = 0; k < bits; k += 48, now += 48) {
+			if (!relaying && p.lc.phase_v42())
+				relaying = true;
+			p.lc.get_bits(1, b.data(), 48);
+			if (relaying) {
+				c_rx.put_bits(1, b.data(), 48);
+				a_tx.get_bits(1, b.data(), 48);
+			}
+			p.la.put_bits(1, b.data(), 48);
+			p.la.get_bits(1, b.data(), 48);
+			if (relaying) {
+				a_rx.put_bits(1, b.data(), 48);
+				c_tx.get_bits(1, b.data(), 48);
+			}
+			p.lc.put_bits(1, b.data(), 48);
+			for (; n_c < from_c.rx.size(); n_c++)
+				if (!drop || !drop(from_c.rx[n_c]))
+					to_a.tx.push_back(from_c.rx[n_c]);
+			for (; n_a < from_a.rx.size(); n_a++) {
+				const auto &f = from_a.rx[n_a];
+				late.emplace_back(now + (is_xid(f) ? delay : 0),
+						  f);
+			}
+			while (!late.empty() && late.front().first <= now) {
+				to_c.tx.push_back(late.front().second);
+				late.erase(late.begin());
+			}
+			if (p.dc.up)
+				p.lc.set_online(true);
+			if (p.da.up)
+				p.la.set_online(true);
+		}
+	}
+};
+
+/* (Relay::drop) an XID with zstd's set: the answerer ignores it, as a
+   USRobotics Courier does */
+static bool drop_zstd_xid(const std::vector<uint8_t> &f)
+{
+	return is_xid(f) && names_set(f, "ZST");
+}
+
+/* Config::comp seen from the other end: its two bits exchanged */
+static int swap_bits(int comp)
+{
+	return (comp & 1) << 1 | (comp >> 1 & 1);
+}
+
+/* the two ends of r agree on the compression, and text and noise go
+   through each way */
+static void check_agreed(const char *name, Relay &r)
+{
+	const Config &c = r.p.lc.config(), &a = r.p.la.config();
+	CHECK(r.p.dc.up && r.p.da.up && r.p.lc.ec() && r.p.la.ec(),
+	      "%s: LAPM up (%d, %d)", name, r.p.dc.up, r.p.da.up);
+	CHECK(c.comp == swap_bits(a.comp) && c.v44 == a.v44 &&
+	      c.zstd == a.zstd, "%s: caller %d/%d/%d, answerer %d/%d/%d",
+	      name, c.comp, c.v44, c.zstd, a.comp, a.v44, a.zstd);
+	Pair &p = r.p;
+	for (int t = 0; t < 2; t++) {
+		p.dc.to_send = t ? noise(3000) : text(3000);
+		p.da.to_send = t ? noise(3000) : text(3000);
+		p.dc.pos = p.da.pos = 0;
+		p.dc.got.clear();
+		p.da.got.clear();
+		for (long k = 0; k < 9600 * 30 && (p.da.got.size() < 3000 ||
+						   p.dc.got.size() < 3000);
+		     k += 9600)
+			r.run(9600);
+		CHECK(p.da.got == p.dc.to_send && p.dc.got == p.da.to_send,
+		      "%s: %s, %zu and %zu of 3000 octets", name,
+		      t ? "noise" : "text", p.da.got.size(), p.dc.got.size());
+	}
+}
+
+/* an answerer that ignores an XID with zstd's set (a Courier, #92):
+   the caller offers its XID again without it, after V.8 too (from the
+   third XID on), and LAPM comes up */
+TEST(Link, LapmZstdIgnored)
+{
+	for (int far = 0; far < 2; far++) {
+		rnd_state = 12345;
+		Config cc = lapm_config(3, true, true);
+		Config ca = lapm_config(3, true, false);
+		cc.fcs32 = ca.fcs32 = false;
+		Relay r(cc, ca);
+		r.drop = drop_zstd_xid;
+		r.start(far);
+		r.run(9600 * 15);
+		check_agreed(far ? "zstd ignored, v.8" : "zstd ignored", r);
+	}
+}
+
+/* the answerer's XID responses come later than T401: the caller has
+   sent its XID again (without zstd after the first), and must not take
+   the late response to an earlier offer; the two ends agree, with V.8
+   before the call or not */
+TEST(Link, LapmXidResponseLate)
+{
+	for (int far = 0; far < 2; far++)
+		for (long delay : { 25000L, 45000L }) {
+			rnd_state = 12345;
+			Config cc = lapm_config(3, true, true);
+			Config ca = lapm_config(3, true, true);
+			cc.fcs32 = ca.fcs32 = false;
+			Relay r(cc, ca);
+			r.delay = delay;
+			r.start(far);
+			r.run(9600 * 20);
+			char name[64];
+			snprintf(name, sizeof(name), "late %ld bits%s", delay,
+				 far ? ", v.8" : "");
+			check_agreed(name, r);
+		}
+}
+
+
+/*
  *    MNP
  *
  */
