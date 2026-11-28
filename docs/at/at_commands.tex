@@ -3903,6 +3903,10 @@ then the data with \cmd{<DLE>} doubled.  \cmd{<DLE><ETX>} ends the data.
 \end{syntax}
 \begin{results}
 \res{\rc{CONNECT}}{Then \rc{OK} after the data.}
+\res{\rc{+FCERROR}}{\cmdl[plusFTM]{+FRM} only: a different signal came
+  before the training, for example \std{V.21} flags.  The frames go to
+  the \cmdl[plusFTH]{+FRH=3} that follows.  With \cmd{AT+FAR=1}, the
+  modem gives \rc{+FRH:3}, then it does \cmdl[plusFTH]{+FRH=3}.}
 \res{\rc{ERROR}}{Outside fax mode, or for a modulation that the modem does not have.}
 \end{results}
 \begin{vtable}{2}{|C{0.2\textwidth}|L{0.66\textwidth}|}{+FTM and +FRM Modulations}
@@ -3923,6 +3927,8 @@ These commands send or receive \std{HDLC} frames at \std{V.21} channel 2
 \end{syntax}
 \begin{results}
 \res{\rc{CONNECT}}{Then \rc{OK} or \rc{ERROR} after each frame.}
+\res{\rc{+FCERROR}}{\cmdl[plusFTH]{+FRH} only: a fast modulation came,
+  not \std{V.21} flags.}
 \res{\rc{ERROR}}{Outside fax mode.}
 \end{results}
 \end{command}

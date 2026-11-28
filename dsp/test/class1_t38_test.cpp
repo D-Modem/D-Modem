@@ -1054,3 +1054,246 @@ TEST(Class1Audio, FtmOnesThenTimeout)
 	rx.release();
 	FAX_delete(f);
 }
+
+
+/*
+ *    a different signal: +FCERROR, and +FAR=1's +FRH:3 (T.31 8.3.4,
+ *    8.3.6, 8.4, 8.5.1)
+ */
+
+/* the bits for a FaxTx: an HDLC stream (octets the first bit lowest),
+   or random bits when it is empty; then FAX_BIT_END */
+struct Src {
+	std::string octets;
+	size_t pos = 0;
+	long random = 0;                /* random bits, when no octets */
+};
+
+/* FaxTx callback: the next bit of the Src at ctx */
+static s16 src_bit(void *ctx)
+{
+	Src *s = static_cast<Src *>(ctx);
+	if (s->octets.empty())
+		return s->random-- > 0 ? (s16)(rand() & 1) : FAX_BIT_END;
+	if (s->pos >= s->octets.size() * 8)
+		return FAX_BIT_END;
+	size_t i = s->pos++;
+	return (unsigned char)s->octets[i / 8] >> (i % 8) & 1;
+}
+
+/* the far end's audio (tx, while not done; silence after it) into the
+   engine for up to ms: the first result (FAX_STATUS_*) and its time at
+   *at_ms, or -1 when none */
+static int line_run(void *f, FaxTx *tx, int ms, int *at_ms = nullptr)
+{
+	for (int t = 0; t < ms; t += TICK / 8) {
+		s16 in[TICK] = {}, out[TICK];
+		for (int i = 0; i < TICK && tx; i++)
+			in[i] = tx->done ? 0 : (s16)(tx->sample() * 0.5f);
+		int st = FAX_process(f, in, out, TICK);
+		if (st) {
+			if (at_ms)
+				*at_ms = t;
+			return st;
+		}
+	}
+	return -1;
+}
+
+/* the tty's data up to <DLE><ETX>, the <DLE>s taken out, and what came
+   before it; false if there is no <DLE><ETX> */
+static bool tty_data(Tty *tty, std::string *d)
+{
+	d->clear();
+	for (size_t i = 0; i + 1 < tty->out.size(); i++) {
+		unsigned char c = tty->out[i];
+		if (c != DLE) {
+			*d += (char)c;
+			continue;
+		}
+		c = tty->out[++i];
+		if (c == ETX) {
+			tty->out.erase(0, i + 1);
+			return true;
+		}
+		if (c == DLE)
+			*d += (char)DLE;
+	}
+	return false;
+}
+
+/* an engine that calls, its first +FRH=3 stopped by the DTE: in command
+   state */
+static void *idle_engine(Tty *tty)
+{
+	void *f = FAX_create(reinterpret_cast<struct modem *>(tty), 1, 8000);
+	if (!f)
+		return nullptr;
+	tty->in = "x";
+	EXPECT_EQ(line_run(f, nullptr, 100), FAX_STATUS_OK);
+	return f;
+}
+
+/* +FRM=96 hears V.21's flags and a DCS (the sender sends its DCS
+   again): +FCERROR in the preamble, not the training's CONNECT; the
+   +FRH=3 that follows has the DCS.  With +FAR=1: +FRH:3, then CONNECT
+   and the DCS with no command */
+TEST(Class1Audio, FrmV21)
+{
+	for (int far = 0; far < 2; far++) {
+		SCOPED_TRACE(far ? "+FAR=1" : "+FAR=0");
+		Tty tty;
+		void *f = idle_engine(&tty);
+		ASSERT_NE(f, nullptr);
+		std::string dcs = frame(FCF_DCS, true, true, dcs_fif(false));
+		Src src;
+		src.octets = hdlc_encode({ dcs }, 38);
+		FaxTx tx;
+		tx.init(FM_V21, 0, 8000, src_bit, &src);
+		tty.out.clear();
+		ASSERT_EQ(FAX_class1_command(f, FAX_CMD_FAR, far), 0);
+		ASSERT_EQ(FAX_class1_command(f, FAX_CMD_FRM, 96), 1);
+		int at = 0;
+		if (!far) {
+			EXPECT_EQ(line_run(f, &tx, 1000, &at),
+				  FAX_STATUS_FCERROR);
+			EXPECT_LT(at, 400) << "in the preamble";
+			EXPECT_EQ(tty.out, "");
+			ASSERT_EQ(FAX_class1_command(f, FAX_CMD_FRH, 3), 1);
+		}
+		EXPECT_EQ(line_run(f, &tx, 1000, &at), FAX_STATUS_CONNECT);
+		if (far) {
+			EXPECT_EQ(tty.out, "\r\n+FRH:3\r\n");
+		}
+		tty.out.clear();
+		EXPECT_EQ(line_run(f, &tx, 2000), FAX_STATUS_OK);
+		std::string d;
+		ASSERT_TRUE(tty_data(&tty, &d));
+		ASSERT_EQ(d.size(), dcs.size() + 2);
+		EXPECT_EQ(d.substr(0, dcs.size()), dcs);
+		FAX_delete(f);
+	}
+}
+
+/* +FRM=96 on V.29 at 9600 bit/s: CONNECT, not +FCERROR (the chance
+   flags of V.29 in V.21's receiver); +FRH=3 on it (a fast modulation in
+   V.21's band, no preamble): +FCERROR, not CONNECT */
+TEST(Class1Audio, FrhFastModulation)
+{
+	for (int frm = 0; frm < 2; frm++) {
+		SCOPED_TRACE(frm ? "+FRM=96" : "+FRH=3");
+		for (int seed = 1; seed <= 5; seed++) {
+			srand(seed);
+			Tty tty;
+			void *f = idle_engine(&tty);
+			ASSERT_NE(f, nullptr);
+			Src src;
+			src.random = 9600 * 3;
+			FaxTx tx;
+			tx.init(FM_V29_9600, 0, 8000, src_bit, &src);
+			ASSERT_EQ(FAX_class1_command(f, frm ? FAX_CMD_FRM :
+						     FAX_CMD_FRH,
+						     frm ? 96 : 3), 1);
+			int at = 0;
+			int st = line_run(f, &tx, 2500, &at);
+			if (frm) {
+				EXPECT_EQ(st, FAX_STATUS_CONNECT);
+			} else {
+				EXPECT_EQ(st, FAX_STATUS_FCERROR);
+				EXPECT_GE(at, 500);
+				EXPECT_LT(at, 700);
+			}
+			FAX_delete(f);
+		}
+	}
+}
+
+/* T.38: +FRM with V.21's preamble, or another fast modulation; +FRH=3
+   with a fast modulation: +FCERROR.  The frame after the preamble goes
+   to the +FRH=3 that follows.  +FAR=1: +FRH:3 and the frame */
+TEST(Class1T38Packets, FcError)
+{
+	World w;
+	Params p{ true, false, 0, 0 };
+	struct t38_ifp q = {};
+	ASSERT_NO_FATAL_FAILURE(start(w, p));
+	Dte dte{ w };
+	auto send = [&w](const struct t38_ifp &x) {
+		unsigned char buf[UDPTL_IFP_MAX];
+		int n = t38_ifp_encode(&x, 0, buf, sizeof(buf));
+		ASSERT_GT(n, 0);
+		w.to_fax.push_back(Bytes(buf, buf + n));
+	};
+	auto ind = [&](int type) {
+		struct t38_ifp x = {};
+		x.type = type;
+		send(x);
+	};
+	std::string dcs = frame(FCF_DCS, true, true, dcs_fif(false));
+	unsigned char b[64];
+	t38_reverse(b, (const unsigned char *)dcs.data(), (int)dcs.size());
+	q.data = 1;
+	q.type = T38_DATA_V21;
+	q.nfields = 2;
+	q.field[0] = { T38_HDLC_DATA, b, (int)dcs.size() };
+	q.field[1] = { T38_HDLC_FCS_OK_SIG_END, NULL, 0 };
+
+	/* (the engine's first +FRH=3 stopped) */
+	w.tty.in = "x";
+	ASSERT_EQ(w.result(1), FAX_STATUS_OK);
+
+	/* +FRM=96, V.21: +FCERROR; the frame to +FRH=3 */
+	EXPECT_EQ(FAX_class1_command(w.fax, FAX_CMD_FRM, 96), 1);
+	ind(T38_IND_V21_PREAMBLE);
+	EXPECT_EQ(w.result(1), FAX_STATUS_FCERROR);
+	send(q);
+	ind(T38_IND_NO_SIGNAL);
+	w.tick();
+	w.tick();
+	EXPECT_EQ(dte.frh(1), dcs.substr(0, dcs.size()));
+
+	/* +FRM=146, V.29: +FCERROR */
+	EXPECT_EQ(FAX_class1_command(w.fax, FAX_CMD_FRM, 146), 1);
+	ind(T38_IND_V29_9600);
+	EXPECT_EQ(w.result(1), FAX_STATUS_FCERROR);
+	ind(T38_IND_NO_SIGNAL);
+	w.tick();
+
+	/* +FRM=146, V.17 at 14400 bit/s with a long training: CONNECT */
+	EXPECT_EQ(FAX_class1_command(w.fax, FAX_CMD_FRM, 146), 1);
+	ind(T38_IND_V17_14400_LONG);
+	struct t38_ifp t = {};
+	unsigned char z[16] = {};
+	t.data = 1;
+	t.type = T38_DATA_V17_14400;
+	t.nfields = 1;
+	t.field[0] = { T38_T4_DATA, z, (int)sizeof(z) };
+	send(t);
+	EXPECT_EQ(w.result(1), FAX_STATUS_CONNECT);
+	t.field[0] = { T38_T4_SIG_END, NULL, 0 };
+	send(t);
+	EXPECT_EQ(w.result(1), FAX_STATUS_NOCARRIER);
+	ind(T38_IND_NO_SIGNAL);
+	w.tick();
+
+	/* +FRH=3, V.27 ter: +FCERROR */
+	EXPECT_EQ(FAX_class1_command(w.fax, FAX_CMD_FRH, 3), 1);
+	ind(T38_IND_V27_4800);
+	EXPECT_EQ(w.result(1), FAX_STATUS_FCERROR);
+	ind(T38_IND_NO_SIGNAL);
+	w.tick();
+
+	/* +FAR=1, +FRM=96, V.21: +FRH:3, CONNECT, the frame */
+	w.tty.out.clear();
+	EXPECT_EQ(FAX_class1_command(w.fax, FAX_CMD_FAR, 1), 0);
+	EXPECT_EQ(FAX_class1_command(w.fax, FAX_CMD_FRM, 96), 1);
+	ind(T38_IND_V21_PREAMBLE);
+	EXPECT_EQ(w.result(1), FAX_STATUS_CONNECT);
+	EXPECT_EQ(w.tty.out, "\r\n+FRH:3\r\n");
+	w.tty.out.clear();
+	send(q);
+	std::string d;
+	ASSERT_TRUE(w.data(1, &d));
+	EXPECT_EQ(w.result(1), FAX_STATUS_OK);
+	EXPECT_EQ(d.substr(0, dcs.size()), dcs);
+}

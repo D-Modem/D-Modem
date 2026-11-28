@@ -14,7 +14,7 @@ and the timers of T.31 (08/95). For a summary, refer to [T.31](t31.md).
 | `+FRM=<mod>` | Receive data on the modulation `mod` |
 | `+FTH=<mod>` | Send HDLC frames on the modulation `mod` |
 | `+FRH=<mod>` | Receive HDLC frames on the modulation `mod` |
-| `+FAR=<n>` | Adaptive reception. 0 (off) is mandatory. |
+| `+FAR=<n>` | Adaptive reception. 0 (off) is mandatory. With 1, V.21 flags in `+FRM` give `+FRH:3` (8.5.1). |
 | `+FCL=<t>` | The time from a carrier loss to the end of reception, `t` × 100 ms |
 | `+FDD=<n>` | `<DLE><SUB>` for two `<DLE>` characters. 0 is mandatory. |
 | `+FIT=<t>,<a>` | The DTE inactivity timer, `t` seconds (0 is off). With `a` = 0, the modem goes on hook and sets `+FCLASS=0`. With `a` = 1, it only goes on hook. |
@@ -87,13 +87,31 @@ after flow control off. It stops when the DTE sends a command or data.
 | `+FTM` fill | Ones before the first data. Zeros when the buffer is empty after data. |
 | `+FTM`, buffer empty | 5 s with no data, then ERROR |
 | `+FTH`, no data | 5 s after CONNECT with no data, then ERROR |
-| `+FAR` | 0 only |
+| `+FAR` | 0 and 1. The modem gives the value to the engine with each `+FRM` and `+FRH`. |
 | `+FCL` | Kept, with no effect. The receivers find the carrier loss in their own time. |
 | `+FDD` | 0 only. `<DLE><SUB>` from the DTE is discarded. |
 | `+FIT` | 0–255 s, actions 0 and 1. The timer runs in command state only. |
 | `+FLO`, `+FPR`, `+FMI`, `+FMM`, `+FMR` | As Annex A |
 | T.38 | The same commands on IFP packets |
-| Not implemented | +FCERROR. `+FRM` and `+FRH` wait for the selected signal only. |
+| +FCERROR | Verbose `+FCERROR`, numeric `+F4`. Refer to the table below. |
+
+How `+FRM` and `+FRH` find a different signal before their CONNECT:
+
+| Command | Audio | T.38 |
+|---|---|---|
+| `+FRM` | A second receiver listens to V.21 until the training. 4 flags in a row give +FCERROR. | The V.21 preamble, V.21 data, or a different fast modulation gives +FCERROR. |
+| `+FRM`, `+FAR=1` | V.21 flags give `+FRH:3`, then CONNECT and the frames of `+FRH=3` | The same |
+| `+FRH` | The V.21 carrier for 500 ms with no 2 flags in a row gives +FCERROR | A fast modulation gives +FCERROR |
+
+- After +FCERROR in `+FRM`, the V.21 receiver continues. The next
+  `+FRH=3` gets the frames that came.
+- A fast modulation in the band of V.21 makes the V.21 receiver find a
+  carrier. Its bits give a flag by chance, but not 2 flags in a row.
+  Thus `+FRH` gives CONNECT only after 2 flags in a row.
+- Tones (CED, CNG, ANSam) do not give +FCERROR. They are on the line
+  at the start of a call.
+- On the audio, `+FRM` does not find a different fast modulation. It
+  waits for its training.
 
 When the buffer of `+FTM` is empty and the last character was not
 NUL, D-Modem continues with zeros for up to 5 s. It does not stop at
@@ -114,7 +132,13 @@ Class 1 DTE of the test against the T.30 machine of D-Modem.
 | `+FTH` sent flags with no end when the DTE sent no frame | ERROR 5 s after CONNECT |
 | `+FTM` sent zeros with no end when the buffer was empty | ERROR after 5 s |
 | `+FTM` sent zeros before the first data | It sends ones (8.3.3) |
+| `+FRM` and `+FRH` waited for the selected signal only. There was no +FCERROR. | +FCERROR (`+F4`) when a different signal comes (8.3.4, 8.3.6, 8.4.1) |
+| `+FAR=1` gave ERROR | `+FAR=1` is accepted. V.21 flags in `+FRM` give `+FRH:3`, then `+FRH=3` (8.5.1, 8.4.2). |
+| `+FRH` gave CONNECT for a fast modulation after 2 flags by chance | CONNECT comes after 2 flags in a row only |
 
-The tests `Core.FaxClass1Parameters` and `Core.FaxClass1DteTimeouts`
-(`core/test/core_test.cpp`) and `Class1Audio.FtmOnesThenTimeout`
-(`dsp/test/class1_t38_test.cpp`) check these corrections.
+The tests `Core.FaxClass1Parameters`, `Core.FaxClass1DteTimeouts` and
+`Core.FaxClass1FcError` (`core/test/core_test.cpp`) check these
+corrections. The tests `Class1Audio.FtmOnesThenTimeout`,
+`Class1Audio.FrmV21`, `Class1Audio.FrhFastModulation` and
+`Class1T38Packets.FcError` (`dsp/test/class1_t38_test.cpp`) also check
+them.

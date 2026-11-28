@@ -287,6 +287,9 @@ enum class Result {
 	/* Rockwell's and US Robotics' voice mode (#CLS=8): the line taken
 	   for voice, where V.253's is OK (with ATV0 90, D-Modem's own) */
 	Vcon = 11,
+	/* T.31's +FCERROR (8.4.1): +FRM or +FRH found a different signal
+	   (with ATV0 +F4) */
+	FcError = 12,
 };
 
 /* the call (for programs that embed the modem) */

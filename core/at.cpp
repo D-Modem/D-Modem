@@ -261,10 +261,11 @@ const struct Kept {
 	/* +FAA=1, adaptive answer: modem.cpp reads it */
 	{ "+FAA", 1, { 0 }, "(0,1)" },
 	{ "+FPR", 1, { 0 }, "(0,1,2,4,8,10,18)" },
-	/* T.31 8.5: +FAR (adaptive reception: off only), +FCL (the
+	/* T.31 8.5: +FAR (adaptive reception: fax_command() gives it to
+	   the engine with each +FRM and +FRH), +FCL (the
 	   carrier loss time, kept with no effect: the receivers' own),
 	   +FDD (<DLE><SUB>: 0 only), +FIT (modem.cpp's fit_tick()) */
-	{ "+FAR", 1, { 0 }, "(0)" },
+	{ "+FAR", 1, { 0 }, "(0,1)" },
 	{ "+FCL", 1, { 0 }, "(0-255)" },
 	{ "+FDD", 1, { 0 }, "(0)" },
 	{ "+FIT", 2, { 0, 0 }, "(0-255),(0,1)" },
@@ -2369,6 +2370,9 @@ s16 Modem::fax_command(enum FAX_CMD cmd, u32 val)
 	int ret;
 	if (!fax_ || fax2_)
 		return -1;
+	/* +FAR (T.31 8.5.1): V.21's flags in +FRM give +FRH:3 */
+	if (cmd == FAX_CMD_FRM || cmd == FAX_CMD_FRH)
+		FAX_class1_command(fax_, FAX_CMD_FAR, kept("+FAR")[0]);
 	ret = FAX_class1_command(fax_, cmd, val);
 	if (ret > 0) {
 		command_ = false;
