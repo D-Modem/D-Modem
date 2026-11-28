@@ -43,9 +43,9 @@ A standard that has no link has no pages yet.
 | [V.33](v33.md) ([details](v33-details.md)) | 14400 bit/s on 4-wire leased circuits |
 | [V.17](v17.md) ([details](v17-details.md)) | 14400 bit/s for fax |
 | [V.34](v34.md) ([details](v34-details.md)) | 33600 bit/s duplex |
-| V.90 | 56000 bit/s downstream, with a digital modem and an analogue modem |
-| V.91 | PCM between two digital modems |
-| V.92 | Quick connect, modem-on-hold and PCM upstream |
+| [V.90](v90.md) ([details](v90-details.md)) | 56000 bit/s downstream, with a digital modem and an analogue modem |
+| [V.91](v91.md) ([details](v91-details.md)) | PCM between two digital modems |
+| [V.92](v92.md) ([details](v92-details.md)) | Quick connect, modem-on-hold and PCM upstream |
 | V.18 | Text telephones |
 | V.61 | Analogue simultaneous voice and data |
 
