@@ -369,6 +369,7 @@ struct T30 : HdlcTx<T30, FRAME_MAX, HdlcV21>,
 	void got_dis();
 	void start_page_rx();
 	void page_done();
+	void line_time_check();
 	void tcf_done();
 	void got_dcs(const unsigned char *fif, s16 len);
 	void dcs_coding(const unsigned char *fif, s16 len);
@@ -851,6 +852,20 @@ static void page_bit(void *ctx, s16 bit)
 	} else if (t->state == S_RX_ECM) {
 		t->EcmRx::hdlc_rx_bit(bit);
 	}
+}
+
+/* a total coded scan line longer than T.4 3.2 permits (13 s: data, fill
+   and EOL, or fill alone): the receiver disconnects */
+void T30::line_time_check()
+{
+	if (!t4rx.line_too_long(rates[rate].bps))
+		return;
+	DSP_DBG("t30: a scan line of more than 13 s: disconnect\n");
+	t4rx.release();
+	rx_page.release();
+	rx_page_on = 0;
+	stop_fast();
+	send_dcn(T30_ERR_PAGE);
 }
 
 /* the response to the page: MCF if it came, RTN if not */
@@ -2706,6 +2721,9 @@ void T30::t38_t4_in(const unsigned char *d, s32 n)
 		} else if (state == S_RX_PAGE && rx_page_on) {
 			page_heard = 1;
 			t4rx.bit(bit);
+			line_time_check();
+			if (state != S_RX_PAGE)
+				return;
 			if (t4rx.done) {
 				/* RTC: the rest is no page */
 				page_done();
@@ -3131,6 +3149,9 @@ void T30::rx_sample(float x)
 			   rx_page_on && t4rx.done) {
 			/* RTC: the rest is no page */
 			page_done();
+		} else if (state == S_RX_PAGE && rx_page_on &&
+			   t4rx.line_too_long(rates[rate].bps)) {
+			line_time_check();
 		} else if (state == S_RX_PAGE && fast.trained) {
 			/* the page may take minutes: the timer only for
 			   the start of it */

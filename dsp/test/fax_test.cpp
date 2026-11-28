@@ -479,6 +479,32 @@ TEST(T4, ZeroRunsAreNoRow)
 	p.release();
 }
 
+/* T.4 3.2: a total coded scan line of more than 13 s (here fill alone,
+   at 9600 bit/s) is too long, and the receiver must disconnect; the
+   next EOL starts the count again */
+TEST(T4, LineTimeLimit)
+{
+	T4Page p;
+	T4Rx rx;
+	const s32 bps = 9600;
+
+	ASSERT_EQ(p.init(T4_WIDTH, 0), 0);
+	rx.init(&p, 0);
+	for (int i = 0; i < 11; i++)
+		rx.bit(0);
+	rx.bit(1);                                     /* EOL */
+	for (s32 i = 0; i < 13 * bps - 1; i++)
+		rx.bit(0);
+	EXPECT_FALSE(rx.line_too_long(bps));
+	rx.bit(0);
+	rx.bit(0);
+	EXPECT_TRUE(rx.line_too_long(bps));
+	rx.bit(1);                                     /* an EOL again */
+	EXPECT_FALSE(rx.line_too_long(bps));
+	rx.release();
+	p.release();
+}
+
 /* a page whose IFD links back to itself: one page, not the same one
    again and again */
 TEST(T4, TiffIfdCycle)

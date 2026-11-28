@@ -611,6 +611,7 @@ s16 T4Rx::bit(s16 bit)
 {
 	if (done)
 		return 1;
+	since_eol++;
 	if (tag_pending) {
 		/* MR: after the EOL, 1 for a one dimensional row */
 		tag_pending = 0;
@@ -636,6 +637,7 @@ s16 T4Rx::bit(s16 bit)
 		line.n = 0;
 		started = 1;
 		zeros = 0;
+		since_eol = 0;
 		if (mr)
 			tag_pending = 1;
 		if (eols >= 6) {             /* RTC */
