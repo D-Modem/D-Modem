@@ -174,6 +174,11 @@ if(DMODEM_CRYPTO STREQUAL "mbedtls")
 			set(_tls_legacy "-DMBEDTLS_USER_CONFIG_FILE=${CMAKE_CURRENT_LIST_DIR}/mbedtls-win32-legacy.h")
 		endif()
 	endif()
+	# (the classic Mac OS: cmake/mbedtls-macos9.h, no entropy from the
+	# platform)
+	if(CMAKE_SYSTEM_NAME STREQUAL "MacOS9")
+		set(_tls_legacy "-DMBEDTLS_USER_CONFIG_FILE=${CMAKE_CURRENT_LIST_DIR}/mbedtls-macos9.h")
+	endif()
 	set(_tls_lib ${_re_prefix}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}mbedcrypto${CMAKE_STATIC_LIBRARY_SUFFIX})
 	if(NOT EXISTS ${_tls_lib})
 		dmodem_fetch_build(mbedtls ${DMODEM_MBEDTLS_REPO}
@@ -223,6 +228,19 @@ if(WIN32 AND CLANG_RETRO_CONFIG MATCHES "picolibc")
 	string(SUBSTRING ${_sum} 0 8 _sum)
 	set(_re_stamp ${_re_stamp}-picolibc-${_sum})
 endif()
+# (the classic Mac OS, D-Modem/gui's cmake/macos9.cmake:
+# cmake/libre-macos9, the names of IPv6, multicast and the interfaces
+# that the C library of clang-retro/mac-sdk does not have)
+if(CMAKE_SYSTEM_NAME STREQUAL "MacOS9")
+	string(APPEND _re_cflags
+		" -include ${CMAKE_CURRENT_LIST_DIR}/libre-macos9/compat.h"
+		" -I${CMAKE_CURRENT_LIST_DIR}/libre-macos9")
+	foreach(_h compat.h net/if.h)
+		file(MD5 ${CMAKE_CURRENT_LIST_DIR}/libre-macos9/${_h} _sum)
+		string(SUBSTRING ${_sum} 0 8 _sum)
+		set(_re_stamp ${_re_stamp}-${_sum})
+	endforeach()
+endif()
 # (Haiku: platforms/haiku/libre-haiku.patch, for its interface ioctls
 # and its lack of a routing table listing)
 # (Mbed TLS: cmake/libre-mbedtls-aes.patch, its AES for SRTP)
@@ -253,6 +271,11 @@ if(APPLE AND CMAKE_OSX_DEPLOYMENT_TARGET
 		message(FATAL_ERROR "Mac OS X before 10.7: DMODEM_CRYPTO=mbedtls")
 	endif()
 	list(APPEND libre_PATCHES ${CMAKE_CURRENT_LIST_DIR}/libre-macosx-legacy.patch)
+endif()
+# (the classic Mac OS: cmake/libre-macos9.patch, no routing table
+# listing)
+if(CMAKE_SYSTEM_NAME STREQUAL "MacOS9")
+	list(APPEND libre_PATCHES ${CMAKE_CURRENT_LIST_DIR}/libre-macos9.patch)
 endif()
 # (picolibc, the Windows 95 build: cmake/libre-picolibc.patch,
 # GetAdaptersInfo() found at run time, because Windows 95 has no

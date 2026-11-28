@@ -26,7 +26,8 @@
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#ifndef __HAIKU__
+/* (Haiku and the classic Mac OS have no sys/syscall.h) */
+#if !defined(__HAIKU__) && __has_include(<sys/syscall.h>)
 #include <sys/syscall.h>
 #endif
 #include <sys/uio.h>
