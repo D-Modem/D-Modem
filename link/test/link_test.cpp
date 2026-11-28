@@ -2379,6 +2379,79 @@ TEST(Link, LapmCallerXidNotAgreed)
 	}
 }
 
+/* an answerer with V.44 that gets an XID command with a V.44
+   parameter below its minimum (a procedural error, 7.4/V.44: no
+   response), then a SABME: the link has no compression, as no XID was
+   agreed (#196), with zstd off and on; the XID of #196's report, and
+   the caller's own XID with P2R, P1T or P3R too small */
+TEST(Link, LapmXidOutOfRangeThenSabme)
+{
+	std::vector<std::vector<uint8_t>> bad = { {
+		0x03, 0xaf, 0x82, 0x80, 0x00, 0x13, 0x03, 0x03, 0x8a, 0x89,
+		0x01, 0x05, 0x02, 0x04, 0x00, 0x06, 0x02, 0x04, 0x00, 0x07,
+		0x01, 0x0f, 0x08, 0x01, 0x0f, 0xf0, 0x00, 0x20, 0x00, 0x03,
+		0x56, 0x34, 0x32, 0x01, 0x01, 0x03, 0x02, 0x02, 0x08, 0x00,
+		0x03, 0x01, 0x22, 0x60, 0x03, 0x5a, 0x53, 0x54, 0x61, 0x59,
+		0x03, 0x62, 0x01, 0x0f, 0x63, 0x04, 0x56, 0x43, 0x4d, 0x01,
+		0xff, 0x40, 0x03, 0x56, 0x34, 0x34, 0x41, 0x01, 0x00, 0x42,
+		0x01, 0x03, 0x43, 0x02, 0x10, 0x00, 0x4e, 0x02, 0x39, 0x00,
+		0x45, 0x01, 0xff, 0x46, 0x01, 0x05, 0x47, 0x02, 0x30, 0x00,
+		0x48, 0x02, 0x30, 0x00 } };
+	{
+		/* the caller's own XID (no zstd), one parameter changed */
+		Dte d("caller");
+		Link l;
+		Config c = lapm_config(3);
+		c.fcs32 = false;
+		l.init(&d, true, c);
+		l.start(true, false);
+		Script s(l);
+		s.rounds(3);
+		CHECK(s.out().size() == 1 && is_xid(s.out()[0]),
+		      "the caller's XID");
+		const std::vector<uint8_t> x = s.out().at(0);
+		const struct { uint8_t pi; uint32_t v; } low[] = {
+			{ 0x46, 0x05 }, { 0x43, 0x00ff }, { 0x48, 0x01ff } };
+		for (auto &w : low) {
+			std::vector<uint8_t> y = x;
+			auto at = std::search(y.begin(), y.end(), "V44",
+					      "V44" + 3);
+			bool done = false;
+			for (size_t i = at - y.begin() + 3; i + 1 < y.size();
+			     i += 2 + y[i + 1])
+				if (y[i] == w.pi) {
+					for (int k = y[i + 1] - 1, b = 0; k >= 0;
+					     k--, b += 8)
+						y[i + 2 + k] = (uint8_t)(w.v >> b);
+					done = true;
+					break;
+				}
+			CHECK(done, "PI %02x in the caller's XID", w.pi);
+			bad.push_back(y);
+		}
+	}
+	for (int zstd = 0; zstd < 2; zstd++)
+		for (size_t n = 0; n < bad.size(); n++) {
+			char name[48];
+			snprintf(name, sizeof(name), "xid %zu, zstd %d", n,
+				 zstd);
+			Dte d("answerer");
+			Link l;
+			l.init(&d, false, lapm_config(3, true, zstd));
+			l.start(true, false);
+			Script s(l);
+			s.send(bad[n]);
+			s.rounds(4);
+			CHECK(s.out().empty(), "%s: %zu frames to the XID",
+			      name, s.out().size());
+			s.send({ 0x03, 0x7f });
+			s.rounds(4);
+			if (!d.up)
+				continue;
+			check_plain(name, s, l, d, 0x03);
+		}
+}
+
 /* the caller's and the answerer's Links, after the detection phase,
    with the frames between them read and sent again: the caller's
    dropped by drop(), the answerer's XID responses delayed delay bits */
